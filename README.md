@@ -6,7 +6,7 @@
 [![MCP](https://img.shields.io/badge/MCP-Server-blueviolet)](https://modelcontextprotocol.io/)
 [![GitHub stars](https://img.shields.io/github/stars/AKzar1el/mcp-geo?style=social)](https://github.com/AKzar1el/mcp-geo/stargazers)
 
-Track how your brand is cited by ChatGPT, Claude, Perplexity, Gemini, and Google AI Overviews — through MCP. Self-hosted on Cloudflare Workers, works with Claude Desktop, Claude.ai web (custom connectors), Cursor, Codex CLI, and any MCP-compatible client.
+**mcp-geo** is an open-source **AI visibility tracker** that measures how often your brand is cited by ChatGPT, Claude, Perplexity, Gemini, and Google AI Overviews. It's the **GEO** (Generative Engine Optimization) and **AEO** (Answer Engine Optimization) equivalent of Google Search Console — built as an MCP server so you can query your AI visibility data directly inside Claude.ai, Claude Desktop, Cursor, Codex CLI, or any MCP-compatible client.
 
 > **Prefer zero setup?** Try the hosted version at [digestseo.com](https://digestseo.com) — managed Cloudflare infra, no API keys to manage, multi-brand, scheduled refresh, web UI. Waitlist now open. [Join waitlist →](https://digestseo.com) <!-- TODO: replace with real waitlist URL once landing page is live -->
 
