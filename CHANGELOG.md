@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here. The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.1] — May 2026
+
+- Removed `scripts/setup.sh` — the bash script wasn't reliable across platforms (Git Bash on Windows in particular couldn't pipe stdin to wrangler's interactive prompts). Replaced with a fully manual, copy-pasteable walkthrough in SETUP.md as the canonical install path.
+- SETUP.md is now self-contained — every wrangler command, every interactive prompt response, and the most common failure modes are documented inline.
+
 ## [0.1.0] — May 2026
 
 Initial public release.
@@ -14,6 +19,5 @@ Initial public release.
 - D1-backed storage: brands, prompts, runs, prompt_responses, shared_prompt_cache.
 - Cloudflare Cron Trigger (every 6h) that respects per-brand `refresh_frequency` (daily/weekly).
 - Admin routes: `/admin/seed`, `/admin/run-live`, `/admin/run-batch-submit`, `/admin/run-batch-collect`, `/admin/generate-prompts`, `/admin/trigger-cron-test`. All gated by `SEED_SECRET`.
-- One-shot interactive setup script at `scripts/setup.sh`.
 - Smoke test suite at `tests/smoke.test.mjs` (Node built-in test runner; no external deps).
 - Claude-Haiku-powered prompt generator and content-gap analyzer with deterministic fallback recommendations.
