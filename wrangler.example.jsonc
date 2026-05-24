@@ -2,9 +2,8 @@
 //
 // Setup:
 //   1. cp wrangler.example.jsonc wrangler.jsonc
-//   2. Run scripts/setup.sh to create KV namespaces + D1 and fill in the
-//      placeholder IDs automatically. OR edit wrangler.jsonc manually
-//      after running `wrangler kv namespace create` / `wrangler d1 create`.
+//   2. Follow SETUP.md to create the KV namespaces + D1 database and
+//      paste each returned id over the YOUR_*_ID placeholders below.
 //
 // wrangler.jsonc is gitignored — never commit it. This template is what
 // stays in the repo.

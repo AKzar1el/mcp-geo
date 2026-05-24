@@ -8,6 +8,10 @@ Track how your brand is cited by ChatGPT, Claude, Perplexity, Gemini, and Google
 
 ## What's New
 
+### [0.1.1] — May 2026
+
+- Manual install is now the canonical path. The unreliable bash setup script was removed; SETUP.md is self-contained and copy-pasteable, with every interactive wrangler prompt documented inline.
+
 ### [0.1.0] — May 2026
 
 - Initial public release.
@@ -16,7 +20,6 @@ Track how your brand is cited by ChatGPT, Claude, Perplexity, Gemini, and Google
 - Engines are opt-in based on which API keys you provide — set only the credentials you have, the rest skip gracefully.
 - Cloudflare Cron Trigger that auto-refreshes tracked brands every 6h, respecting per-brand `refresh_frequency` (daily/weekly).
 - D1-backed storage for brands, prompts, runs, citations, and a shared prompt cache.
-- One-shot setup script (`scripts/setup.sh`) that creates KV namespaces, D1 database, and prompts for every secret.
 
 ---
 
@@ -58,12 +61,35 @@ Engines are opt-in. Pick the ones you want; the rest skip silently.
 
 Solo evaluation runs comfortably under €1/month on Gemini + OpenAI alone.
 
-### Step 2 — Cloudflare setup
+### Step 2 — Deploy to your Cloudflare account
 
-You need a free Cloudflare account. Then either:
+The deploy is 6 commands and takes about 5 minutes. See [SETUP.md](./SETUP.md) for the full walkthrough with explanations and troubleshooting, or follow the quick version below.
 
-- **Guided (recommended):** `./scripts/setup.sh` — interactive, creates KV namespaces, D1 database, populates `wrangler.jsonc`, prompts for each secret, applies migrations.
-- **Manual:** see [SETUP.md](./SETUP.md) for every `wrangler` command spelled out.
+```bash
+# 1. Install deps
+npm install
+
+# 2. Log in to Cloudflare
+npx wrangler login
+
+# 3. Copy the config template
+cp wrangler.example.jsonc wrangler.jsonc
+
+# 4. Create KV namespaces + D1 database, paste each printed id into wrangler.jsonc
+npx wrangler kv namespace create OAUTH_KV
+npx wrangler kv namespace create RATE_LIMIT
+npx wrangler d1 create digestseo-db
+
+# 5. Set the required secret + at least one engine API key
+npx wrangler secret put SEED_SECRET
+npx wrangler secret put GEMINI_API_KEY   # free tier — easiest engine to start with
+
+# 6. Apply migrations and deploy
+npx wrangler d1 migrations apply digestseo-db --remote
+npx wrangler deploy
+```
+
+After deploy, wrangler prints your Worker URL. Save it.
 
 ### Step 3 — Connect to your MCP client
 
@@ -207,6 +233,10 @@ Issues and PRs welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md) for the short v
 
 See [CHANGELOG.md](./CHANGELOG.md) for the full version history.
 
+### [0.1.1] — May 2026
+
+- Removed the unreliable bash setup script. Manual install via SETUP.md is now the canonical path.
+
 ### [0.1.0] — May 2026
 
 - Initial public release.
@@ -214,4 +244,3 @@ See [CHANGELOG.md](./CHANGELOG.md) for the full version history.
 - 6 MCP tools.
 - Engines opt-in based on which API keys you provide.
 - Cloudflare Cron Trigger for auto-refresh.
-- One-shot `scripts/setup.sh` for first-time deploy.

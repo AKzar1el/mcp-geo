@@ -1,25 +1,22 @@
 # SETUP.md — Deploying digestseo-mcp to Cloudflare Workers
 
-This is the long-form walkthrough. If you'd rather not read it, run
-`./scripts/setup.sh` from the repo root — it does everything below
-interactively.
+5-minute walkthrough. If you hit a problem, the Troubleshooting section at the bottom likely covers it.
 
 ## Prerequisites
 
-- **Node 18+** and **npm**. `node --version` should print v18 or higher.
-- A free **Cloudflare account** ([dash.cloudflare.com](https://dash.cloudflare.com/sign-up)). The Workers Free plan covers a single-brand deployment comfortably; D1 is also free up to 5 GB.
-- At least one engine API key — see the engine list in [README.md](./README.md#step-1--get-api-keys). You can start with just OpenAI or just Gemini.
+- **Node 18+** — verify with `node --version`.
+- A free **Cloudflare account** — sign up at [dash.cloudflare.com](https://dash.cloudflare.com/sign-up).
+- At least one engine API key — see the engine list in [README.md → Step 1 — Get API keys](./README.md#step-1--get-api-keys).
 
 ## 1 — Clone and install
 
 ```bash
-git clone https://github.com/YOUR-FORK/digestseo-mcp.git
-cd digestseo-mcp
+git clone https://github.com/AKzar1el/mcp-geo.git
+cd mcp-geo
 npm install
 ```
 
-Wrangler is pulled in as a devDependency, so you don't need a global
-install. All `wrangler` commands below can be prefixed with `npx`.
+Wrangler ships as a devDependency, so `npx wrangler` works without a global install.
 
 ## 2 — Authenticate wrangler
 
@@ -27,106 +24,111 @@ install. All `wrangler` commands below can be prefixed with `npx`.
 npx wrangler login
 ```
 
-This opens a browser, asks you to authorize wrangler against your
-Cloudflare account, and stashes the credentials in
-`~/.wrangler/config/default.toml`. You only need to do this once per
-machine.
+This opens a browser, authorizes wrangler against your Cloudflare account, and stashes credentials locally. One-time per machine.
 
-## 3 — Recommended path: run the setup script
+## 3 — Copy the config template
 
 ```bash
-./scripts/setup.sh
+cp wrangler.example.jsonc wrangler.jsonc
 ```
 
-The script is interactive and idempotent — re-running it will skip
-already-completed steps. It:
+`wrangler.jsonc` is gitignored. Your real IDs go here. The template stays in the repo.
 
-1. Verifies wrangler is installed and logged in.
-2. Copies `wrangler.example.jsonc` → `wrangler.jsonc` and `.dev.vars.example` → `.dev.vars` if either is missing.
-3. Creates the two KV namespaces (`OAUTH_KV`, `RATE_LIMIT`) and patches their IDs into `wrangler.jsonc`.
-4. Creates the D1 database (`digestseo-db`) and patches its ID into `wrangler.jsonc`.
-5. Prompts for each engine API key — leave blank to skip. Writes filled values to `.dev.vars` *and* installs them as Worker secrets via `wrangler secret put`.
-6. Prompts for the required `SEED_SECRET`.
-7. Applies all migrations to remote D1.
-8. Prints the exact next commands (`wrangler deploy`, get URL, connect to Claude.ai).
+Optional: also copy `.dev.vars.example` to `.dev.vars` if you plan to run `wrangler dev` locally.
 
-If the script runs cleanly, **skip to section 9**.
+```bash
+cp .dev.vars.example .dev.vars
+```
 
-## 4 — Manual path: create KV namespaces
-
-If you'd rather walk through the wrangler commands yourself, start here.
+## 4 — Create the two KV namespaces
 
 ```bash
 npx wrangler kv namespace create OAUTH_KV
-# → 🌀 Creating namespace with title "OAUTH_KV"
-#   ✨ Success!
-#   Add the following to your configuration file in your kv_namespaces array:
-#   { "binding": "OAUTH_KV", "id": "abc123..." }
-
-npx wrangler kv namespace create RATE_LIMIT
-# → ... same output with a different id
 ```
 
-Copy each returned `id` into `wrangler.jsonc`, replacing
-`YOUR_OAUTH_KV_ID` and `YOUR_RATE_LIMIT_KV_ID` in the
-`kv_namespaces` block.
+Wrangler will ask three questions after creating the namespace:
 
-## 5 — Manual path: create D1 database
+- "Would you like Wrangler to add it on your behalf?" → answer **n** (we'll do it manually below).
+- "What binding name would you like to use?" → press Enter to accept `OAUTH_KV`.
+- "For local dev, do you want to connect to the remote resource instead of a local resource?" → press Enter or answer **n**.
+
+Wrangler prints a JSON snippet like:
+
+```json
+"kv_namespaces": [
+  {
+    "binding": "OAUTH_KV",
+    "id": "d260b40c2a9b42ad9ce11a0c8a9ae652"
+  }
+]
+```
+
+**Copy the `id` value**, open `wrangler.jsonc`, and replace `YOUR_OAUTH_KV_ID` with it.
+
+Now do the same for the rate-limit namespace:
+
+```bash
+npx wrangler kv namespace create RATE_LIMIT
+```
+
+Same three prompts. Replace `YOUR_RATE_LIMIT_KV_ID` in `wrangler.jsonc` with the new id.
+
+## 5 — Create the D1 database
 
 ```bash
 npx wrangler d1 create digestseo-db
-# → ✅ Successfully created DB 'digestseo-db' in region UNKNOWN
-#   Created database 'digestseo-db' at 0f3a... (...)
-#
-#   [[d1_databases]]
-#   binding = "DIGESTSEO_DB"
-#   database_name = "digestseo-db"
-#   database_id = "abc123..."
 ```
 
-Paste the returned `database_id` into `wrangler.jsonc`, replacing
-`YOUR_D1_DATABASE_ID`.
+Output includes:
 
-## 6 — Manual path: set secrets
+```
+[[d1_databases]]
+binding = "DIGESTSEO_DB"
+database_name = "digestseo-db"
+database_id = "abc12345-1234-1234-1234-abc123456789"
+```
 
-For every engine you want to use, run the corresponding command and
-paste your key when prompted:
+**Copy the `database_id` value** and replace `YOUR_D1_DATABASE_ID` in `wrangler.jsonc`.
+
+## 6 — Verify wrangler.jsonc is fully filled in
 
 ```bash
-npx wrangler secret put OPENAI_API_KEY
-npx wrangler secret put ANTHROPIC_API_KEY
-npx wrangler secret put GEMINI_API_KEY
-npx wrangler secret put PERPLEXITY_API_KEY
-npx wrangler secret put SERPAPI_API_KEY
+grep -E "(YOUR_OAUTH_KV_ID|YOUR_RATE_LIMIT_KV_ID|YOUR_D1_DATABASE_ID)" wrangler.jsonc
 ```
 
-`SEED_SECRET` is required (it gates the `/admin/*` routes):
+Expected output: **nothing**. If grep prints any line, you missed one — go back and replace it.
+
+## 7 — Set required secrets
+
+The only secret strictly required is `SEED_SECRET` — it gates the `/admin/*` routes.
 
 ```bash
 npx wrangler secret put SEED_SECRET
-# Pick any high-entropy string. Save it — you'll need it as the
-# X-Seed-Secret header for /admin/seed, /admin/run-live, etc.
 ```
 
-For local `wrangler dev`, mirror the values you actually want to use
-into `.dev.vars` (copy from `.dev.vars.example`). Wrangler reads from
-`.dev.vars` only in dev mode; production reads from the encrypted
-secret store.
+Paste any high-entropy string when prompted (e.g. `openssl rand -hex 32`). Save it — you'll need it as the `X-Seed-Secret` header for admin endpoints.
 
-## 7 — Manual path: apply migrations
-
-The schema is in `migrations/`. Apply to both local and remote D1:
+Then add API keys for whichever engines you want to use. Each is opt-in — engines without keys are silently skipped.
 
 ```bash
-# Local (for `wrangler dev`)
-npx wrangler d1 migrations apply digestseo-db --local
+npx wrangler secret put OPENAI_API_KEY      # ChatGPT engine
+npx wrangler secret put ANTHROPIC_API_KEY   # Claude engine + prompt generation
+npx wrangler secret put GEMINI_API_KEY      # Gemini engine (free tier easiest to start)
+npx wrangler secret put PERPLEXITY_API_KEY  # Perplexity engine (paid)
+npx wrangler secret put SERPAPI_API_KEY     # Google AI Overviews (paid)
+```
 
-# Remote (for the deployed Worker)
+Solo evaluation runs comfortably under €1/month on Gemini alone. Start there if you want to try the cheapest path.
+
+## 8 — Apply migrations
+
+```bash
 npx wrangler d1 migrations apply digestseo-db --remote
 ```
 
-If `migrations apply` fails because it can't find the migrations table,
-run the initial file directly:
+If it asks "Would you like to apply these migrations?" answer **y**.
+
+If `migrations apply` fails because it can't find the migrations table, run each file directly:
 
 ```bash
 npx wrangler d1 execute digestseo-db --remote --file=migrations/0001_initial.sql
@@ -134,29 +136,28 @@ npx wrangler d1 execute digestseo-db --remote --file=migrations/0002_fail_stuck_
 npx wrangler d1 execute digestseo-db --remote --file=migrations/0003_perplexity_citations.sql
 ```
 
-## 8 — Manual path: deploy
+## 9 — Deploy
 
 ```bash
 npx wrangler deploy
 ```
 
-The first deploy prints the public URL — something like
-`https://digestseo-mcp.YOUR-SUBDOMAIN.workers.dev`. Note it down.
+Wrangler prints the public URL. Looks like `https://digestseo-mcp.YOUR-SUBDOMAIN.workers.dev`. **Save this URL** — you'll need it in every step below.
 
-## 9 — Verify it's alive
+## 10 — Verify it's alive
 
 ```bash
 curl https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev/healthz
 # → ok
 ```
 
-If you get `ok`, the Worker is deployed and reachable.
+If you see `ok`, the Worker is reachable.
 
-## 10 — Seed a test brand
+## 11 — Seed your first brand
 
 ```bash
 curl -X POST https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev/admin/seed \
-  -H "X-Seed-Secret: <your SEED_SECRET>" \
+  -H "X-Seed-Secret: YOUR_SEED_SECRET" \
   -H "Content-Type: application/json" \
   -d '{
     "brand_id": "acme",
@@ -165,61 +166,53 @@ curl -X POST https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev/admin/seed \
     "category": "Project management software",
     "competitors": ["asana.com", "monday.com", "clickup.com", "notion.so"]
   }'
-# → {"seeded": true, "brand_id": "acme", "prompts_inserted": 20, "prompt_source": "generated"}
 ```
 
-If `prompt_source` is `"fallback"`, prompt generation failed (probably
-because `ANTHROPIC_API_KEY` isn't set) and the brand was seeded with 3
-generic prompts. Set the key and re-run via `/admin/generate-prompts`
-to replace them with category-specific prompts.
+Expected response:
 
-## 11 — Kick off a live run
+```json
+{"seeded": true, "brand_id": "acme", "prompts_inserted": 20, "prompt_source": "generated"}
+```
+
+If `prompt_source` is `"fallback"`, the prompt generator (Claude Haiku) failed — usually because `ANTHROPIC_API_KEY` isn't set. Set the key and re-run via `/admin/generate-prompts`.
+
+## 12 — Trigger a live scan
 
 ```bash
 curl -X POST https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev/admin/run-live \
-  -H "X-Seed-Secret: <your SEED_SECRET>" \
+  -H "X-Seed-Secret: YOUR_SEED_SECRET" \
   -H "Content-Type: application/json" \
   -d '{"brand_id":"acme"}'
-# → {"run_ids":{"chatgpt":"...","gemini":"..."},"prompts_total":20,"engines":["chatgpt","gemini"]}
 ```
 
-The `engines` array reflects whatever keys you actually configured.
-Wait 30-60s for the parallel runs to finish.
+Wait 30-60s for the engines to finish.
 
-## 12 — Connect to Claude.ai
+## 13 — Connect to Claude.ai
 
-In Claude.ai → Settings → Connectors → Add custom connector:
+Claude.ai → Settings → Connectors → Add custom connector:
 
 ```
 https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev/mcp
 ```
 
-Complete the OAuth flow (the OSS build auto-completes with a single
-dev user — no Google/GitHub round trip). The connector turns green
-when ready.
+The OAuth handshake auto-completes in the OSS build (single dev user, no Google/GitHub round-trip).
 
-Then in any Claude.ai conversation:
+In a Claude.ai conversation, try:
 
 > Check the AI visibility for brand_id `acme`.
 
-Claude will call `check_visibility` and return per-engine scores. From
-there, try `compare_competitors`, `get_citations`, `get_content_gaps`,
-and `refresh_brand`.
+Claude will call `check_visibility` and return per-engine scores. From there try `compare_competitors`, `get_citations`, `get_content_gaps`, `refresh_brand`.
 
-## 13 — Optional: custom domain
+## Troubleshooting
 
-Workers domains (`*.workers.dev`) are public and free. If you want
-something like `mcp.digestseo.com`, see Cloudflare's
-[custom domains for Workers](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/)
-docs — it's a few clicks in the dashboard once the domain is on
-Cloudflare DNS.
+- **`wrangler deploy` says "KV namespace 'YOUR_OAUTH_KV_ID' is not valid"** — you forgot to replace one of the placeholder ids in `wrangler.jsonc`. Run the grep check from Step 6.
+- **`wrangler kv namespace create` hangs** — wrangler is waiting for your answer to one of the three interactive prompts. Don't try to script these; run the command directly in your terminal and answer them by typing.
+- **`Cannot find module '@cloudflare/workers-oauth-provider'` on deploy** — you skipped `npm install`. Run it from the repo root.
+- **`401 unauthorized` from `/admin/*`** — `X-Seed-Secret` header is missing or doesn't match the deployed `SEED_SECRET`. Re-run `npx wrangler secret put SEED_SECRET` and use the value you set.
+- **`prompt_source: "fallback"`** in seed response — `ANTHROPIC_API_KEY` isn't set, so Claude Haiku-based prompt generation skipped. Set it via `npx wrangler secret put ANTHROPIC_API_KEY` and the next seed will use real generated prompts.
+- **Cron not firing** — Cloudflare dashboard → Workers & Pages → digestseo-mcp → Settings → Triggers. The cron `0 */6 * * *` should be listed. If missing, re-run `npx wrangler deploy`.
+- **Custom MCP connector in Claude.ai not connecting** — URL must end in `/mcp`. Try `curl https://YOUR-URL/mcp` and confirm you get a non-error response. If the OAuth loops, remove and re-add the connector.
 
-## Where to go next
+## Optional: custom domain
 
-- Read [README.md](./README.md) for the full tools reference and
-  troubleshooting.
-- Read the source in `src/index.ts` — the 6 MCP tools, the OAuth
-  glue, the cron handler, and the admin routes are all there in one
-  file.
-- Re-run `./scripts/setup.sh` any time you want to add a key you
-  skipped initially — it's idempotent.
+Workers `.workers.dev` URLs work, but if you want `mcp.example.com`, see Cloudflare's [custom domains for Workers](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/) — a few clicks once your domain is on Cloudflare DNS.
