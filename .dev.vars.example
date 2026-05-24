@@ -1,0 +1,15 @@
+# Local dev secrets for `wrangler dev`. Copy to .dev.vars and fill in.
+# .dev.vars is gitignored — never commit it.
+#
+# All engine API keys are opt-in. Leave any line blank and that engine
+# will be skipped at runtime. You need at least one engine key for the
+# server to do anything useful.
+
+OPENAI_API_KEY=your_key_here
+ANTHROPIC_API_KEY=your_key_here
+GEMINI_API_KEY=your_key_here
+PERPLEXITY_API_KEY=your_key_here
+SERPAPI_API_KEY=your_key_here
+SEED_SECRET=your_key_here
+TURNSTILE_SITE_KEY=your_key_here
+TURNSTILE_SECRET_KEY=your_key_here

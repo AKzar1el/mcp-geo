@@ -1,0 +1,74 @@
+// Cloudflare Worker configuration template for digestseo-mcp.
+//
+// Setup:
+//   1. cp wrangler.example.jsonc wrangler.jsonc
+//   2. Run scripts/setup.sh to create KV namespaces + D1 and fill in the
+//      placeholder IDs automatically. OR edit wrangler.jsonc manually
+//      after running `wrangler kv namespace create` / `wrangler d1 create`.
+//
+// wrangler.jsonc is gitignored — never commit it. This template is what
+// stays in the repo.
+{
+	"name": "digestseo-mcp",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-05-22",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"observability": {
+		"enabled": true
+	},
+	"kv_namespaces": [
+		{
+			"binding": "OAUTH_KV",
+			"id": "YOUR_OAUTH_KV_ID"
+		},
+		{
+			"binding": "RATE_LIMIT",
+			"id": "YOUR_RATE_LIMIT_KV_ID"
+		}
+	],
+	"d1_databases": [
+		{
+			"binding": "DIGESTSEO_DB",
+			"database_name": "digestseo-db",
+			"database_id": "YOUR_D1_DATABASE_ID"
+		}
+	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "MCP_OBJECT",
+				"class_name": "GeoMcpAgent"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": [
+				"GeoMcpAgent"
+			]
+		}
+	],
+	// Auto-refresh trigger. Fires every 6h; the scheduled handler in
+	// src/index.ts checks each brand's refresh_frequency (daily/weekly)
+	// and only dispatches engines for brands that are actually due.
+	"triggers": {
+		"crons": [
+			"0 */6 * * *"
+		]
+	}
+	// Secrets are NOT stored here. They live in Cloudflare's encrypted
+	// secret store, set via the CLI (or via the dashboard):
+	//   npx wrangler secret put OPENAI_API_KEY
+	// Expected secrets (all opt-in — set only the engines you want):
+	//   - OPENAI_API_KEY      (ChatGPT engine)
+	//   - ANTHROPIC_API_KEY   (Claude engine + prompt generation + content gaps)
+	//   - GEMINI_API_KEY      (Gemini engine — free tier available)
+	//   - PERPLEXITY_API_KEY  (Perplexity engine — paid)
+	//   - SERPAPI_API_KEY     (Google AI Overviews engine — paid)
+	//   - SEED_SECRET         (required — gates /admin/* routes)
+	//   - TURNSTILE_SITE_KEY  (optional — for forks adding a public /check route)
+	//   - TURNSTILE_SECRET_KEY (optional — same)
+}
