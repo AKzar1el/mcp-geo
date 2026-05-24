@@ -1,5 +1,11 @@
 # DigestSEO — AI Visibility MCP for SEO & GEO
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
+[![MCP](https://img.shields.io/badge/MCP-Server-blueviolet)](https://modelcontextprotocol.io/)
+[![GitHub stars](https://img.shields.io/github/stars/AKzar1el/mcp-geo?style=social)](https://github.com/AKzar1el/mcp-geo/stargazers)
+
 Track how your brand is cited by ChatGPT, Claude, Perplexity, Gemini, and Google AI Overviews — through MCP. Self-hosted on Cloudflare Workers, works with Claude Desktop, Claude.ai web (custom connectors), Cursor, Codex CLI, and any MCP-compatible client.
 
 > **Prefer zero setup?** Try the hosted version at [digestseo.com](https://digestseo.com) — managed Cloudflare infra, no API keys to manage, multi-brand, scheduled refresh, web UI. Waitlist now open. [Join waitlist →](https://digestseo.com) <!-- TODO: replace with real waitlist URL once landing page is live -->
