@@ -1,6 +1,7 @@
 {
   "name": "digestseo-mcp",
-  "version": "0.1.1",
+  "version": "0.2.0",
+  "description": "Self-hostable MCP server for AI visibility tracking across ChatGPT, Claude, Perplexity, Gemini, and Google AI Overviews. Runs on Cloudflare Workers with D1.",
   "private": false,
   "license": "MIT",
   "type": "module",

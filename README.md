@@ -8,6 +8,16 @@ Track how your brand is cited by ChatGPT, Claude, Perplexity, Gemini, and Google
 
 ## What's New
 
+### [0.2.0] — May 2026
+
+- **Per-engine HTTP fan-out.** `/admin/run-live` now creates one runs row per engine and self-fetches `/admin/run-engine` once per engine. Each engine runs in its own worker invocation with its own free-plan 50-subrequest budget — a single-invocation fan-out used to burst past the cap mid-run and lose half the rows.
+- **Service binding (`env.SELF`)** dispatches the per-engine fan-out through Cloudflare's internal fabric instead of a public-URL fetch, dodging the "Worker called itself" guard (error 1042) that silently blocks the latter.
+- **Status column** on `prompt_responses` (`ok` / `failed` / `skipped`) plus `error_message`. Failed engine calls used to write `raw_response='ERROR: ...'` rows that downstream scoring treated as real zero-mention hits; now they're explicitly excluded.
+- **FK-resistant inserts.** `/admin/run-engine` `INSERT OR IGNORE`s its runs row before persisting — D1 is eventually consistent across edge regions, and the upstream `INSERT INTO runs` from `/admin/run-live` doesn't always replicate before the downstream engine call lands. The IGNORE makes the FK happy either way.
+- **Bulk D1 batch.** Each engine collects its 20 prompt results in memory then flushes inserts + cache writes + the final `UPDATE runs SET status='completed'` in a single `D1.batch()` call. Drops the per-invocation subrequest count from ~89 to ~26.
+- **Relaxed visibility queries.** `getLatestCompletedRun` anchors on `EXISTS(ok rows)` instead of `status='completed'`, so partially-finished runs still surface their data in MCP tool output instead of silently disappearing.
+- **New admin route `POST /admin/cleanup-failed-runs`** for one-shot deletion of legacy polluted rows after migrating to 0005.
+
 ### [0.1.1] — May 2026
 
 - Manual install is now the canonical path. The unreliable bash setup script was removed; SETUP.md is self-contained and copy-pasteable, with every interactive wrangler prompt documented inline.
@@ -214,6 +224,9 @@ If you'd rather not run your own Cloudflare account, manage API keys, or pay ind
 - **Custom MCP connector in Claude.ai not connecting** — the URL must end in `/mcp`. The OAuth handshake auto-completes in the OSS build (single dev user). If it loops, clear the connector and re-add it. Double-check the Worker is publicly reachable (`curl https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev/healthz` should return `ok`).
 - **Cron not firing** — check the Cloudflare dashboard at **Workers & Pages → digestseo-mcp → Settings → Triggers**. The "Cron Triggers" section should list `0 */6 * * *`. If it's missing, run `npx wrangler deploy` again — the trigger is registered on deploy. The handler also only dispatches engines for brands whose `refresh_frequency` cadence has elapsed, so a freshly-seeded brand might not fire on the next 6h boundary.
 - **`401 unauthorized` from `/admin/*`** — `X-Seed-Secret` header is missing or doesn't match the deployed `SEED_SECRET`. Re-run `npx wrangler secret put SEED_SECRET` and update your `.env.test`.
+- **Worker returns 404 on self-fetch / error code 1042** — the `services` binding in `wrangler.jsonc` is missing or the `service` name doesn't match the worker's `name` field. `/admin/run-live` self-fetches `/admin/run-engine` via `env.SELF` (a Cloudflare service binding) precisely because a public-URL fetch back to your own `workers.dev` hostname is blocked by Cloudflare's "Worker called itself" guard. Confirm the `wrangler.jsonc` you deployed contains `"services": [{ "binding": "SELF", "service": "<your-worker-name>" }]` with the same name you set in the top-level `"name"` field. After fixing, `npx wrangler deploy` and re-run.
+- **Gemini rate limit (HTTP 429) on every prompt** — the Gemini free tier caps `gemini-2.5-flash-lite` at single-digit requests per minute and a low daily total. For brands with more than ~5 prompts you'll see `status='failed'` rows with 429 error messages, which excludes Gemini from scoring. Workarounds: upgrade to paid Gemini, switch the `MODEL` constant in `src/gemini.ts` to a different model with a higher quota, or invoke `/admin/run-engine` for one engine at a time so the per-minute window has time to refill between batches.
+- **`FOREIGN KEY constraint failed` in wrangler tail during `/admin/run-engine`** — D1's cross-region replication hasn't caught up with the `INSERT INTO runs` that `/admin/run-live` just performed. The handler `INSERT OR IGNORE`s the runs row locally to dodge this, so you should not see this on the 0.2.0+ build; if you do, confirm you've deployed the latest `src/index.ts` (`grep -n "INSERT OR IGNORE INTO runs" src/index.ts` should match).
 
 ---
 
@@ -232,6 +245,15 @@ Issues and PRs welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md) for the short v
 ## Changelog
 
 See [CHANGELOG.md](./CHANGELOG.md) for the full version history.
+
+### [0.2.0] — May 2026
+
+- Per-engine HTTP fan-out via `env.SELF` service binding (one worker invocation per engine, dodges Cloudflare's 1042 self-call guard).
+- `status` + `error_message` columns on `prompt_responses` — failed engine calls are now explicit rows, no more `ERROR:` strings in `raw_response`.
+- `INSERT OR IGNORE` on the runs row inside `/admin/run-engine` (handles D1 cross-region replication lag without dropping prompt_responses to FK violations).
+- Bulk D1 batch in each engine's `runLive` (~26 subrequests/invocation instead of ~89; full 20-prompt runs now fit under the free-plan cap).
+- `getLatestCompletedRun` anchored on `EXISTS(ok rows)`; partially-finished runs still show their data.
+- New `POST /admin/cleanup-failed-runs` admin route.
 
 ### [0.1.1] — May 2026
 

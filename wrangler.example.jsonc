@@ -17,6 +17,33 @@
 	"observability": {
 		"enabled": true
 	},
+	// vars are plaintext, shipped with the worker. Don't put secrets
+	// here — use `wrangler secret put` instead (see SETUP.md).
+	"vars": {
+		// Public URL of THIS deployed Worker. The /admin/run-live
+		// orchestrator and the scheduled (cron) handler need to know
+		// the worker's own canonical URL so they can build a Request
+		// for env.SELF.fetch() (see "services" below). Update this
+		// after your first `wrangler deploy` — wrangler will print the
+		// URL it assigned, usually:
+		//   https://digestseo-mcp.<your-subdomain>.workers.dev
+		// HTTP-triggered paths fall back to deriving the origin from
+		// the incoming request URL, so leaving the placeholder breaks
+		// only the cron path. Cron sweeps that try to fire before this
+		// is set will log a clear error and bail.
+		"SELF_URL": "https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev"
+	},
+	// Service binding back to this same worker. /admin/run-live fans
+	// out to /admin/run-engine once per engine via env.SELF.fetch() so
+	// each engine gets its own worker invocation and its own free-plan
+	// 50-subrequest budget. The host portion of the URL is irrelevant
+	// to the binding (it routes by pathname), but a public-URL fetch
+	// to your own workers.dev hostname would trip Cloudflare's
+	// "Worker called itself" guard (error 1042) and never reach the
+	// handler. The "service" name MUST match this file's "name" field.
+	"services": [
+		{ "binding": "SELF", "service": "digestseo-mcp" }
+	],
 	"kv_namespaces": [
 		{
 			"binding": "OAUTH_KV",

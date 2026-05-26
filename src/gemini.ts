@@ -8,15 +8,18 @@ import {
   hashPrompt,
 } from './openai';
 import {
-  cacheGet,
-  cachePut,
-  insertPromptResponse,
+  bulkCacheGet,
+  persistEngineRun,
   updateRun,
   type Brand,
   type DbEnv,
+  type EnginePromptResult,
   type Prompt,
 } from './db';
 
+// gemini-2.5-flash-lite has the most generous free-tier daily quota
+// across the 2.5 family. If you need more headroom, switch to
+// gemini-2.5-flash (paid tier).
 export const MODEL = 'gemini-2.5-flash-lite';
 export const ENGINE = 'gemini';
 
@@ -87,61 +90,39 @@ export async function chatCompletion(
   return text;
 }
 
-async function processSinglePrompt(
-  env: GeminiEnv,
-  brand: Brand,
-  prompt: Prompt,
-  runId: string,
-): Promise<void> {
-  try {
-    const hash = await hashPrompt(prompt.text, ENGINE, MODEL);
-    let responseText: string;
-    const cached = await cacheGet(env, hash, ENGINE, MODEL);
-    if (cached) {
-      responseText = cached.raw_response;
-    } else {
-      responseText = await chatCompletion(
-        requireGeminiKey(env),
-        prompt.text,
-        buildSystemPrompt(),
-      );
-      await cachePut(
-        env,
-        hash,
-        ENGINE,
-        MODEL,
-        responseText,
-        LIVE_CACHE_TTL_SECONDS,
-      );
-    }
-    const citations = extractCitations(brand, responseText);
-    await insertPromptResponse(env, {
-      run_id: runId,
-      prompt_id: prompt.id,
-      engine: ENGINE,
-      raw_response: responseText,
-      brand_mentioned: citations.brand_mentioned,
-      brand_cited_with_link: citations.brand_cited_with_link,
-      cited_urls: citations.cited_urls,
-      competitors_mentioned: citations.competitors_mentioned,
-    });
-  } catch (err) {
-    console.error('runLive[gemini]: prompt failed', {
-      run_id: runId,
-      prompt_id: prompt.id,
-      message: (err as Error).message,
-    });
-    await insertPromptResponse(env, {
-      run_id: runId,
-      prompt_id: prompt.id,
-      engine: ENGINE,
-      raw_response: `ERROR: ${(err as Error).message}`,
-      brand_mentioned: 0,
-      brand_cited_with_link: 0,
-      cited_urls: [],
-      competitors_mentioned: [],
-    });
-  }
+function truncateError(msg: string): string {
+  return msg.length > 500 ? msg.slice(0, 500) : msg;
+}
+
+function buildSkippedResult(prompt: Prompt): EnginePromptResult {
+  return {
+    prompt_id: prompt.id,
+    raw_response: '',
+    brand_mentioned: 0,
+    brand_cited_with_link: 0,
+    cited_urls: [],
+    competitors_mentioned: [],
+    status: 'skipped',
+    error_message: 'no API key configured',
+  };
+}
+
+function buildFailedResult(prompt: Prompt, err: unknown): EnginePromptResult {
+  const msg = (err as Error).message;
+  console.error('runLive[gemini]: prompt failed', {
+    prompt_id: prompt.id,
+    message: msg,
+  });
+  return {
+    prompt_id: prompt.id,
+    raw_response: '',
+    brand_mentioned: 0,
+    brand_cited_with_link: 0,
+    cited_urls: [],
+    competitors_mentioned: [],
+    status: 'failed',
+    error_message: truncateError(msg),
+  };
 }
 
 export async function runLive(
@@ -150,24 +131,81 @@ export async function runLive(
   prompts: Prompt[],
   runId: string,
 ): Promise<void> {
+  // Bulk pattern — see src/openai.ts:runLive. Gemini's free-tier
+  // daily quota is very low (a handful of req/min); rate-limited
+  // failures now produce status='failed' rows instead of being
+  // silently dropped.
   const CONCURRENCY = 5;
-  let completed = 0;
+  const hashes = await Promise.all(
+    prompts.map((p) => hashPrompt(p.text, ENGINE, MODEL)),
+  );
+
+  if (!env.GEMINI_API_KEY) {
+    const results = prompts.map(buildSkippedResult);
+    await persistEngineRun(
+      env,
+      runId,
+      ENGINE,
+      MODEL,
+      LIVE_CACHE_TTL_SECONDS,
+      results,
+    );
+    return;
+  }
+
+  const cacheMap = await bulkCacheGet(env, hashes, ENGINE, MODEL);
+  const results: EnginePromptResult[] = new Array(prompts.length);
+
+  for (let i = 0; i < prompts.length; i += CONCURRENCY) {
+    const chunkStart = i;
+    const chunk = prompts.slice(i, i + CONCURRENCY);
+    await Promise.all(
+      chunk.map(async (prompt, j) => {
+        const idx = chunkStart + j;
+        const hash = hashes[idx];
+        const cached = cacheMap.get(hash);
+        try {
+          let responseText: string;
+          let cacheToPut: EnginePromptResult['cache_to_put'];
+          if (cached !== undefined) {
+            responseText = cached;
+          } else {
+            responseText = await chatCompletion(
+              requireGeminiKey(env),
+              prompt.text,
+              buildSystemPrompt(),
+            );
+            cacheToPut = { prompt_hash: hash, raw_response: responseText };
+          }
+          const citations = extractCitations(brand, responseText);
+          results[idx] = {
+            prompt_id: prompt.id,
+            raw_response: responseText,
+            brand_mentioned: citations.brand_mentioned,
+            brand_cited_with_link: citations.brand_cited_with_link,
+            cited_urls: citations.cited_urls,
+            competitors_mentioned: citations.competitors_mentioned,
+            status: 'ok',
+            cache_to_put: cacheToPut,
+          };
+        } catch (err) {
+          results[idx] = buildFailedResult(prompt, err);
+        }
+      }),
+    );
+  }
+
   try {
-    for (let i = 0; i < prompts.length; i += CONCURRENCY) {
-      const chunk = prompts.slice(i, i + CONCURRENCY);
-      await Promise.allSettled(
-        chunk.map((prompt) => processSinglePrompt(env, brand, prompt, runId)),
-      );
-      completed += chunk.length;
-      await updateRun(env, runId, { prompts_completed: completed });
-    }
-    await updateRun(env, runId, {
-      status: 'completed',
-      completed_at: Date.now(),
-      prompts_completed: completed,
-    });
+    await persistEngineRun(
+      env,
+      runId,
+      ENGINE,
+      MODEL,
+      LIVE_CACHE_TTL_SECONDS,
+      results,
+    );
   } catch (err) {
-    console.error('runLive[gemini]: run failed', {
+    console.error('runLive[gemini]: persistEngineRun failed', {
       run_id: runId,
       message: (err as Error).message,
     });
@@ -175,6 +213,6 @@ export async function runLive(
       status: 'failed',
       error: (err as Error).message,
       completed_at: Date.now(),
-    });
+    }).catch(() => {});
   }
 }

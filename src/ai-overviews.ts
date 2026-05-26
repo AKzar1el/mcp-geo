@@ -16,12 +16,12 @@ import {
   hashPrompt,
 } from './openai';
 import {
-  cacheGet,
-  cachePut,
-  insertPromptResponse,
+  bulkCacheGet,
+  persistEngineRun,
   updateRun,
   type Brand,
   type DbEnv,
+  type EnginePromptResult,
   type Prompt,
 } from './db';
 
@@ -186,86 +186,82 @@ function mergeUrls(extracted: string[], engineCitations: string[]): string[] {
   return merged;
 }
 
-async function processSinglePrompt(
-  env: AiOverviewsEnv,
+function truncateError(msg: string): string {
+  return msg.length > 500 ? msg.slice(0, 500) : msg;
+}
+
+function buildSkippedResult(prompt: Prompt): EnginePromptResult {
+  return {
+    prompt_id: prompt.id,
+    raw_response: '',
+    brand_mentioned: 0,
+    brand_cited_with_link: 0,
+    cited_urls: [],
+    competitors_mentioned: [],
+    status: 'skipped',
+    error_message: 'no API key configured',
+  };
+}
+
+function buildFailedResult(prompt: Prompt, err: unknown): EnginePromptResult {
+  const msg = (err as Error).message;
+  console.error('runLive[ai_overviews]: prompt failed', {
+    prompt_id: prompt.id,
+    message: msg,
+  });
+  return {
+    prompt_id: prompt.id,
+    raw_response: '',
+    brand_mentioned: 0,
+    brand_cited_with_link: 0,
+    cited_urls: [],
+    competitors_mentioned: [],
+    status: 'failed',
+    error_message: truncateError(msg),
+  };
+}
+
+function buildResultFromPayload(
   brand: Brand,
   prompt: Prompt,
-  runId: string,
-): Promise<void> {
-  try {
-    const hash = await hashPrompt(prompt.text, ENGINE, MODEL);
-    let payload: CachedPayload;
-    const cached = await cacheGet(env, hash, ENGINE, MODEL);
-    if (cached) {
-      payload = unpackCached(cached.raw_response);
-    } else {
-      const completion = await chatCompletion(requireSerpApiKey(env), prompt.text);
-      payload = { text: completion.text, citations: completion.citations };
-      await cachePut(
-        env,
-        hash,
-        ENGINE,
-        MODEL,
-        packCached(payload),
-        LIVE_CACHE_TTL_SECONDS,
-      );
-    }
-
-    // For the no-overview sentinel, write a structural row but don't try
-    // to extract anything meaningful from it.
-    if (payload.text === NO_AI_OVERVIEW && payload.citations.length === 0) {
-      await insertPromptResponse(env, {
-        run_id: runId,
-        prompt_id: prompt.id,
-        engine: ENGINE,
-        raw_response: NO_AI_OVERVIEW,
-        brand_mentioned: 0,
-        brand_cited_with_link: 0,
-        cited_urls: [],
-        competitors_mentioned: [],
-      });
-      return;
-    }
-
-    const citations = extractCitations(brand, payload.text);
-    const merged_cited = mergeUrls(citations.cited_urls, payload.citations);
-    // Re-evaluate brand_cited_with_link against the merged URL set — a
-    // reference URL pointing at brand.domain counts even when the text
-    // doesn't markdown-link to it.
-    const fullDomain = brand.domain.toLowerCase();
-    const brandCitedWithLink =
-      citations.brand_cited_with_link === 1 ||
-      merged_cited.some((h) => h.includes(fullDomain))
-        ? 1
-        : 0;
-    await insertPromptResponse(env, {
-      run_id: runId,
+  payload: CachedPayload,
+  cacheToPut?: EnginePromptResult['cache_to_put'],
+): EnginePromptResult {
+  // No-overview sentinel: "Google's AI Overview didn't trigger for this
+  // prompt" is a legitimate signal, not an error. status stays 'ok' so
+  // the row counts toward the per-engine total, but brand_mentioned=0
+  // naturally drags the AI Overviews score down — accurate.
+  if (payload.text === NO_AI_OVERVIEW && payload.citations.length === 0) {
+    return {
       prompt_id: prompt.id,
-      engine: ENGINE,
-      raw_response: payload.text,
-      brand_mentioned: citations.brand_mentioned,
-      brand_cited_with_link: brandCitedWithLink,
-      cited_urls: merged_cited,
-      competitors_mentioned: citations.competitors_mentioned,
-      engine_citations: payload.citations,
-    });
-  } catch (err) {
-    console.error('runLive[ai_overviews]: prompt failed', {
-      run_id: runId,
-      prompt_id: prompt.id,
-      message: (err as Error).message,
-    });
-    await insertPromptResponse(env, {
-      run_id: runId,
-      prompt_id: prompt.id,
-      engine: ENGINE,
-      raw_response: `ERROR: ${(err as Error).message}`,
+      raw_response: NO_AI_OVERVIEW,
       brand_mentioned: 0,
       brand_cited_with_link: 0,
       cited_urls: [],
       competitors_mentioned: [],
-    });
+      status: 'ok',
+      cache_to_put: cacheToPut,
+    };
   }
+  const citations = extractCitations(brand, payload.text);
+  const merged_cited = mergeUrls(citations.cited_urls, payload.citations);
+  const fullDomain = brand.domain.toLowerCase();
+  const brandCitedWithLink =
+    citations.brand_cited_with_link === 1 ||
+    merged_cited.some((h) => h.includes(fullDomain))
+      ? 1
+      : 0;
+  return {
+    prompt_id: prompt.id,
+    raw_response: payload.text,
+    brand_mentioned: citations.brand_mentioned,
+    brand_cited_with_link: brandCitedWithLink,
+    cited_urls: merged_cited,
+    competitors_mentioned: citations.competitors_mentioned,
+    engine_citations: payload.citations,
+    status: 'ok',
+    cache_to_put: cacheToPut,
+  };
 }
 
 export async function runLive(
@@ -274,24 +270,81 @@ export async function runLive(
   prompts: Prompt[],
   runId: string,
 ): Promise<void> {
+  // Bulk pattern — see src/openai.ts:runLive. AI Overviews caches the
+  // SerpAPI {text, citations} payload as JSON (see packCached), so
+  // cacheToPut wraps that, not raw text.
   const CONCURRENCY = 5;
-  let completed = 0;
+  const hashes = await Promise.all(
+    prompts.map((p) => hashPrompt(p.text, ENGINE, MODEL)),
+  );
+
+  if (!env.SERPAPI_API_KEY) {
+    const results = prompts.map(buildSkippedResult);
+    await persistEngineRun(
+      env,
+      runId,
+      ENGINE,
+      MODEL,
+      LIVE_CACHE_TTL_SECONDS,
+      results,
+    );
+    return;
+  }
+
+  const cacheMap = await bulkCacheGet(env, hashes, ENGINE, MODEL);
+  const results: EnginePromptResult[] = new Array(prompts.length);
+
+  for (let i = 0; i < prompts.length; i += CONCURRENCY) {
+    const chunkStart = i;
+    const chunk = prompts.slice(i, i + CONCURRENCY);
+    await Promise.all(
+      chunk.map(async (prompt, j) => {
+        const idx = chunkStart + j;
+        const hash = hashes[idx];
+        const cached = cacheMap.get(hash);
+        try {
+          let payload: CachedPayload;
+          let cacheToPut: EnginePromptResult['cache_to_put'];
+          if (cached !== undefined) {
+            payload = unpackCached(cached);
+          } else {
+            const completion = await chatCompletion(
+              requireSerpApiKey(env),
+              prompt.text,
+            );
+            payload = {
+              text: completion.text,
+              citations: completion.citations,
+            };
+            cacheToPut = {
+              prompt_hash: hash,
+              raw_response: packCached(payload),
+            };
+          }
+          results[idx] = buildResultFromPayload(
+            brand,
+            prompt,
+            payload,
+            cacheToPut,
+          );
+        } catch (err) {
+          results[idx] = buildFailedResult(prompt, err);
+        }
+      }),
+    );
+  }
+
   try {
-    for (let i = 0; i < prompts.length; i += CONCURRENCY) {
-      const chunk = prompts.slice(i, i + CONCURRENCY);
-      await Promise.allSettled(
-        chunk.map((prompt) => processSinglePrompt(env, brand, prompt, runId)),
-      );
-      completed += chunk.length;
-      await updateRun(env, runId, { prompts_completed: completed });
-    }
-    await updateRun(env, runId, {
-      status: 'completed',
-      completed_at: Date.now(),
-      prompts_completed: completed,
-    });
+    await persistEngineRun(
+      env,
+      runId,
+      ENGINE,
+      MODEL,
+      LIVE_CACHE_TTL_SECONDS,
+      results,
+    );
   } catch (err) {
-    console.error('runLive[ai_overviews]: run failed', {
+    console.error('runLive[ai_overviews]: persistEngineRun failed', {
       run_id: runId,
       message: (err as Error).message,
     });
@@ -299,6 +352,6 @@ export async function runLive(
       status: 'failed',
       error: (err as Error).message,
       completed_at: Date.now(),
-    });
+    }).catch(() => {});
   }
 }

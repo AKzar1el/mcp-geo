@@ -120,7 +120,43 @@ npx wrangler secret put SERPAPI_API_KEY     # Google AI Overviews (paid)
 
 Solo evaluation runs comfortably under €1/month on Gemini alone. Start there if you want to try the cheapest path.
 
-## 8 — Apply migrations
+## 8 — Configure the `SELF` service binding
+
+When `/admin/run-live` fires, it splits its work into one self-fetch per engine to `/admin/run-engine`. Each self-fetch runs in its own worker invocation, so each engine gets its own free-plan 50-subrequest budget. Without that split, one invocation tries to do 5 engines × 20 prompts in a single budget and bursts past the cap mid-run.
+
+Cloudflare blocks a worker from calling its own public URL — `fetch("https://my-worker.workers.dev/...")` from inside that same worker trips error code 1042 and the request never lands. The fix is a **service binding** that points the worker at itself through Cloudflare's internal fabric.
+
+The binding is already set in `wrangler.example.jsonc`:
+
+```jsonc
+"services": [
+  { "binding": "SELF", "service": "digestseo-mcp" }
+]
+```
+
+The `service` value **must match** the `name` field at the top of the same file. If you renamed your worker (e.g. to `acme-mcp`), update both:
+
+```jsonc
+{
+  "name": "acme-mcp",
+  ...
+  "services": [
+    { "binding": "SELF", "service": "acme-mcp" }
+  ]
+}
+```
+
+Service bindings route by request pathname; the host part of the URL doesn't actually have to resolve over public DNS. But `new Request(url, ...)` requires a syntactically valid URL, so the orchestrator still needs to know the canonical hostname. After your first `wrangler deploy` (in Step 10), wrangler will print the URL — paste it back into the `SELF_URL` value at the top of `wrangler.jsonc`:
+
+```jsonc
+"vars": {
+  "SELF_URL": "https://digestseo-mcp.YOUR-SUBDOMAIN.workers.dev"
+}
+```
+
+If you leave the placeholder in place, HTTP-triggered runs (via `/admin/run-live` or the `refresh_brand` MCP tool while a Claude.ai connector is talking to the worker) still work because the orchestrator falls back to deriving the origin from the inbound request. The cron path (no inbound request to derive from) will log a clear error and bail until `SELF_URL` is set.
+
+## 9 — Apply migrations
 
 ```bash
 npx wrangler d1 migrations apply digestseo-db --remote
@@ -134,9 +170,10 @@ If `migrations apply` fails because it can't find the migrations table, run each
 npx wrangler d1 execute digestseo-db --remote --file=migrations/0001_initial.sql
 npx wrangler d1 execute digestseo-db --remote --file=migrations/0002_fail_stuck_runs.sql
 npx wrangler d1 execute digestseo-db --remote --file=migrations/0003_perplexity_citations.sql
+npx wrangler d1 execute digestseo-db --remote --file=migrations/0005_response_status.sql
 ```
 
-## 9 — Deploy
+## 10 — Deploy
 
 ```bash
 npx wrangler deploy
@@ -144,7 +181,7 @@ npx wrangler deploy
 
 Wrangler prints the public URL. Looks like `https://digestseo-mcp.YOUR-SUBDOMAIN.workers.dev`. **Save this URL** — you'll need it in every step below.
 
-## 10 — Verify it's alive
+## 11 — Verify it's alive
 
 ```bash
 curl https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev/healthz
@@ -153,7 +190,7 @@ curl https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev/healthz
 
 If you see `ok`, the Worker is reachable.
 
-## 11 — Seed your first brand
+## 12 — Seed your first brand
 
 ```bash
 curl -X POST https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev/admin/seed \
@@ -176,7 +213,7 @@ Expected response:
 
 If `prompt_source` is `"fallback"`, the prompt generator (Claude Haiku) failed — usually because `ANTHROPIC_API_KEY` isn't set. Set the key and re-run via `/admin/generate-prompts`.
 
-## 12 — Trigger a live scan
+## 13 — Trigger a live scan
 
 ```bash
 curl -X POST https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev/admin/run-live \
@@ -187,7 +224,7 @@ curl -X POST https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev/admin/run-live 
 
 Wait 30-60s for the engines to finish.
 
-## 13 — Connect to Claude.ai
+## 14 — Connect to Claude.ai
 
 Claude.ai → Settings → Connectors → Add custom connector:
 

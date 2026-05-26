@@ -43,6 +43,8 @@ export interface Run {
   completed_at: number | null;
 }
 
+export type ResponseStatus = 'ok' | 'failed' | 'skipped';
+
 export interface PromptResponse {
   id: string;
   run_id: string;
@@ -55,6 +57,8 @@ export interface PromptResponse {
   cited_urls: string[];
   competitors_mentioned: string[];
   engine_citations: string[];
+  status: ResponseStatus;
+  error_message: string | null;
   captured_at: number;
 }
 
@@ -223,17 +227,28 @@ export async function getLatestRun(
   return row ?? null;
 }
 
+// "Latest run that produced any usable data for this (brand, engine)" —
+// NOT "latest run with status='completed'". A subrequest-cap or wall-time
+// abort can leave the runs row stuck at 'in_progress' even though some
+// prompt_responses rows landed with status='ok'. Anchoring on EXISTS(ok
+// rows) instead of run.status keeps the visibility tools honest about
+// partial data and survives any future incident that interrupts a run.
 export async function getLatestCompletedRun(
   env: DbEnv,
   brandId: string,
   engine: string,
 ): Promise<Run | null> {
   const row = await env.DIGESTSEO_DB.prepare(
-    `SELECT id, brand_id, engine, mode, status, batch_id, prompts_total,
-            prompts_completed, cost_eur_estimate, error, started_at, completed_at
-       FROM runs
-      WHERE brand_id = ? AND engine = ? AND status = 'completed'
-      ORDER BY completed_at DESC
+    `SELECT r.id, r.brand_id, r.engine, r.mode, r.status, r.batch_id,
+            r.prompts_total, r.prompts_completed, r.cost_eur_estimate,
+            r.error, r.started_at, r.completed_at
+       FROM runs r
+      WHERE r.brand_id = ? AND r.engine = ?
+        AND EXISTS (
+          SELECT 1 FROM prompt_responses pr
+           WHERE pr.run_id = r.id AND pr.status = 'ok'
+        )
+      ORDER BY COALESCE(r.completed_at, r.started_at) DESC
       LIMIT 1`,
   )
     .bind(brandId, engine)
@@ -296,6 +311,8 @@ export interface InsertPromptResponseInput {
   cited_urls: string[];
   competitors_mentioned: string[];
   engine_citations?: string[];
+  status: ResponseStatus;
+  error_message?: string | null;
 }
 
 export async function insertPromptResponse(
@@ -306,8 +323,8 @@ export async function insertPromptResponse(
     `INSERT INTO prompt_responses
        (id, run_id, prompt_id, engine, raw_response, brand_mentioned,
         brand_cited_with_link, cited_urls_json, competitors_mentioned_json,
-        engine_citations_json, captured_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        engine_citations_json, status, error_message, captured_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       randomId(),
@@ -322,9 +339,124 @@ export async function insertPromptResponse(
       input.engine_citations && input.engine_citations.length > 0
         ? JSON.stringify(input.engine_citations)
         : null,
+      input.status,
+      input.error_message ?? null,
       Date.now(),
     )
     .run();
+}
+
+// Idempotency for /admin/run-engine: before re-running an engine
+// against an existing run row, wipe any prompt_responses already
+// written for that run. Same run_id is reserved per (run, engine),
+// so this can't clobber other engines.
+export async function deleteResponsesForRun(
+  env: DbEnv,
+  runId: string,
+): Promise<void> {
+  await env.DIGESTSEO_DB.prepare(
+    'DELETE FROM prompt_responses WHERE run_id = ?',
+  )
+    .bind(runId)
+    .run();
+}
+
+// Per-prompt result produced by an engine's runLive. Collected into an
+// array and flushed in a single D1.batch() at the end of the run, so
+// 20 prompts cost 1 subrequest of writes instead of 40+. The bulk
+// pattern is required for the per-engine fan-out to fit inside the
+// Workers free-plan 50-subrequest cap.
+export interface EnginePromptResult {
+  prompt_id: string;
+  raw_response: string;
+  brand_mentioned: number;
+  brand_cited_with_link: number;
+  cited_urls: string[];
+  competitors_mentioned: string[];
+  engine_citations?: string[];
+  status: ResponseStatus;
+  error_message?: string | null;
+  cache_to_put?: { prompt_hash: string; raw_response: string };
+}
+
+// One D1 subrequest that writes every prompt's row, every cache entry
+// to back-fill, and the final run status. Replaces the per-prompt
+// insertPromptResponse + cachePut + per-chunk updateRun pattern that
+// blew the 50-subrequest cap.
+export async function persistEngineRun(
+  env: DbEnv,
+  runId: string,
+  engine: string,
+  model: string,
+  cacheTtlSeconds: number,
+  results: EnginePromptResult[],
+): Promise<void> {
+  const now = Date.now();
+  const cacheExpiresAt = now + cacheTtlSeconds * 1000;
+  const stmts: D1PreparedStatement[] = [];
+  for (const r of results) {
+    stmts.push(
+      env.DIGESTSEO_DB.prepare(
+        `INSERT INTO prompt_responses
+           (id, run_id, prompt_id, engine, raw_response, brand_mentioned,
+            brand_cited_with_link, cited_urls_json, competitors_mentioned_json,
+            engine_citations_json, status, error_message, captured_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(
+        randomId(),
+        runId,
+        r.prompt_id,
+        engine,
+        r.raw_response,
+        r.brand_mentioned,
+        r.brand_cited_with_link,
+        JSON.stringify(r.cited_urls),
+        JSON.stringify(r.competitors_mentioned),
+        r.engine_citations && r.engine_citations.length > 0
+          ? JSON.stringify(r.engine_citations)
+          : null,
+        r.status,
+        r.error_message ?? null,
+        now,
+      ),
+    );
+    if (r.cache_to_put) {
+      stmts.push(
+        env.DIGESTSEO_DB.prepare(
+          `INSERT INTO shared_prompt_cache
+             (prompt_hash, engine, model, raw_response, captured_at, expires_at)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(prompt_hash, engine, model)
+           DO UPDATE SET raw_response = excluded.raw_response,
+                         captured_at = excluded.captured_at,
+                         expires_at = excluded.expires_at`,
+        ).bind(
+          r.cache_to_put.prompt_hash,
+          engine,
+          model,
+          r.cache_to_put.raw_response,
+          now,
+          cacheExpiresAt,
+        ),
+      );
+    }
+  }
+  // Always close the run, even if every prompt failed — a row stuck
+  // in 'in_progress' is what made check_visibility silently drop
+  // engines pre-fix.
+  const okCount = results.filter((r) => r.status === 'ok').length;
+  stmts.push(
+    env.DIGESTSEO_DB.prepare(
+      `UPDATE runs
+          SET status = 'completed',
+              completed_at = ?,
+              prompts_completed = ?
+        WHERE id = ?`,
+    ).bind(now, okCount, runId),
+  );
+  if (stmts.length > 0) {
+    await env.DIGESTSEO_DB.batch(stmts);
+  }
 }
 
 interface ResponseJoinRow {
@@ -339,6 +471,8 @@ interface ResponseJoinRow {
   cited_urls_json: string | null;
   competitors_mentioned_json: string | null;
   engine_citations_json: string | null;
+  status: string;
+  error_message: string | null;
   captured_at: number;
 }
 
@@ -353,6 +487,9 @@ function parseJsonArray(raw: string | null): string[] {
   }
 }
 
+// Only returns status='ok' rows. Scoring and tool handlers must never
+// see 'failed' or 'skipped' rows — they'd be counted as zero-mention
+// hits and pollute every aggregate.
 export async function getResponsesForRun(
   env: DbEnv,
   runId: string,
@@ -361,10 +498,11 @@ export async function getResponsesForRun(
     `SELECT pr.id, pr.run_id, pr.prompt_id, p.text AS prompt_text, pr.engine,
             pr.raw_response, pr.brand_mentioned, pr.brand_cited_with_link,
             pr.cited_urls_json, pr.competitors_mentioned_json,
-            pr.engine_citations_json, pr.captured_at
+            pr.engine_citations_json, pr.status, pr.error_message, pr.captured_at
        FROM prompt_responses pr
        JOIN prompts p ON p.id = pr.prompt_id
-      WHERE pr.run_id = ?`,
+      WHERE pr.run_id = ?
+        AND pr.status = 'ok'`,
   )
     .bind(runId)
     .all<ResponseJoinRow>();
@@ -380,6 +518,8 @@ export async function getResponsesForRun(
     cited_urls: parseJsonArray(row.cited_urls_json),
     competitors_mentioned: parseJsonArray(row.competitors_mentioned_json),
     engine_citations: parseJsonArray(row.engine_citations_json),
+    status: (row.status as ResponseStatus) ?? 'ok',
+    error_message: row.error_message,
     captured_at: row.captured_at,
   }));
 }
@@ -429,6 +569,36 @@ export async function cacheGet(
     .bind(promptHash, engine, model, now)
     .first<CachedResponse>();
   return row ?? null;
+}
+
+// Bulk version of cacheGet: one D1 subrequest for N hashes instead of
+// N separate cacheGet calls. Without this, a /admin/run-engine run for
+// 20 prompts costs 20 cacheGet subrequests, plus 20 cachePuts, plus 20
+// inserts, plus ~5 updateRuns, plus ~4 init reads — well over the
+// Workers free-plan 50-cap. Returns a hash → raw_response map for the
+// entries that hit the cache; misses are absent from the map.
+export async function bulkCacheGet(
+  env: DbEnv,
+  promptHashes: string[],
+  engine: string,
+  model: string,
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (promptHashes.length === 0) return map;
+  const now = Date.now();
+  const placeholders = promptHashes.map(() => '?').join(', ');
+  const { results } = await env.DIGESTSEO_DB.prepare(
+    `SELECT prompt_hash, raw_response
+       FROM shared_prompt_cache
+      WHERE prompt_hash IN (${placeholders})
+        AND engine = ? AND model = ? AND expires_at > ?`,
+  )
+    .bind(...promptHashes, engine, model, now)
+    .all<{ prompt_hash: string; raw_response: string }>();
+  for (const row of results ?? []) {
+    map.set(row.prompt_hash, row.raw_response);
+  }
+  return map;
 }
 
 export async function cachePut(
