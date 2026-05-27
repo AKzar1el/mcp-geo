@@ -4,6 +4,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import {
   createRun,
+  deleteResponsesForRun,
   getActivePrompts,
   getBrand,
   getBrandsDueForRefresh,
@@ -19,6 +20,7 @@ import {
   ALL_ENGINES,
   getAvailableEngines,
   isEngineName,
+  runEngineInProcess,
   runEngines,
   type EngineName,
 } from './engines';
@@ -45,6 +47,20 @@ export interface Env {
   SERPAPI_API_KEY?: string;
   // Shared secret gating /admin/* routes.
   SEED_SECRET: string;
+  // Service binding back to this same worker. /admin/run-live fans out
+  // by self-fetching /admin/run-engine once per engine via env.SELF.
+  // A public-URL fetch back to the same hostname triggers Cloudflare's
+  // "Worker called itself" guard (error 1042) and never reaches the
+  // handler; service bindings route through Cloudflare's internal
+  // fabric and bypass that guard. See wrangler.example.jsonc for the
+  // matching "services" config.
+  SELF: Fetcher;
+  // Public URL of the deployed Worker. Cron path (no Request to
+  // derive from) requires this; HTTP-triggered paths fall back to
+  // `new URL(request.url).origin` when SELF_URL is missing. Set it to
+  // your https://YOUR-WORKER.YOUR-SUBDOMAIN.workers.dev (or custom
+  // domain) after the first deploy.
+  SELF_URL?: string;
   // Reserved for future use (e.g. a public /check endpoint). The OSS
   // build does not currently reference these but keeps them in scope so
   // forks can wire them up without changing the Env shape.
@@ -109,16 +125,21 @@ export class GeoMcpAgent extends McpAgent<Env, unknown, AgentProps> {
           );
         }
 
+        // getLatestCompletedRun anchors on EXISTS(ok rows) rather than
+        // run.status='completed', so partially-finished runs (killed
+        // by the subrequest cap, wall time, etc.) still surface their
+        // ok rows. Use completed_at when available, started_at as a
+        // fallback for in-progress runs.
         const allResponses: PromptResponse[] = [];
-        let mostRecentCompletedAt = 0;
+        let mostRecentTimestamp = 0;
         for (const engine of ALL_ENGINES) {
           const run = await getLatestCompletedRun(this.env, brand_id, engine);
-          if (!run || !run.completed_at) continue;
+          if (!run) continue;
           const responses = await getResponsesForRun(this.env, run.id);
+          if (responses.length === 0) continue;
           allResponses.push(...responses);
-          if (run.completed_at > mostRecentCompletedAt) {
-            mostRecentCompletedAt = run.completed_at;
-          }
+          const ts = run.completed_at ?? run.started_at;
+          if (ts > mostRecentTimestamp) mostRecentTimestamp = ts;
         }
         if (allResponses.length === 0) {
           throw new Error(
@@ -138,7 +159,7 @@ export class GeoMcpAgent extends McpAgent<Env, unknown, AgentProps> {
             domain: brand.domain,
             category: brand.category,
           },
-          refreshed_at: new Date(mostRecentCompletedAt).toISOString(),
+          refreshed_at: new Date(mostRecentTimestamp).toISOString(),
           overall_score: scored.overall_score,
           per_engine: filteredPerEngine,
           top_winning_prompts: scored.top_winning_prompts,
@@ -170,11 +191,15 @@ export class GeoMcpAgent extends McpAgent<Env, unknown, AgentProps> {
       async ({ brand_id, days, granularity }) => {
         const since = Date.now() - days * 86_400_000;
         const { results } = await this.env.DIGESTSEO_DB.prepare(
+          // status='ok' filter on the join keeps failed/skipped rows
+          // out of COUNT and SUM. Without it, polluted runs report
+          // inflated totals with deflated hit rates.
           `SELECT r.id AS run_id, r.engine, r.completed_at,
                   COUNT(pr.id) AS total,
                   SUM(pr.brand_mentioned) AS hits
              FROM runs r
-             LEFT JOIN prompt_responses pr ON pr.run_id = r.id
+             LEFT JOIN prompt_responses pr
+               ON pr.run_id = r.id AND pr.status = 'ok'
             WHERE r.brand_id = ?
               AND r.status = 'completed'
               AND r.completed_at IS NOT NULL
@@ -278,8 +303,9 @@ export class GeoMcpAgent extends McpAgent<Env, unknown, AgentProps> {
         const allResponses: PromptResponse[] = [];
         for (const engine of ALL_ENGINES) {
           const run = await getLatestCompletedRun(this.env, brand_id, engine);
-          if (!run || !run.completed_at) continue;
-          if (run.completed_at < since) continue;
+          if (!run) continue;
+          const ts = run.completed_at ?? run.started_at;
+          if (ts < since) continue;
           const responses = await getResponsesForRun(this.env, run.id);
           allResponses.push(...responses);
         }
@@ -411,7 +437,8 @@ export class GeoMcpAgent extends McpAgent<Env, unknown, AgentProps> {
              JOIN prompts p ON p.id = pr.prompt_id
             WHERE r.brand_id = ?
               AND pr.captured_at >= ?
-              AND pr.brand_mentioned = 1`;
+              AND pr.brand_mentioned = 1
+              AND pr.status = 'ok'`;
         const params: unknown[] = [brand_id, since];
         if (engine) {
           sql += ' AND r.engine = ?';
@@ -496,7 +523,7 @@ export class GeoMcpAgent extends McpAgent<Env, unknown, AgentProps> {
         >();
         for (const engine of ALL_ENGINES) {
           const run = await getLatestCompletedRun(this.env, brand_id, engine);
-          if (!run || !run.completed_at) continue;
+          if (!run) continue;
           const responses = await getResponsesForRun(this.env, run.id);
           for (const r of responses) {
             if (r.brand_mentioned !== 0) continue;
@@ -798,12 +825,18 @@ async function handleAdminRunLive(
   if (prompts.length === 0) {
     return jsonResponse({ error: 'no active prompts for brand' }, 400);
   }
+  // runEngines now creates the run rows then HTTP-self-fetches
+  // /admin/run-engine via env.SELF (service binding) so each engine
+  // executes in its own worker invocation with its own 50-subrequest
+  // budget. Passing `request` lets the orchestrator derive the
+  // worker's own origin as a fallback when env.SELF_URL isn't set.
   const { run_ids, engines } = await runEngines(
     env,
     ctx,
     brand,
     prompts,
     engineNames,
+    request,
   );
   return jsonResponse({
     run_ids,
@@ -925,6 +958,149 @@ async function handleAdminTriggerCronTest(env: Env): Promise<Response> {
   return jsonResponse({ brands_due_count: brandsDue.length });
 }
 
+// Single-engine execution. Called by runEngines() via env.SELF.fetch so
+// each engine gets its own worker invocation and its own 50-subrequest
+// budget. Idempotent: INSERT OR IGNOREs the runs row (the upstream
+// run-live insert may not have replicated to this edge region yet —
+// D1 is eventually consistent across regions, and a missing parent
+// row makes persistEngineRun's batched insert fail with "FOREIGN KEY
+// constraint failed"), then deletes any prior prompt_responses for the
+// run_id before re-inserting, then dispatches the engine.
+//
+// Trust-the-body model: this route is X-Seed-Secret-gated and only
+// ever called by the worker calling itself, so we deliberately do NOT
+// re-query the runs row by id here. The brand row, by contrast, is
+// stable and safe to read.
+async function handleAdminRunEngine(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  console.log('/admin/run-engine received', {
+    method: request.method,
+    path: new URL(request.url).pathname,
+    has_seed_secret_header: Boolean(request.headers.get('X-Seed-Secret')),
+  });
+  const body = await readJsonBody<{
+    run_id?: string;
+    brand_id?: string;
+    engine?: string;
+  }>(request);
+  const runId = body?.run_id;
+  const brandId = body?.brand_id;
+  const engine = body?.engine;
+  if (!runId || !brandId || !engine) {
+    console.log('/admin/run-engine returning 400', {
+      reason: 'run_id, brand_id, engine all required',
+    });
+    return jsonResponse(
+      { error: 'run_id, brand_id, engine all required' },
+      400,
+    );
+  }
+  if (!isEngineName(engine)) {
+    console.log('/admin/run-engine returning 400', {
+      reason: `unknown engine: ${engine}`,
+    });
+    return jsonResponse(
+      {
+        error: `Unknown engine: ${engine}. Allowed: ${ALL_ENGINES.join(', ')}`,
+      },
+      400,
+    );
+  }
+  const brand = await getBrand(env, brandId);
+  if (!brand) {
+    console.log('/admin/run-engine returning 404', { reason: 'brand not found' });
+    return jsonResponse({ error: 'brand not found' }, 404);
+  }
+  const prompts = await getActivePrompts(env, brandId);
+  if (prompts.length === 0) {
+    console.log('/admin/run-engine returning 400', {
+      reason: 'no active prompts for brand',
+    });
+    return jsonResponse({ error: 'no active prompts for brand' }, 400);
+  }
+  // FK guard: prompt_responses.run_id REFERENCES runs(id). /admin/run-live
+  // inserts the runs row in region A; this handler can land in region B
+  // before D1 has replicated the row, causing persistEngineRun's batched
+  // INSERT to fail with "FOREIGN KEY constraint failed" and drop all
+  // prompt_responses rows on the floor. INSERT OR IGNORE makes the row
+  // exist locally: if the upstream row has replicated, this is a no-op;
+  // if not, we create the same row here. 'live' mode matches what
+  // runEngines passes to createRun so the row shape is identical
+  // either way.
+  await env.DIGESTSEO_DB.prepare(
+    `INSERT OR IGNORE INTO runs
+       (id, brand_id, engine, mode, status, prompts_total,
+        prompts_completed, started_at)
+     VALUES (?, ?, ?, 'live', 'in_progress', ?, 0, ?)`,
+  )
+    .bind(runId, brandId, engine, prompts.length, Date.now())
+    .run();
+  // Idempotency: clear any prior rows for this run_id so a retry
+  // produces exactly one row per prompt instead of duplicating them.
+  await deleteResponsesForRun(env, runId);
+  await runEngineInProcess(env, brand, prompts, { engine, run_id: runId });
+  return jsonResponse({
+    run_id: runId,
+    engine,
+    prompts_total: prompts.length,
+  });
+}
+
+interface CleanupCounts {
+  total_deleted: number;
+  per_engine: Record<string, number>;
+}
+
+// One-shot cleanup of legacy polluted prompt_responses rows. New writes
+// (post-0005-migration) use status='failed' instead of writing
+// raw_response='ERROR: ...' — those rows are NOT touched here, since
+// scoring already excludes them via the status filter.
+async function handleAdminCleanupFailedRuns(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  const body = await readJsonBody<{ brand_id?: string }>(request);
+  const brandId = body?.brand_id;
+
+  const baseWhere =
+    `(raw_response LIKE '%Too many subrequests%'
+      OR raw_response LIKE 'ERROR:%'
+      OR (raw_response = '' AND status = 'ok'))`;
+
+  let countSql = `SELECT engine, COUNT(*) AS n FROM prompt_responses WHERE ${baseWhere}`;
+  let deleteSql = `DELETE FROM prompt_responses WHERE ${baseWhere}`;
+  const params: unknown[] = [];
+  if (brandId) {
+    const brandClause =
+      ' AND prompt_id IN (SELECT id FROM prompts WHERE brand_id = ?)';
+    countSql += brandClause;
+    deleteSql += brandClause;
+    params.push(brandId);
+  }
+  countSql += ' GROUP BY engine';
+
+  const { results } = await env.DIGESTSEO_DB.prepare(countSql)
+    .bind(...params)
+    .all<{ engine: string; n: number }>();
+  const counts: CleanupCounts = { total_deleted: 0, per_engine: {} };
+  for (const row of results ?? []) {
+    counts.per_engine[row.engine] = Number(row.n);
+    counts.total_deleted += Number(row.n);
+  }
+
+  await env.DIGESTSEO_DB.prepare(deleteSql)
+    .bind(...params)
+    .run();
+
+  return jsonResponse({
+    cleaned: true,
+    brand_id: brandId ?? null,
+    ...counts,
+  });
+}
+
 const defaultHandler = {
   async fetch(
     request: Request,
@@ -1002,6 +1178,21 @@ const defaultHandler = {
       return handleAdminTriggerCronTest(env);
     }
 
+    if (url.pathname === '/admin/run-engine' && request.method === 'POST') {
+      const denied = requireSeedSecret(request, env);
+      if (denied) return denied;
+      return handleAdminRunEngine(request, env);
+    }
+
+    if (
+      url.pathname === '/admin/cleanup-failed-runs' &&
+      request.method === 'POST'
+    ) {
+      const denied = requireSeedSecret(request, env);
+      if (denied) return denied;
+      return handleAdminCleanupFailedRuns(request, env);
+    }
+
     if (url.pathname === '/authorize') {
       // Self-hosted OSS auto-completes the authorization with a single
       // local dev user so the Worker can be connected as a custom MCP
@@ -1061,6 +1252,13 @@ export default {
     env: Env,
     ctx: ExecutionContext,
   ): Promise<void> => {
+    if (!env.SELF_URL) {
+      console.error(
+        'scheduled trigger: env.SELF_URL is not set — cron cannot self-fetch /admin/run-engine. Set SELF_URL in wrangler.jsonc and redeploy.',
+        { cron: event.cron },
+      );
+      return;
+    }
     const available = getAvailableEngines(env);
     if (available.length === 0) {
       console.warn(

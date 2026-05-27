@@ -36,8 +36,13 @@ export function computeOverallScore(
   _brand: Brand,
   responses: PromptResponse[],
 ): ScoreResult {
+  // Defense in depth: getResponsesForRun already filters status='ok',
+  // but any future caller that bypasses that helper would otherwise
+  // count failed/skipped rows as zero-mention hits and silently inflate
+  // the denominator. Belt + suspenders.
+  const okResponses = responses.filter((r) => r.status === 'ok');
   const byEngine = new Map<string, PromptResponse[]>();
-  for (const r of responses) {
+  for (const r of okResponses) {
     const arr = byEngine.get(r.engine);
     if (arr) arr.push(r);
     else byEngine.set(r.engine, [r]);
@@ -71,7 +76,7 @@ export function computeOverallScore(
     string,
     { prompt: string; engines: Set<string> }
   >();
-  for (const r of responses) {
+  for (const r of okResponses) {
     if (r.brand_mentioned !== 1) continue;
     const existing = winsByPrompt.get(r.prompt_id);
     if (existing) existing.engines.add(r.engine);
@@ -99,7 +104,7 @@ export function computeOverallScore(
     string,
     { prompt: string; competitors: Set<string> }
   >();
-  for (const r of responses) {
+  for (const r of okResponses) {
     if (r.brand_mentioned !== 0) continue;
     if (r.competitors_mentioned.length === 0) continue;
     const existing = lossByPrompt.get(r.prompt_id);

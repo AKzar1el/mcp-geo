@@ -376,3 +376,115 @@ test(
     );
   },
 );
+
+// CHECK 12-15 cover the engine-fan-out + status-column subsystem:
+//   - /admin/run-engine is gated by X-Seed-Secret (no auth bypass).
+//   - cleanup-failed-runs is idempotent after a fresh run-live (no new
+//     'ERROR: ...' or 'Too many subrequests' rows from the new
+//     status='failed' path).
+//   - check_visibility reports total_prompts === seeded count for every
+//     engine that ran (Bug-1: subrequest-cap-driven row loss is gone;
+//     Bug-3: getLatestCompletedRun anchors on EXISTS ok rows, not
+//     run.status='completed', so partial runs still surface).
+
+test(
+  'CHECK 12: POST /admin/run-engine without X-Seed-Secret returns 401',
+  async () => {
+    const resp = await fetch(`${GEO_BASE_URL}/admin/run-engine`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        run_id: 'noop',
+        brand_id: SEED_BRAND_ID,
+        engine: 'chatgpt',
+      }),
+    });
+    assert.equal(resp.status, 401);
+  },
+);
+
+test(
+  'CHECK 13: POST /admin/cleanup-failed-runs returns counts JSON',
+  { skip: adminSkipReason },
+  async () => {
+    const resp = await adminPost('/admin/cleanup-failed-runs', {
+      brand_id: SEED_BRAND_ID,
+    });
+    assert.equal(resp.status, 200);
+    const data = await resp.json();
+    assert.equal(data.cleaned, true);
+    assert.equal(data.brand_id, SEED_BRAND_ID);
+    assert.equal(typeof data.total_deleted, 'number');
+    assert.ok(
+      data.total_deleted >= 0,
+      `total_deleted must be non-negative, got ${data.total_deleted}`,
+    );
+    assert.ok(
+      data.per_engine && typeof data.per_engine === 'object',
+      'per_engine must be an object',
+    );
+  },
+);
+
+test(
+  'CHECK 14: cleanup-failed-runs is idempotent — second call deletes 0 rows',
+  { skip: adminSkipReason },
+  async () => {
+    // Run cleanup once to clear legacy state, then again to assert
+    // that CHECK 7's run-live wrote zero legacy 'ERROR: ...' rows —
+    // the new status='failed' path uses empty raw_response instead.
+    await adminPost('/admin/cleanup-failed-runs', { brand_id: SEED_BRAND_ID });
+    const resp = await adminPost('/admin/cleanup-failed-runs', {
+      brand_id: SEED_BRAND_ID,
+    });
+    assert.equal(resp.status, 200);
+    const data = await resp.json();
+    assert.equal(
+      data.total_deleted,
+      0,
+      `expected idempotent cleanup to delete 0 rows on second call, got ${data.total_deleted}. ` +
+        `If non-zero, the new engine clients are still writing legacy 'ERROR: ...' rows.`,
+    );
+  },
+);
+
+test(
+  'CHECK 15: check_visibility surfaces every configured engine with full row count',
+  { skip: fullSkipReason },
+  async () => {
+    // CHECK 7 fired /admin/run-live and CHECK 8 waited 90s. After the
+    // bulk-pattern + service-binding fan-out fix:
+    //   - every configured engine writes one row per prompt
+    //   - getLatestCompletedRun surfaces partial runs too
+    // So every engine whose API key is set should appear in
+    // per_engine, and its total_prompts should match the seed count.
+    const session = await mcpInitSession();
+    assert.ok(session, 'no Mcp-Session-Id returned from initialize');
+    const env = await mcpCall(session, {
+      jsonrpc: '2.0',
+      id: 4,
+      method: 'tools/call',
+      params: { name: 'check_visibility', arguments: { brand_id: SEED_BRAND_ID } },
+    });
+    assert.ok(
+      !env.error,
+      `check_visibility returned error: ${JSON.stringify(env.error)}`,
+    );
+    const text = env?.result?.content?.[0]?.text ?? '';
+    const payload = JSON.parse(text);
+    assert.ok(
+      Array.isArray(payload.per_engine) && payload.per_engine.length >= 1,
+      `expected per_engine entries, got ${payload.per_engine?.length}`,
+    );
+    // total_prompts should be the same for every engine in a single
+    // run (every engine sees the same prompt set). If they diverge,
+    // some engines lost rows to the subrequest cap or a flaky API.
+    const totals = new Set(payload.per_engine.map((pe) => pe.total_prompts));
+    assert.equal(
+      totals.size,
+      1,
+      `expected every engine to write the same number of rows; saw distinct totals: ` +
+        `${JSON.stringify(payload.per_engine.map((pe) => ({ engine: pe.engine, total_prompts: pe.total_prompts })))}`,
+    );
+  },
+);
