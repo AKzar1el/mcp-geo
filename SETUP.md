@@ -40,7 +40,7 @@ Optional: also copy `.dev.vars.example` to `.dev.vars` if you plan to run `wrang
 cp .dev.vars.example .dev.vars
 ```
 
-## 4 — Create the two KV namespaces
+## 4 — Create the KV namespace
 
 ```bash
 npx wrangler kv namespace create OAUTH_KV
@@ -65,14 +65,6 @@ Wrangler prints a JSON snippet like:
 
 **Copy the `id` value**, open `wrangler.jsonc`, and replace `YOUR_OAUTH_KV_ID` with it.
 
-Now do the same for the rate-limit namespace:
-
-```bash
-npx wrangler kv namespace create RATE_LIMIT
-```
-
-Same three prompts. Replace `YOUR_RATE_LIMIT_KV_ID` in `wrangler.jsonc` with the new id.
-
 ## 5 — Create the D1 database
 
 ```bash
@@ -93,7 +85,7 @@ database_id = "abc12345-1234-1234-1234-abc123456789"
 ## 6 — Verify wrangler.jsonc is fully filled in
 
 ```bash
-grep -E "(YOUR_OAUTH_KV_ID|YOUR_RATE_LIMIT_KV_ID|YOUR_D1_DATABASE_ID)" wrangler.jsonc
+grep -E "(YOUR_OAUTH_KV_ID|YOUR_D1_DATABASE_ID)" wrangler.jsonc
 ```
 
 Expected output: **nothing**. If grep prints any line, you missed one — go back and replace it.
@@ -170,7 +162,7 @@ If `migrations apply` fails because it can't find the migrations table, run each
 npx wrangler d1 execute digestseo-db --remote --file=migrations/0001_initial.sql
 npx wrangler d1 execute digestseo-db --remote --file=migrations/0002_fail_stuck_runs.sql
 npx wrangler d1 execute digestseo-db --remote --file=migrations/0003_perplexity_citations.sql
-npx wrangler d1 execute digestseo-db --remote --file=migrations/0005_response_status.sql
+npx wrangler d1 execute digestseo-db --remote --file=migrations/0004_response_status.sql
 ```
 
 ## 10 — Deploy
