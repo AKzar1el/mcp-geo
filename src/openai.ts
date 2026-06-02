@@ -128,13 +128,30 @@ function termAppearsAsWord(text: string, term: string): boolean {
   return re.test(text);
 }
 
-function mentionsTerm(text: string, domain: string, name?: string): boolean {
+interface MatchTerms {
+  domain: string;
+  name?: string;
+  aliases?: string[];
+  excludeTerms?: string[];
+}
+
+function mentionsTermSet(text: string, terms: MatchTerms): boolean {
   const fullDomain =
-    domain.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0]?.toLowerCase() ?? '';
-  if (fullDomain.length > 0 && text.toLowerCase().includes(fullDomain)) return true; // high-confidence
-  if (name && termAppearsAsWord(text, name)) return true;
-  const root = rootTermFromDomain(domain);
-  if (root.length > 0 && termAppearsAsWord(text, root)) return true;
+    terms.domain.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0]?.toLowerCase() ?? '';
+  // 1. Full domain substring — highest confidence, never suppressed.
+  if (fullDomain.length > 0 && text.toLowerCase().includes(fullDomain)) return true;
+  // 2. Explicit aliases — user-declared, count as word matches, never suppressed.
+  for (const a of terms.aliases ?? []) {
+    if (termAppearsAsWord(text, a)) return true;
+  }
+  const excluded = new Set((terms.excludeTerms ?? []).map((e) => e.trim().toLowerCase()));
+  // 3. Brand name as a standalone word — unless excluded.
+  if (terms.name && !excluded.has(terms.name.trim().toLowerCase()) && termAppearsAsWord(text, terms.name)) {
+    return true;
+  }
+  // 4. Bare domain root as a standalone word — unless excluded.
+  const root = rootTermFromDomain(terms.domain);
+  if (root.length > 0 && !excluded.has(root) && termAppearsAsWord(text, root)) return true;
   return false;
 }
 
@@ -169,7 +186,12 @@ export function extractCitations(
   brand: Brand,
   responseText: string,
 ): CitationExtraction {
-  const brandMentioned = mentionsTerm(responseText, brand.domain, brand.name);
+  const brandMentioned = mentionsTermSet(responseText, {
+    domain: brand.domain,
+    name: brand.name,
+    aliases: brand.aliases,
+    excludeTerms: brand.exclude_terms,
+  });
 
   const urls = extractUrls(responseText);
   const hosts: string[] = [];
@@ -191,7 +213,7 @@ export function extractCitations(
 
   const competitorsMentioned: string[] = [];
   for (const competitor of brand.competitors) {
-    if (mentionsTerm(responseText, competitor)) {
+    if (mentionsTermSet(responseText, { domain: competitor })) {
       competitorsMentioned.push(competitor);
     }
   }

@@ -36,6 +36,8 @@ export interface SeedBrandInput {
   domain: string;
   category?: string;
   competitors?: string[];
+  aliases?: string[];
+  exclude_terms?: string[];
 }
 
 export interface SeedResult {
@@ -92,8 +94,9 @@ export async function seedBrand(
   await env.DIGESTSEO_DB.prepare(
     `INSERT OR IGNORE INTO brands
        (id, user_id, domain, name, category, competitors_json,
+        aliases_json, exclude_terms_json,
         refresh_frequency, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'weekly', ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'weekly', ?, ?)`,
   )
     .bind(
       input.brand_id,
@@ -102,6 +105,8 @@ export async function seedBrand(
       input.name,
       category,
       JSON.stringify(competitors),
+      JSON.stringify(input.aliases ?? []),
+      JSON.stringify(input.exclude_terms ?? []),
       now,
       now,
     )
