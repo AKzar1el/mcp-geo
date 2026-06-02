@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented here. The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.1] — unreleased
+
+### Added
+
+- Per-brand `aliases` and `exclude_terms` (`migrations/0005_brand_alias_exclude.sql`, `Brand` in `src/db.ts`, `SeedBrandInput` in `src/seed.ts`). Aliases are extra terms that always count as a mention; exclude terms suppress the bare-word match on the brand name and domain root — so "Monday" the brand stops matching "monday" the weekday — while the full domain and aliases still count. `extractCitations` now matches through a `mentionsTermSet` term set; its exported signature is unchanged. Apply 0005 to add the `aliases_json` + `exclude_terms_json` columns; existing brands read as empty arrays and behave exactly as before.
+- `tests/matching.test.ts` — first unit test (Node's built-in test runner via `tsx`, run with `npm run test:unit`). Covers excluded bare words, full-domain matches that survive exclusion, root terms not matching inside a larger word, and competitor word matches.
+
+### Fixed
+
+- Word-boundary brand/competitor matching in `src/openai.ts`. `mentionsTerm` used `haystack.includes(root)`, a raw substring test: a brand whose domain root is a common word (`monday.com` → "monday", `notion.so` → "notion") false-positived on the everyday word, and any term matched inside a larger word ("motion" inside "promotional"). Matching now uses Unicode-aware boundary checks — `(?<![\p{L}\p{N}])…(?![\p{L}\p{N}])` — for the brand name and the domain root, while the full domain is still accepted as a high-confidence substring. The exported `extractCitations` signature is unchanged. (The homograph case — a bare root term that is itself a common word, e.g. "monday"/"notion" — is intentionally left matching the common word; that's a separate later task.)
+- NUL → unit-separator hash delimiter in `hashPrompt` (`src/openai.ts`). The field join used two literal NUL (`\x00`) bytes, which made git classify the whole file as binary and refuse to render its diffs. It now joins with the ASCII unit separator through a named `HASH_FIELD_SEP = '\x1f'` constant. Hash outputs change, so existing `shared_prompt_cache` rows simply miss and expire on their TTL — no cache clear or migration required.
+
+### Changed
+
+- Docs (`README.md`, `SETUP.md`) now recommend **OpenAI + Anthropic (Claude)** as the starting engine pair instead of the Gemini free tier. The Gemini free tier 429s for brands with more than ~5 prompts (excluding it from scoring), and Google AI Overviews frequently returns `NO_AI_OVERVIEW` (scored as a zero), so the cheapest documented path produced misleading first-run data. Gemini and SerpAPI stay documented as opt-in engines; engine availability is unchanged and remains key-driven (`getAvailableEngines` untouched).
+
 ## [0.2.0] — May 2026
 
 A correctness + architecture pass driven by an end-to-end debugging session on the production fork. Every fix is described in terms of what the prior version got wrong.

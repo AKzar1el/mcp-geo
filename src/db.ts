@@ -13,6 +13,8 @@ export interface Brand {
   name: string;
   category: string | null;
   competitors: string[];
+  aliases: string[];
+  exclude_terms: string[];
   refresh_frequency: string;
   created_at: number;
   updated_at: number;
@@ -78,6 +80,8 @@ interface BrandRow {
   name: string;
   category: string | null;
   competitors_json: string | null;
+  aliases_json: string | null;
+  exclude_terms_json: string | null;
   refresh_frequency: string;
   created_at: number;
   updated_at: number;
@@ -102,6 +106,8 @@ function rowToBrand(row: BrandRow): Brand {
     name: row.name,
     category: row.category,
     competitors,
+    aliases: parseJsonArray(row.aliases_json),
+    exclude_terms: parseJsonArray(row.exclude_terms_json),
     refresh_frequency: row.refresh_frequency,
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -113,7 +119,7 @@ export async function getBrand(
   brandId: string,
 ): Promise<Brand | null> {
   const row = await env.DIGESTSEO_DB.prepare(
-    'SELECT id, user_id, domain, name, category, competitors_json, refresh_frequency, created_at, updated_at FROM brands WHERE id = ?',
+    'SELECT id, user_id, domain, name, category, competitors_json, aliases_json, exclude_terms_json, refresh_frequency, created_at, updated_at FROM brands WHERE id = ?',
   )
     .bind(brandId)
     .first<BrandRow>();
@@ -286,6 +292,7 @@ export async function getBrandsDueForRefresh(
   const dailyCutoff = now - 24 * 60 * 60 * 1000;
   const { results } = await env.DIGESTSEO_DB.prepare(
     `SELECT b.id, b.user_id, b.domain, b.name, b.category, b.competitors_json,
+            b.aliases_json, b.exclude_terms_json,
             b.refresh_frequency, b.created_at, b.updated_at,
             MAX(r.completed_at) AS last_run
        FROM brands b

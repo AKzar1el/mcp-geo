@@ -85,11 +85,11 @@ Engines are opt-in. Pick the ones you want; the rest skip silently.
 
 - **OpenAI** — ChatGPT engine. ~€0.0004 per prompt with `gpt-4o-mini`. Batch path roughly halves that. [platform.openai.com](https://platform.openai.com/api-keys)
 - **Anthropic** — Claude engine, plus prompt generation and content-gap analysis (both call Claude Haiku). ~€0.0002 per prompt. Free trial credits are usually enough to evaluate. [console.anthropic.com](https://console.anthropic.com/)
-- **Google AI Studio (Gemini)** — Gemini engine. ~€0.0001 per prompt. Free tier covers ~1500 requests/day — enough for a single brand on a daily cadence. [aistudio.google.com](https://aistudio.google.com/app/apikey)
+- **Google AI Studio (Gemini)** — Gemini engine. ~€0.0001 per prompt. The free tier has a low per-minute cap, so brands with more than ~5 prompts hit HTTP 429 and drop out of scoring (see [Troubleshooting](#troubleshooting)) — treat it as an opt-in add-on, not a starting engine. [aistudio.google.com](https://aistudio.google.com/app/apikey)
 - **Perplexity** — Perplexity Sonar engine. ~€0.005-0.008 per prompt. Paid only. [perplexity.ai/settings/api](https://www.perplexity.ai/settings/api)
 - **SerpAPI** — Google AI Overviews engine. ~€0.005 (free tier) / ~€0.0015 (volume) per prompt. Free tier covers ~100 calls/month — enough for development. [serpapi.com/dashboard](https://serpapi.com/dashboard)
 
-Solo evaluation runs comfortably under €1/month on Gemini + OpenAI alone.
+**Recommended starting pair: OpenAI + Anthropic (Claude).** Both bill per token with no rate-limit surprises, so your first scan returns clean, scorable data across the ChatGPT and Claude engines — and the Anthropic key also powers prompt generation and content-gap analysis. Solo evaluation runs comfortably under €1/month on the two together. Add Gemini, Perplexity, or SerpAPI deliberately once you want more coverage; Gemini's free tier rate-limits and Google AI Overviews often returns no result (scored as a zero), so leading with the cheapest path can skew your first run.
 
 ### Step 2 — Deploy to your Cloudflare account
 
@@ -110,8 +110,10 @@ npx wrangler kv namespace create OAUTH_KV
 npx wrangler d1 create digestseo-db
 
 # 5. Set the required secret + at least one engine API key
+#    Recommended starting pair — both bill per token, clean first-run data:
 npx wrangler secret put SEED_SECRET
-npx wrangler secret put GEMINI_API_KEY   # free tier — easiest engine to start with
+npx wrangler secret put OPENAI_API_KEY      # ChatGPT engine
+npx wrangler secret put ANTHROPIC_API_KEY   # Claude engine + prompt generation
 
 # 6. Apply migrations and deploy
 npx wrangler d1 migrations apply digestseo-db --remote
@@ -202,7 +204,7 @@ args = [
 |---|---|---|---|
 | `OPENAI_API_KEY` | opt-in | unset | Enables the ChatGPT engine. Without it, ChatGPT is skipped. |
 | `ANTHROPIC_API_KEY` | opt-in | unset | Enables the Claude engine *and* the Claude-Haiku-powered prompt generator + content-gap analyzer. |
-| `GEMINI_API_KEY` | opt-in | unset | Enables the Gemini engine. Free tier covers solo use. |
+| `GEMINI_API_KEY` | opt-in | unset | Enables the Gemini engine. Free tier is rate-limited for brands with more than ~5 prompts (see Troubleshooting); opt-in add-on. |
 | `PERPLEXITY_API_KEY` | opt-in | unset | Enables the Perplexity Sonar engine. Paid only. |
 | `SERPAPI_API_KEY` | opt-in | unset | Enables the Google AI Overviews engine (via SerpAPI). |
 | `SEED_SECRET` | **yes** | unset | Shared secret that gates every `/admin/*` route. Pick a high-entropy string. |
