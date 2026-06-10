@@ -10,7 +10,7 @@ Track how your brand is cited by ChatGPT, Claude, Perplexity, Gemini, and Google
 
 <sup>A real report written by Claude from this server's tool output — `check_visibility`, `compare_competitors`, and `get_citations` over one tracked brand. Click for the [full report](docs/demo-report-full.png).</sup>
 
-> **Prefer zero setup?** Try the hosted version at [digestseo.com](https://digestseo.com) — managed Cloudflare infra, no API keys to manage, multi-brand, scheduled refresh, web UI. Waitlist now open. [Join waitlist →](https://digestseo.com) <!-- TODO: replace with real waitlist URL once landing page is live -->
+> **Prefer zero setup?** Try the hosted version at [digestseo.com](https://digestseo.com) — managed Cloudflare infra, no API keys to manage, multi-brand, scheduled refresh, web UI. Waitlist now open. [Join waitlist →](https://digestseo.com/#waitlist)
 
 ---
 
@@ -268,7 +268,7 @@ Once the connector is live in Claude.ai (or any MCP client), try:
 
 ## Hosted Version
 
-If you'd rather not run your own Cloudflare account, manage API keys, or pay individual engine bills, the hosted version of DigestSEO runs the same MCP server on managed infrastructure with multi-brand support, scheduled refresh, a web UI, and consolidated billing. Waitlist now open at [digestseo.com](https://digestseo.com). <!-- TODO: replace placeholder with real waitlist URL -->
+If you'd rather not run your own Cloudflare account, manage API keys, or pay individual engine bills, the hosted version of DigestSEO runs the same MCP server on managed infrastructure with multi-brand support, scheduled refresh, a web UI, and consolidated billing. Waitlist now open — [join at digestseo.com](https://digestseo.com/#waitlist).
 
 ---
 
