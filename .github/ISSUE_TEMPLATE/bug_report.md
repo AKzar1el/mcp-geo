@@ -1,9 +1,10 @@
 ---
 name: Bug report
 about: Something isn't working as documented
-title: '[bug] '
+title: "[bug] "
 labels: bug
 assignees: ''
+
 ---
 
 ## What happened

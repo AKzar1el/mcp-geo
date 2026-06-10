@@ -10,13 +10,13 @@
 --   'skipped' — engine had no API key configured at call time, exclude
 --
 -- Default 'ok' keeps existing rows scoring as before; the
--- 0005_response_status migration is paired with a one-shot cleanup
+-- 0004_response_status migration is paired with a one-shot cleanup
 -- (POST /admin/cleanup-failed-runs) to delete legacy polluted rows that
 -- were written with raw_response='ERROR: ...' before this column existed.
 --
 -- Apply with:
---   npx wrangler d1 execute digestseo-db --local  --file=migrations/0005_response_status.sql
---   npx wrangler d1 execute digestseo-db --remote --file=migrations/0005_response_status.sql
+--   npx wrangler d1 execute digestseo-db --local  --file=migrations/0004_response_status.sql
+--   npx wrangler d1 execute digestseo-db --remote --file=migrations/0004_response_status.sql
 
 ALTER TABLE prompt_responses ADD COLUMN status TEXT NOT NULL DEFAULT 'ok';
 ALTER TABLE prompt_responses ADD COLUMN error_message TEXT;

@@ -15,6 +15,8 @@ const brand: Brand = {
   name: 'Acme',
   category: null,
   competitors: ['asana.com'],
+  aliases: [],
+  exclude_terms: [],
   refresh_frequency: 'weekly',
   created_at: 0,
   updated_at: 0,

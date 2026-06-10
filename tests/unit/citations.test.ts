@@ -16,6 +16,8 @@ const acme: Brand = {
   name: 'Acme Project Tool',
   category: 'Project management software',
   competitors: ['asana.com', 'monday.com', 'notion.so'],
+  aliases: [],
+  exclude_terms: [],
   refresh_frequency: 'weekly',
   created_at: 0,
   updated_at: 0,

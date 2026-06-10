@@ -40,7 +40,7 @@ Optional: also copy `.dev.vars.example` to `.dev.vars` if you plan to run `wrang
 cp .dev.vars.example .dev.vars
 ```
 
-## 4 — Create the two KV namespaces
+## 4 — Create the KV namespace
 
 ```bash
 npx wrangler kv namespace create OAUTH_KV
@@ -65,14 +65,6 @@ Wrangler prints a JSON snippet like:
 
 **Copy the `id` value**, open `wrangler.jsonc`, and replace `YOUR_OAUTH_KV_ID` with it.
 
-Now do the same for the rate-limit namespace:
-
-```bash
-npx wrangler kv namespace create RATE_LIMIT
-```
-
-Same three prompts. Replace `YOUR_RATE_LIMIT_KV_ID` in `wrangler.jsonc` with the new id.
-
 ## 5 — Create the D1 database
 
 ```bash
@@ -93,7 +85,7 @@ database_id = "abc12345-1234-1234-1234-abc123456789"
 ## 6 — Verify wrangler.jsonc is fully filled in
 
 ```bash
-grep -E "(YOUR_OAUTH_KV_ID|YOUR_RATE_LIMIT_KV_ID|YOUR_D1_DATABASE_ID)" wrangler.jsonc
+grep -E "(YOUR_OAUTH_KV_ID|YOUR_D1_DATABASE_ID)" wrangler.jsonc
 ```
 
 Expected output: **nothing**. If grep prints any line, you missed one — go back and replace it.
@@ -117,14 +109,14 @@ npx wrangler secret put CONNECT_SECRET
 Then add API keys for whichever engines you want to use. Each is opt-in — engines without keys are silently skipped.
 
 ```bash
-npx wrangler secret put OPENAI_API_KEY      # ChatGPT engine
-npx wrangler secret put ANTHROPIC_API_KEY   # Claude engine + prompt generation
-npx wrangler secret put GEMINI_API_KEY      # Gemini engine (free tier easiest to start)
+npx wrangler secret put OPENAI_API_KEY      # ChatGPT engine — recommended starter
+npx wrangler secret put ANTHROPIC_API_KEY   # Claude engine + prompt generation — recommended starter
+npx wrangler secret put GEMINI_API_KEY      # Gemini engine (opt-in; free-tier rate limits, see Troubleshooting)
 npx wrangler secret put PERPLEXITY_API_KEY  # Perplexity engine (paid)
 npx wrangler secret put SERPAPI_API_KEY     # Google AI Overviews (paid)
 ```
 
-Solo evaluation runs comfortably under €1/month on Gemini alone. Start there if you want to try the cheapest path.
+Recommended starting pair is **OpenAI + Anthropic (Claude)** — both bill per token with no rate-limit surprises, so your first scan returns clean, scorable data across the ChatGPT and Claude engines, and the Anthropic key also powers prompt generation. Solo evaluation runs comfortably under €1/month on the two together. Add Gemini, Perplexity, or SerpAPI once you want more coverage.
 
 ## 8 — Configure the `SELF` service binding
 
@@ -176,7 +168,8 @@ If `migrations apply` fails because it can't find the migrations table, run each
 npx wrangler d1 execute digestseo-db --remote --file=migrations/0001_initial.sql
 npx wrangler d1 execute digestseo-db --remote --file=migrations/0002_fail_stuck_runs.sql
 npx wrangler d1 execute digestseo-db --remote --file=migrations/0003_perplexity_citations.sql
-npx wrangler d1 execute digestseo-db --remote --file=migrations/0005_response_status.sql
+npx wrangler d1 execute digestseo-db --remote --file=migrations/0004_response_status.sql
+npx wrangler d1 execute digestseo-db --remote --file=migrations/0005_brand_alias_exclude.sql
 ```
 
 ## 10 — Deploy

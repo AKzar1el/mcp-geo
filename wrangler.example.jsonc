@@ -48,10 +48,6 @@
 		{
 			"binding": "OAUTH_KV",
 			"id": "YOUR_OAUTH_KV_ID"
-		},
-		{
-			"binding": "RATE_LIMIT",
-			"id": "YOUR_RATE_LIMIT_KV_ID"
 		}
 	],
 	"d1_databases": [

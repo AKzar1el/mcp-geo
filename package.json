@@ -9,7 +9,7 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
-    "test:unit": "node --import tsx --test \"tests/unit/*.test.ts\"",
+    "test:unit": "node --import tsx --test \"tests/matching.test.ts\" \"tests/unit/*.test.ts\"",
     "test:smoke": "node --test tests/smoke.test.mjs"
   },
   "dependencies": {
@@ -20,7 +20,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260520.1",
-    "tsx": "^4.20.0",
+    "tsx": "^4.22.4",
     "typescript": "^6.0.3",
     "wrangler": "^4.93.0"
   }

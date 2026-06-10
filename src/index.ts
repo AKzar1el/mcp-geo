@@ -72,7 +72,6 @@ export interface Env {
   // Reserved for future use (e.g. a public /check endpoint). The OSS
   // build does not currently reference these but keeps them in scope so
   // forks can wire them up without changing the Env shape.
-  RATE_LIMIT?: KVNamespace;
   TURNSTILE_SITE_KEY?: string;
   TURNSTILE_SECRET_KEY?: string;
 }
@@ -99,7 +98,7 @@ const SERVER_VERSION = '0.2.1';
 
 export class GeoMcpAgent extends McpAgent<Env, unknown, AgentProps> {
   server = new McpServer({
-    name: 'digestseo-ai-visibility',
+    name: 'digestseo-mcp',
     version: SERVER_VERSION,
   });
 
@@ -1084,7 +1083,7 @@ interface CleanupCounts {
 }
 
 // One-shot cleanup of legacy polluted prompt_responses rows. New writes
-// (post-0005-migration) use status='failed' instead of writing
+// (post-0004-migration) use status='failed' instead of writing
 // raw_response='ERROR: ...' — those rows are NOT touched here, since
 // scoring already excludes them via the status filter.
 async function handleAdminCleanupFailedRuns(
