@@ -1,12 +1,28 @@
 # DigestSEO — AI Visibility MCP for SEO & GEO
 
-Track how your brand is cited by ChatGPT, Claude, Perplexity, Gemini, and Google AI Overviews — through MCP. Self-hosted on Cloudflare Workers, works with Claude Desktop, Claude.ai web (custom connectors), Cursor, Codex CLI, and any MCP-compatible client.
+[![CI](https://github.com/AKzar1el/mcp-geo/actions/workflows/ci.yml/badge.svg)](https://github.com/AKzar1el/mcp-geo/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![MCP](https://img.shields.io/badge/MCP-remote%20server-blue)](https://modelcontextprotocol.io)
+
+Track how your brand is cited by ChatGPT, Claude, Perplexity, Gemini, and Google AI Overviews — through MCP. Self-hosted on Cloudflare Workers, works with Claude.ai web (custom connectors), Claude Desktop, Claude Code, Cursor, Codex CLI, and any MCP-compatible client.
+
+[![Sample AI visibility report produced from DigestSEO MCP data](docs/demo-report-hero.png)](docs/demo-report-full.png)
+
+<sup>A real report written by Claude from this server's tool output — `check_visibility`, `compare_competitors`, and `get_citations` over one tracked brand. Click for the [full report](docs/demo-report-full.png).</sup>
 
 > **Prefer zero setup?** Try the hosted version at [digestseo.com](https://digestseo.com) — managed Cloudflare infra, no API keys to manage, multi-brand, scheduled refresh, web UI. Waitlist now open. [Join waitlist →](https://digestseo.com) <!-- TODO: replace with real waitlist URL once landing page is live -->
 
 ---
 
 ## What's New
+
+### [0.2.1] — June 2026
+
+- **Optional `CONNECT_SECRET` gate on the OAuth flow.** By default the OSS build auto-completes `/authorize` for any MCP client that knows your worker URL — anyone who finds the URL can connect and call `refresh_brand`, spending your engine API credits. Set `CONNECT_SECRET` and the browser step of the connect flow now asks for it before issuing a token. See [SECURITY.md](./SECURITY.md).
+- **Accurate citation matching.** Brand/competitor mentions now require word boundaries (`acme` no longer matches "acmeshop"), and linked-citation checks require the exact domain or a subdomain (`notacme.com` no longer counts as a link to `acme.com`).
+- **`get_visibility_history` consistency.** Partially-finished runs now count toward history (matching `check_visibility`'s 0.2.0 behavior), and fully-failed runs no longer show up as fake zero scores.
+- **CI + unit tests.** GitHub Actions runs `tsc --noEmit` plus a new pure-function unit suite (`npm run test:unit`) covering citation extraction and score aggregation on every push.
+- Constant-time comparison for `SEED_SECRET` / `CONNECT_SECRET`.
 
 ### [0.2.0] — May 2026
 
@@ -116,6 +132,14 @@ https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev/mcp
 
 Complete the OAuth handshake. The connector turns green when ready.
 
+#### Claude Code
+
+```bash
+claude mcp add --transport http digestseo https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev/mcp
+```
+
+Then run `/mcp` inside Claude Code to complete the OAuth handshake in your browser.
+
 #### Claude Desktop
 
 Edit your Claude Desktop config:
@@ -187,10 +211,42 @@ args = [
 | `PERPLEXITY_API_KEY` | opt-in | unset | Enables the Perplexity Sonar engine. Paid only. |
 | `SERPAPI_API_KEY` | opt-in | unset | Enables the Google AI Overviews engine (via SerpAPI). |
 | `SEED_SECRET` | **yes** | unset | Shared secret that gates every `/admin/*` route. Pick a high-entropy string. |
+| `CONNECT_SECRET` | recommended | unset | When set, the OAuth connect flow asks for this secret in the browser before issuing a token. Without it, anyone who knows your worker URL can connect an MCP client. See [SECURITY.md](./SECURITY.md). |
 | `TURNSTILE_SITE_KEY` | no | unset | Reserved for forks that add a public `/check` form. Unused by the OSS build. |
 | `TURNSTILE_SECRET_KEY` | no | unset | Same — reserved for forks. |
 
 All values are set via `wrangler secret put VAR` in production or `.dev.vars` locally. None are stored in `wrangler.jsonc`.
+
+---
+
+## Architecture
+
+```mermaid
+flowchart LR
+    C["MCP client<br/>(Claude.ai / Claude Code / Cursor / ...)"] -- "MCP over HTTP + OAuth" --> W["Cloudflare Worker<br/>digestseo-mcp"]
+    CRON["Cron Trigger<br/>every 6h"] --> W
+    W --> DO["GeoMcpAgent<br/>(Durable Object, 6 MCP tools)"]
+    W -- "one self-fetch per engine<br/>via SELF service binding" --> RE["/admin/run-engine<br/>(own invocation per engine)"]
+    RE --> E1["OpenAI"]
+    RE --> E2["Anthropic"]
+    RE --> E3["Gemini"]
+    RE --> E4["Perplexity"]
+    RE --> E5["SerpAPI<br/>(AI Overviews)"]
+    RE --> DB[("D1<br/>brands / prompts / runs /<br/>responses / cache")]
+    DO --> DB
+```
+
+Each engine runs in its own Worker invocation with its own free-plan 50-subrequest budget; results are flushed in a single `D1.batch()` per engine. The whole system fits the Cloudflare free tier for a single brand on a daily cadence.
+
+---
+
+## Security
+
+- `/admin/*` is gated by `SEED_SECRET` (constant-time compared).
+- `/mcp` requires OAuth; set `CONNECT_SECRET` so only people with the secret can complete the connect flow — strongly recommended whenever your worker URL is shared anywhere, since connected clients can call `refresh_brand` and spend your engine API credits.
+- All engine keys live in Cloudflare's encrypted secret store; all data stays in your own D1 database.
+
+Full details and vulnerability reporting: [SECURITY.md](./SECURITY.md).
 
 ---
 
@@ -221,7 +277,7 @@ If you'd rather not run your own Cloudflare account, manage API keys, or pay ind
 - **Worker deploys but tools return empty data** — at least one engine API key is missing. Check `wrangler secret list` and add the keys you intend to use. Engines without keys are silently skipped, which can leave `check_visibility` with no data.
 - **`no engines available` error in logs** — no engine API keys are set at all. Set at least one of `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `PERPLEXITY_API_KEY`, `SERPAPI_API_KEY`.
 - **D1 migration fails** — make sure you've run `npx wrangler d1 migrations apply digestseo-db --remote` (and also `--local` for `wrangler dev`). For ad-hoc fixes, `npx wrangler d1 execute digestseo-db --remote --file=migrations/0001_initial.sql`.
-- **Custom MCP connector in Claude.ai not connecting** — the URL must end in `/mcp`. The OAuth handshake auto-completes in the OSS build (single dev user). If it loops, clear the connector and re-add it. Double-check the Worker is publicly reachable (`curl https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev/healthz` should return `ok`).
+- **Custom MCP connector in Claude.ai not connecting** — the URL must end in `/mcp`. The OAuth handshake auto-completes in the OSS build (single dev user); if you set `CONNECT_SECRET`, the browser step shows a one-field form — enter the secret you set during deploy. If it loops, clear the connector and re-add it. Double-check the Worker is publicly reachable (`curl https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev/healthz` should return `ok`).
 - **Cron not firing** — check the Cloudflare dashboard at **Workers & Pages → digestseo-mcp → Settings → Triggers**. The "Cron Triggers" section should list `0 */6 * * *`. If it's missing, run `npx wrangler deploy` again — the trigger is registered on deploy. The handler also only dispatches engines for brands whose `refresh_frequency` cadence has elapsed, so a freshly-seeded brand might not fire on the next 6h boundary.
 - **`401 unauthorized` from `/admin/*`** — `X-Seed-Secret` header is missing or doesn't match the deployed `SEED_SECRET`. Re-run `npx wrangler secret put SEED_SECRET` and update your `.env.test`.
 - **Worker returns 404 on self-fetch / error code 1042** — the `services` binding in `wrangler.jsonc` is missing or the `service` name doesn't match the worker's `name` field. `/admin/run-live` self-fetches `/admin/run-engine` via `env.SELF` (a Cloudflare service binding) precisely because a public-URL fetch back to your own `workers.dev` hostname is blocked by Cloudflare's "Worker called itself" guard. Confirm the `wrangler.jsonc` you deployed contains `"services": [{ "binding": "SELF", "service": "<your-worker-name>" }]` with the same name you set in the top-level `"name"` field. After fixing, `npx wrangler deploy` and re-run.
@@ -245,6 +301,14 @@ Issues and PRs welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md) for the short v
 ## Changelog
 
 See [CHANGELOG.md](./CHANGELOG.md) for the full version history.
+
+### [0.2.1] — June 2026
+
+- Optional `CONNECT_SECRET` gate on the OAuth connect flow.
+- Word-boundary brand/competitor matching; exact-domain-or-subdomain linked-citation checks.
+- `get_visibility_history` includes partial runs and drops fully-failed runs.
+- CI workflow (typecheck + unit tests) and a pure-function unit test suite.
+- Constant-time secret comparison.
 
 ### [0.2.0] — May 2026
 

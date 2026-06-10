@@ -8,6 +8,7 @@ import {
   buildSystemPrompt,
   extractCitations,
   hashPrompt,
+  hostMatchesDomain,
 } from './openai';
 import {
   bulkCacheGet,
@@ -176,10 +177,9 @@ function buildOkResult(
 ): EnginePromptResult {
   const citations = extractCitations(brand, payload.text);
   const merged_cited = mergeUrls(citations.cited_urls, payload.citations);
-  const fullDomain = brand.domain.toLowerCase();
   const brandCitedWithLink =
     citations.brand_cited_with_link === 1 ||
-    merged_cited.some((h) => h.includes(fullDomain))
+    merged_cited.some((h) => hostMatchesDomain(h, brand.domain))
       ? 1
       : 0;
   return {

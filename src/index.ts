@@ -15,7 +15,7 @@ import {
   type PromptResponse,
 } from './db';
 
-import { collectBatch, submitBatch } from './openai';
+import { collectBatch, hostMatchesDomain, submitBatch } from './openai';
 import {
   ALL_ENGINES,
   getAvailableEngines,
@@ -47,6 +47,14 @@ export interface Env {
   SERPAPI_API_KEY?: string;
   // Shared secret gating /admin/* routes.
   SEED_SECRET: string;
+  // Optional shared secret gating the OAuth /authorize auto-complete.
+  // When set, anyone connecting an MCP client must type this secret
+  // into a one-field browser form before a token is issued. When
+  // unset, /authorize auto-completes for any client that knows the
+  // worker URL — fine for private/obscure deployments, risky for
+  // anything you've shared publicly (connected clients can call
+  // refresh_brand, which spends your engine API credits).
+  CONNECT_SECRET?: string;
   // Service binding back to this same worker. /admin/run-live fans out
   // by self-fetching /admin/run-engine once per engine via env.SELF.
   // A public-URL fetch back to the same hostname triggers Cloudflare's
@@ -86,10 +94,13 @@ function filterRequestedEngines(
   return requested.filter((e) => available.has(e));
 }
 
+// Keep in sync with package.json "version".
+const SERVER_VERSION = '0.2.1';
+
 export class GeoMcpAgent extends McpAgent<Env, unknown, AgentProps> {
   server = new McpServer({
     name: 'digestseo-ai-visibility',
-    version: '0.1.0',
+    version: SERVER_VERSION,
   });
 
   async init() {
@@ -192,33 +203,35 @@ export class GeoMcpAgent extends McpAgent<Env, unknown, AgentProps> {
         const since = Date.now() - days * 86_400_000;
         const { results } = await this.env.DIGESTSEO_DB.prepare(
           // status='ok' filter on the join keeps failed/skipped rows
-          // out of COUNT and SUM. Without it, polluted runs report
-          // inflated totals with deflated hit rates.
-          `SELECT r.id AS run_id, r.engine, r.completed_at,
+          // out of COUNT and SUM. The INNER JOIN also drops runs with
+          // zero ok rows entirely — a fully-failed run is "no data",
+          // not a real score of 0. COALESCE on the timestamp matches
+          // getLatestCompletedRun's stance: partially-finished runs
+          // (stuck at in_progress) still count toward history.
+          `SELECT r.id AS run_id, r.engine,
+                  COALESCE(r.completed_at, r.started_at) AS ts,
                   COUNT(pr.id) AS total,
                   SUM(pr.brand_mentioned) AS hits
              FROM runs r
-             LEFT JOIN prompt_responses pr
+             JOIN prompt_responses pr
                ON pr.run_id = r.id AND pr.status = 'ok'
             WHERE r.brand_id = ?
-              AND r.status = 'completed'
-              AND r.completed_at IS NOT NULL
-              AND r.completed_at >= ?
-            GROUP BY r.id, r.engine, r.completed_at
-            ORDER BY r.completed_at ASC`,
+              AND COALESCE(r.completed_at, r.started_at) >= ?
+            GROUP BY r.id, r.engine
+            ORDER BY ts ASC`,
         )
           .bind(brand_id, since)
           .all<{
             run_id: string;
             engine: string;
-            completed_at: number;
+            ts: number;
             total: number | null;
             hits: number | null;
           }>();
 
         const buckets = new Map<string, Map<string, number>>();
         for (const row of results ?? []) {
-          const date = bucketStart(row.completed_at, granularity);
+          const date = bucketStart(row.ts, granularity);
           const total = Number(row.total ?? 0);
           const hits = Number(row.hits ?? 0);
           const score = total > 0 ? Math.round((100 * hits) / total) : 0;
@@ -734,10 +747,13 @@ function pickBrandUrl(
   engineHosts: string[],
   citedHosts: string[],
 ): string | null {
-  const fullDomain = brand.domain.toLowerCase();
-  const fromEngine = engineHosts.find((h) => h.includes(fullDomain));
+  const fromEngine = engineHosts.find((h) =>
+    hostMatchesDomain(h, brand.domain),
+  );
   if (fromEngine) return `https://${fromEngine}/`;
-  const fromExtracted = citedHosts.find((h) => h.includes(fullDomain));
+  const fromExtracted = citedHosts.find((h) =>
+    hostMatchesDomain(h, brand.domain),
+  );
   if (fromExtracted) return `https://${fromExtracted}/`;
   return null;
 }
@@ -749,9 +765,23 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+// Constant-time string comparison so the secret check doesn't leak
+// match-prefix length through response timing. (Length inequality still
+// short-circuits, which is fine — the length of a high-entropy secret
+// is not useful to an attacker.)
+function safeEquals(a: string, b: string): boolean {
+  const enc = new TextEncoder();
+  const ab = enc.encode(a);
+  const bb = enc.encode(b);
+  if (ab.length !== bb.length) return false;
+  let diff = 0;
+  for (let i = 0; i < ab.length; i++) diff |= ab[i] ^ bb[i];
+  return diff === 0;
+}
+
 function requireSeedSecret(request: Request, env: Env): Response | null {
   const provided = request.headers.get('X-Seed-Secret') ?? '';
-  if (!env.SEED_SECRET || provided !== env.SEED_SECRET) {
+  if (!env.SEED_SECRET || !safeEquals(provided, env.SEED_SECRET)) {
     return jsonResponse({ error: 'unauthorized' }, 401);
   }
   return null;
@@ -1101,6 +1131,134 @@ async function handleAdminCleanupFailedRuns(
   });
 }
 
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// One-field consent form shown when CONNECT_SECRET is set. The form
+// POSTs back to /authorize with the original OAuth query string intact
+// so parseAuthRequest sees the exact params the MCP client sent.
+function renderConnectForm(query: string, error?: string): Response {
+  const action = `/authorize${escapeHtml(query)}`;
+  const errorHtml = error
+    ? `<p class="err">${escapeHtml(error)}</p>`
+    : '';
+  const html = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Connect &mdash; DigestSEO MCP</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #0f1117; color: #e6e6e6;
+         display: flex; min-height: 100vh; align-items: center; justify-content: center; margin: 0; }
+  main { max-width: 26rem; padding: 2rem; }
+  h1 { font-size: 1.25rem; margin: 0 0 .5rem; }
+  p { color: #9aa0ae; font-size: .9rem; line-height: 1.5; }
+  .err { color: #f87171; }
+  input { width: 100%; box-sizing: border-box; padding: .6rem .75rem; margin: .75rem 0;
+          border: 1px solid #2a2f3a; border-radius: 6px; background: #161a22; color: #e6e6e6; }
+  button { width: 100%; padding: .6rem; border: 0; border-radius: 6px;
+           background: #4f7df9; color: #fff; font-size: .95rem; cursor: pointer; }
+</style>
+</head>
+<body>
+<main>
+<h1>DigestSEO MCP</h1>
+<p>This server requires a connect secret before an MCP client can be
+authorized. Enter the <code>CONNECT_SECRET</code> you set during deploy.</p>
+${errorHtml}
+<form method="post" action="${action}">
+  <input type="password" name="connect_secret" placeholder="Connect secret" autofocus required>
+  <button type="submit">Authorize client</button>
+</form>
+</main>
+</body>
+</html>`;
+  return new Response(html, {
+    status: error ? 401 : 200,
+    headers: { 'content-type': 'text/html; charset=utf-8' },
+  });
+}
+
+// Self-hosted OSS authorization. Without CONNECT_SECRET this
+// auto-completes with a single local dev user so the Worker can be
+// connected as a custom MCP connector without a real OAuth round trip.
+// With CONNECT_SECRET set, the browser step of the OAuth flow shows a
+// one-field form and only completes when the secret matches — anyone
+// who merely knows the worker URL can no longer mint a token. Replace
+// with Google/GitHub OAuth in a fork if you expose the Worker to
+// multiple end-users.
+async function handleAuthorize(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const invalidRequest = () =>
+    new Response(
+      'Invalid OAuth authorization request. This endpoint is called by MCP clients during the connection flow, not directly in a browser.',
+      {
+        status: 400,
+        headers: { 'content-type': 'text/plain; charset=utf-8' },
+      },
+    );
+
+  // MCP clients always arrive with OAuth params; a bare browser visit
+  // (or a scanner probe) gets a clean 400 instead of the connect form.
+  if (!url.searchParams.has('client_id')) {
+    return invalidRequest();
+  }
+
+  let authRequestSource = request;
+  if (env.CONNECT_SECRET) {
+    if (request.method === 'GET') {
+      return renderConnectForm(url.search);
+    }
+    if (request.method !== 'POST') {
+      return new Response('Method Not Allowed', {
+        status: 405,
+        headers: { Allow: 'GET, POST' },
+      });
+    }
+    const form = await request.formData().catch(() => null);
+    const provided = form?.get('connect_secret');
+    if (
+      typeof provided !== 'string' ||
+      !safeEquals(provided, env.CONNECT_SECRET)
+    ) {
+      return renderConnectForm(
+        url.search,
+        'Wrong connect secret. Use the CONNECT_SECRET value you set with `wrangler secret put CONNECT_SECRET`.',
+      );
+    }
+    // parseAuthRequest reads OAuth params from the URL query (preserved
+    // verbatim by the form action); re-wrap as GET so the library sees
+    // the canonical request shape rather than a form POST.
+    authRequestSource = new Request(request.url, { method: 'GET' });
+  }
+
+  let claudeAuthRequest;
+  try {
+    claudeAuthRequest = await env.OAUTH_PROVIDER.parseAuthRequest(
+      authRequestSource,
+    );
+  } catch (err) {
+    console.warn('Invalid /authorize request', {
+      message: (err as Error).message,
+    });
+    return invalidRequest();
+  }
+  const { redirectTo } = await env.OAUTH_PROVIDER.completeAuthorization({
+    request: claudeAuthRequest,
+    userId: DEV_USER_ID,
+    metadata: { email: DEV_USER_EMAIL },
+    scope: claudeAuthRequest.scope,
+    props: { user_id: DEV_USER_ID, email: DEV_USER_EMAIL },
+  });
+  return Response.redirect(redirectTo, 302);
+}
+
 const defaultHandler = {
   async fetch(
     request: Request,
@@ -1194,34 +1352,7 @@ const defaultHandler = {
     }
 
     if (url.pathname === '/authorize') {
-      // Self-hosted OSS auto-completes the authorization with a single
-      // local dev user so the Worker can be connected as a custom MCP
-      // connector in Claude.ai without a real OAuth round trip. Replace
-      // with Google/GitHub OAuth in a fork if you expose the Worker to
-      // multiple end-users.
-      let claudeAuthRequest;
-      try {
-        claudeAuthRequest = await env.OAUTH_PROVIDER.parseAuthRequest(request);
-      } catch (err) {
-        console.warn('Invalid /authorize request', {
-          message: (err as Error).message,
-        });
-        return new Response(
-          'Invalid OAuth authorization request. This endpoint is called by MCP clients during the connection flow, not directly in a browser.',
-          {
-            status: 400,
-            headers: { 'content-type': 'text/plain; charset=utf-8' },
-          },
-        );
-      }
-      const { redirectTo } = await env.OAUTH_PROVIDER.completeAuthorization({
-        request: claudeAuthRequest,
-        userId: DEV_USER_ID,
-        metadata: { email: DEV_USER_EMAIL },
-        scope: claudeAuthRequest.scope,
-        props: { user_id: DEV_USER_ID, email: DEV_USER_EMAIL },
-      });
-      return Response.redirect(redirectTo, 302);
+      return handleAuthorize(request, env);
     }
 
     return new Response('Not found', { status: 404 });

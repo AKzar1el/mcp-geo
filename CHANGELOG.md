@@ -2,6 +2,28 @@
 
 All notable changes to this project are documented here. The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.1] — June 2026
+
+A security + accuracy pass ahead of wider distribution.
+
+### Added
+
+- Optional `CONNECT_SECRET` secret. When set, the browser step of the OAuth connect flow shows a one-field form and only completes when the secret matches. Without it the OSS build keeps its auto-completing single-dev-user flow — which means anyone who knows the worker URL can connect an MCP client and call `refresh_brand` (spending your engine API credits). Recommended for every deployment whose URL is shared anywhere.
+- `SECURITY.md` — security model, trust boundaries, and private vulnerability reporting.
+- GitHub Actions CI (`.github/workflows/ci.yml`): `tsc --noEmit` + unit tests on every push and PR.
+- Unit test suite (`npm run test:unit`, Node test runner + tsx) covering citation extraction (`extractCitations`, `hostMatchesDomain`) and score aggregation (`computeOverallScore`). These are the pure functions every score flows through; the smoke suite still covers the deployed Worker end-to-end.
+- `migrations/README.md` documenting the intentional 0004 numbering gap and why files must never be renumbered.
+- README: Claude Code connect instructions (`claude mcp add --transport http`), architecture diagram, security section, hero report image.
+
+### Changed
+
+- **Brand/competitor mention matching now requires word boundaries.** `acme` no longer matches inside "acmeshop" or "macme". Scores may shift slightly downward for brands whose root term is a common substring — the new number is the honest one.
+- **Linked-citation checks require the exact brand domain or a subdomain of it.** Previously a substring check meant `notacme.com` counted as a link to `acme.com`. Applies to `extractCitations`, the Perplexity and AI Overviews engine-citation merge, and `get_citations`' `cited_url` selection.
+- **`get_visibility_history` matches `check_visibility`'s stance on partial runs.** Runs interrupted mid-flight (stuck at `in_progress`) now count toward history via `COALESCE(completed_at, started_at)`, and runs with zero ok rows are excluded entirely instead of charting as a fake score of 0.
+- `SEED_SECRET` and `CONNECT_SECRET` comparisons are constant-time.
+- MCP server version string now tracks the package version (was stuck at 0.1.0).
+- Runtime dependencies (`@cloudflare/workers-oauth-provider`, `@modelcontextprotocol/sdk`, `agents`, `zod`) moved from `devDependencies` to `dependencies` — wrangler bundles either way, but the manifest now tells the truth.
+
 ## [0.2.0] — May 2026
 
 A correctness + architecture pass driven by an end-to-end debugging session on the production fork. Every fix is described in terms of what the prior version got wrong.

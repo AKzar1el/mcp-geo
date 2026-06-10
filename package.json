@@ -1,6 +1,6 @@
 {
   "name": "digestseo-mcp",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Self-hostable MCP server for AI visibility tracking across ChatGPT, Claude, Perplexity, Gemini, and Google AI Overviews. Runs on Cloudflare Workers with D1.",
   "private": false,
   "license": "MIT",
@@ -9,15 +9,19 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
+    "test:unit": "node --import tsx --test \"tests/unit/*.test.ts\"",
     "test:smoke": "node --test tests/smoke.test.mjs"
   },
-  "devDependencies": {
+  "dependencies": {
     "@cloudflare/workers-oauth-provider": "^0.6.0",
-    "@cloudflare/workers-types": "^4.20260520.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "agents": "^0.13.1",
-    "typescript": "^6.0.3",
-    "wrangler": "^4.93.0",
     "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260520.1",
+    "tsx": "^4.20.0",
+    "typescript": "^6.0.3",
+    "wrangler": "^4.93.0"
   }
 }

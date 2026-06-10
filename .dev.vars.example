@@ -11,5 +11,8 @@ GEMINI_API_KEY=your_key_here
 PERPLEXITY_API_KEY=your_key_here
 SERPAPI_API_KEY=your_key_here
 SEED_SECRET=your_key_here
+# Optional but recommended: gates the OAuth connect flow with a one-field
+# browser form. Leave blank to keep the auto-completing dev flow.
+CONNECT_SECRET=
 TURNSTILE_SITE_KEY=your_key_here
 TURNSTILE_SECRET_KEY=your_key_here
