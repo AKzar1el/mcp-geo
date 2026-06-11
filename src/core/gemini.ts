@@ -1,72 +1,89 @@
-// Anthropic Claude runner. Mirrors src/openai.ts. Live mode only; the
-// Anthropic Batch API is not used here.
+// Google Gemini runner. Live mode only — Gemini doesn't have a comparable
+// batch API for chat completions. Uses the public Generative Language API
+// (api key in URL, no Authorization header).
 
 import {
   buildSystemPrompt,
   extractCitations,
   hashPrompt,
-} from './openai';
-import {
-  bulkCacheGet,
-  persistEngineRun,
-  updateRun,
-  type Brand,
-  type DbEnv,
-  type EnginePromptResult,
-  type Prompt,
-} from './db';
+} from './openai.js';
+import type {
+  Brand,
+  Db,
+  EnginePromptResult,
+  Prompt,
+} from '../db/types.js';
 
-export const MODEL = 'claude-haiku-4-5';
-export const ENGINE = 'claude';
+// gemini-2.5-flash-lite has the most generous free-tier daily quota
+// across the 2.5 family. If you need more headroom, switch to
+// gemini-2.5-flash (paid tier).
+export const MODEL = 'gemini-2.5-flash-lite';
+export const ENGINE = 'gemini';
 
 const LIVE_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60;
-const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
-const ANTHROPIC_VERSION = '2023-06-01';
+const GEMINI_BASE =
+  'https://generativelanguage.googleapis.com/v1beta/models';
 
-export interface AnthropicEnv extends DbEnv {
-  ANTHROPIC_API_KEY?: string;
+export interface GeminiEnv {
+  db: Db;
+  GEMINI_API_KEY?: string;
 }
 
-function requireAnthropicKey(env: AnthropicEnv): string {
-  if (!env.ANTHROPIC_API_KEY) {
-    throw new Error('ANTHROPIC_API_KEY not set');
+function requireGeminiKey(env: GeminiEnv): string {
+  if (!env.GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY not set');
   }
-  return env.ANTHROPIC_API_KEY;
+  return env.GEMINI_API_KEY;
 }
 
-interface AnthropicMessageResponse {
-  content?: Array<{ type?: string; text?: string }>;
+interface GeminiResponse {
+  candidates?: Array<{
+    content?: { parts?: Array<{ text?: string }> };
+    finishReason?: string;
+  }>;
+  promptFeedback?: { blockReason?: string };
 }
 
 export async function chatCompletion(
   apiKey: string,
   userText: string,
   systemPrompt: string,
-  maxTokens: number = 600,
 ): Promise<string> {
-  const resp = await fetch(ANTHROPIC_URL, {
+  const url = `${GEMINI_BASE}/${MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const resp = await fetch(url, {
     method: 'POST',
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': ANTHROPIC_VERSION,
-      'content-type': 'application/json',
-    },
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      model: MODEL,
-      max_tokens: maxTokens,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userText }],
+      systemInstruction: { parts: [{ text: systemPrompt }] },
+      contents: [{ role: 'user', parts: [{ text: userText }] }],
+      generationConfig: {
+        temperature: 0.3,
+        maxOutputTokens: 600,
+      },
     }),
   });
   if (!resp.ok) {
     const text = await resp.text();
-    throw new Error(`Anthropic completion failed: ${resp.status} ${text}`);
+    throw new Error(`Gemini completion failed: ${resp.status} ${text}`);
   }
-  const data = (await resp.json()) as AnthropicMessageResponse;
-  const textBlock = data.content?.find((b) => b.type === 'text');
-  const text = textBlock?.text;
+  const data = (await resp.json()) as GeminiResponse;
+  if (data.promptFeedback?.blockReason) {
+    throw new Error(
+      `Gemini blocked prompt: ${data.promptFeedback.blockReason}`,
+    );
+  }
+  const candidate = data.candidates?.[0];
+  if (!candidate) {
+    throw new Error('Gemini response missing candidates[0]');
+  }
+  if (candidate.finishReason && candidate.finishReason !== 'STOP') {
+    throw new Error(
+      `Gemini finished with non-STOP reason: ${candidate.finishReason}`,
+    );
+  }
+  const text = candidate.content?.parts?.[0]?.text;
   if (typeof text !== 'string' || text.length === 0) {
-    throw new Error('Anthropic response missing text content block');
+    throw new Error('Gemini response missing candidates[0].content.parts[0].text');
   }
   return text;
 }
@@ -90,7 +107,7 @@ function buildSkippedResult(prompt: Prompt): EnginePromptResult {
 
 function buildFailedResult(prompt: Prompt, err: unknown): EnginePromptResult {
   const msg = (err as Error).message;
-  console.error('runLive[claude]: prompt failed', {
+  console.error('runLive[gemini]: prompt failed', {
     prompt_id: prompt.id,
     message: msg,
   });
@@ -107,21 +124,23 @@ function buildFailedResult(prompt: Prompt, err: unknown): EnginePromptResult {
 }
 
 export async function runLive(
-  env: AnthropicEnv,
+  env: GeminiEnv,
   brand: Brand,
   prompts: Prompt[],
   runId: string,
 ): Promise<void> {
-  // Bulk pattern — see src/openai.ts:runLive for the rationale.
+  // Bulk pattern — see src/openai.ts:runLive. Gemini's free-tier
+  // daily quota is very low (a handful of req/min); rate-limited
+  // failures now produce status='failed' rows instead of being
+  // silently dropped.
   const CONCURRENCY = 5;
   const hashes = await Promise.all(
     prompts.map((p) => hashPrompt(p.text, ENGINE, MODEL)),
   );
 
-  if (!env.ANTHROPIC_API_KEY) {
+  if (!env.GEMINI_API_KEY) {
     const results = prompts.map(buildSkippedResult);
-    await persistEngineRun(
-      env,
+    await env.db.persistEngineRun(
       runId,
       ENGINE,
       MODEL,
@@ -131,7 +150,7 @@ export async function runLive(
     return;
   }
 
-  const cacheMap = await bulkCacheGet(env, hashes, ENGINE, MODEL);
+  const cacheMap = await env.db.bulkCacheGet(hashes, ENGINE, MODEL);
   const results: EnginePromptResult[] = new Array(prompts.length);
 
   for (let i = 0; i < prompts.length; i += CONCURRENCY) {
@@ -149,7 +168,7 @@ export async function runLive(
             responseText = cached;
           } else {
             responseText = await chatCompletion(
-              requireAnthropicKey(env),
+              requireGeminiKey(env),
               prompt.text,
               buildSystemPrompt(),
             );
@@ -174,8 +193,7 @@ export async function runLive(
   }
 
   try {
-    await persistEngineRun(
-      env,
+    await env.db.persistEngineRun(
       runId,
       ENGINE,
       MODEL,
@@ -183,11 +201,11 @@ export async function runLive(
       results,
     );
   } catch (err) {
-    console.error('runLive[claude]: persistEngineRun failed', {
+    console.error('runLive[gemini]: persistEngineRun failed', {
       run_id: runId,
       message: (err as Error).message,
     });
-    await updateRun(env, runId, {
+    await env.db.updateRun(runId, {
       status: 'failed',
       error: (err as Error).message,
       completed_at: Date.now(),

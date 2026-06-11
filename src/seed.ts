@@ -1,10 +1,5 @@
-import {
-  getBrand,
-  replacePrompts,
-  type DbEnv,
-  type NewPromptInput,
-} from './db';
-import { generatePrompts, type PromptGenEnv } from './prompt-generation';
+import type { Db, NewPromptInput } from './db/types.js';
+import { generatePrompts } from './core/prompt-generation.js';
 
 const DEFAULT_USER_ID = 'dev-user';
 const DEFAULT_USER_EMAIL = 'dev@local';
@@ -46,7 +41,15 @@ export interface SeedResult {
   prompt_source?: 'generated' | 'fallback';
 }
 
-export interface SeedEnv extends DbEnv, PromptGenEnv {}
+// Worker-only: seeding writes users/brands rows with raw D1 SQL (these
+// inserts have no Db helper) and uses the Db contract for everything
+// that does. `db` + ANTHROPIC_API_KEY also structurally satisfy
+// core/prompt-generation's PromptGenEnv.
+export interface SeedEnv {
+  DIGESTSEO_DB: D1Database;
+  db: Db;
+  ANTHROPIC_API_KEY?: string;
+}
 
 // Genericized seeder. Pass any brand identity via SeedBrandInput; an
 // empty/missing input returns cleanly with no DB writes so an empty POST
@@ -69,7 +72,7 @@ export async function seedBrand(
     };
   }
 
-  const existing = await getBrand(env, input.brand_id);
+  const existing = await env.db.getBrand(input.brand_id);
   if (existing) {
     return {
       seeded: false,
@@ -107,7 +110,7 @@ export async function seedBrand(
     )
     .run();
 
-  const brand = await getBrand(env, input.brand_id);
+  const brand = await env.db.getBrand(input.brand_id);
   if (!brand) {
     throw new Error('seedBrand: brand insert apparently failed');
   }
@@ -125,7 +128,7 @@ export async function seedBrand(
       brand_id: input.brand_id,
       message: (err as Error).message,
     });
-    await replacePrompts(env, input.brand_id, FALLBACK_PROMPTS);
+    await env.db.replacePrompts(input.brand_id, FALLBACK_PROMPTS);
     return {
       seeded: true,
       brand_id: input.brand_id,

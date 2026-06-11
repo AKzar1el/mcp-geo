@@ -1,37 +1,25 @@
+// Cloudflare Worker entry: McpAgent wiring, D1 deps construction,
+// /admin/* routes, the cron trigger, and the per-engine fan-out. All
+// tool logic lives in src/core/tools.ts and is shared with the local
+// stdio CLI (src/cli.ts).
+
 import { OAuthProvider } from '@cloudflare/workers-oauth-provider';
 import { McpAgent } from 'agents/mcp';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
-import {
-  createRun,
-  deleteResponsesForRun,
-  getActivePrompts,
-  getBrand,
-  getBrandsDueForRefresh,
-  getLatestCompletedRun,
-  getResponsesForRun,
-  getRunById,
-  type Brand,
-  type PromptResponse,
-} from './db';
-
-import { collectBatch, submitBatch } from './openai';
+import { createD1Db } from './db/d1.js';
+import type { Db } from './db/types.js';
 import {
   ALL_ENGINES,
   getAvailableEngines,
   isEngineName,
   runEngineInProcess,
-  runEngines,
   type EngineName,
-} from './engines';
-import { generatePrompts } from './prompt-generation';
-import {
-  analyzeContentGaps,
-  FALLBACK_RECOMMENDATIONS,
-  type LosingPromptSummary,
-} from './content-gap-analysis';
-import { computeOverallScore } from './scoring';
-import { seedBrand, type SeedBrandInput } from './seed';
+} from './core/engines.js';
+import { registerTools } from './core/tools.js';
+import { collectBatch, submitBatch } from './core/openai.js';
+import { generatePrompts } from './core/prompt-generation.js';
+import { runEngines, type WorkerEnginesEnv } from './engines.js';
+import { seedBrand, type SeedBrandInput } from './seed.js';
 
 export interface Env {
   OAUTH_KV: KVNamespace;
@@ -39,7 +27,7 @@ export interface Env {
   MCP_OBJECT: DurableObjectNamespace;
   OAUTH_PROVIDER: any;
   // Engine API keys are opt-in. Set only the ones you have; the rest of
-  // the engines skip gracefully. See src/engines.ts:getAvailableEngines.
+  // the engines skip gracefully. See src/core/engines.ts:getAvailableEngines.
   OPENAI_API_KEY?: string;
   ANTHROPIC_API_KEY?: string;
   PERPLEXITY_API_KEY?: string;
@@ -77,13 +65,21 @@ interface AgentProps extends Record<string, unknown> {
 const DEV_USER_ID = 'dev-user';
 const DEV_USER_EMAIL = 'dev@local';
 
-function filterRequestedEngines(
-  env: Env,
-  requested: EngineName[] | undefined,
-): EngineName[] {
-  const available = new Set(getAvailableEngines(env));
-  if (!requested || requested.length === 0) return [...available];
-  return requested.filter((e) => available.has(e));
+// Everything the worker-side fan-out needs, derived from the worker Env
+// plus a constructed Db. Spelled out (rather than spreading env) so the
+// dependency surface stays visible.
+function workerEnginesEnv(env: Env, db: Db): WorkerEnginesEnv {
+  return {
+    db,
+    OPENAI_API_KEY: env.OPENAI_API_KEY,
+    ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY,
+    GEMINI_API_KEY: env.GEMINI_API_KEY,
+    PERPLEXITY_API_KEY: env.PERPLEXITY_API_KEY,
+    SERPAPI_API_KEY: env.SERPAPI_API_KEY,
+    SEED_SECRET: env.SEED_SECRET,
+    SELF: env.SELF,
+    SELF_URL: env.SELF_URL,
+  };
 }
 
 export class GeoMcpAgent extends McpAgent<Env, unknown, AgentProps> {
@@ -93,653 +89,23 @@ export class GeoMcpAgent extends McpAgent<Env, unknown, AgentProps> {
   });
 
   async init() {
-    this.server.registerTool(
-      'check_visibility',
-      {
-        description:
-          "Get the latest AI visibility data for a tracked brand: which AI assistants (ChatGPT, Claude, Perplexity, Gemini, Google AI Overviews) cite this brand, for which prompts, and how it compares to competitors. Use when the user asks 'how visible am I on AI?', 'who's citing my brand?', or 'show me my AI visibility score'. Returns stored data — for fresh data, call refresh_brand.",
-        inputSchema: {
-          brand_id: z.string(),
-          engines: z
-            .array(
-              z.enum([
-                'chatgpt',
-                'claude',
-                'perplexity',
-                'gemini',
-                'ai_overviews',
-              ]),
-            )
-            .optional(),
-        },
-        annotations: {
-          readOnlyHint: true,
-          openWorldHint: false,
-        },
-      },
-      async ({ brand_id, engines }) => {
-        const brand = await getBrand(this.env, brand_id);
-        if (!brand) {
-          throw new Error(
-            'Brand not found. Seed the brand via POST /admin/seed first.',
-          );
-        }
-
-        // getLatestCompletedRun anchors on EXISTS(ok rows) rather than
-        // run.status='completed', so partially-finished runs (killed
-        // by the subrequest cap, wall time, etc.) still surface their
-        // ok rows. Use completed_at when available, started_at as a
-        // fallback for in-progress runs.
-        const allResponses: PromptResponse[] = [];
-        let mostRecentTimestamp = 0;
-        for (const engine of ALL_ENGINES) {
-          const run = await getLatestCompletedRun(this.env, brand_id, engine);
-          if (!run) continue;
-          const responses = await getResponsesForRun(this.env, run.id);
-          if (responses.length === 0) continue;
-          allResponses.push(...responses);
-          const ts = run.completed_at ?? run.started_at;
-          if (ts > mostRecentTimestamp) mostRecentTimestamp = ts;
-        }
-        if (allResponses.length === 0) {
-          throw new Error(
-            'No visibility data yet for this brand. Call refresh_brand to populate it.',
-          );
-        }
-        const scored = computeOverallScore(brand, allResponses);
-
-        const filteredPerEngine = engines
-          ? scored.per_engine.filter((e) => engines.includes(e.engine as any))
-          : scored.per_engine;
-
-        const payload = {
-          brand: {
-            id: brand.id,
-            name: brand.name,
-            domain: brand.domain,
-            category: brand.category,
-          },
-          refreshed_at: new Date(mostRecentTimestamp).toISOString(),
-          overall_score: scored.overall_score,
-          per_engine: filteredPerEngine,
-          top_winning_prompts: scored.top_winning_prompts,
-          top_losing_prompts: scored.top_losing_prompts,
-        };
-        return {
-          content: [
-            { type: 'text', text: JSON.stringify(payload, null, 2) },
-          ],
-        };
-      },
-    );
-
-    this.server.registerTool(
-      'get_visibility_history',
-      {
-        description:
-          "Get the time-series history of a brand's AI visibility score, broken down per engine. Use when the user asks 'how has my AI visibility changed over time?', 'is my visibility growing or shrinking?', or 'show me the trend for the last month'.",
-        inputSchema: {
-          brand_id: z.string(),
-          days: z.number().min(1).max(365).default(30),
-          granularity: z.enum(['daily', 'weekly']).default('weekly'),
-        },
-        annotations: {
-          readOnlyHint: true,
-          openWorldHint: false,
-        },
-      },
-      async ({ brand_id, days, granularity }) => {
-        const since = Date.now() - days * 86_400_000;
-        const { results } = await this.env.DIGESTSEO_DB.prepare(
-          // status='ok' filter on the join keeps failed/skipped rows
-          // out of COUNT and SUM. Without it, polluted runs report
-          // inflated totals with deflated hit rates.
-          `SELECT r.id AS run_id, r.engine, r.completed_at,
-                  COUNT(pr.id) AS total,
-                  SUM(pr.brand_mentioned) AS hits
-             FROM runs r
-             LEFT JOIN prompt_responses pr
-               ON pr.run_id = r.id AND pr.status = 'ok'
-            WHERE r.brand_id = ?
-              AND r.status = 'completed'
-              AND r.completed_at IS NOT NULL
-              AND r.completed_at >= ?
-            GROUP BY r.id, r.engine, r.completed_at
-            ORDER BY r.completed_at ASC`,
-        )
-          .bind(brand_id, since)
-          .all<{
-            run_id: string;
-            engine: string;
-            completed_at: number;
-            total: number | null;
-            hits: number | null;
-          }>();
-
-        const buckets = new Map<string, Map<string, number>>();
-        for (const row of results ?? []) {
-          const date = bucketStart(row.completed_at, granularity);
-          const total = Number(row.total ?? 0);
-          const hits = Number(row.hits ?? 0);
-          const score = total > 0 ? Math.round((100 * hits) / total) : 0;
-          let perEngine = buckets.get(date);
-          if (!perEngine) {
-            perEngine = new Map();
-            buckets.set(date, perEngine);
-          }
-          perEngine.set(row.engine, score);
-        }
-        const series = [...buckets.entries()]
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([date, perEngine]) => {
-            const scores = [...perEngine.values()];
-            const overall_score =
-              scores.length === 0
-                ? 0
-                : Math.round(
-                    scores.reduce((s, x) => s + x, 0) / scores.length,
-                  );
-            return {
-              date,
-              overall_score,
-              per_engine: Object.fromEntries(perEngine),
-            };
-          });
-
-        const payload = { brand_id, days, granularity, series };
-        return {
-          content: [
-            { type: 'text', text: JSON.stringify(payload, null, 2) },
-          ],
-        };
-      },
-    );
-
-    this.server.registerTool(
-      'compare_competitors',
-      {
-        description:
-          "Compare a brand's AI visibility against competitors for the same category. Returns share-of-voice percentages, prompts the user wins, and prompts where competitors win. Use when the user asks 'who beats me in AI search?', 'compare me to my competitors', or 'why does [competitor] get cited more?'.",
-        inputSchema: {
-          brand_id: z.string(),
-          competitor_domains: z.array(z.string()).optional(),
-          days: z.number().min(1).max(90).default(7),
-        },
-        annotations: {
-          readOnlyHint: true,
-          openWorldHint: false,
-        },
-      },
-      async ({ brand_id, competitor_domains, days }) => {
-        const brand = await getBrand(this.env, brand_id);
-        if (!brand) {
-          throw new Error(
-            'Brand not found. Seed the brand via POST /admin/seed first.',
-          );
-        }
-        const targets =
-          competitor_domains && competitor_domains.length > 0
-            ? competitor_domains
-            : brand.competitors;
-        if (targets.length === 0) {
-          const payload = {
-            brand_id,
-            days,
-            message:
-              'No competitor list configured for this brand. Pass competitor_domains or set brand.competitors.',
-            your_share_of_voice_pct: 0,
-            competitors: [],
-            prompts_you_win: [],
-            requested_competitor_domains: competitor_domains ?? null,
-          };
-          return {
-            content: [
-              { type: 'text', text: JSON.stringify(payload, null, 2) },
-            ],
-          };
-        }
-
-        const since = Date.now() - days * 86_400_000;
-        const allResponses: PromptResponse[] = [];
-        for (const engine of ALL_ENGINES) {
-          const run = await getLatestCompletedRun(this.env, brand_id, engine);
-          if (!run) continue;
-          const ts = run.completed_at ?? run.started_at;
-          if (ts < since) continue;
-          const responses = await getResponsesForRun(this.env, run.id);
-          allResponses.push(...responses);
-        }
-
-        const brandMentions = allResponses.reduce(
-          (s, r) => s + (r.brand_mentioned === 1 ? 1 : 0),
-          0,
-        );
-        const competitorMentions = new Map<string, number>();
-        for (const target of targets) competitorMentions.set(target, 0);
-        for (const r of allResponses) {
-          for (const c of r.competitors_mentioned) {
-            if (competitorMentions.has(c)) {
-              competitorMentions.set(c, (competitorMentions.get(c) ?? 0) + 1);
-            }
-          }
-        }
-        const totalMentions =
-          brandMentions +
-          [...competitorMentions.values()].reduce((s, x) => s + x, 0);
-        const pct = (n: number) =>
-          totalMentions === 0 ? 0 : Math.round((100 * n) / totalMentions);
-
-        const competitorsOut = targets.map((domain) => {
-          const wonPrompts = new Map<string, string>();
-          for (const r of allResponses) {
-            if (r.brand_mentioned === 1) continue;
-            if (!r.competitors_mentioned.includes(domain)) continue;
-            if (!wonPrompts.has(r.prompt_id)) {
-              wonPrompts.set(r.prompt_id, r.prompt_text);
-            }
-          }
-          return {
-            domain,
-            share_of_voice_pct: pct(competitorMentions.get(domain) ?? 0),
-            prompts_won_against_you: [...wonPrompts.values()].slice(0, 5),
-          };
-        });
-
-        const winsByPrompt = new Map<
-          string,
-          {
-            prompt: string;
-            engines: Set<string>;
-            competitors: Set<string>;
-          }
-        >();
-        for (const r of allResponses) {
-          if (r.brand_mentioned !== 1) continue;
-          const existing = winsByPrompt.get(r.prompt_id);
-          if (existing) {
-            existing.engines.add(r.engine);
-            for (const c of r.competitors_mentioned) {
-              if (targets.includes(c)) existing.competitors.add(c);
-            }
-          } else {
-            winsByPrompt.set(r.prompt_id, {
-              prompt: r.prompt_text,
-              engines: new Set([r.engine]),
-              competitors: new Set(
-                r.competitors_mentioned.filter((c) => targets.includes(c)),
-              ),
-            });
-          }
-        }
-        const prompts_you_win = [...winsByPrompt.values()]
-          .sort((a, b) => b.engines.size - a.engines.size)
-          .slice(0, 5)
-          .map((w) => ({
-            prompt: w.prompt,
-            you_cited_by: [...w.engines].sort(),
-            competitors_cited: [...w.competitors].sort(),
-          }));
-
-        const payload = {
-          brand_id,
-          days,
-          your_share_of_voice_pct: pct(brandMentions),
-          competitors: competitorsOut,
-          prompts_you_win,
-          requested_competitor_domains: competitor_domains ?? null,
-        };
-        return {
-          content: [
-            { type: 'text', text: JSON.stringify(payload, null, 2) },
-          ],
-        };
-      },
-    );
-
-    this.server.registerTool(
-      'get_citations',
-      {
-        description:
-          "Get the actual citation events where AI assistants mentioned or linked to the brand. Each citation includes the prompt that triggered it, the LLM's response excerpt, and whether it was a linked citation, a mention without a link, or a paraphrase. Use when the user asks 'show me where I'm cited', 'what are ChatGPT/Claude/Perplexity actually saying about my brand?', or 'give me proof of AI citations'.",
-        inputSchema: {
-          brand_id: z.string(),
-          days: z.number().min(1).max(90).default(14),
-          engine: z
-            .enum([
-              'chatgpt',
-              'claude',
-              'perplexity',
-              'gemini',
-              'ai_overviews',
-            ])
-            .optional(),
-        },
-        annotations: {
-          readOnlyHint: true,
-          openWorldHint: false,
-        },
-      },
-      async ({ brand_id, days, engine }) => {
-        const brand = await getBrand(this.env, brand_id);
-        if (!brand) {
-          throw new Error(
-            'Brand not found. Seed the brand via POST /admin/seed first.',
-          );
-        }
-        const since = Date.now() - days * 86_400_000;
-        let sql =
-          `SELECT r.engine AS engine, p.text AS prompt, pr.raw_response,
-                  pr.brand_mentioned, pr.brand_cited_with_link,
-                  pr.cited_urls_json, pr.engine_citations_json,
-                  pr.captured_at, pr.run_id, pr.prompt_id
-             FROM prompt_responses pr
-             JOIN runs r ON r.id = pr.run_id
-             JOIN prompts p ON p.id = pr.prompt_id
-            WHERE r.brand_id = ?
-              AND pr.captured_at >= ?
-              AND pr.brand_mentioned = 1
-              AND pr.status = 'ok'`;
-        const params: unknown[] = [brand_id, since];
-        if (engine) {
-          sql += ' AND r.engine = ?';
-          params.push(engine);
-        }
-        sql += ' ORDER BY pr.captured_at DESC LIMIT 50';
-        const { results } = await this.env.DIGESTSEO_DB.prepare(sql)
-          .bind(...params)
-          .all<{
-            engine: string;
-            prompt: string;
-            raw_response: string;
-            brand_mentioned: number;
-            brand_cited_with_link: number;
-            cited_urls_json: string | null;
-            engine_citations_json: string | null;
-            captured_at: number;
-            run_id: string;
-            prompt_id: string;
-          }>();
-
-        const citations = (results ?? []).map((row) => {
-          const citedHosts = parseStringArray(row.cited_urls_json);
-          const engineHosts = parseStringArray(row.engine_citations_json);
-          return {
-            id: citationId(row.run_id, row.prompt_id),
-            engine: row.engine,
-            prompt: row.prompt,
-            cited_at: new Date(row.captured_at).toISOString(),
-            citation_type:
-              row.brand_cited_with_link === 1
-                ? 'mention_with_link'
-                : 'mention_without_link',
-            response_excerpt: buildResponseExcerpt(row.raw_response, brand),
-            cited_url: pickBrandUrl(brand, engineHosts, citedHosts),
-          };
-        });
-
-        const payload = {
-          brand_id,
-          days,
-          engine: engine ?? null,
-          citations,
-        };
-        return {
-          content: [
-            { type: 'text', text: JSON.stringify(payload, null, 2) },
-          ],
-        };
-      },
-    );
-
-    this.server.registerTool(
-      'get_content_gaps',
-      {
-        description:
-          "Get actionable content recommendations based on AI visibility gaps. Returns prioritized topics and content formats that would close the gap between this brand and competitors winning the same prompts. Use when the user asks 'what should I write to improve AI visibility?', 'what content gaps do I have?', or 'how do I get cited more by AI?'.",
-        inputSchema: {
-          brand_id: z.string(),
-          max_recommendations: z.number().min(1).max(10).default(5),
-        },
-        annotations: {
-          readOnlyHint: true,
-          openWorldHint: false,
-        },
-      },
-      async ({ brand_id, max_recommendations }) => {
-        const brand = await getBrand(this.env, brand_id);
-        if (!brand) {
-          throw new Error(
-            'Brand not found. Seed the brand via POST /admin/seed first.',
-          );
-        }
-
-        const losingByPrompt = new Map<
-          string,
-          {
-            prompt_text: string;
-            engines: Set<string>;
-            competitors: Set<string>;
-          }
-        >();
-        for (const engine of ALL_ENGINES) {
-          const run = await getLatestCompletedRun(this.env, brand_id, engine);
-          if (!run) continue;
-          const responses = await getResponsesForRun(this.env, run.id);
-          for (const r of responses) {
-            if (r.brand_mentioned !== 0) continue;
-            if (r.competitors_mentioned.length === 0) continue;
-            const existing = losingByPrompt.get(r.prompt_id);
-            if (existing) {
-              existing.engines.add(r.engine);
-              for (const c of r.competitors_mentioned) {
-                existing.competitors.add(c);
-              }
-            } else {
-              losingByPrompt.set(r.prompt_id, {
-                prompt_text: r.prompt_text,
-                engines: new Set([r.engine]),
-                competitors: new Set(r.competitors_mentioned),
-              });
-            }
-          }
-        }
-        const losingPrompts: LosingPromptSummary[] = [...losingByPrompt.values()]
-          .map((l) => ({
-            prompt_text: l.prompt_text,
-            engines_lost_on: [...l.engines].sort(),
-            competitors_winning: [...l.competitors].sort(),
-          }))
-          .sort(
-            (a, b) =>
-              b.competitors_winning.length - a.competitors_winning.length,
-          )
-          .slice(0, 15);
-
-        if (losingPrompts.length === 0) {
-          const payload = {
-            brand_id,
-            recommendations: [],
-            prompt_source: 'generated' as const,
-            reason:
-              'no losing prompts yet — collect more data first (run refresh_brand, then re-check competitors)',
-          };
-          return {
-            content: [
-              { type: 'text', text: JSON.stringify(payload, null, 2) },
-            ],
-          };
-        }
-
-        let recommendations;
-        let prompt_source: 'generated' | 'fallback';
-        try {
-          if (!this.env.ANTHROPIC_API_KEY) {
-            throw new Error('ANTHROPIC_API_KEY not set');
-          }
-          recommendations = await analyzeContentGaps(
-            { ANTHROPIC_API_KEY: this.env.ANTHROPIC_API_KEY },
-            brand,
-            losingPrompts,
-            max_recommendations,
-          );
-          prompt_source = 'generated';
-        } catch (err) {
-          console.warn('get_content_gaps: analyzer failed, returning fallback', {
-            brand_id,
-            message: (err as Error).message,
-          });
-          recommendations = FALLBACK_RECOMMENDATIONS.slice(0, max_recommendations);
-          prompt_source = 'fallback';
-        }
-
-        const payload = {
-          brand_id,
-          recommendations,
-          prompt_source,
-        };
-        return {
-          content: [
-            { type: 'text', text: JSON.stringify(payload, null, 2) },
-          ],
-        };
-      },
-    );
-
-    this.server.registerTool(
-      'refresh_brand',
-      {
-        description:
-          "Manually trigger a fresh AI visibility scan for a tracked brand. Runs every engine that has its API key configured (ChatGPT, Claude, Perplexity, Gemini, Google AI Overviews) against the brand's current prompt set. Use when the user asks 'refresh my data', 'rerun the scan', or 'I want fresh data right now'. Returns immediately with run IDs; results populate in 30-60 seconds.",
-        inputSchema: {
-          brand_id: z.string(),
-          engines: z
-            .array(
-              z.enum([
-                'chatgpt',
-                'claude',
-                'perplexity',
-                'gemini',
-                'ai_overviews',
-              ]),
-            )
-            .optional(),
-        },
-        annotations: {
-          readOnlyHint: false,
-          openWorldHint: true,
-        },
-      },
-      async ({ brand_id, engines }) => {
-        const brand = await getBrand(this.env, brand_id);
-        if (!brand) {
-          throw new Error(
-            'Brand not found. Seed the brand via POST /admin/seed first.',
-          );
-        }
-        const prompts = await getActivePrompts(this.env, brand_id);
-        if (prompts.length === 0) {
-          throw new Error(
-            'Brand has no active prompts. Seed it again or call /admin/generate-prompts.',
-          );
-        }
-        const requested = engines as EngineName[] | undefined;
-        if (requested) {
-          const unknown = requested.filter((e) => !isEngineName(e));
-          if (unknown.length > 0) {
-            throw new Error(
-              `Unknown engines: ${unknown.join(', ')}. Allowed: ${ALL_ENGINES.join(', ')}`,
-            );
-          }
-        }
-        const filtered = filterRequestedEngines(this.env, requested);
-        if (filtered.length === 0) {
-          throw new Error(
-            'No engines available. Set at least one of OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, PERPLEXITY_API_KEY, SERPAPI_API_KEY.',
-          );
-        }
-        const { run_ids, engines: kicked } = await runEngines(
-          this.env,
+    const db = createD1Db(this.env.DIGESTSEO_DB);
+    registerTools(this.server, {
+      db,
+      env: this.env,
+      // Worker implementation of refresh_brand's engine dispatch:
+      // per-engine fan-out via the SELF service binding so each engine
+      // gets its own invocation (and its own 50-subrequest budget).
+      runEnginesInline: (brand, prompts, engines) =>
+        runEngines(
+          workerEnginesEnv(this.env, db),
           this.ctx,
           brand,
           prompts,
-          filtered,
-        );
-        const payload = {
-          brand_id: brand.id,
-          message: `Refresh started for ${kicked.length} engine${kicked.length === 1 ? '' : 's'}`,
-          run_ids,
-          estimated_completion_seconds: 30,
-        };
-        return {
-          content: [
-            { type: 'text', text: JSON.stringify(payload, null, 2) },
-          ],
-        };
-      },
-    );
+          engines,
+        ),
+    });
   }
-}
-
-function bucketStart(ts: number, granularity: 'daily' | 'weekly'): string {
-  const d = new Date(ts);
-  if (granularity === 'daily') {
-    d.setUTCHours(0, 0, 0, 0);
-    return d.toISOString().slice(0, 10);
-  }
-  const day = d.getUTCDay();
-  const daysFromMonday = (day + 6) % 7;
-  d.setUTCDate(d.getUTCDate() - daysFromMonday);
-  d.setUTCHours(0, 0, 0, 0);
-  return d.toISOString().slice(0, 10);
-}
-
-function parseStringArray(raw: string | null): string[] {
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((s): s is string => typeof s === 'string');
-  } catch {
-    return [];
-  }
-}
-
-function citationId(runId: string, promptId: string): string {
-  return `cit_${runId.slice(0, 8)}_${promptId.slice(0, 8)}`;
-}
-
-function buildResponseExcerpt(text: string, brand: Brand): string {
-  if (!text) return '';
-  if (text === '[NO_AI_OVERVIEW]') return text;
-  const lower = text.toLowerCase();
-  const root = brand.domain.toLowerCase().split('.')[0] ?? '';
-  const targets = [
-    brand.name.toLowerCase(),
-    brand.domain.toLowerCase(),
-    root,
-  ].filter((s) => s.length > 0);
-  let idx = -1;
-  for (const t of targets) {
-    idx = lower.indexOf(t);
-    if (idx !== -1) break;
-  }
-  if (idx === -1) return text.slice(0, 250);
-  const start = Math.max(0, idx - 100);
-  const end = Math.min(text.length, idx + 150);
-  return text.slice(start, end);
-}
-
-function pickBrandUrl(
-  brand: Brand,
-  engineHosts: string[],
-  citedHosts: string[],
-): string | null {
-  const fullDomain = brand.domain.toLowerCase();
-  const fromEngine = engineHosts.find((h) => h.includes(fullDomain));
-  if (fromEngine) return `https://${fromEngine}/`;
-  const fromExtracted = citedHosts.find((h) => h.includes(fullDomain));
-  if (fromExtracted) return `https://${fromExtracted}/`;
-  return null;
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -768,6 +134,7 @@ async function readJsonBody<T>(request: Request): Promise<T | null> {
 async function handleAdminSeed(
   request: Request,
   env: Env,
+  db: Db,
 ): Promise<Response> {
   // Body shape:
   //   { "brand_id": "acme",
@@ -777,7 +144,14 @@ async function handleAdminSeed(
   //     "competitors": ["asana.com", "monday.com"] }
   // Empty body returns a clean no-op.
   const body = await readJsonBody<SeedBrandInput>(request);
-  const result = await seedBrand(env, body);
+  const result = await seedBrand(
+    {
+      DIGESTSEO_DB: env.DIGESTSEO_DB,
+      db,
+      ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY,
+    },
+    body,
+  );
   return jsonResponse(result);
 }
 
@@ -785,6 +159,7 @@ async function handleAdminRunLive(
   request: Request,
   env: Env,
   ctx: ExecutionContext,
+  db: Db,
 ): Promise<Response> {
   const body = await readJsonBody<{
     brand_id?: string;
@@ -819,19 +194,19 @@ async function handleAdminRunLive(
   } else {
     engineNames = available;
   }
-  const brand = await getBrand(env, brandId);
+  const brand = await db.getBrand(brandId);
   if (!brand) return jsonResponse({ error: 'brand not found' }, 404);
-  const prompts = await getActivePrompts(env, brandId);
+  const prompts = await db.getActivePrompts(brandId);
   if (prompts.length === 0) {
     return jsonResponse({ error: 'no active prompts for brand' }, 400);
   }
-  // runEngines now creates the run rows then HTTP-self-fetches
+  // runEngines creates the run rows then HTTP-self-fetches
   // /admin/run-engine via env.SELF (service binding) so each engine
   // executes in its own worker invocation with its own 50-subrequest
   // budget. Passing `request` lets the orchestrator derive the
   // worker's own origin as a fallback when env.SELF_URL isn't set.
   const { run_ids, engines } = await runEngines(
-    env,
+    workerEnginesEnv(env, db),
     ctx,
     brand,
     prompts,
@@ -848,6 +223,7 @@ async function handleAdminRunLive(
 async function handleAdminGeneratePrompts(
   request: Request,
   env: Env,
+  db: Db,
 ): Promise<Response> {
   const body = await readJsonBody<{ brand_id?: string; count?: number }>(
     request,
@@ -869,10 +245,14 @@ async function handleAdminGeneratePrompts(
     typeof body?.count === 'number' && body.count > 0 && body.count <= 50
       ? body.count
       : 20;
-  const brand = await getBrand(env, brandId);
+  const brand = await db.getBrand(brandId);
   if (!brand) return jsonResponse({ error: 'brand not found' }, 404);
   try {
-    const generated = await generatePrompts(env, brand, count);
+    const generated = await generatePrompts(
+      { db, ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY },
+      brand,
+      count,
+    );
     return jsonResponse({
       brand_id: brand.id,
       prompts_inserted: generated.length,
@@ -896,6 +276,7 @@ async function handleAdminGeneratePrompts(
 async function handleAdminRunBatchSubmit(
   request: Request,
   env: Env,
+  db: Db,
 ): Promise<Response> {
   const body = await readJsonBody<{ brand_id?: string }>(request);
   const brandId = body?.brand_id;
@@ -908,15 +289,15 @@ async function handleAdminRunBatchSubmit(
       400,
     );
   }
-  const brand = await getBrand(env, brandId);
+  const brand = await db.getBrand(brandId);
   if (!brand) return jsonResponse({ error: 'brand not found' }, 404);
-  const prompts = await getActivePrompts(env, brandId);
+  const prompts = await db.getActivePrompts(brandId);
   if (prompts.length === 0) {
     return jsonResponse({ error: 'no active prompts for brand' }, 400);
   }
-  const run = await createRun(env, brand, 'chatgpt', 'batch', prompts.length);
+  const run = await db.createRun(brand, 'chatgpt', 'batch', prompts.length);
   const { batch_id } = await submitBatch(
-    { DIGESTSEO_DB: env.DIGESTSEO_DB, OPENAI_API_KEY: env.OPENAI_API_KEY },
+    { db, OPENAI_API_KEY: env.OPENAI_API_KEY },
     brand,
     prompts,
     run.id,
@@ -927,6 +308,7 @@ async function handleAdminRunBatchSubmit(
 async function handleAdminRunBatchCollect(
   request: Request,
   env: Env,
+  db: Db,
 ): Promise<Response> {
   const body = await readJsonBody<{ run_id?: string }>(request);
   const runId = body?.run_id;
@@ -939,13 +321,13 @@ async function handleAdminRunBatchCollect(
       400,
     );
   }
-  const run = await getRunById(env, runId);
+  const run = await db.getRunById(runId);
   if (!run) return jsonResponse({ error: 'run not found' }, 404);
-  const brand = await getBrand(env, run.brand_id);
+  const brand = await db.getBrand(run.brand_id);
   if (!brand) return jsonResponse({ error: 'brand not found' }, 404);
-  const prompts = await getActivePrompts(env, brand.id);
+  const prompts = await db.getActivePrompts(brand.id);
   const result = await collectBatch(
-    { DIGESTSEO_DB: env.DIGESTSEO_DB, OPENAI_API_KEY: env.OPENAI_API_KEY },
+    { db, OPENAI_API_KEY: env.OPENAI_API_KEY },
     run,
     brand,
     prompts,
@@ -953,8 +335,8 @@ async function handleAdminRunBatchCollect(
   return jsonResponse({ run_id: run.id, ...result });
 }
 
-async function handleAdminTriggerCronTest(env: Env): Promise<Response> {
-  const brandsDue = await getBrandsDueForRefresh(env);
+async function handleAdminTriggerCronTest(db: Db): Promise<Response> {
+  const brandsDue = await db.getBrandsDueForRefresh();
   return jsonResponse({ brands_due_count: brandsDue.length });
 }
 
@@ -974,6 +356,7 @@ async function handleAdminTriggerCronTest(env: Env): Promise<Response> {
 async function handleAdminRunEngine(
   request: Request,
   env: Env,
+  db: Db,
 ): Promise<Response> {
   console.log('/admin/run-engine received', {
     method: request.method,
@@ -1008,12 +391,12 @@ async function handleAdminRunEngine(
       400,
     );
   }
-  const brand = await getBrand(env, brandId);
+  const brand = await db.getBrand(brandId);
   if (!brand) {
     console.log('/admin/run-engine returning 404', { reason: 'brand not found' });
     return jsonResponse({ error: 'brand not found' }, 404);
   }
-  const prompts = await getActivePrompts(env, brandId);
+  const prompts = await db.getActivePrompts(brandId);
   if (prompts.length === 0) {
     console.log('/admin/run-engine returning 400', {
       reason: 'no active prompts for brand',
@@ -1039,8 +422,20 @@ async function handleAdminRunEngine(
     .run();
   // Idempotency: clear any prior rows for this run_id so a retry
   // produces exactly one row per prompt instead of duplicating them.
-  await deleteResponsesForRun(env, runId);
-  await runEngineInProcess(env, brand, prompts, { engine, run_id: runId });
+  await db.deleteResponsesForRun(runId);
+  await runEngineInProcess(
+    {
+      db,
+      OPENAI_API_KEY: env.OPENAI_API_KEY,
+      ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY,
+      GEMINI_API_KEY: env.GEMINI_API_KEY,
+      PERPLEXITY_API_KEY: env.PERPLEXITY_API_KEY,
+      SERPAPI_API_KEY: env.SERPAPI_API_KEY,
+    },
+    brand,
+    prompts,
+    { engine, run_id: runId },
+  );
   return jsonResponse({
     run_id: runId,
     engine,
@@ -1130,16 +525,18 @@ const defaultHandler = {
       });
     }
 
+    const db = createD1Db(env.DIGESTSEO_DB);
+
     if (url.pathname === '/admin/seed' && request.method === 'POST') {
       const denied = requireSeedSecret(request, env);
       if (denied) return denied;
-      return handleAdminSeed(request, env);
+      return handleAdminSeed(request, env, db);
     }
 
     if (url.pathname === '/admin/run-live' && request.method === 'POST') {
       const denied = requireSeedSecret(request, env);
       if (denied) return denied;
-      return handleAdminRunLive(request, env, ctx);
+      return handleAdminRunLive(request, env, ctx, db);
     }
 
     if (
@@ -1148,7 +545,7 @@ const defaultHandler = {
     ) {
       const denied = requireSeedSecret(request, env);
       if (denied) return denied;
-      return handleAdminRunBatchSubmit(request, env);
+      return handleAdminRunBatchSubmit(request, env, db);
     }
 
     if (
@@ -1157,7 +554,7 @@ const defaultHandler = {
     ) {
       const denied = requireSeedSecret(request, env);
       if (denied) return denied;
-      return handleAdminRunBatchCollect(request, env);
+      return handleAdminRunBatchCollect(request, env, db);
     }
 
     if (
@@ -1166,7 +563,7 @@ const defaultHandler = {
     ) {
       const denied = requireSeedSecret(request, env);
       if (denied) return denied;
-      return handleAdminGeneratePrompts(request, env);
+      return handleAdminGeneratePrompts(request, env, db);
     }
 
     if (
@@ -1175,13 +572,13 @@ const defaultHandler = {
     ) {
       const denied = requireSeedSecret(request, env);
       if (denied) return denied;
-      return handleAdminTriggerCronTest(env);
+      return handleAdminTriggerCronTest(db);
     }
 
     if (url.pathname === '/admin/run-engine' && request.method === 'POST') {
       const denied = requireSeedSecret(request, env);
       if (denied) return denied;
-      return handleAdminRunEngine(request, env);
+      return handleAdminRunEngine(request, env, db);
     }
 
     if (
@@ -1267,7 +664,8 @@ export default {
       );
       return;
     }
-    const brandsDue = await getBrandsDueForRefresh(env);
+    const db = createD1Db(env.DIGESTSEO_DB);
+    const brandsDue = await db.getBrandsDueForRefresh();
     console.log('scheduled trigger', {
       cron: event.cron,
       brands_due: brandsDue.length,
@@ -1276,11 +674,17 @@ export default {
     if (brandsDue.length === 0) return;
     const results = await Promise.allSettled(
       brandsDue.map(async (brand) => {
-        const prompts = await getActivePrompts(env, brand.id);
+        const prompts = await db.getActivePrompts(brand.id);
         if (prompts.length === 0) {
           return { brand_id: brand.id, skipped: true };
         }
-        return runEngines(env, ctx, brand, prompts, available);
+        return runEngines(
+          workerEnginesEnv(env, db),
+          ctx,
+          brand,
+          prompts,
+          available,
+        );
       }),
     );
     const succeeded = results.filter(

@@ -4,8 +4,8 @@
 // The caller (get_content_gaps tool) falls back to FALLBACK_RECOMMENDATIONS
 // if this function throws.
 
-import { chatCompletion as anthropicChat } from './anthropic';
-import type { Brand } from './db';
+import { chatCompletion as anthropicChat } from './anthropic.js';
+import type { Brand } from '../db/types.js';
 
 export interface AnalysisEnv {
   ANTHROPIC_API_KEY?: string;
