@@ -5,8 +5,8 @@ Thanks for being here. PRs and issues both welcome.
 ## Quick start
 
 ```bash
-git clone https://github.com/YOUR-FORK/digestseo-mcp.git
-cd digestseo-mcp
+git clone https://github.com/YOUR-FORK/mcp-geo.git
+cd mcp-geo
 npm install
 cp wrangler.example.jsonc wrangler.jsonc   # fill in your own IDs
 cp .dev.vars.example .dev.vars             # fill in your own keys
@@ -15,7 +15,7 @@ npm run dev                                # wrangler dev on localhost:8787
 
 ## Before opening a PR
 
-- `npm run typecheck` must pass.
+- `npm run typecheck` and `npm run test:unit` must pass (CI runs both on every push).
 - If your change touches `/admin/*` routes, `/mcp` tools, or D1
   schema, run the smoke tests against a deployed branch:
   `GEO_BASE_URL=https://your-preview-deploy npm run test:smoke`.

@@ -27,10 +27,10 @@
 		// after your first `wrangler deploy` — wrangler will print the
 		// URL it assigned, usually:
 		//   https://digestseo-mcp.<your-subdomain>.workers.dev
-		// HTTP-triggered paths fall back to deriving the origin from
-		// the incoming request URL, so leaving the placeholder breaks
-		// only the cron path. Cron sweeps that try to fire before this
-		// is set will log a clear error and bail.
+		// The SELF service binding routes by pathname and ignores the
+		// host, so runs work even with the placeholder in place — but
+		// set the real URL anyway to keep logs honest and future-proof
+		// any code that needs the worker's true origin.
 		"SELF_URL": "https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev"
 	},
 	// Service binding back to this same worker. /admin/run-live fans
@@ -91,6 +91,8 @@
 	//   - PERPLEXITY_API_KEY  (Perplexity engine — paid)
 	//   - SERPAPI_API_KEY     (Google AI Overviews engine — paid)
 	//   - SEED_SECRET         (required — gates /admin/* routes)
+	//   - CONNECT_SECRET      (recommended — gates the OAuth connect flow;
+	//                          without it anyone with the URL can connect)
 	//   - TURNSTILE_SITE_KEY  (optional — for forks adding a public /check route)
 	//   - TURNSTILE_SECRET_KEY (optional — same)
 }

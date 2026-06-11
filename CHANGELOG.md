@@ -2,21 +2,33 @@
 
 All notable changes to this project are documented here. The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.2.1] — unreleased
+## [0.2.1] — June 2026
+
+A security + accuracy pass ahead of wider distribution.
 
 ### Added
 
+- Optional `CONNECT_SECRET` secret. When set, the browser step of the OAuth connect flow shows a one-field form and only completes when the secret matches. Without it the OSS build keeps its auto-completing single-dev-user flow — which means anyone who knows the worker URL can connect an MCP client and call `refresh_brand` (spending your engine API credits). Recommended for every deployment whose URL is shared anywhere.
 - Per-brand `aliases` and `exclude_terms` (`migrations/0005_brand_alias_exclude.sql`, `Brand` in `src/db.ts`, `SeedBrandInput` in `src/seed.ts`). Aliases are extra terms that always count as a mention; exclude terms suppress the bare-word match on the brand name and domain root — so "Monday" the brand stops matching "monday" the weekday — while the full domain and aliases still count. `extractCitations` now matches through a `mentionsTermSet` term set; its exported signature is unchanged. Apply 0005 to add the `aliases_json` + `exclude_terms_json` columns; existing brands read as empty arrays and behave exactly as before.
-- `tests/matching.test.ts` — first unit test (Node's built-in test runner via `tsx`, run with `npm run test:unit`). Covers excluded bare words, full-domain matches that survive exclusion, root terms not matching inside a larger word, and competitor word matches.
+- `SECURITY.md` — security model, trust boundaries, and private vulnerability reporting.
+- GitHub Actions CI (`.github/workflows/ci.yml`): `tsc --noEmit` + unit tests on every push and PR.
+- Unit test suite (`npm run test:unit`, Node test runner + tsx): `tests/matching.test.ts` covers brand/competitor mention matching (excluded bare words, full-domain matches that survive exclusion, root terms not matching inside a larger word); `tests/unit/citations.test.ts` and `tests/unit/scoring.test.ts` cover citation extraction (`extractCitations`, `hostMatchesDomain`) and score aggregation (`computeOverallScore`). These are the pure functions every score flows through; the smoke suite still covers the deployed Worker end-to-end.
+- `migrations/README.md` — how to apply migrations and why files must never be renumbered.
+- README: Claude Code connect instructions (`claude mcp add --transport http`), architecture diagram, security section.
 
 ### Fixed
 
-- Word-boundary brand/competitor matching in `src/openai.ts`. `mentionsTerm` used `haystack.includes(root)`, a raw substring test: a brand whose domain root is a common word (`monday.com` → "monday", `notion.so` → "notion") false-positived on the everyday word, and any term matched inside a larger word ("motion" inside "promotional"). Matching now uses Unicode-aware boundary checks — `(?<![\p{L}\p{N}])…(?![\p{L}\p{N}])` — for the brand name and the domain root, while the full domain is still accepted as a high-confidence substring. The exported `extractCitations` signature is unchanged. (The homograph case — a bare root term that is itself a common word, e.g. "monday"/"notion" — is intentionally left matching the common word; that's a separate later task.)
+- Word-boundary brand/competitor matching in `src/openai.ts`. `mentionsTerm` used `haystack.includes(root)`, a raw substring test: a brand whose domain root is a common word (`monday.com` → "monday", `notion.so` → "notion") false-positived on the everyday word, and any term matched inside a larger word ("motion" inside "promotional"). Matching now uses Unicode-aware boundary checks — `(?<![\p{L}\p{N}])…(?![\p{L}\p{N}])` — for the brand name and the domain root, while the full domain is still accepted as a high-confidence substring. The exported `extractCitations` signature is unchanged. (The homograph case — a bare root term that is itself a common word, e.g. "monday"/"notion" — is handled via the new per-brand `exclude_terms`.)
+- **Linked-citation checks require the exact brand domain or a subdomain of it.** Previously a substring check meant `notacme.com` counted as a link to `acme.com`. Applies to `extractCitations`, the Perplexity and AI Overviews engine-citation merge, and `get_citations`' `cited_url` selection — all through the new shared `hostMatchesDomain` helper.
 - NUL → unit-separator hash delimiter in `hashPrompt` (`src/openai.ts`). The field join used two literal NUL (`\x00`) bytes, which made git classify the whole file as binary and refuse to render its diffs. It now joins with the ASCII unit separator through a named `HASH_FIELD_SEP = '\x1f'` constant. Hash outputs change, so existing `shared_prompt_cache` rows simply miss and expire on their TTL — no cache clear or migration required.
+- **`get_visibility_history` matches `check_visibility`'s stance on partial runs.** Runs interrupted mid-flight (stuck at `in_progress`) now count toward history via `COALESCE(completed_at, started_at)`, and runs with zero ok rows are excluded entirely instead of charting as a fake score of 0.
 
 ### Changed
 
 - Docs (`README.md`, `SETUP.md`) now recommend **OpenAI + Anthropic (Claude)** as the starting engine pair instead of the Gemini free tier. The Gemini free tier 429s for brands with more than ~5 prompts (excluding it from scoring), and Google AI Overviews frequently returns `NO_AI_OVERVIEW` (scored as a zero), so the cheapest documented path produced misleading first-run data. Gemini and SerpAPI stay documented as opt-in engines; engine availability is unchanged and remains key-driven (`getAvailableEngines` untouched).
+- `SEED_SECRET` and `CONNECT_SECRET` comparisons are constant-time.
+- MCP server version string now tracks the package version (was stuck at an older value).
+- Runtime dependencies (`@cloudflare/workers-oauth-provider`, `@modelcontextprotocol/sdk`, `agents`, `zod`) moved from `devDependencies` to `dependencies` — wrangler bundles either way, but the manifest now tells the truth.
 
 ## [0.2.0] — May 2026
 

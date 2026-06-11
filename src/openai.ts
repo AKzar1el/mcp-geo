@@ -155,6 +155,20 @@ function mentionsTermSet(text: string, terms: MatchTerms): boolean {
   return false;
 }
 
+// True when host IS the domain or a subdomain of it. A substring check
+// would also match lookalike domains that merely end with the brand
+// domain — "notacme.com".includes("acme.com") is true.
+export function hostMatchesDomain(host: string, domain: string): boolean {
+  const d = domain
+    .replace(/^https?:\/\//i, '')
+    .replace(/^www\./i, '')
+    .split('/')[0]
+    .toLowerCase();
+  if (d.length === 0) return false;
+  const h = host.toLowerCase();
+  return h === d || h.endsWith(`.${d}`);
+}
+
 function normalizeHost(rawUrl: string): string | null {
   try {
     const u = new URL(rawUrl);
@@ -207,9 +221,11 @@ export function extractCitations(
 
   // Linked-citation check uses the full brand.domain (not the root term).
   // Mentions tolerate paraphrase ("we use Example"), but a link counts as a
-  // citation only if the URL points at the brand's actual domain.
-  const fullDomain = brand.domain.toLowerCase();
-  const brandCitedWithLink = hosts.some((h) => h.includes(fullDomain));
+  // citation only if the URL points at the brand's actual domain (or a
+  // subdomain of it).
+  const brandCitedWithLink = hosts.some((h) =>
+    hostMatchesDomain(h, brand.domain),
+  );
 
   const competitorsMentioned: string[] = [];
   for (const competitor of brand.competitors) {

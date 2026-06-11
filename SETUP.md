@@ -100,6 +100,12 @@ npx wrangler secret put SEED_SECRET
 
 Paste any high-entropy string when prompted (e.g. `openssl rand -hex 32`). Save it — you'll need it as the `X-Seed-Secret` header for admin endpoints.
 
+**Strongly recommended:** also set a connect secret. Without it, anyone who discovers your worker URL can connect an MCP client and trigger scans that spend your engine API credits. With it, the browser step of the connect flow asks for the secret before issuing a token.
+
+```bash
+npx wrangler secret put CONNECT_SECRET
+```
+
 Then add API keys for whichever engines you want to use. Each is opt-in — engines without keys are silently skipped.
 
 ```bash
@@ -146,7 +152,7 @@ Service bindings route by request pathname; the host part of the URL doesn't act
 }
 ```
 
-If you leave the placeholder in place, HTTP-triggered runs (via `/admin/run-live` or the `refresh_brand` MCP tool while a Claude.ai connector is talking to the worker) still work because the orchestrator falls back to deriving the origin from the inbound request. The cron path (no inbound request to derive from) will log a clear error and bail until `SELF_URL` is set.
+Because the service binding routes by pathname and ignores the host portion of the URL, runs actually work even while the placeholder is still in place. Setting `SELF_URL` to your real URL is still worth the 10 seconds: it keeps logs honest and protects you if a future version (or your fork) ever needs the worker's true origin.
 
 ## 9 — Apply migrations
 
@@ -163,6 +169,7 @@ npx wrangler d1 execute digestseo-db --remote --file=migrations/0001_initial.sql
 npx wrangler d1 execute digestseo-db --remote --file=migrations/0002_fail_stuck_runs.sql
 npx wrangler d1 execute digestseo-db --remote --file=migrations/0003_perplexity_citations.sql
 npx wrangler d1 execute digestseo-db --remote --file=migrations/0004_response_status.sql
+npx wrangler d1 execute digestseo-db --remote --file=migrations/0005_brand_alias_exclude.sql
 ```
 
 ## 10 — Deploy
@@ -224,7 +231,7 @@ Claude.ai → Settings → Connectors → Add custom connector:
 https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev/mcp
 ```
 
-The OAuth handshake auto-completes in the OSS build (single dev user, no Google/GitHub round-trip).
+The OAuth handshake auto-completes in the OSS build (single dev user, no Google/GitHub round-trip). If you set `CONNECT_SECRET` in Step 7, the browser step shows a one-field form first — enter the secret and the handshake completes.
 
 In a Claude.ai conversation, try:
 
