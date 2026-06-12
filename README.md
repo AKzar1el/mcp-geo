@@ -1,5 +1,45 @@
 # DigestSEO — AI Visibility MCP for SEO & GEO
 
+[![npm version](https://img.shields.io/npm/v/digestseo-mcp)](https://www.npmjs.com/package/digestseo-mcp)
+[![MCP Registry](https://img.shields.io/badge/MCP_Registry-io.github.AKzar1el%2Fdigestseo--mcp-0098FF)](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.AKzar1el/digestseo-mcp)
+
+## Quick Install
+
+Runs locally over stdio with your own API keys — all data stays on your machine (see [Privacy Policy](#privacy-policy)). Set at least one engine key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `PERPLEXITY_API_KEY`, `SERPAPI_API_KEY`); engines without a key skip gracefully.
+
+**Claude Desktop / any MCP client (npx):**
+
+```json
+{
+  "mcpServers": {
+    "digestseo": {
+      "command": "npx",
+      "args": ["-y", "digestseo-mcp"],
+      "env": {
+        "OPENAI_API_KEY": "sk-...",
+        "GEMINI_API_KEY": "your_key_here"
+      }
+    }
+  }
+}
+```
+
+**Claude Code:**
+
+```bash
+claude mcp add --transport stdio digestseo -s user --env GEMINI_API_KEY=your_key_here -- npx -y digestseo-mcp
+```
+
+**Cursor:**
+
+[![Add to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=digestseo&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImRpZ2VzdHNlby1tY3AiXSwiZW52Ijp7Ik9QRU5BSV9BUElfS0VZIjoiIiwiQU5USFJPUElDX0FQSV9LRVkiOiIiLCJHRU1JTklfQVBJX0tFWSI6IiIsIlBFUlBMRVhJVFlfQVBJX0tFWSI6IiIsIlNFUlBBUElfQVBJX0tFWSI6IiJ9fQ%3D%3D)
+
+**Claude Desktop extension (one-click):** download the `.mcpb` bundle from the [latest release](https://github.com/AKzar1el/mcp-geo/releases/latest) and double-click it — Claude Desktop prompts for the API keys.
+
+AI agents installing this server: follow [llms-install.md](./llms-install.md). Prefer a remote server with cron auto-refresh? Self-host on Cloudflare Workers below.
+
+---
+
 Track how your brand is cited by ChatGPT, Claude, Perplexity, Gemini, and Google AI Overviews — through MCP. Self-hosted on Cloudflare Workers, works with Claude Desktop, Claude.ai web (custom connectors), Cursor, Codex CLI, and any MCP-compatible client.
 
 > **Prefer zero setup?** Try the hosted version at [digestseo.com](https://digestseo.com) — managed Cloudflare infra, no API keys to manage, multi-brand, scheduled refresh, web UI. Waitlist now open. [Join waitlist →](https://digestseo.com) <!-- TODO: replace with real waitlist URL once landing page is live -->
