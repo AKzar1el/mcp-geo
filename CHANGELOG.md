@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented here. The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+A second distribution path: a local stdio CLI where users bring their own API keys, published to npm as `digestseo-mcp`, plus registry/marketplace metadata. The Cloudflare Workers path is unchanged.
+
+### Added
+
+- **Local stdio CLI** (`npx -y digestseo-mcp`): the same MCP tools backed by a local SQLite database (`~/.digestseo/digestseo.sqlite`, override with `DIGESTSEO_DB_PATH`). Engines run inline and sequentially — no fan-out needed locally. All logging goes to stderr; stdout is the JSON-RPC channel.
+- **Local brand-management tools** (CLI only): `track_brand` (creates a brand + generated prompt set; falls back to three starter prompts without `ANTHROPIC_API_KEY`), `list_brands` (brands with active prompt counts), `generate_prompts` (regenerate a brand's prompt set via Claude Haiku). On Workers deployments these operations remain behind the `X-Seed-Secret`-gated `/admin/*` routes; the Worker MCP surface still exposes exactly the original six tools.
+- `src/core/` — runtime-agnostic core shared by the Worker and the CLI: engine callers, scoring, prompt generation, content-gap analysis, brand seeding, and `registerTools`/`registerLocalManagementTools`.
+- `src/db/types.ts` (`Db` contract), `src/db/d1.ts` (D1 adapter), `src/db/sqlite.ts` (better-sqlite3 adapter with a `_migrations`-tracked migration runner).
+- Packaging/metadata: npm `bin` + `mcpName`, `server.json` for the official MCP registry, `manifest.json` + `.mcpbignore` for the MCPB desktop extension, `Dockerfile`, `glama.json`, `llms-install.md`, README Quick Install section, CI + release-publish GitHub Actions workflows.
+- Unit tests for the sqlite adapter and core seeding (`npm run test:unit`), and a stdio smoke test that drives the built CLI over JSON-RPC (`npm run test:stdio`).
+
+### Fixed
+
+- Fallback seed prompts no longer contain a literal `$CATEGORY` placeholder — it is substituted with the brand's category (or name) before insert. Affects the Worker's `/admin/seed` fallback path too.
+
 ## [0.2.0] — May 2026
 
 A correctness + architecture pass driven by an end-to-end debugging session on the production fork. Every fix is described in terms of what the prior version got wrong.

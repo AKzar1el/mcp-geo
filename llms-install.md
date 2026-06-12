@@ -115,35 +115,29 @@ Open Cline → MCP Servers → Configure MCP Servers (this opens `cline_mcp_sett
 
 ### Verify the install
 
-Ask the client to list tools. Exactly six must appear: `check_visibility`, `get_visibility_history`, `compare_competitors`, `get_citations`, `get_content_gaps`, `refresh_brand`.
+Ask the client to list tools. Exactly nine must appear: `check_visibility`, `get_visibility_history`, `compare_competitors`, `get_citations`, `get_content_gaps`, `refresh_brand`, `track_brand`, `list_brands`, `generate_prompts`.
 
-### Known limitation in v0.2.x: seeding the first brand
+### First brand: track → refresh → check
 
-The six tools read and refresh brands that already exist in the database; the local CLI does not yet expose a tool that creates one (the Workers deployment does this via `POST /admin/seed`). Until a seeding tool ships, create the brand row directly in the SQLite database. Run this with any SQLite client against `~/.digestseo/digestseo.sqlite` **after the server has started once** (so migrations have been applied), replacing the four obvious values:
+The database starts empty. Run this three-call sequence through the MCP client (natural-language equivalent: "Track acme.com as brand `acme` and run the first scan"):
 
-```sql
-INSERT OR IGNORE INTO users (id, email, plan, created_at, updated_at)
-VALUES ('local-user', 'local@localhost', 'free',
-        CAST(strftime('%s','now') AS INTEGER) * 1000,
-        CAST(strftime('%s','now') AS INTEGER) * 1000);
+1. **`track_brand`** with arguments:
 
-INSERT OR IGNORE INTO brands
-  (id, user_id, domain, name, category, competitors_json,
-   refresh_frequency, created_at, updated_at)
-VALUES ('acme', 'local-user', 'acme.com', 'Acme Project Tool',
-        'Project management software',
-        '["asana.com","monday.com"]', 'weekly',
-        CAST(strftime('%s','now') AS INTEGER) * 1000,
-        CAST(strftime('%s','now') AS INTEGER) * 1000);
+   ```json
+   {
+     "brand_id": "acme",
+     "name": "Acme Project Tool",
+     "domain": "acme.com",
+     "category": "Project management software",
+     "competitors": ["asana.com", "monday.com"]
+   }
+   ```
 
-INSERT INTO prompts (id, brand_id, text, intent_stage, shape, active, created_at)
-VALUES
-  (lower(hex(randomblob(16))), 'acme', 'best project management software', 'awareness', 'best X', 1, CAST(strftime('%s','now') AS INTEGER) * 1000),
-  (lower(hex(randomblob(16))), 'acme', 'asana alternatives', 'comparison', 'alternatives to X', 1, CAST(strftime('%s','now') AS INTEGER) * 1000),
-  (lower(hex(randomblob(16))), 'acme', 'project management tool for small teams', 'decision', 'X for Y', 1, CAST(strftime('%s','now') AS INTEGER) * 1000);
-```
+   Creates the brand and generates 20 buyer-intent prompts via Claude Haiku when `ANTHROPIC_API_KEY` is set; without it you get 3 generic starter prompts (`prompt_source: "fallback"`) — add the key later and call `generate_prompts` with `{"brand_id": "acme"}` to upgrade.
 
-Then call `refresh_brand` with `brand_id` `acme`, wait for it to return, and `check_visibility` will have data.
+2. **`refresh_brand`** with `{"brand_id": "acme"}` — runs every configured engine inline; progress is logged to stderr.
+
+3. **`check_visibility`** with `{"brand_id": "acme"}` — returns the per-engine scores. `list_brands` (no arguments) recalls the `brand_id` later.
 
 ---
 

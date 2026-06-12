@@ -23,6 +23,11 @@ import {
   type LosingPromptSummary,
 } from './content-gap-analysis.js';
 import { computeOverallScore } from './scoring.js';
+import { generatePrompts } from './prompt-generation.js';
+import { seedBrand } from './seed.js';
+
+const BRAND_NOT_FOUND_MESSAGE =
+  'Brand not found. Create it first: use the track_brand tool (local CLI), or POST /admin/seed on a Cloudflare Workers deployment.';
 
 export interface Deps {
   db: Db;
@@ -75,9 +80,7 @@ export function registerTools(server: McpServer, deps: Deps): void {
     async ({ brand_id, engines }) => {
       const brand = await deps.db.getBrand(brand_id);
       if (!brand) {
-        throw new Error(
-          'Brand not found. Seed the brand via POST /admin/seed first.',
-        );
+        throw new Error(BRAND_NOT_FOUND_MESSAGE);
       }
 
       // getLatestCompletedRun anchors on EXISTS(ok rows) rather than
@@ -204,9 +207,7 @@ export function registerTools(server: McpServer, deps: Deps): void {
     async ({ brand_id, competitor_domains, days }) => {
       const brand = await deps.db.getBrand(brand_id);
       if (!brand) {
-        throw new Error(
-          'Brand not found. Seed the brand via POST /admin/seed first.',
-        );
+        throw new Error(BRAND_NOT_FOUND_MESSAGE);
       }
       const targets =
         competitor_domains && competitor_domains.length > 0
@@ -353,9 +354,7 @@ export function registerTools(server: McpServer, deps: Deps): void {
     async ({ brand_id, days, engine }) => {
       const brand = await deps.db.getBrand(brand_id);
       if (!brand) {
-        throw new Error(
-          'Brand not found. Seed the brand via POST /admin/seed first.',
-        );
+        throw new Error(BRAND_NOT_FOUND_MESSAGE);
       }
       const since = Date.now() - days * 86_400_000;
       const results = await deps.db.getCitationRows(brand_id, since, engine);
@@ -408,9 +407,7 @@ export function registerTools(server: McpServer, deps: Deps): void {
     async ({ brand_id, max_recommendations }) => {
       const brand = await deps.db.getBrand(brand_id);
       if (!brand) {
-        throw new Error(
-          'Brand not found. Seed the brand via POST /admin/seed first.',
-        );
+        throw new Error(BRAND_NOT_FOUND_MESSAGE);
       }
 
       const losingByPrompt = new Map<
@@ -532,14 +529,12 @@ export function registerTools(server: McpServer, deps: Deps): void {
     async ({ brand_id, engines }) => {
       const brand = await deps.db.getBrand(brand_id);
       if (!brand) {
-        throw new Error(
-          'Brand not found. Seed the brand via POST /admin/seed first.',
-        );
+        throw new Error(BRAND_NOT_FOUND_MESSAGE);
       }
       const prompts = await deps.db.getActivePrompts(brand_id);
       if (prompts.length === 0) {
         throw new Error(
-          'Brand has no active prompts. Seed it again or call /admin/generate-prompts.',
+          'Brand has no active prompts. Run the generate_prompts tool (local CLI) or POST /admin/generate-prompts (Workers deployment).',
         );
       }
       const requested = engines as EngineName[] | undefined;
@@ -575,6 +570,205 @@ export function registerTools(server: McpServer, deps: Deps): void {
       };
     },
   );
+}
+
+export interface ManagementDeps {
+  db: Db;
+  env: EngineKeys;
+}
+
+// Local brand-management tools, registered ONLY by the stdio CLI
+// (src/cli.ts). The Worker deliberately does not expose these over MCP:
+// on a hosted deployment, brand creation and prompt regeneration stay
+// behind the X-Seed-Secret-gated /admin/* routes, while the OSS
+// Worker's OAuth flow auto-approves any connector.
+export function registerLocalManagementTools(
+  server: McpServer,
+  deps: ManagementDeps,
+): void {
+  server.registerTool(
+    'track_brand',
+    {
+      description:
+        "Start tracking a brand's AI visibility. Creates the brand in the local database and generates buyer-intent prompts for it — via Claude Haiku when ANTHROPIC_API_KEY is configured, otherwise three generic starter prompts (upgrade later with generate_prompts). Use when the user says 'track my brand', 'add my site', 'start monitoring acme.com', or when another tool reported the brand doesn't exist. After tracking, call refresh_brand to run the first scan.",
+      inputSchema: {
+        brand_id: z
+          .string()
+          .regex(
+            /^[a-z0-9][a-z0-9_-]{0,63}$/i,
+            'brand_id must be 1-64 characters: letters, digits, hyphens, underscores (e.g. "acme")',
+          ),
+        name: z.string().min(1).max(200),
+        domain: z.string().min(3).max(253),
+        category: z.string().min(1).max(200).optional(),
+        competitors: z.array(z.string().min(3).max(253)).max(20).optional(),
+        prompt_count: z.number().int().min(1).max(50).default(20),
+      },
+      annotations: {
+        readOnlyHint: false,
+        openWorldHint: true,
+      },
+    },
+    async ({ brand_id, name, domain, category, competitors, prompt_count }) => {
+      const normalizedDomain = normalizeDomainInput(domain);
+      if (!normalizedDomain) {
+        throw new Error(
+          `'${domain}' does not look like a domain. Pass a bare domain like 'acme.com' (no scheme or path needed).`,
+        );
+      }
+      const normalizedCompetitors: string[] = [];
+      for (const raw of competitors ?? []) {
+        const host = normalizeDomainInput(raw);
+        if (!host) {
+          throw new Error(
+            `Competitor '${raw}' does not look like a domain. Pass bare domains like 'asana.com'.`,
+          );
+        }
+        if (host === normalizedDomain) continue;
+        if (!normalizedCompetitors.includes(host)) {
+          normalizedCompetitors.push(host);
+        }
+      }
+
+      const result = await seedBrand(
+        { db: deps.db, ANTHROPIC_API_KEY: deps.env.ANTHROPIC_API_KEY },
+        {
+          brand_id,
+          name,
+          domain: normalizedDomain,
+          category,
+          competitors: normalizedCompetitors,
+        },
+        prompt_count,
+      );
+
+      let next_steps: string;
+      if (result.seeded) {
+        next_steps =
+          result.prompt_source === 'fallback'
+            ? `Tracked with ${result.prompts_inserted} generic starter prompts (no ANTHROPIC_API_KEY configured for prompt generation). Call refresh_brand with brand_id '${result.brand_id}' to run the first scan; add ANTHROPIC_API_KEY and call generate_prompts later for category-specific prompts.`
+            : `Call refresh_brand with brand_id '${result.brand_id}' to run the first scan, then check_visibility for the results.`;
+      } else if (result.reason === 'already exists') {
+        next_steps = `Brand '${result.brand_id}' is already tracked — nothing was changed. Use list_brands to inspect it, generate_prompts to refresh its prompt set, or pick a different brand_id.`;
+      } else {
+        next_steps =
+          'Nothing was created — brand_id, name, and domain are all required.';
+      }
+
+      const payload = {
+        ...result,
+        domain: result.seeded ? normalizedDomain : undefined,
+        competitors: result.seeded ? normalizedCompetitors : undefined,
+        next_steps,
+      };
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify(payload, null, 2) },
+        ],
+      };
+    },
+  );
+
+  server.registerTool(
+    'list_brands',
+    {
+      description:
+        "List every brand tracked in the local database, with domain, category, competitors, refresh frequency, and how many prompts are active. Use when the user asks 'which brands am I tracking?' or to look up the brand_id the other tools need.",
+      inputSchema: {},
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false,
+      },
+    },
+    async () => {
+      const brands = await deps.db.listBrands();
+      const payload = {
+        brands: brands.map((b) => ({
+          brand_id: b.id,
+          name: b.name,
+          domain: b.domain,
+          category: b.category,
+          competitors: b.competitors,
+          refresh_frequency: b.refresh_frequency,
+          active_prompts: b.active_prompts,
+          created_at: new Date(b.created_at).toISOString(),
+        })),
+        hint:
+          brands.length === 0
+            ? 'No brands tracked yet — call track_brand to add one.'
+            : undefined,
+      };
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify(payload, null, 2) },
+        ],
+      };
+    },
+  );
+
+  server.registerTool(
+    'generate_prompts',
+    {
+      description:
+        "Regenerate the buyer-intent prompt set for a tracked brand using Claude Haiku (requires ANTHROPIC_API_KEY). Replaces the brand's active prompts; historical run data is preserved. Use when the user wants better or more prompts, or to upgrade from the generic starter prompts after adding an Anthropic key.",
+      inputSchema: {
+        brand_id: z.string(),
+        count: z.number().int().min(1).max(50).default(20),
+      },
+      annotations: {
+        readOnlyHint: false,
+        openWorldHint: true,
+      },
+    },
+    async ({ brand_id, count }) => {
+      if (!deps.env.ANTHROPIC_API_KEY) {
+        throw new Error(
+          'ANTHROPIC_API_KEY not set — prompt generation requires Claude Haiku. Add the key to your MCP client config and restart the server.',
+        );
+      }
+      const brand = await deps.db.getBrand(brand_id);
+      if (!brand) {
+        throw new Error(BRAND_NOT_FOUND_MESSAGE);
+      }
+      const generated = await generatePrompts(
+        { db: deps.db, ANTHROPIC_API_KEY: deps.env.ANTHROPIC_API_KEY },
+        brand,
+        count,
+      );
+      const payload = {
+        brand_id,
+        prompts_inserted: generated.length,
+        prompt_source: 'generated' as const,
+        prompts: generated.map((p) => p.text),
+        next_steps: `Call refresh_brand with brand_id '${brand_id}' to scan the new prompt set.`,
+      };
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify(payload, null, 2) },
+        ],
+      };
+    },
+  );
+}
+
+// 'https://www.Acme.com/pricing?x=1' → 'acme.com'. Returns null when
+// the input doesn't reduce to something domain-shaped. Citation
+// matching compares lowercased hostnames with their www. prefix
+// stripped (see core/openai.ts normalizeHost), so storing the brand
+// domain in that same shape is what makes brand_cited_with_link work.
+function normalizeDomainInput(raw: string): string | null {
+  let s = raw.trim().toLowerCase();
+  s = s.replace(/^[a-z][a-z0-9+.-]*:\/\//, ''); // scheme
+  s = s.split('/')[0] ?? s; // path
+  s = s.split('?')[0] ?? s; // query without a path
+  s = s.split('#')[0] ?? s; // fragment without a path
+  s = s.replace(/:\d+$/, ''); // port
+  if (s.startsWith('www.')) s = s.slice(4);
+  if (s.length === 0 || s.length > 253) return null;
+  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(s)) {
+    return null;
+  }
+  return s;
 }
 
 function bucketStart(ts: number, granularity: 'daily' | 'weekly'): string {

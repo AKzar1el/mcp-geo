@@ -36,6 +36,8 @@ claude mcp add --transport stdio digestseo -s user --env GEMINI_API_KEY=your_key
 
 **Claude Desktop extension (one-click):** download the `.mcpb` bundle from the [latest release](https://github.com/AKzar1el/mcp-geo/releases/latest) and double-click it — Claude Desktop prompts for the API keys.
 
+**First run:** ask your client to *"track acme.com as brand `acme`, then refresh it"* — `track_brand` creates the brand with generated prompts, `refresh_brand` runs the first scan, `check_visibility` shows the scores.
+
 AI agents installing this server: follow [llms-install.md](./llms-install.md). Prefer a remote server with cron auto-refresh? Self-host on Cloudflare Workers below.
 
 ---
@@ -94,6 +96,14 @@ Track how your brand is cited by ChatGPT, Claude, Perplexity, Gemini, and Google
 | `get_citations` | The actual citation events — prompt, engine, response excerpt, citation type, brand URL when present. | `brand_id`, optional `days`, optional `engine` filter |
 | `get_content_gaps` | Prioritized Claude-Haiku-generated content recommendations targeting your losing prompts. | `brand_id`, optional `max_recommendations` (1-10) |
 | `refresh_brand` | Manually trigger a fresh scan across every engine whose API key is set. | `brand_id`, optional `engines[]` filter |
+
+The local stdio CLI (npx, desktop extension, Docker) additionally provides brand management — on a Workers deployment the same operations live behind the `X-Seed-Secret`-gated `/admin/*` routes instead:
+
+| Tool (local CLI only) | What it does | What you provide |
+|---|---|---|
+| `track_brand` | Start tracking a brand: creates it locally and generates its buyer-intent prompt set (Claude Haiku when `ANTHROPIC_API_KEY` is set, three starter prompts otherwise). | `brand_id`, `name`, `domain`, optional `category`, `competitors[]`, `prompt_count` |
+| `list_brands` | List tracked brands with domains, competitors, and active prompt counts. | — |
+| `generate_prompts` | Regenerate a brand's prompt set via Claude Haiku (replaces active prompts, keeps history). | `brand_id`, optional `count` (default 20) |
 
 ---
 

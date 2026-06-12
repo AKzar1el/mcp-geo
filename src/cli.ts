@@ -17,7 +17,7 @@ import {
   type EngineKeys,
   type RunEnginesResult,
 } from './core/engines.js';
-import { registerTools } from './core/tools.js';
+import { registerLocalManagementTools, registerTools } from './core/tools.js';
 import { defaultDbPath, openSqliteDb } from './db/sqlite.js';
 import type { Brand, Prompt } from './db/types.js';
 import type { EngineName } from './core/engines.js';
@@ -109,6 +109,9 @@ async function main(): Promise<void> {
       return { run_ids, engines };
     },
   });
+  // Local-only brand management (track_brand, list_brands,
+  // generate_prompts). The Worker keeps these behind /admin/* instead.
+  registerLocalManagementTools(server, { db, env });
 
   const transport = new StdioServerTransport();
   await server.connect(transport);

@@ -30,13 +30,17 @@ const EXPECTED_TOOLS = [
   'get_citations',
   'get_content_gaps',
   'refresh_brand',
+  // Local management tools — CLI only, not present on the Worker.
+  'track_brand',
+  'list_brands',
+  'generate_prompts',
 ];
 
 function rpc(child, body) {
   child.stdin.write(JSON.stringify(body) + '\n');
 }
 
-test('stdio CLI: initialize + tools/list returns all six tools, stdout stays pure JSON', async () => {
+test('stdio CLI: initialize + tools/list returns all nine tools, track_brand→list_brands works offline, stdout stays pure JSON', async () => {
   assert.ok(
     existsSync(CLI_PATH),
     `CLI artifact not found at ${CLI_PATH} — run \`npm run build\` first`,
@@ -132,6 +136,63 @@ test('stdio CLI: initialize + tools/list returns all six tools, stdout stays pur
       EXPECTED_TOOLS.length,
       `expected exactly ${EXPECTED_TOOLS.length} tools, got ${names.size}`,
     );
+
+    // End-to-end seeding flow, fully offline: with no ANTHROPIC_API_KEY
+    // the generator falls back to the three starter prompts, so
+    // track_brand never touches the network.
+    rpc(child, {
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'tools/call',
+      params: {
+        name: 'track_brand',
+        arguments: {
+          brand_id: 'smoke-brand',
+          name: 'Smoke Test Brand',
+          domain: 'https://www.Smoke-Test.example/pricing',
+          category: 'Smoke testing software',
+          competitors: ['rival.example'],
+        },
+      },
+    });
+    const tracked = await waitFor(3);
+    assert.ok(
+      !tracked.error,
+      `track_brand errored: ${JSON.stringify(tracked.error)}`,
+    );
+    assert.ok(
+      !tracked.result?.isError,
+      `track_brand returned isError: ${JSON.stringify(tracked.result)}`,
+    );
+    const trackPayload = JSON.parse(tracked.result.content[0].text);
+    assert.equal(trackPayload.seeded, true);
+    assert.equal(trackPayload.brand_id, 'smoke-brand');
+    assert.equal(trackPayload.prompt_source, 'fallback');
+    assert.equal(trackPayload.prompts_inserted, 3);
+    assert.equal(
+      trackPayload.domain,
+      'smoke-test.example',
+      'domain was not normalized (scheme/www/path stripping)',
+    );
+
+    rpc(child, {
+      jsonrpc: '2.0',
+      id: 4,
+      method: 'tools/call',
+      params: { name: 'list_brands', arguments: {} },
+    });
+    const listed = await waitFor(4);
+    assert.ok(
+      !listed.error && !listed.result?.isError,
+      `list_brands failed: ${JSON.stringify(listed.error ?? listed.result)}`,
+    );
+    const listPayload = JSON.parse(listed.result.content[0].text);
+    const smoke = (listPayload.brands ?? []).find(
+      (b) => b.brand_id === 'smoke-brand',
+    );
+    assert.ok(smoke, 'tracked brand missing from list_brands');
+    assert.equal(Number(smoke.active_prompts), 3);
+    assert.deepEqual(smoke.competitors, ['rival.example']);
 
     // stdout purity: every line the process ever wrote must be JSON.
     for (const line of stdoutLines) {
