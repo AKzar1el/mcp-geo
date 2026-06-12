@@ -1,0 +1,73 @@
+# Publishes a GitHub release to npm and then to the official MCP
+# registry, following
+# https://github.com/modelcontextprotocol/registry/blob/main/docs/modelcontextprotocol-io/github-actions.mdx
+#
+# Job 1 (npm) needs the NPM_TOKEN repository secret (an npm automation
+# token). Job 2 authenticates via GitHub OIDC — no secret required; the
+# io.github.AKzar1el/* namespace is proven by the workflow's identity.
+
+name: Publish (npm + MCP Registry)
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write # GitHub OIDC for mcp-publisher login github-oidc
+
+jobs:
+  publish-npm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Single source of truth is package.json. server.json (top-level
+      # AND its npm package entry) must match exactly; manifest.json
+      # (MCPB bundle) drift is surfaced as a warning.
+      - name: Version sync check (package.json <-> server.json)
+        run: |
+          PKG=$(node -p "require('./package.json').version")
+          SRV=$(node -p "require('./server.json').version")
+          SRV_PKG=$(node -p "require('./server.json').packages[0].version")
+          MANIFEST=$(node -p "require('./manifest.json').version")
+          echo "package.json=$PKG server.json=$SRV server.json#packages[0]=$SRV_PKG manifest.json=$MANIFEST"
+          if [ "$PKG" != "$SRV" ] || [ "$PKG" != "$SRV_PKG" ]; then
+            echo "::error::version drift: package.json=$PKG but server.json=$SRV / packages[0]=$SRV_PKG — update server.json before releasing"
+            exit 1
+          fi
+          if [ "$PKG" != "$MANIFEST" ]; then
+            echo "::warning::manifest.json version ($MANIFEST) differs from package.json ($PKG) — the next .mcpb bundle will carry a stale version"
+          fi
+
+      # prepublishOnly runs typecheck + unit tests + build before the
+      # tarball is created.
+      - name: Publish to npm
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  publish-mcp-registry:
+    runs-on: ubuntu-latest
+    needs: publish-npm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install mcp-publisher
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+
+      - name: Login to the MCP registry (GitHub OIDC)
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish server.json
+        run: ./mcp-publisher publish
