@@ -1,10 +1,43 @@
 {
   "name": "digestseo-mcp",
   "version": "0.2.0",
-  "description": "Self-hostable MCP server for AI visibility tracking across ChatGPT, Claude, Perplexity, Gemini, and Google AI Overviews. Runs on Cloudflare Workers with D1.",
+  "description": "Self-hostable MCP server for AI visibility tracking across ChatGPT, Claude, Perplexity, Gemini, and Google AI Overviews. Runs locally over stdio (bring your own API keys) or on Cloudflare Workers with D1.",
   "private": false,
   "license": "MIT",
   "type": "module",
+  "mcpName": "io.github.AKzar1el/digestseo-mcp",
+  "bin": {
+    "digestseo-mcp": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "migrations",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AKzar1el/mcp-geo.git"
+  },
+  "homepage": "https://github.com/AKzar1el/mcp-geo#readme",
+  "bugs": {
+    "url": "https://github.com/AKzar1el/mcp-geo/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "seo",
+    "geo",
+    "generative-engine-optimization",
+    "ai-visibility",
+    "ai-search",
+    "brand-monitoring",
+    "cloudflare-workers",
+    "claude"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
@@ -12,21 +45,22 @@
     "typecheck": "tsc --noEmit && tsc -p tsconfig.node.json --noEmit",
     "test:unit": "tsx --test tests/unit/sqlite.test.ts",
     "test:stdio": "node --test tests/stdio-smoke.test.mjs",
-    "test:smoke": "node --test tests/smoke.test.mjs"
+    "test:smoke": "node --test tests/smoke.test.mjs",
+    "prepublishOnly": "npm run typecheck && npm run test:unit && npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "better-sqlite3": "^12.10.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@cloudflare/workers-oauth-provider": "^0.6.0",
     "@cloudflare/workers-types": "^4.20260520.1",
-    "@modelcontextprotocol/sdk": "^1.29.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.9.3",
     "agents": "^0.13.1",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
-    "wrangler": "^4.93.0",
-    "zod": "^4.4.3"
-  },
-  "dependencies": {
-    "better-sqlite3": "^12.10.0"
+    "wrangler": "^4.93.0"
   }
 }
