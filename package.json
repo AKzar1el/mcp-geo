@@ -8,8 +8,10 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "build": "tsc -p tsconfig.node.json && node -e \"require('fs').chmodSync('dist/cli.js', 0o755)\"",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.node.json --noEmit",
     "test:unit": "tsx --test tests/unit/sqlite.test.ts",
+    "test:stdio": "node --test tests/stdio-smoke.test.mjs",
     "test:smoke": "node --test tests/smoke.test.mjs"
   },
   "devDependencies": {
