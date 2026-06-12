@@ -8,3 +8,4 @@ dist/
 .env*
 !.dev.vars.example
 *.tgz
+*.mcpb
