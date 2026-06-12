@@ -19,8 +19,10 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type {
   Brand,
+  BrandSummary,
   CachedResponse,
   CitationRow,
+  CreateBrandInput,
   Db,
   EnginePromptResult,
   InsertPromptResponseInput,
@@ -179,6 +181,57 @@ export function openSqliteDb(path?: string): SqliteDb {
           'SELECT id, brand_id, text, intent_stage, shape, active, created_at FROM prompts WHERE brand_id = ? AND active = 1 ORDER BY created_at ASC',
         )
         .all(brandId) as Prompt[];
+    },
+
+    async upsertUser(id: string, email: string): Promise<void> {
+      const now = Date.now();
+      sqlite
+        .prepare(
+          `INSERT OR IGNORE INTO users (id, email, plan, created_at, updated_at)
+           VALUES (?, ?, 'free', ?, ?)`,
+        )
+        .run(id, email, now, now);
+    },
+
+    async createBrand(input: CreateBrandInput): Promise<void> {
+      const now = Date.now();
+      sqlite
+        .prepare(
+          `INSERT OR IGNORE INTO brands
+             (id, user_id, domain, name, category, competitors_json,
+              refresh_frequency, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          input.id,
+          input.user_id,
+          input.domain,
+          input.name,
+          input.category,
+          JSON.stringify(input.competitors),
+          input.refresh_frequency,
+          now,
+          now,
+        );
+    },
+
+    async listBrands(): Promise<BrandSummary[]> {
+      const rows = sqlite
+        .prepare(
+          `SELECT b.id, b.user_id, b.domain, b.name, b.category,
+                  b.competitors_json, b.refresh_frequency, b.created_at,
+                  b.updated_at,
+                  COUNT(p.id) AS active_prompts
+             FROM brands b
+             LEFT JOIN prompts p ON p.brand_id = b.id AND p.active = 1
+            GROUP BY b.id
+            ORDER BY b.created_at ASC`,
+        )
+        .all() as Array<BrandRow & { active_prompts: number }>;
+      return rows.map((row) => ({
+        ...rowToBrand(row),
+        active_prompts: Number(row.active_prompts ?? 0),
+      }));
     },
 
     async createRun(

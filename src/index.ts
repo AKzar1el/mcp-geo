@@ -19,7 +19,7 @@ import { registerTools } from './core/tools.js';
 import { collectBatch, submitBatch } from './core/openai.js';
 import { generatePrompts } from './core/prompt-generation.js';
 import { runEngines, type WorkerEnginesEnv } from './engines.js';
-import { seedBrand, type SeedBrandInput } from './seed.js';
+import { seedBrand, type SeedBrandInput } from './core/seed.js';
 
 export interface Env {
   OAUTH_KV: KVNamespace;
@@ -145,11 +145,7 @@ async function handleAdminSeed(
   // Empty body returns a clean no-op.
   const body = await readJsonBody<SeedBrandInput>(request);
   const result = await seedBrand(
-    {
-      DIGESTSEO_DB: env.DIGESTSEO_DB,
-      db,
-      ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY,
-    },
+    { db, ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY },
     body,
   );
   return jsonResponse(result);

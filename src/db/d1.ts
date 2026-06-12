@@ -5,8 +5,10 @@
 
 import type {
   Brand,
+  BrandSummary,
   CachedResponse,
   CitationRow,
+  CreateBrandInput,
   Db,
   EnginePromptResult,
   InsertPromptResponseInput,
@@ -109,6 +111,59 @@ export function createD1Db(d1: D1Database): Db {
         .bind(brandId)
         .all<Prompt>();
       return results ?? [];
+    },
+
+    async upsertUser(id: string, email: string): Promise<void> {
+      const now = Date.now();
+      await d1
+        .prepare(
+          `INSERT OR IGNORE INTO users (id, email, plan, created_at, updated_at)
+           VALUES (?, ?, 'free', ?, ?)`,
+        )
+        .bind(id, email, now, now)
+        .run();
+    },
+
+    async createBrand(input: CreateBrandInput): Promise<void> {
+      const now = Date.now();
+      await d1
+        .prepare(
+          `INSERT OR IGNORE INTO brands
+             (id, user_id, domain, name, category, competitors_json,
+              refresh_frequency, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          input.id,
+          input.user_id,
+          input.domain,
+          input.name,
+          input.category,
+          JSON.stringify(input.competitors),
+          input.refresh_frequency,
+          now,
+          now,
+        )
+        .run();
+    },
+
+    async listBrands(): Promise<BrandSummary[]> {
+      const { results } = await d1
+        .prepare(
+          `SELECT b.id, b.user_id, b.domain, b.name, b.category,
+                  b.competitors_json, b.refresh_frequency, b.created_at,
+                  b.updated_at,
+                  COUNT(p.id) AS active_prompts
+             FROM brands b
+             LEFT JOIN prompts p ON p.brand_id = b.id AND p.active = 1
+            GROUP BY b.id
+            ORDER BY b.created_at ASC`,
+        )
+        .all<BrandRow & { active_prompts: number }>();
+      return (results ?? []).map((row) => ({
+        ...rowToBrand(row),
+        active_prompts: Number(row.active_prompts ?? 0),
+      }));
     },
 
     async createRun(

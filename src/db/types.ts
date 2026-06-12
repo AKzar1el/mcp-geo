@@ -105,6 +105,24 @@ export interface NewPromptInput {
   shape: string | null;
 }
 
+// Input for Db.createBrand. competitors is serialized to
+// competitors_json at the adapter boundary, like everywhere else.
+export interface CreateBrandInput {
+  id: string;
+  user_id: string;
+  domain: string;
+  name: string;
+  category: string | null;
+  competitors: string[];
+  refresh_frequency: string;
+}
+
+// Row shape behind the list_brands tool: every brand plus how many
+// prompts are currently active for it.
+export interface BrandSummary extends Brand {
+  active_prompts: number;
+}
+
 export type UpdateRunFields = Partial<
   Pick<
     Run,
@@ -150,6 +168,11 @@ export interface CitationRow {
 export interface Db {
   getBrand(brandId: string): Promise<Brand | null>;
   getActivePrompts(brandId: string): Promise<Prompt[]>;
+  // Seeding (core/seed.ts): INSERT OR IGNORE semantics on both — a
+  // pre-existing user/brand row is left untouched, never clobbered.
+  upsertUser(id: string, email: string): Promise<void>;
+  createBrand(input: CreateBrandInput): Promise<void>;
+  listBrands(): Promise<BrandSummary[]>;
   createRun(
     brand: Brand,
     engine: string,

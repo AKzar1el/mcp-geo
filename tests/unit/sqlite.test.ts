@@ -1,10 +1,11 @@
-// Unit tests for the better-sqlite3 Db adapter (src/db/sqlite.ts).
-// Runs against a throwaway database under the OS temp dir — no network,
-// no Cloudflare. Run with: npm run test:unit
+// Unit tests for the better-sqlite3 Db adapter (src/db/sqlite.ts) and
+// the core seeding flow (src/core/seed.ts) on top of it. Runs against a
+// throwaway database under the OS temp dir — no network, no Cloudflare.
+// Run with: npm run test:unit
 //
-// The adapter has no "create brand" method (the Db contract mirrors the
-// query helpers the tools actually use), so brand/prompt fixtures are
-// inserted through the adapter's exposed raw better-sqlite3 handle.
+// Some fixtures are still inserted through the adapter's exposed raw
+// better-sqlite3 handle where the test wants exact control over row
+// shape, independent of the Db methods under test.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,6 +13,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openSqliteDb, type SqliteDb } from '../../src/db/sqlite.ts';
+import { seedBrand } from '../../src/core/seed.ts';
 
 const EXPECTED_MIGRATIONS = [
   '0001_initial.sql',
@@ -350,6 +352,147 @@ test('replacePrompts soft-deletes old prompts and getCitationRows filters by eng
     assert.equal(citations[0].brand_cited_with_link, 1);
     const filtered = await db.getCitationRows('acme', 0, 'claude');
     assert.equal(filtered.length, 0);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('upsertUser + createBrand: insert-or-ignore semantics, getBrand round-trip', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'digestseo.sqlite'));
+  try {
+    await db.upsertUser('local-user', 'local@localhost');
+    // Second upsert with a different email is a no-op (INSERT OR IGNORE).
+    await db.upsertUser('local-user', 'changed@localhost');
+
+    await db.createBrand({
+      id: 'acme',
+      user_id: 'local-user',
+      domain: 'acme.com',
+      name: 'Acme Project Tool',
+      category: 'Project management software',
+      competitors: ['asana.com', 'monday.com'],
+      refresh_frequency: 'weekly',
+    });
+    // Re-creating the same id must not throw and must not clobber.
+    await db.createBrand({
+      id: 'acme',
+      user_id: 'local-user',
+      domain: 'other.com',
+      name: 'Other',
+      category: null,
+      competitors: [],
+      refresh_frequency: 'daily',
+    });
+
+    const brand = await db.getBrand('acme');
+    assert.ok(brand);
+    assert.equal(brand.domain, 'acme.com');
+    assert.equal(brand.name, 'Acme Project Tool');
+    assert.deepEqual(brand.competitors, ['asana.com', 'monday.com']);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('listBrands returns every brand with its active prompt count', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'digestseo.sqlite'));
+  try {
+    assert.deepEqual(await db.listBrands(), []);
+
+    seedBrandFixture(db, 'acme');
+    seedPromptFixture(db, 'acme', 'p1', 'best project management tools');
+    seedPromptFixture(db, 'acme', 'p2', 'asana alternatives');
+    // A second brand with zero prompts.
+    db.raw
+      .prepare(
+        `INSERT INTO brands
+           (id, user_id, domain, name, category, competitors_json,
+            refresh_frequency, created_at, updated_at)
+         VALUES ('beta', 'test-user', 'beta.io', 'Beta', NULL, NULL, 'weekly', ?, ?)`,
+      )
+      .run(Date.now() + 1, Date.now() + 1);
+
+    const brands = await db.listBrands();
+    assert.equal(brands.length, 2);
+    const acme = brands.find((b) => b.id === 'acme');
+    const beta = brands.find((b) => b.id === 'beta');
+    assert.ok(acme);
+    assert.ok(beta);
+    assert.equal(Number(acme.active_prompts), 2);
+    assert.equal(Number(beta.active_prompts), 0);
+    assert.deepEqual(acme.competitors, ['asana.com', 'monday.com']);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('seedBrand (core): fallback prompts without ANTHROPIC_API_KEY, $CATEGORY substituted', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'digestseo.sqlite'));
+  try {
+    const result = await seedBrand(
+      { db },
+      {
+        brand_id: 'acme',
+        name: 'Acme Project Tool',
+        domain: 'acme.com',
+        category: 'Project management software',
+        competitors: ['asana.com'],
+      },
+    );
+    assert.equal(result.seeded, true);
+    assert.equal(result.brand_id, 'acme');
+    assert.equal(result.prompt_source, 'fallback');
+    assert.equal(result.prompts_inserted, 3);
+
+    const brand = await db.getBrand('acme');
+    assert.ok(brand);
+    assert.deepEqual(brand.competitors, ['asana.com']);
+
+    const prompts = await db.getActivePrompts('acme');
+    assert.equal(prompts.length, 3);
+    const texts = prompts.map((p) => p.text);
+    assert.ok(
+      texts.includes('best tools for Project management software'),
+      `expected $CATEGORY to be substituted; got: ${JSON.stringify(texts)}`,
+    );
+    assert.ok(
+      texts.every((t) => !t.includes('$CATEGORY')),
+      `a literal $CATEGORY placeholder leaked into prompts: ${JSON.stringify(texts)}`,
+    );
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('seedBrand (core): already-existing brand is a clean no-op, empty input is a no-op', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'digestseo.sqlite'));
+  try {
+    const first = await seedBrand(
+      { db },
+      { brand_id: 'acme', name: 'Acme', domain: 'acme.com' },
+    );
+    assert.equal(first.seeded, true);
+
+    const second = await seedBrand(
+      { db },
+      { brand_id: 'acme', name: 'Acme Again', domain: 'other.com' },
+    );
+    assert.equal(second.seeded, false);
+    assert.equal(second.reason, 'already exists');
+    // Prompts from the first seed are untouched.
+    assert.equal((await db.getActivePrompts('acme')).length, 3);
+
+    const empty = await seedBrand({ db }, null);
+    assert.equal(empty.seeded, false);
+    assert.equal(empty.reason, 'no brand payload provided');
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });
