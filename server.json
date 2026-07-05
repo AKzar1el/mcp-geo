@@ -1,0 +1,45 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.AKzar1el/mcp-geo",
+  "title": "DigestSEO AI Visibility",
+  "description": "Track how ChatGPT, Claude, Perplexity, Gemini, and Google AI Overviews cite your brand.",
+  "version": "0.2.1",
+  "repository": {
+    "url": "https://github.com/AKzar1el/mcp-geo",
+    "source": "github"
+  },
+  "websiteUrl": "https://github.com/AKzar1el/mcp-geo#readme",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://{worker_domain}/mcp",
+      "variables": {
+        "worker_domain": {
+          "description": "Hostname of your self-deployed Cloudflare Worker, as printed by `wrangler deploy` (see SETUP.md or llms-install.md)",
+          "isRequired": true,
+          "placeholder": "digestseo-mcp.your-subdomain.workers.dev"
+        }
+      }
+    }
+  ],
+  "_meta": {
+    "io.modelcontextprotocol.registry/publisher-provided": {
+      "license": "MIT",
+      "deployment": "self-hosted",
+      "notes": "Self-hosted Cloudflare Worker. Deploy to your own account (see SETUP.md or llms-install.md); the MCP endpoint is your Worker URL with path /mcp. Engines are opt-in: each of the five engines activates only when its API key is set as a Worker secret.",
+      "tags": [
+        "geo",
+        "aeo",
+        "ai-visibility",
+        "generative-engine-optimization",
+        "seo",
+        "cloudflare-workers",
+        "chatgpt",
+        "claude",
+        "perplexity",
+        "gemini",
+        "google-ai-overviews"
+      ]
+    }
+  }
+}

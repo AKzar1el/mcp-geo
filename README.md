@@ -315,6 +315,8 @@ Issues and PRs welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md) for the short v
 
 [MIT](./LICENSE).
 
+Built and maintained by [Tomi Šeregi](https://tomiseregi.si).
+
 ---
 
 ## Changelog
