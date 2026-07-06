@@ -2,18 +2,13 @@
 // We call the HTTP API directly via fetch() so the worker bundle stays small
 // and we keep Workers runtime compatibility without the openai npm package.
 
-import {
-  bulkCacheGet,
-  cachePut,
-  insertPromptResponse,
-  persistEngineRun,
-  updateRun,
-  type Brand,
-  type DbEnv,
-  type EnginePromptResult,
-  type Prompt,
-  type Run,
-} from './db';
+import type {
+  Brand,
+  Db,
+  EnginePromptResult,
+  Prompt,
+  Run,
+} from '../db/types.js';
 
 export const MODEL = 'gpt-4o-mini';
 const ENGINE = 'chatgpt';
@@ -27,7 +22,8 @@ const OPENAI_BASE = 'https://api.openai.com/v1';
 // bucket (env.OPENAI_BATCH_BUCKET) instead of holding it in memory. v1
 // uploads straight to OpenAI's Files API, so no R2 is needed today.
 
-export interface OpenAiEnv extends DbEnv {
+export interface OpenAiEnv {
+  db: Db;
   OPENAI_API_KEY?: string;
 }
 
@@ -296,8 +292,7 @@ export async function runLive(
 
   if (!env.OPENAI_API_KEY) {
     const results = prompts.map(buildSkippedResult);
-    await persistEngineRun(
-      env,
+    await env.db.persistEngineRun(
       runId,
       ENGINE,
       MODEL,
@@ -307,7 +302,7 @@ export async function runLive(
     return;
   }
 
-  const cacheMap = await bulkCacheGet(env, hashes, ENGINE, MODEL);
+  const cacheMap = await env.db.bulkCacheGet(hashes, ENGINE, MODEL);
   const results: EnginePromptResult[] = new Array(prompts.length);
 
   for (let i = 0; i < prompts.length; i += CONCURRENCY) {
@@ -349,8 +344,7 @@ export async function runLive(
   }
 
   try {
-    await persistEngineRun(
-      env,
+    await env.db.persistEngineRun(
       runId,
       ENGINE,
       MODEL,
@@ -367,7 +361,7 @@ export async function runLive(
     // subrequest cap was already hit), there's nothing left to do —
     // getLatestCompletedRun anchors on EXISTS(ok rows), not
     // status='completed', so the data we wrote still surfaces.
-    await updateRun(env, runId, {
+    await env.db.updateRun(runId, {
       status: 'failed',
       error: (err as Error).message,
       completed_at: Date.now(),
@@ -455,7 +449,7 @@ export async function submitBatch(
   }
   const batch = (await createResp.json()) as OpenAiBatch;
 
-  await updateRun(env, runId, { batch_id: batch.id, status: 'in_progress' });
+  await env.db.updateRun(runId, { batch_id: batch.id, status: 'in_progress' });
 
   return { batch_id: batch.id, input_file_id: file.id };
 }
@@ -494,11 +488,11 @@ export async function collectBatch(
   const batch = (await statusResp.json()) as OpenAiBatch;
 
   if (batch.status !== 'completed') {
-    await updateRun(env, run.id, { status: 'in_progress' });
+    await env.db.updateRun(run.id, { status: 'in_progress' });
     return { ready: false, status: batch.status };
   }
   if (!batch.output_file_id) {
-    await updateRun(env, run.id, {
+    await env.db.updateRun(run.id, {
       status: 'failed',
       error: 'batch completed without output_file_id',
       completed_at: Date.now(),
@@ -533,7 +527,7 @@ export async function collectBatch(
     const content = parsed.response?.body?.choices?.[0]?.message?.content;
     if (typeof content !== 'string') {
       failed += 1;
-      await insertPromptResponse(env, {
+      await env.db.insertPromptResponse({
         run_id: run.id,
         prompt_id: prompt.id,
         engine: ENGINE,
@@ -550,9 +544,9 @@ export async function collectBatch(
       continue;
     }
     const hash = await hashPrompt(prompt.text, ENGINE, MODEL);
-    await cachePut(env, hash, ENGINE, MODEL, content, BATCH_CACHE_TTL_SECONDS);
+    await env.db.cachePut(hash, ENGINE, MODEL, content, BATCH_CACHE_TTL_SECONDS);
     const citations = extractCitations(brand, content);
-    await insertPromptResponse(env, {
+    await env.db.insertPromptResponse({
       run_id: run.id,
       prompt_id: prompt.id,
       engine: ENGINE,
@@ -566,7 +560,7 @@ export async function collectBatch(
     completed += 1;
   }
 
-  await updateRun(env, run.id, {
+  await env.db.updateRun(run.id, {
     status: 'completed',
     prompts_completed: completed,
     completed_at: Date.now(),

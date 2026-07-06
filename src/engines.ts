@@ -1,79 +1,30 @@
-// Per-engine HTTP fan-out across the 5 LLM/SERP engines. runEngines()
-// creates one runs row per engine then fires one self-fetch per engine
-// to /admin/run-engine, so each engine executes in its OWN worker
-// invocation with its own 50-subrequest budget. A naive
-// "Promise.all five engines in one invocation" exceeds the free-plan
-// cap with ~100 LLM fetches and half the rows go missing.
+// Worker-only per-engine HTTP fan-out across the 5 LLM/SERP engines.
+// runEngines() creates one runs row per engine then fires one
+// self-fetch per engine to /admin/run-engine, so each engine executes
+// in its OWN worker invocation with its own 50-subrequest budget. A
+// naive "Promise.all five engines in one invocation" exceeds the
+// free-plan cap with ~100 LLM fetches and half the rows go missing.
 //
 // The self-fetch goes through env.SELF.fetch() — a Cloudflare service
 // binding pointing this worker at itself. A public-URL fetch back to
 // the same hostname triggers Cloudflare's "Worker called itself"
 // guard (error code 1042) and never reaches the handler.
+//
+// The runtime-agnostic engine registry (ALL_ENGINES, availability,
+// in-process dispatch) lives in src/core/engines.ts; the local CLI
+// uses that directly and never touches this file.
 
 import {
-  runLive as runLiveChatgpt,
-  type OpenAiEnv,
-} from './openai';
-import {
-  runLive as runLiveClaude,
-  type AnthropicEnv,
-} from './anthropic';
-import {
-  runLive as runLivePerplexity,
-  type PerplexityEnv,
-} from './perplexity';
-import {
-  runLive as runLiveGemini,
-  type GeminiEnv,
-} from './gemini';
-import {
-  runLive as runLiveAiOverviews,
-  type AiOverviewsEnv,
-} from './ai-overviews';
-import { createRun, type Brand, type Prompt } from './db';
+  getAvailableEngines,
+  type EngineKeys,
+  type EngineName,
+  type EngineRun,
+  type RunEnginesResult,
+} from './core/engines.js';
+import type { Brand, Db, Prompt } from './db/types.js';
 
-export const ALL_ENGINES = [
-  'chatgpt',
-  'claude',
-  'perplexity',
-  'gemini',
-  'ai_overviews',
-] as const;
-export type EngineName = (typeof ALL_ENGINES)[number];
-
-export function isEngineName(s: string): s is EngineName {
-  return (ALL_ENGINES as readonly string[]).includes(s);
-}
-
-// Public OSS opt-in model: engines are enabled by the presence of their
-// API key. Users only set credentials for the engines they want, and
-// the rest are silently skipped. getAvailableEngines(env) is the
-// canonical way to decide which engines to fan out to when no explicit
-// list is passed.
-export interface AvailabilityEnv {
-  OPENAI_API_KEY?: string;
-  ANTHROPIC_API_KEY?: string;
-  GEMINI_API_KEY?: string;
-  PERPLEXITY_API_KEY?: string;
-  SERPAPI_API_KEY?: string;
-}
-
-export function getAvailableEngines(env: AvailabilityEnv): EngineName[] {
-  const engines: EngineName[] = [];
-  if (env.OPENAI_API_KEY) engines.push('chatgpt');
-  if (env.ANTHROPIC_API_KEY) engines.push('claude');
-  if (env.GEMINI_API_KEY) engines.push('gemini');
-  if (env.PERPLEXITY_API_KEY) engines.push('perplexity');
-  if (env.SERPAPI_API_KEY) engines.push('ai_overviews');
-  return engines;
-}
-
-export interface EnginesEnv
-  extends OpenAiEnv,
-    AnthropicEnv,
-    PerplexityEnv,
-    GeminiEnv,
-    AiOverviewsEnv {
+export interface WorkerEnginesEnv extends EngineKeys {
+  db: Db;
   SEED_SECRET: string;
   // Service binding back to this worker — see file header for why a
   // service binding is required (the public-URL fetch is blocked by
@@ -86,40 +37,6 @@ export interface EnginesEnv
   SELF_URL?: string;
 }
 
-export interface EngineRun {
-  engine: EngineName;
-  run_id: string;
-}
-
-// Direct in-process dispatch used by /admin/run-engine. Each branch
-// makes at most ~20 LLM/SERP fetches + the bulk D1 ops in db.ts'
-// persistEngineRun — well under the 50-subrequest cap for a single
-// worker invocation.
-export async function runEngineInProcess(
-  env: EnginesEnv,
-  brand: Brand,
-  prompts: Prompt[],
-  engineRun: EngineRun,
-): Promise<void> {
-  switch (engineRun.engine) {
-    case 'chatgpt':
-      return runLiveChatgpt(env, brand, prompts, engineRun.run_id);
-    case 'claude':
-      return runLiveClaude(env, brand, prompts, engineRun.run_id);
-    case 'perplexity':
-      return runLivePerplexity(env, brand, prompts, engineRun.run_id);
-    case 'gemini':
-      return runLiveGemini(env, brand, prompts, engineRun.run_id);
-    case 'ai_overviews':
-      return runLiveAiOverviews(env, brand, prompts, engineRun.run_id);
-  }
-}
-
-export interface RunEnginesResult {
-  run_ids: Record<string, string>;
-  engines: EngineName[];
-}
-
 // Structural type so both Worker fetch ExecutionContext and Durable
 // Object DurableObjectState satisfy it (refresh_brand fires from
 // inside the MCP Durable Object).
@@ -127,7 +44,7 @@ export interface WaitUntilCtx {
   waitUntil(promise: Promise<unknown>): void;
 }
 
-function resolveSelfUrl(env: EnginesEnv, request?: Request): string {
+function resolveSelfUrl(env: WorkerEnginesEnv, request?: Request): string {
   if (env.SELF_URL && env.SELF_URL.length > 0) {
     return env.SELF_URL.replace(/\/$/, '');
   }
@@ -150,7 +67,7 @@ function resolveSelfUrl(env: EnginesEnv, request?: Request): string {
 // fallback for env.SELF_URL). Pass undefined from cron / Durable
 // Object contexts and rely on env.SELF_URL.
 export async function runEngines(
-  env: EnginesEnv,
+  env: WorkerEnginesEnv,
   ctx: WaitUntilCtx,
   brand: Brand,
   prompts: Prompt[],
@@ -179,7 +96,7 @@ export async function runEngines(
 
   const engineRuns: EngineRun[] = [];
   for (const engine of filtered) {
-    const run = await createRun(env, brand, engine, 'live', prompts.length);
+    const run = await env.db.createRun(brand, engine, 'live', prompts.length);
     engineRuns.push({ engine, run_id: run.id });
   }
 

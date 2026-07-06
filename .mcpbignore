@@ -1,0 +1,49 @@
+# Files excluded from the .mcpb desktop-extension bundle (npm run mcpb:pack).
+# The bundle needs: manifest.json, dist/, migrations/, assets/, and the
+# PRODUCTION node_modules (@modelcontextprotocol/sdk, zod, better-sqlite3
+# and their transitive deps). Everything else is repo/dev cruft.
+#
+# Note: better-sqlite3 is a native module — the bundle carries the
+# prebuilt binary of the platform that ran mcpb pack.
+
+# Sources and tests (the bundle runs the compiled dist/)
+src/
+tests/
+docs/
+*.ts
+
+# Worker-only / repo files
+wrangler.example.jsonc
+wrangler.jsonc
+worker-configuration.d.ts
+.dev.vars
+.dev.vars.example
+server.json
+glama.json
+Dockerfile
+.dockerignore
+llms-install.md
+SETUP.md
+CHANGELOG.md
+CONTRIBUTING.md
+tsconfig.json
+tsconfig.node.json
+.github/
+.wrangler/
+.claude/
+*.tgz
+*.mcpb
+
+# Dev-only dependency trees (runtime deps stay bundled). Equivalent
+# alternative: run `npm ci --omit=dev` before `npm run mcpb:pack`.
+node_modules/wrangler/
+node_modules/workerd/
+node_modules/miniflare/
+node_modules/typescript/
+node_modules/tsx/
+node_modules/agents/
+node_modules/esbuild/
+node_modules/@esbuild/
+node_modules/@cloudflare/
+node_modules/@types/
+node_modules/@typescript/

@@ -5,8 +5,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { extractCitations } from '../src/openai.ts';
-import type { Brand } from '../src/db.ts';
+import { extractCitations } from '../src/core/openai.ts';
+import type { Brand } from '../src/db/types.ts';
 
 function makeBrand(overrides: Partial<Brand>): Brand {
   return {

@@ -1,0 +1,31 @@
+# Keep the build context to what the Dockerfile actually COPYies:
+# package manifests, tsconfig.node.json, src/, migrations/.
+node_modules
+dist
+.git
+.github
+.wrangler
+.claude
+.dev.vars
+.env*
+tests
+docs
+assets
+*.tgz
+*.mcpb
+*.log
+wrangler.jsonc
+wrangler.example.jsonc
+server.json
+manifest.json
+glama.json
+llms-install.md
+SETUP.md
+CHANGELOG.md
+CONTRIBUTING.md
+README.md
+LICENSE
+Dockerfile
+.dockerignore
+.mcpbignore
+.gitignore

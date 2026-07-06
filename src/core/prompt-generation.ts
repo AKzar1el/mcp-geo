@@ -6,15 +6,11 @@
 // On failure (network, parse, validation), throws without touching the
 // DB so callers can fall back or retry.
 
-import { chatCompletion as anthropicChat } from './anthropic';
-import {
-  replacePrompts,
-  type Brand,
-  type DbEnv,
-  type NewPromptInput,
-} from './db';
+import { chatCompletion as anthropicChat } from './anthropic.js';
+import type { Brand, Db, NewPromptInput } from '../db/types.js';
 
-export interface PromptGenEnv extends DbEnv {
+export interface PromptGenEnv {
+  db: Db;
   ANTHROPIC_API_KEY?: string;
 }
 
@@ -139,6 +135,6 @@ export async function generatePrompts(
     });
     prompts = await callGenerator(env, brand, count, true);
   }
-  await replacePrompts(env, brand.id, prompts);
+  await env.db.replacePrompts(brand.id, prompts);
   return prompts;
 }

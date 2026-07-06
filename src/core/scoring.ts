@@ -1,4 +1,4 @@
-import type { Brand, PromptResponse } from './db';
+import type { Brand, PromptResponse } from '../db/types.js';
 
 // Score formula (v1):
 //   per_engine_score = round(100 * (prompts_with_brand_mentioned / total_prompts))

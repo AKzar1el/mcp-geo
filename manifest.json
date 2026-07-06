@@ -1,0 +1,130 @@
+{
+  "manifest_version": "0.2",
+  "name": "digestseo-mcp",
+  "display_name": "DigestSEO AI Visibility",
+  "version": "0.3.0",
+  "description": "Track how ChatGPT, Claude, Perplexity, Gemini, and Google AI Overviews cite your brand.",
+  "long_description": "Self-hosted AI visibility tracking over MCP. Runs buyer-intent prompts against the AI engines you hold API keys for, records which ones cite your brand versus competitors, and exposes nine tools: track_brand, list_brands, generate_prompts, refresh_brand, check_visibility, get_visibility_history, compare_competitors, get_citations, get_content_gaps. All data stays in a local SQLite database under ~/.digestseo.",
+  "author": {
+    "name": "AKzar1el",
+    "url": "https://github.com/AKzar1el"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AKzar1el/mcp-geo"
+  },
+  "homepage": "https://github.com/AKzar1el/mcp-geo",
+  "license": "MIT",
+  "icon": "assets/logo.png",
+  "privacy_policies": [
+    "https://github.com/AKzar1el/mcp-geo#privacy-policy",
+    "https://openai.com/policies/privacy-policy",
+    "https://www.anthropic.com/legal/privacy",
+    "https://policies.google.com/privacy",
+    "https://www.perplexity.ai/hub/legal/privacy-policy",
+    "https://serpapi.com/legal"
+  ],
+  "server": {
+    "type": "node",
+    "entry_point": "dist/cli.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/dist/cli.js"],
+      "env": {
+        "OPENAI_API_KEY": "${user_config.openai_api_key}",
+        "ANTHROPIC_API_KEY": "${user_config.anthropic_api_key}",
+        "GEMINI_API_KEY": "${user_config.gemini_api_key}",
+        "PERPLEXITY_API_KEY": "${user_config.perplexity_api_key}",
+        "SERPAPI_API_KEY": "${user_config.serpapi_api_key}"
+      }
+    }
+  },
+  "user_config": {
+    "openai_api_key": {
+      "type": "string",
+      "title": "OpenAI API Key (ChatGPT engine)",
+      "description": "Optional — every engine key is opt-in, but at least one of the five is required for the server to do anything useful. Engines without a key are skipped gracefully.",
+      "sensitive": true,
+      "required": false
+    },
+    "anthropic_api_key": {
+      "type": "string",
+      "title": "Anthropic API Key (Claude engine)",
+      "description": "Optional — also powers prompt generation and content-gap analysis via Claude Haiku. At least one of the five engine keys is required.",
+      "sensitive": true,
+      "required": false
+    },
+    "gemini_api_key": {
+      "type": "string",
+      "title": "Google AI Studio API Key (Gemini engine)",
+      "description": "Optional — free tier available at aistudio.google.com. At least one of the five engine keys is required.",
+      "sensitive": true,
+      "required": false
+    },
+    "perplexity_api_key": {
+      "type": "string",
+      "title": "Perplexity API Key (Perplexity engine)",
+      "description": "Optional — paid plans only. At least one of the five engine keys is required.",
+      "sensitive": true,
+      "required": false
+    },
+    "serpapi_api_key": {
+      "type": "string",
+      "title": "SerpAPI Key (Google AI Overviews engine)",
+      "description": "Optional — free tier covers ~100 searches/month. At least one of the five engine keys is required.",
+      "sensitive": true,
+      "required": false
+    }
+  },
+  "tools": [
+    {
+      "name": "check_visibility",
+      "description": "Latest AI visibility snapshot for a tracked brand with per-engine scores."
+    },
+    {
+      "name": "get_visibility_history",
+      "description": "Time-series history of overall and per-engine visibility."
+    },
+    {
+      "name": "compare_competitors",
+      "description": "Share-of-voice comparison against competitor domains."
+    },
+    {
+      "name": "get_citations",
+      "description": "Actual citation events with prompts, excerpts, and citation type."
+    },
+    {
+      "name": "get_content_gaps",
+      "description": "Prioritized content recommendations targeting losing prompts."
+    },
+    {
+      "name": "refresh_brand",
+      "description": "Trigger a fresh scan across every engine whose API key is set."
+    },
+    {
+      "name": "track_brand",
+      "description": "Start tracking a brand: creates it locally and generates its buyer-intent prompt set."
+    },
+    {
+      "name": "list_brands",
+      "description": "List tracked brands with domains, competitors, and active prompt counts."
+    },
+    {
+      "name": "generate_prompts",
+      "description": "Regenerate a brand's prompt set via Claude Haiku (requires ANTHROPIC_API_KEY)."
+    }
+  ],
+  "keywords": [
+    "seo",
+    "geo",
+    "ai-visibility",
+    "brand-monitoring",
+    "generative-engine-optimization"
+  ],
+  "compatibility": {
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": {
+      "node": ">=18.0.0"
+    }
+  }
+}
