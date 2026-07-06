@@ -8,5 +8,9 @@
     "noImplicitAny": true,
     "skipLibCheck": true
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts"],
+  // Node-only files (local stdio CLI + sqlite adapter) are typechecked
+  // and built by tsconfig.node.json instead — they import node: builtins
+  // that don't exist under @cloudflare/workers-types.
+  "exclude": ["src/cli.ts", "src/db/sqlite.ts"]
 }

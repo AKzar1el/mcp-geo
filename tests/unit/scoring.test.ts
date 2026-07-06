@@ -5,8 +5,8 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeOverallScore } from '../../src/scoring';
-import type { Brand, PromptResponse, ResponseStatus } from '../../src/db';
+import { computeOverallScore } from '../../src/core/scoring.ts';
+import type { Brand, PromptResponse, ResponseStatus } from '../../src/db/types.ts';
 
 const brand: Brand = {
   id: 'acme',

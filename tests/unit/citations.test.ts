@@ -6,8 +6,8 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractCitations, hostMatchesDomain } from '../../src/openai';
-import type { Brand } from '../../src/db';
+import { extractCitations, hostMatchesDomain } from '../../src/core/openai.ts';
+import type { Brand } from '../../src/db/types.ts';
 
 const acme: Brand = {
   id: 'acme',

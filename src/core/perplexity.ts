@@ -9,16 +9,13 @@ import {
   extractCitations,
   hashPrompt,
   hostMatchesDomain,
-} from './openai';
-import {
-  bulkCacheGet,
-  persistEngineRun,
-  updateRun,
-  type Brand,
-  type DbEnv,
-  type EnginePromptResult,
-  type Prompt,
-} from './db';
+} from './openai.js';
+import type {
+  Brand,
+  Db,
+  EnginePromptResult,
+  Prompt,
+} from '../db/types.js';
 
 export const MODEL = 'sonar';
 export const ENGINE = 'perplexity';
@@ -26,7 +23,8 @@ export const ENGINE = 'perplexity';
 const LIVE_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60;
 const PERPLEXITY_URL = 'https://api.perplexity.ai/chat/completions';
 
-export interface PerplexityEnv extends DbEnv {
+export interface PerplexityEnv {
+  db: Db;
   PERPLEXITY_API_KEY?: string;
 }
 
@@ -211,8 +209,7 @@ export async function runLive(
 
   if (!env.PERPLEXITY_API_KEY) {
     const results = prompts.map(buildSkippedResult);
-    await persistEngineRun(
-      env,
+    await env.db.persistEngineRun(
       runId,
       ENGINE,
       MODEL,
@@ -222,7 +219,7 @@ export async function runLive(
     return;
   }
 
-  const cacheMap = await bulkCacheGet(env, hashes, ENGINE, MODEL);
+  const cacheMap = await env.db.bulkCacheGet(hashes, ENGINE, MODEL);
   const results: EnginePromptResult[] = new Array(prompts.length);
 
   for (let i = 0; i < prompts.length; i += CONCURRENCY) {
@@ -262,8 +259,7 @@ export async function runLive(
   }
 
   try {
-    await persistEngineRun(
-      env,
+    await env.db.persistEngineRun(
       runId,
       ENGINE,
       MODEL,
@@ -275,7 +271,7 @@ export async function runLive(
       run_id: runId,
       message: (err as Error).message,
     });
-    await updateRun(env, runId, {
+    await env.db.updateRun(runId, {
       status: 'failed',
       error: (err as Error).message,
       completed_at: Date.now(),

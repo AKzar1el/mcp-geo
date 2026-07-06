@@ -2,7 +2,7 @@
 //
 // Setup:
 //   1. cp wrangler.example.jsonc wrangler.jsonc
-//   2. Follow SETUP.md to create the KV namespaces + D1 database and
+//   2. Follow SETUP.md to create the KV namespace + D1 database and
 //      paste each returned id over the YOUR_*_ID placeholders below.
 //
 // wrangler.jsonc is gitignored — never commit it. This template is what
