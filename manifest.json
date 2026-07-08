@@ -29,7 +29,9 @@
     "entry_point": "dist/cli.js",
     "mcp_config": {
       "command": "node",
-      "args": ["${__dirname}/dist/cli.js"],
+      "args": [
+        "${__dirname}/dist/cli.js"
+      ],
       "env": {
         "OPENAI_API_KEY": "${user_config.openai_api_key}",
         "ANTHROPIC_API_KEY": "${user_config.anthropic_api_key}",
@@ -79,39 +81,437 @@
   "tools": [
     {
       "name": "check_visibility",
-      "description": "Latest AI visibility snapshot for a tracked brand with per-engine scores."
+      "description": "Get the latest AI visibility data for a tracked brand: which AI assistants (ChatGPT, Claude, Perplexity, Gemini, Google AI Overviews) cite this brand, for which prompts, and how it compares to competitors. Use when the user asks 'how visible am I on AI?', 'who's citing my brand?', or 'show me my AI visibility score'. Returns stored data — for fresh data, call refresh_brand.",
+      "inputSchema": {
+        "def": {
+          "type": "object",
+          "shape": {
+            "brand_id": {
+              "def": {
+                "type": "string"
+              },
+              "type": "string",
+              "format": null,
+              "minLength": null,
+              "maxLength": null
+            },
+            "engines": {
+              "def": {
+                "type": "optional",
+                "innerType": {
+                  "def": {
+                    "type": "array",
+                    "element": {
+                      "def": {
+                        "type": "enum",
+                        "entries": {
+                          "chatgpt": "chatgpt",
+                          "claude": "claude",
+                          "perplexity": "perplexity",
+                          "gemini": "gemini",
+                          "ai_overviews": "ai_overviews"
+                        }
+                      },
+                      "type": "enum",
+                      "enum": {
+                        "chatgpt": "chatgpt",
+                        "claude": "claude",
+                        "perplexity": "perplexity",
+                        "gemini": "gemini",
+                        "ai_overviews": "ai_overviews"
+                      },
+                      "options": [
+                        "chatgpt",
+                        "claude",
+                        "perplexity",
+                        "gemini",
+                        "ai_overviews"
+                      ]
+                    }
+                  },
+                  "type": "array",
+                  "element": {
+                    "def": {
+                      "type": "enum",
+                      "entries": {
+                        "chatgpt": "chatgpt",
+                        "claude": "claude",
+                        "perplexity": "perplexity",
+                        "gemini": "gemini",
+                        "ai_overviews": "ai_overviews"
+                      }
+                    },
+                    "type": "enum",
+                    "enum": {
+                      "chatgpt": "chatgpt",
+                      "claude": "claude",
+                      "perplexity": "perplexity",
+                      "gemini": "gemini",
+                      "ai_overviews": "ai_overviews"
+                    },
+                    "options": [
+                      "chatgpt",
+                      "claude",
+                      "perplexity",
+                      "gemini",
+                      "ai_overviews"
+                    ]
+                  }
+                }
+              },
+              "type": "optional"
+            }
+          }
+        },
+        "type": "object"
+      }
     },
     {
       "name": "get_visibility_history",
-      "description": "Time-series history of overall and per-engine visibility."
+      "description": "Get the time-series history of a brand's AI visibility score, broken down per engine. Use when the user asks 'how has my AI visibility changed over time?', 'is my visibility growing or shrinking?', or 'show me the trend for the last month'.",
+      "inputSchema": {
+        "def": {
+          "type": "object",
+          "shape": {
+            "brand_id": {
+              "def": {
+                "type": "string"
+              },
+              "type": "string",
+              "format": null,
+              "minLength": null,
+              "maxLength": null
+            },
+            "days": {
+              "def": {
+                "type": "default",
+                "innerType": {
+                  "def": {
+                    "type": "number",
+                    "checks": [
+                      {},
+                      {}
+                    ]
+                  },
+                  "type": "number",
+                  "minValue": 1,
+                  "maxValue": 365,
+                  "isInt": false,
+                  "isFinite": true,
+                  "format": null
+                },
+                "defaultValue": 30
+              },
+              "type": "default"
+            },
+            "granularity": {
+              "def": {
+                "type": "default",
+                "innerType": {
+                  "def": {
+                    "type": "enum",
+                    "entries": {
+                      "daily": "daily",
+                      "weekly": "weekly"
+                    }
+                  },
+                  "type": "enum",
+                  "enum": {
+                    "daily": "daily",
+                    "weekly": "weekly"
+                  },
+                  "options": [
+                    "daily",
+                    "weekly"
+                  ]
+                },
+                "defaultValue": "weekly"
+              },
+              "type": "default"
+            }
+          }
+        },
+        "type": "object"
+      }
     },
     {
       "name": "compare_competitors",
-      "description": "Share-of-voice comparison against competitor domains."
+      "description": "Compare a brand's AI visibility against competitors for the same category. Returns share-of-voice percentages, prompts the user wins, and prompts where competitors win. Use when the user asks 'who beats me in AI search?', 'compare me to my competitors', or 'why does [competitor] get cited more?'.",
+      "inputSchema": {
+        "def": {
+          "type": "object",
+          "shape": {
+            "brand_id": {
+              "def": {
+                "type": "string"
+              },
+              "type": "string",
+              "format": null,
+              "minLength": null,
+              "maxLength": null
+            },
+            "competitor_domains": {
+              "def": {
+                "type": "optional",
+                "innerType": {
+                  "def": {
+                    "type": "array",
+                    "element": {
+                      "def": {
+                        "type": "string"
+                      },
+                      "type": "string",
+                      "format": null,
+                      "minLength": null,
+                      "maxLength": null
+                    }
+                  },
+                  "type": "array",
+                  "element": {
+                    "def": {
+                      "type": "string"
+                    },
+                    "type": "string",
+                    "format": null,
+                    "minLength": null,
+                    "maxLength": null
+                  }
+                }
+              },
+              "type": "optional"
+            },
+            "days": {
+              "def": {
+                "type": "default",
+                "innerType": {
+                  "def": {
+                    "type": "number",
+                    "checks": [
+                      {},
+                      {}
+                    ]
+                  },
+                  "type": "number",
+                  "minValue": 1,
+                  "maxValue": 90,
+                  "isInt": false,
+                  "isFinite": true,
+                  "format": null
+                },
+                "defaultValue": 7
+              },
+              "type": "default"
+            }
+          }
+        },
+        "type": "object"
+      }
     },
     {
       "name": "get_citations",
-      "description": "Actual citation events with prompts, excerpts, and citation type."
+      "description": "Get the actual citation events where AI assistants mentioned or linked to the brand. Each citation includes the prompt that triggered it, the LLM's response excerpt, and whether it was a linked citation, a mention without a link, or a paraphrase. Use when the user asks 'show me where I'm cited', 'what are ChatGPT/Claude/Perplexity actually saying about my brand?', or 'give me proof of AI citations'.",
+      "inputSchema": {
+        "def": {
+          "type": "object",
+          "shape": {
+            "brand_id": {
+              "def": {
+                "type": "string"
+              },
+              "type": "string",
+              "format": null,
+              "minLength": null,
+              "maxLength": null
+            },
+            "days": {
+              "def": {
+                "type": "default",
+                "innerType": {
+                  "def": {
+                    "type": "number",
+                    "checks": [
+                      {},
+                      {}
+                    ]
+                  },
+                  "type": "number",
+                  "minValue": 1,
+                  "maxValue": 90,
+                  "isInt": false,
+                  "isFinite": true,
+                  "format": null
+                },
+                "defaultValue": 14
+              },
+              "type": "default"
+            },
+            "engine": {
+              "def": {
+                "type": "optional",
+                "innerType": {
+                  "def": {
+                    "type": "enum",
+                    "entries": {
+                      "chatgpt": "chatgpt",
+                      "claude": "claude",
+                      "perplexity": "perplexity",
+                      "gemini": "gemini",
+                      "ai_overviews": "ai_overviews"
+                    }
+                  },
+                  "type": "enum",
+                  "enum": {
+                    "chatgpt": "chatgpt",
+                    "claude": "claude",
+                    "perplexity": "perplexity",
+                    "gemini": "gemini",
+                    "ai_overviews": "ai_overviews"
+                  },
+                  "options": [
+                    "chatgpt",
+                    "claude",
+                    "perplexity",
+                    "gemini",
+                    "ai_overviews"
+                  ]
+                }
+              },
+              "type": "optional"
+            }
+          }
+        },
+        "type": "object"
+      }
     },
     {
       "name": "get_content_gaps",
-      "description": "Prioritized content recommendations targeting losing prompts."
+      "description": "Get actionable content recommendations based on AI visibility gaps. Returns prioritized topics and content formats that would close the gap between this brand and competitors winning the same prompts. Use when the user asks 'what should I write to improve AI visibility?', 'what content gaps do I have?', or 'how do I get cited more by AI?'.",
+      "inputSchema": {
+        "def": {
+          "type": "object",
+          "shape": {
+            "brand_id": {
+              "def": {
+                "type": "string"
+              },
+              "type": "string",
+              "format": null,
+              "minLength": null,
+              "maxLength": null
+            },
+            "max_recommendations": {
+              "def": {
+                "type": "default",
+                "innerType": {
+                  "def": {
+                    "type": "number",
+                    "checks": [
+                      {},
+                      {}
+                    ]
+                  },
+                  "type": "number",
+                  "minValue": 1,
+                  "maxValue": 10,
+                  "isInt": false,
+                  "isFinite": true,
+                  "format": null
+                },
+                "defaultValue": 5
+              },
+              "type": "default"
+            }
+          }
+        },
+        "type": "object"
+      }
     },
     {
       "name": "refresh_brand",
-      "description": "Trigger a fresh scan across every engine whose API key is set."
-    },
-    {
-      "name": "track_brand",
-      "description": "Start tracking a brand: creates it locally and generates its buyer-intent prompt set."
-    },
-    {
-      "name": "list_brands",
-      "description": "List tracked brands with domains, competitors, and active prompt counts."
-    },
-    {
-      "name": "generate_prompts",
-      "description": "Regenerate a brand's prompt set via Claude Haiku (requires ANTHROPIC_API_KEY)."
+      "description": "Manually trigger a fresh AI visibility scan for a tracked brand. Runs every engine that has its API key configured (ChatGPT, Claude, Perplexity, Gemini, Google AI Overviews) against the brand's current prompt set. Use when the user asks 'refresh my data', 'rerun the scan', or 'I want fresh data right now'. Returns immediately with run IDs; results populate in 30-60 seconds.",
+      "inputSchema": {
+        "def": {
+          "type": "object",
+          "shape": {
+            "brand_id": {
+              "def": {
+                "type": "string"
+              },
+              "type": "string",
+              "format": null,
+              "minLength": null,
+              "maxLength": null
+            },
+            "engines": {
+              "def": {
+                "type": "optional",
+                "innerType": {
+                  "def": {
+                    "type": "array",
+                    "element": {
+                      "def": {
+                        "type": "enum",
+                        "entries": {
+                          "chatgpt": "chatgpt",
+                          "claude": "claude",
+                          "perplexity": "perplexity",
+                          "gemini": "gemini",
+                          "ai_overviews": "ai_overviews"
+                        }
+                      },
+                      "type": "enum",
+                      "enum": {
+                        "chatgpt": "chatgpt",
+                        "claude": "claude",
+                        "perplexity": "perplexity",
+                        "gemini": "gemini",
+                        "ai_overviews": "ai_overviews"
+                      },
+                      "options": [
+                        "chatgpt",
+                        "claude",
+                        "perplexity",
+                        "gemini",
+                        "ai_overviews"
+                      ]
+                    }
+                  },
+                  "type": "array",
+                  "element": {
+                    "def": {
+                      "type": "enum",
+                      "entries": {
+                        "chatgpt": "chatgpt",
+                        "claude": "claude",
+                        "perplexity": "perplexity",
+                        "gemini": "gemini",
+                        "ai_overviews": "ai_overviews"
+                      }
+                    },
+                    "type": "enum",
+                    "enum": {
+                      "chatgpt": "chatgpt",
+                      "claude": "claude",
+                      "perplexity": "perplexity",
+                      "gemini": "gemini",
+                      "ai_overviews": "ai_overviews"
+                    },
+                    "options": [
+                      "chatgpt",
+                      "claude",
+                      "perplexity",
+                      "gemini",
+                      "ai_overviews"
+                    ]
+                  }
+                }
+              },
+              "type": "optional"
+            }
+          }
+        },
+        "type": "object"
+      }
     }
   ],
   "keywords": [
@@ -122,7 +522,11 @@
     "generative-engine-optimization"
   ],
   "compatibility": {
-    "platforms": ["darwin", "win32", "linux"],
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ],
     "runtimes": {
       "node": ">=18.0.0"
     }
