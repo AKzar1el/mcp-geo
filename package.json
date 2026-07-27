@@ -54,6 +54,12 @@
     "better-sqlite3": "^12.10.0",
     "zod": "^4.4.3"
   },
+  "overrides": {
+    "@hono/node-server": "2.0.12",
+    "body-parser": "2.3.0",
+    "fast-uri": "3.1.4",
+    "hono": "4.12.32"
+  },
   "devDependencies": {
     "@cloudflare/workers-oauth-provider": "^0.6.0",
     "@cloudflare/workers-types": "^4.20260520.1",
