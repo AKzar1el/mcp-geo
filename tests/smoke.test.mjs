@@ -205,12 +205,12 @@ test(
     const tools = env?.result?.tools ?? [];
     const names = new Set(tools.map((t) => t.name));
     const expected = [
-      'check_visibility',
-      'get_visibility_history',
-      'compare_competitors',
-      'get_citations',
-      'get_content_gaps',
-      'refresh_brand',
+      'visibility.check',
+      'visibility.history',
+      'visibility.compare',
+      'visibility.citations',
+      'visibility.content_gaps',
+      'visibility.refresh',
     ];
     for (const name of expected) {
       assert.ok(
@@ -295,7 +295,7 @@ test(
       jsonrpc: '2.0',
       id: 3,
       method: 'tools/call',
-      params: { name: 'check_visibility', arguments: { brand_id: SEED_BRAND_ID } },
+      params: { name: 'visibility.check', arguments: { brand_id: SEED_BRAND_ID } },
     });
     assert.ok(
       !env.error,
@@ -464,7 +464,7 @@ test(
       jsonrpc: '2.0',
       id: 4,
       method: 'tools/call',
-      params: { name: 'check_visibility', arguments: { brand_id: SEED_BRAND_ID } },
+      params: { name: 'visibility.check', arguments: { brand_id: SEED_BRAND_ID } },
     });
     assert.ok(
       !env.error,

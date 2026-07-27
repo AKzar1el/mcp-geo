@@ -32,6 +32,148 @@ import { seedBrand } from './seed.js';
 const BRAND_NOT_FOUND_MESSAGE =
   'Brand not found. Create it first: use the track_brand tool (local CLI), or POST /admin/seed on a Cloudflare Workers deployment.';
 
+const ENGINE_NAMES = [
+  'chatgpt',
+  'claude',
+  'perplexity',
+  'gemini',
+  'ai_overviews',
+] as const;
+
+const engineSchema = z.enum(ENGINE_NAMES);
+
+const visibilityOutputSchema = z.object({
+  brand: z.object({
+    id: z.string(),
+    name: z.string(),
+    domain: z.string(),
+    category: z.string().nullable(),
+  }),
+  refreshed_at: z.string(),
+  overall_score: z.number(),
+  per_engine: z.array(z.unknown()),
+  top_winning_prompts: z.array(z.unknown()),
+  top_losing_prompts: z.array(z.unknown()),
+});
+
+const historyOutputSchema = z.object({
+  brand_id: z.string(),
+  days: z.number(),
+  granularity: z.enum(['daily', 'weekly']),
+  series: z.array(
+    z.object({
+      date: z.string(),
+      overall_score: z.number(),
+      per_engine: z.record(z.string(), z.number()),
+    }),
+  ),
+});
+
+const compareOutputSchema = z.object({
+  brand_id: z.string(),
+  days: z.number(),
+  your_share_of_voice_pct: z.number(),
+  competitors: z.array(
+    z.object({
+      domain: z.string(),
+      share_of_voice_pct: z.number(),
+      prompts_won_against_you: z.array(z.string()),
+    }),
+  ),
+  prompts_you_win: z.array(
+    z.object({
+      prompt: z.string(),
+      you_cited_by: z.array(z.string()),
+      competitors_cited: z.array(z.string()),
+    }),
+  ),
+  requested_competitor_domains: z.array(z.string()).nullable(),
+});
+
+const citationsOutputSchema = z.object({
+  brand_id: z.string(),
+  days: z.number(),
+  engine: z.string().nullable(),
+  citations: z.array(
+    z.object({
+      id: z.string(),
+      engine: z.string(),
+      prompt: z.string(),
+      cited_at: z.string(),
+      citation_type: z.string(),
+      response_excerpt: z.string(),
+      cited_url: z.string().nullable(),
+    }),
+  ),
+});
+
+const contentGapsOutputSchema = z.object({
+  brand_id: z.string(),
+  recommendations: z.array(z.unknown()),
+  prompt_source: z.enum(['generated', 'fallback']),
+  reason: z.string().optional(),
+});
+
+const refreshOutputSchema = z.object({
+  brand_id: z.string(),
+  message: z.string(),
+  run_ids: z.record(z.string(), z.string()),
+  estimated_completion_seconds: z.number(),
+});
+
+const trackBrandOutputSchema = z.object({
+  seeded: z.boolean(),
+  brand_id: z.string(),
+  reason: z.string().optional(),
+  prompts_inserted: z.number().optional(),
+  prompt_source: z.enum(['generated', 'fallback']).optional(),
+  domain: z.string().optional(),
+  competitors: z.array(z.string()).optional(),
+  next_steps: z.string(),
+});
+
+const listBrandsOutputSchema = z.object({
+  brands: z.array(
+    z.object({
+      brand_id: z.string(),
+      name: z.string(),
+      domain: z.string(),
+      category: z.string().nullable(),
+      competitors: z.array(z.string()),
+      refresh_frequency: z.string(),
+      active_prompts: z.number(),
+      created_at: z.string(),
+    }),
+  ),
+  hint: z.string().optional(),
+});
+
+const generatePromptsOutputSchema = z.object({
+  brand_id: z.string(),
+  prompts_inserted: z.number(),
+  prompt_source: z.literal('generated'),
+  prompts: z.array(z.string()),
+  next_steps: z.string(),
+});
+
+const HOSTED_TOOL_NAMES = {
+  check_visibility: 'visibility.check',
+  get_visibility_history: 'visibility.history',
+  compare_competitors: 'visibility.compare',
+  get_citations: 'visibility.citations',
+  get_content_gaps: 'visibility.content_gaps',
+  refresh_brand: 'visibility.refresh',
+} as const;
+
+function toolResult(payload: Record<string, unknown>) {
+  return {
+    content: [
+      { type: 'text' as const, text: JSON.stringify(payload, null, 2) },
+    ],
+    structuredContent: payload,
+  };
+}
+
 export interface Deps {
   db: Db;
   env: EngineKeys;
@@ -55,26 +197,35 @@ function filterRequestedEngines(
   return requested.filter((e) => available.has(e));
 }
 
-export function registerTools(server: McpServer, deps: Deps): void {
+export interface ToolRegistrationOptions {
+  namespaced?: boolean;
+}
+
+export function registerTools(
+  server: McpServer,
+  deps: Deps,
+  options: ToolRegistrationOptions = {},
+): void {
+  const toolName = (legacyName: keyof typeof HOSTED_TOOL_NAMES) =>
+    options.namespaced ? HOSTED_TOOL_NAMES[legacyName] : legacyName;
+
   server.registerTool(
-    'check_visibility',
+    toolName('check_visibility'),
     {
       description:
         "Get the latest AI visibility data for a tracked brand: which AI assistants (ChatGPT, Claude, Perplexity, Gemini, Google AI Overviews) cite this brand, for which prompts, and how it compares to competitors. Use when the user asks 'how visible am I on AI?', 'who's citing my brand?', or 'show me my AI visibility score'. Returns stored data — for fresh data, call refresh_brand.",
       inputSchema: {
-        brand_id: z.string(),
+        brand_id: z
+          .string()
+          .describe('Stable identifier of the tracked brand to inspect.'),
         engines: z
-          .array(
-            z.enum([
-              'chatgpt',
-              'claude',
-              'perplexity',
-              'gemini',
-              'ai_overviews',
-            ]),
-          )
-          .optional(),
+          .array(engineSchema)
+          .optional()
+          .describe(
+            'Optional engine filter. If omitted, return results for every engine with stored data.',
+          ),
       },
+      outputSchema: visibilityOutputSchema,
       annotations: {
         readOnlyHint: true,
         openWorldHint: false,
@@ -126,24 +277,31 @@ export function registerTools(server: McpServer, deps: Deps): void {
         top_winning_prompts: scored.top_winning_prompts,
         top_losing_prompts: scored.top_losing_prompts,
       };
-      return {
-        content: [
-          { type: 'text', text: JSON.stringify(payload, null, 2) },
-        ],
-      };
+      return toolResult(payload);
     },
   );
 
   server.registerTool(
-    'get_visibility_history',
+    toolName('get_visibility_history'),
     {
       description:
         "Get the time-series history of a brand's AI visibility score, broken down per engine. Use when the user asks 'how has my AI visibility changed over time?', 'is my visibility growing or shrinking?', or 'show me the trend for the last month'.",
       inputSchema: {
-        brand_id: z.string(),
-        days: z.number().min(1).max(365).default(30),
-        granularity: z.enum(['daily', 'weekly']).default('weekly'),
+        brand_id: z
+          .string()
+          .describe('Stable identifier of the tracked brand to inspect.'),
+        days: z
+          .number()
+          .min(1)
+          .max(365)
+          .default(30)
+          .describe('Number of previous calendar days to include.'),
+        granularity: z
+          .enum(['daily', 'weekly'])
+          .default('weekly')
+          .describe('Time bucket for the returned visibility series.'),
       },
+      outputSchema: historyOutputSchema,
       annotations: {
         readOnlyHint: true,
         openWorldHint: false,
@@ -184,24 +342,33 @@ export function registerTools(server: McpServer, deps: Deps): void {
         });
 
       const payload = { brand_id, days, granularity, series };
-      return {
-        content: [
-          { type: 'text', text: JSON.stringify(payload, null, 2) },
-        ],
-      };
+      return toolResult(payload);
     },
   );
 
   server.registerTool(
-    'compare_competitors',
+    toolName('compare_competitors'),
     {
       description:
         "Compare a brand's AI visibility against competitors for the same category. Returns share-of-voice percentages, prompts the user wins, and prompts where competitors win. Use when the user asks 'who beats me in AI search?', 'compare me to my competitors', or 'why does [competitor] get cited more?'.",
       inputSchema: {
-        brand_id: z.string(),
-        competitor_domains: z.array(z.string()).optional(),
-        days: z.number().min(1).max(90).default(7),
+        brand_id: z
+          .string()
+          .describe('Stable identifier of the tracked brand to compare.'),
+        competitor_domains: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Optional competitor domains to compare; otherwise use the brand\'s configured competitors.',
+          ),
+        days: z
+          .number()
+          .min(1)
+          .max(90)
+          .default(7)
+          .describe('Number of previous days to include in the comparison.'),
       },
+      outputSchema: compareOutputSchema,
       annotations: {
         readOnlyHint: true,
         openWorldHint: false,
@@ -227,11 +394,7 @@ export function registerTools(server: McpServer, deps: Deps): void {
           prompts_you_win: [],
           requested_competitor_domains: competitor_domains ?? null,
         };
-        return {
-          content: [
-            { type: 'text', text: JSON.stringify(payload, null, 2) },
-          ],
-        };
+        return toolResult(payload);
       }
 
       const since = Date.now() - days * 86_400_000;
@@ -323,32 +486,30 @@ export function registerTools(server: McpServer, deps: Deps): void {
         prompts_you_win,
         requested_competitor_domains: competitor_domains ?? null,
       };
-      return {
-        content: [
-          { type: 'text', text: JSON.stringify(payload, null, 2) },
-        ],
-      };
+      return toolResult(payload);
     },
   );
 
   server.registerTool(
-    'get_citations',
+    toolName('get_citations'),
     {
       description:
         "Get the actual citation events where AI assistants mentioned or linked to the brand. Each citation includes the prompt that triggered it, the LLM's response excerpt, and whether it was a linked citation, a mention without a link, or a paraphrase. Use when the user asks 'show me where I'm cited', 'what are ChatGPT/Claude/Perplexity actually saying about my brand?', or 'give me proof of AI citations'.",
       inputSchema: {
-        brand_id: z.string(),
-        days: z.number().min(1).max(90).default(14),
-        engine: z
-          .enum([
-            'chatgpt',
-            'claude',
-            'perplexity',
-            'gemini',
-            'ai_overviews',
-          ])
-          .optional(),
+        brand_id: z
+          .string()
+          .describe('Stable identifier of the tracked brand to inspect.'),
+        days: z
+          .number()
+          .min(1)
+          .max(90)
+          .default(14)
+          .describe('Number of previous days from which to return citations.'),
+        engine: engineSchema
+          .optional()
+          .describe('Optional engine filter for the citation events.'),
       },
+      outputSchema: citationsOutputSchema,
       annotations: {
         readOnlyHint: true,
         openWorldHint: false,
@@ -385,23 +546,27 @@ export function registerTools(server: McpServer, deps: Deps): void {
         engine: engine ?? null,
         citations,
       };
-      return {
-        content: [
-          { type: 'text', text: JSON.stringify(payload, null, 2) },
-        ],
-      };
+      return toolResult(payload);
     },
   );
 
   server.registerTool(
-    'get_content_gaps',
+    toolName('get_content_gaps'),
     {
       description:
         "Get actionable content recommendations based on AI visibility gaps. Returns prioritized topics and content formats that would close the gap between this brand and competitors winning the same prompts. Use when the user asks 'what should I write to improve AI visibility?', 'what content gaps do I have?', or 'how do I get cited more by AI?'.",
       inputSchema: {
-        brand_id: z.string(),
-        max_recommendations: z.number().min(1).max(10).default(5),
+        brand_id: z
+          .string()
+          .describe('Stable identifier of the tracked brand to analyze.'),
+        max_recommendations: z
+          .number()
+          .min(1)
+          .max(10)
+          .default(5)
+          .describe('Maximum number of content recommendations to return.'),
       },
+      outputSchema: contentGapsOutputSchema,
       annotations: {
         readOnlyHint: true,
         openWorldHint: false,
@@ -463,11 +628,7 @@ export function registerTools(server: McpServer, deps: Deps): void {
           reason:
             'no losing prompts yet — collect more data first (run refresh_brand, then re-check competitors)',
         };
-        return {
-          content: [
-            { type: 'text', text: JSON.stringify(payload, null, 2) },
-          ],
-        };
+        return toolResult(payload);
       }
 
       let recommendations;
@@ -497,33 +658,27 @@ export function registerTools(server: McpServer, deps: Deps): void {
         recommendations,
         prompt_source,
       };
-      return {
-        content: [
-          { type: 'text', text: JSON.stringify(payload, null, 2) },
-        ],
-      };
+      return toolResult(payload);
     },
   );
 
   server.registerTool(
-    'refresh_brand',
+    toolName('refresh_brand'),
     {
       description:
         "Manually trigger a fresh AI visibility scan for a tracked brand. Runs every engine that has its API key configured (ChatGPT, Claude, Perplexity, Gemini, Google AI Overviews) against the brand's current prompt set. Use when the user asks 'refresh my data', 'rerun the scan', or 'I want fresh data right now'. Returns immediately with run IDs; results populate in 30-60 seconds.",
       inputSchema: {
-        brand_id: z.string(),
+        brand_id: z
+          .string()
+          .describe('Stable identifier of the tracked brand to refresh.'),
         engines: z
-          .array(
-            z.enum([
-              'chatgpt',
-              'claude',
-              'perplexity',
-              'gemini',
-              'ai_overviews',
-            ]),
-          )
-          .optional(),
+          .array(engineSchema)
+          .optional()
+          .describe(
+            'Optional engine filter. If omitted, refresh every configured engine.',
+          ),
       },
+      outputSchema: refreshOutputSchema,
       annotations: {
         readOnlyHint: false,
         openWorldHint: true,
@@ -566,11 +721,7 @@ export function registerTools(server: McpServer, deps: Deps): void {
         run_ids,
         estimated_completion_seconds: 30,
       };
-      return {
-        content: [
-          { type: 'text', text: JSON.stringify(payload, null, 2) },
-        ],
-      };
+      return toolResult(payload);
     },
   );
 }
@@ -597,14 +748,32 @@ export function registerLocalManagementTools(
       inputSchema: {
         brand_id: z
           .string()
+          .describe('Stable identifier to assign to the new tracked brand.')
           .regex(
             /^[a-z0-9][a-z0-9_-]{0,63}$/i,
             'brand_id must be 1-64 characters: letters, digits, hyphens, underscores (e.g. "acme")',
           ),
-        name: z.string().min(1).max(200),
-        domain: z.string().min(3).max(253),
-        category: z.string().min(1).max(200).optional(),
-        competitors: z.array(z.string().min(3).max(253)).max(20).optional(),
+        name: z
+          .string()
+          .min(1)
+          .max(200)
+          .describe('Display name of the brand to track.'),
+        domain: z
+          .string()
+          .min(3)
+          .max(253)
+          .describe('Primary domain of the brand, such as acme.com.'),
+        category: z
+          .string()
+          .min(1)
+          .max(200)
+          .optional()
+          .describe('Optional product or market category for prompt generation.'),
+        competitors: z
+          .array(z.string().min(3).max(253))
+          .max(20)
+          .optional()
+          .describe('Optional competitor domains to include in visibility analysis.'),
         aliases: z
           .array(z.string().min(1).max(100))
           .max(20)
@@ -619,8 +788,15 @@ export function registerLocalManagementTools(
           .describe(
             'Terms suppressed from bare-word matching — for brand names that are everyday words ("Monday", "Notion"). The full domain still matches.',
           ),
-        prompt_count: z.number().int().min(1).max(50).default(20),
+        prompt_count: z
+          .number()
+          .int()
+          .min(1)
+          .max(50)
+          .default(20)
+          .describe('Number of buyer-intent prompts to generate for the brand.'),
       },
+      outputSchema: trackBrandOutputSchema,
       annotations: {
         readOnlyHint: false,
         openWorldHint: true,
@@ -689,11 +865,7 @@ export function registerLocalManagementTools(
         competitors: result.seeded ? normalizedCompetitors : undefined,
         next_steps,
       };
-      return {
-        content: [
-          { type: 'text', text: JSON.stringify(payload, null, 2) },
-        ],
-      };
+      return toolResult(payload);
     },
   );
 
@@ -703,6 +875,7 @@ export function registerLocalManagementTools(
       description:
         "List every brand tracked in the local database, with domain, category, competitors, refresh frequency, and how many prompts are active. Use when the user asks 'which brands am I tracking?' or to look up the brand_id the other tools need.",
       inputSchema: {},
+      outputSchema: listBrandsOutputSchema,
       annotations: {
         readOnlyHint: true,
         openWorldHint: false,
@@ -726,11 +899,7 @@ export function registerLocalManagementTools(
             ? 'No brands tracked yet — call track_brand to add one.'
             : undefined,
       };
-      return {
-        content: [
-          { type: 'text', text: JSON.stringify(payload, null, 2) },
-        ],
-      };
+      return toolResult(payload);
     },
   );
 
@@ -740,9 +909,18 @@ export function registerLocalManagementTools(
       description:
         "Regenerate the buyer-intent prompt set for a tracked brand using Claude Haiku (requires ANTHROPIC_API_KEY). Replaces the brand's active prompts; historical run data is preserved. Use when the user wants better or more prompts, or to upgrade from the generic starter prompts after adding an Anthropic key.",
       inputSchema: {
-        brand_id: z.string(),
-        count: z.number().int().min(1).max(50).default(20),
+        brand_id: z
+          .string()
+          .describe('Stable identifier of the tracked brand to update.'),
+        count: z
+          .number()
+          .int()
+          .min(1)
+          .max(50)
+          .default(20)
+          .describe('Number of buyer-intent prompts to generate.'),
       },
+      outputSchema: generatePromptsOutputSchema,
       annotations: {
         readOnlyHint: false,
         openWorldHint: true,
@@ -770,11 +948,7 @@ export function registerLocalManagementTools(
         prompts: generated.map((p) => p.text),
         next_steps: `Call refresh_brand with brand_id '${brand_id}' to scan the new prompt set.`,
       };
-      return {
-        content: [
-          { type: 'text', text: JSON.stringify(payload, null, 2) },
-        ],
-      };
+      return toolResult(payload);
     },
   );
 }

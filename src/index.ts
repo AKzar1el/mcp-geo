@@ -100,21 +100,25 @@ export class GeoMcpAgent extends McpAgent<Env, unknown, AgentProps> {
 
   async init() {
     const db = createD1Db(this.env.DIGESTSEO_DB);
-    registerTools(this.server, {
-      db,
-      env: this.env,
-      // Worker implementation of refresh_brand's engine dispatch:
-      // per-engine fan-out via the SELF service binding so each engine
-      // gets its own invocation (and its own 50-subrequest budget).
-      runEnginesInline: (brand, prompts, engines) =>
-        runEngines(
-          workerEnginesEnv(this.env, db),
-          this.ctx,
-          brand,
-          prompts,
-          engines,
-        ),
-    });
+    registerTools(
+      this.server,
+      {
+        db,
+        env: this.env,
+        // Worker implementation of refresh_brand's engine dispatch:
+        // per-engine fan-out via the SELF service binding so each engine
+        // gets its own invocation (and its own 50-subrequest budget).
+        runEnginesInline: (brand, prompts, engines) =>
+          runEngines(
+            workerEnginesEnv(this.env, db),
+            this.ctx,
+            brand,
+            prompts,
+            engines,
+          ),
+      },
+      { namespaced: true },
+    );
   }
 }
 
