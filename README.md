@@ -9,6 +9,8 @@
 [![MCP](https://img.shields.io/badge/MCP-Server-blueviolet)](https://modelcontextprotocol.io/)
 [![GitHub stars](https://img.shields.io/github/stars/AKzar1el/mcp-geo?style=social)](https://github.com/AKzar1el/mcp-geo/stargazers)
 
+[![mcp-geo MCP server](https://glama.ai/mcp/servers/AKzar1el/mcp-geo/badges/card.svg)](https://glama.ai/mcp/servers/AKzar1el/mcp-geo)
+
 ## Quick Install
 
 Runs locally over stdio with your own API keys — all data stays on your machine (see [Privacy Policy](#privacy-policy)). Set at least one engine key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `PERPLEXITY_API_KEY`, `SERPAPI_API_KEY`); engines without a key skip gracefully.
