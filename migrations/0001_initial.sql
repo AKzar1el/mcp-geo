@@ -1,7 +1,7 @@
 -- geo-mcp initial schema (Day 2).
 -- Apply with:
---   npx wrangler d1 execute digestseo-db --local  --file=migrations/0001_initial.sql
---   npx wrangler d1 execute digestseo-db --remote --file=migrations/0001_initial.sql
+--   npx wrangler d1 execute mcp-geo-db --local  --file=migrations/0001_initial.sql
+--   npx wrangler d1 execute mcp-geo-db --remote --file=migrations/0001_initial.sql
 --
 -- D1 is SQLite. Integer timestamps are unix-ms. JSON fields are stored as TEXT.
 

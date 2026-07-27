@@ -3,8 +3,8 @@
 Apply in filename order with:
 
 ```bash
-npx wrangler d1 migrations apply digestseo-db --remote   # production
-npx wrangler d1 migrations apply digestseo-db --local    # wrangler dev
+npx wrangler d1 migrations apply mcp-geo-db --remote   # production
+npx wrangler d1 migrations apply mcp-geo-db --local    # wrangler dev
 ```
 
 Current set:

@@ -190,7 +190,7 @@ Wrangler asks three interactive questions after creating the namespace — answe
 Capture the printed `id` and replace `YOUR_OAUTH_KV_ID` in `wrangler.jsonc` with it.
 
 ```bash
-npx wrangler d1 create digestseo-db
+npx wrangler d1 create mcp-geo-db
 ```
 
 Capture the printed `database_id` and replace `YOUR_D1_DATABASE_ID` in `wrangler.jsonc` with it.
@@ -232,7 +232,7 @@ npx wrangler secret put SERPAPI_API_KEY     # optional
 ### Step 6 — Apply migrations and deploy
 
 ```bash
-npx wrangler d1 migrations apply digestseo-db --remote
+npx wrangler d1 migrations apply mcp-geo-db --remote
 ```
 
 Answer **y** if asked "Would you like to apply these migrations?".

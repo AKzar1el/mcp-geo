@@ -15,8 +15,8 @@
 -- were written with raw_response='ERROR: ...' before this column existed.
 --
 -- Apply with:
---   npx wrangler d1 execute digestseo-db --local  --file=migrations/0004_response_status.sql
---   npx wrangler d1 execute digestseo-db --remote --file=migrations/0004_response_status.sql
+--   npx wrangler d1 execute mcp-geo-db --local  --file=migrations/0004_response_status.sql
+--   npx wrangler d1 execute mcp-geo-db --remote --file=migrations/0004_response_status.sql
 
 ALTER TABLE prompt_responses ADD COLUMN status TEXT NOT NULL DEFAULT 'ok';
 ALTER TABLE prompt_responses ADD COLUMN error_message TEXT;

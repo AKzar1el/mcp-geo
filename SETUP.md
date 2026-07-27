@@ -68,7 +68,7 @@ Wrangler prints a JSON snippet like:
 ## 5 — Create the D1 database
 
 ```bash
-npx wrangler d1 create digestseo-db
+npx wrangler d1 create mcp-geo-db
 ```
 
 Output includes:
@@ -76,7 +76,7 @@ Output includes:
 ```
 [[d1_databases]]
 binding = "DIGESTSEO_DB"
-database_name = "digestseo-db"
+database_name = "mcp-geo-db"
 database_id = "abc12345-1234-1234-1234-abc123456789"
 ```
 
@@ -157,7 +157,7 @@ Because the service binding routes by pathname and ignores the host portion of t
 ## 9 — Apply migrations
 
 ```bash
-npx wrangler d1 migrations apply digestseo-db --remote
+npx wrangler d1 migrations apply mcp-geo-db --remote
 ```
 
 If it asks "Would you like to apply these migrations?" answer **y**.
@@ -165,11 +165,11 @@ If it asks "Would you like to apply these migrations?" answer **y**.
 If `migrations apply` fails because it can't find the migrations table, run each file directly:
 
 ```bash
-npx wrangler d1 execute digestseo-db --remote --file=migrations/0001_initial.sql
-npx wrangler d1 execute digestseo-db --remote --file=migrations/0002_fail_stuck_runs.sql
-npx wrangler d1 execute digestseo-db --remote --file=migrations/0003_perplexity_citations.sql
-npx wrangler d1 execute digestseo-db --remote --file=migrations/0004_response_status.sql
-npx wrangler d1 execute digestseo-db --remote --file=migrations/0005_brand_alias_exclude.sql
+npx wrangler d1 execute mcp-geo-db --remote --file=migrations/0001_initial.sql
+npx wrangler d1 execute mcp-geo-db --remote --file=migrations/0002_fail_stuck_runs.sql
+npx wrangler d1 execute mcp-geo-db --remote --file=migrations/0003_perplexity_citations.sql
+npx wrangler d1 execute mcp-geo-db --remote --file=migrations/0004_response_status.sql
+npx wrangler d1 execute mcp-geo-db --remote --file=migrations/0005_brand_alias_exclude.sql
 ```
 
 ## 10 — Deploy

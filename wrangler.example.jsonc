@@ -60,7 +60,7 @@
 	"d1_databases": [
 		{
 			"binding": "DIGESTSEO_DB",
-			"database_name": "digestseo-db",
+			"database_name": "mcp-geo-db",
 			"database_id": "YOUR_D1_DATABASE_ID"
 		}
 	],

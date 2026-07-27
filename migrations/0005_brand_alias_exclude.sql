@@ -12,8 +12,8 @@
 -- array — existing brands behave exactly as before until terms are set.
 --
 -- Apply with:
---   npx wrangler d1 execute digestseo-db --local  --file=migrations/0005_brand_alias_exclude.sql
---   npx wrangler d1 execute digestseo-db --remote --file=migrations/0005_brand_alias_exclude.sql
+--   npx wrangler d1 execute mcp-geo-db --local  --file=migrations/0005_brand_alias_exclude.sql
+--   npx wrangler d1 execute mcp-geo-db --remote --file=migrations/0005_brand_alias_exclude.sql
 
 ALTER TABLE brands ADD COLUMN aliases_json TEXT;
 ALTER TABLE brands ADD COLUMN exclude_terms_json TEXT;
