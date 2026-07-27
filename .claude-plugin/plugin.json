@@ -1,0 +1,15 @@
+{
+  "name": "digestseo-geo",
+  "version": "0.3.2",
+  "description": "Track brand citations and AI visibility across ChatGPT, Claude, Perplexity, Gemini, and Google AI Overviews.",
+  "keywords": [
+    "mcp",
+    "seo",
+    "geo",
+    "ai-visibility",
+    "brand-monitoring"
+  ],
+  "homepage": "https://digestseo.com/geo-mcp/",
+  "repository": "https://github.com/AKzar1el/mcp-geo",
+  "license": "MIT"
+}
