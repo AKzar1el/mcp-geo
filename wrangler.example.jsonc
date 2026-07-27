@@ -9,6 +9,13 @@
 // stays in the repo.
 {
 	"name": "digestseo-mcp",
+	"workers_dev": false,
+	"routes": [
+		{
+			"pattern": "geo-mcp.digestseo.com",
+			"custom_domain": true
+		}
+	],
 	"main": "src/index.ts",
 	"compatibility_date": "2026-05-22",
 	"compatibility_flags": [
@@ -31,7 +38,7 @@
 		// host, so runs work even with the placeholder in place — but
 		// set the real URL anyway to keep logs honest and future-proof
 		// any code that needs the worker's true origin.
-		"SELF_URL": "https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev"
+		"SELF_URL": "https://geo-mcp.digestseo.com"
 	},
 	// Service binding back to this same worker. /admin/run-live fans
 	// out to /admin/run-engine once per engine via env.SELF.fetch() so
