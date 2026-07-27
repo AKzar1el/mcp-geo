@@ -37,12 +37,14 @@ jobs:
       - name: Version sync check (package.json <-> server.json)
         run: |
           PKG=$(node -p "require('./package.json').version")
+          PKG_NAME=$(node -p "require('./package.json').name")
           SRV=$(node -p "require('./server.json').version")
+          SRV_PKG_NAME=$(node -p "require('./server.json').packages[0].identifier")
           SRV_PKG=$(node -p "require('./server.json').packages[0].version")
           MANIFEST=$(node -p "require('./manifest.json').version")
-          echo "package.json=$PKG server.json=$SRV server.json#packages[0]=$SRV_PKG manifest.json=$MANIFEST"
-          if [ "$PKG" != "$SRV" ] || [ "$PKG" != "$SRV_PKG" ]; then
-            echo "::error::version drift: package.json=$PKG but server.json=$SRV / packages[0]=$SRV_PKG — update server.json before releasing"
+          echo "package.json=$PKG_NAME@$PKG server.json=$SRV server.json#packages[0]=$SRV_PKG_NAME@$SRV_PKG manifest.json=$MANIFEST"
+          if [ "$PKG" != "$SRV" ] || [ "$PKG" != "$SRV_PKG" ] || [ "$PKG_NAME" != "$SRV_PKG_NAME" ]; then
+            echo "::error::package drift: package.json=$PKG_NAME@$PKG but server.json=$SRV_PKG_NAME@$SRV_PKG (server version=$SRV) — update server.json before releasing"
             exit 1
           fi
           if [ "$PKG" != "$MANIFEST" ]; then
@@ -52,7 +54,7 @@ jobs:
       # prepublishOnly runs typecheck + unit tests + build before the
       # tarball is created.
       - name: Publish to npm
-        run: npm publish
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 

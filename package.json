@@ -1,9 +1,12 @@
 {
-  "name": "digestseo-mcp",
+  "name": "@digestseo/mcp-geo",
   "version": "0.3.2",
   "description": "Self-hostable MCP server for AI visibility tracking across ChatGPT, Claude, Perplexity, Gemini, and Google AI Overviews. Runs locally over stdio (bring your own API keys) or on Cloudflare Workers with D1.",
   "private": false,
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "mcpName": "io.github.AKzar1el/mcp-geo",
   "bin": {

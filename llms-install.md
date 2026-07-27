@@ -1,6 +1,6 @@
-# llms-install.md — AI agent installation guide for digestseo-mcp
+# llms-install.md — AI agent installation guide for the DigestSEO GEO Tracker
 
-This file is written for AI agents (Cline, Claude Code, Cursor agents, etc.) installing **digestseo-mcp**, an MCP server that tracks how ChatGPT, Claude, Perplexity, Gemini, and Google AI Overviews cite a brand. Every command below is copy-pasteable as-is. Choose exactly one path:
+This file is written for AI agents (Cline, Claude Code, Cursor agents, etc.) installing **@digestseo/mcp-geo** (the `digestseo-mcp` executable), an MCP server that tracks how ChatGPT, Claude, Perplexity, Gemini, and Google AI Overviews cite a brand. Every command below is copy-pasteable as-is. Choose exactly one path:
 
 - **Path A (recommended): run locally via npx** — no hosting, data stays in a local SQLite file, user brings their own AI provider API keys.
 - **Path B: self-host on Cloudflare Workers** — remote MCP server with D1 storage, cron auto-refresh, and admin HTTP routes. The connect URL at the end is `https://<worker-host>/mcp`.
@@ -35,7 +35,7 @@ Data location: SQLite database at `~/.digestseo/digestseo.sqlite`, created autom
 ### Sanity check (optional)
 
 ```bash
-npx -y digestseo-mcp
+npx -y @digestseo/mcp-geo
 ```
 
 With at least one key exported in the shell, this starts the server on stdio and logs `ready on stdio` to stderr (press Ctrl+C to stop). With zero keys it exits 1 with an error listing the five variable names.
@@ -54,7 +54,7 @@ Merge this into the `mcpServers` object (include only the keys the user has; del
   "mcpServers": {
     "digestseo": {
       "command": "npx",
-      "args": ["-y", "digestseo-mcp"],
+      "args": ["-y", "@digestseo/mcp-geo"],
       "env": {
         "OPENAI_API_KEY": "sk-REPLACE_ME",
         "ANTHROPIC_API_KEY": "sk-ant-REPLACE_ME",
@@ -74,10 +74,10 @@ Alternative for Claude Desktop: download the `.mcpb` desktop extension from the 
 ### Claude Code (CLI)
 
 ```bash
-claude mcp add --transport stdio digestseo -s user --env OPENAI_API_KEY=sk-REPLACE_ME -- npx -y digestseo-mcp
+claude mcp add --transport stdio digestseo -s user --env OPENAI_API_KEY=sk-REPLACE_ME -- npx -y @digestseo/mcp-geo
 ```
 
-Add one `--env NAME=VALUE` flag per key the user has (before the `--`). The base form without env flags is `claude mcp add --transport stdio digestseo -s user -- npx -y digestseo-mcp`, but remember the server exits at startup if it ends up with zero keys.
+Add one `--env NAME=VALUE` flag per key the user has (before the `--`). The base form without env flags is `claude mcp add --transport stdio digestseo -s user -- npx -y @digestseo/mcp-geo`, but remember the server exits at startup if it ends up with zero keys.
 
 ### Cursor
 
@@ -88,7 +88,7 @@ Edit `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` in the project root, sa
   "mcpServers": {
     "digestseo": {
       "command": "npx",
-      "args": ["-y", "digestseo-mcp"],
+      "args": ["-y", "@digestseo/mcp-geo"],
       "env": {
         "OPENAI_API_KEY": "sk-REPLACE_ME"
       }
@@ -106,7 +106,7 @@ Open Cline → MCP Servers → Configure MCP Servers (this opens `cline_mcp_sett
   "mcpServers": {
     "digestseo": {
       "command": "npx",
-      "args": ["-y", "digestseo-mcp"],
+      "args": ["-y", "@digestseo/mcp-geo"],
       "env": {
         "OPENAI_API_KEY": "sk-REPLACE_ME"
       },

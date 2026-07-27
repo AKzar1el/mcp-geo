@@ -22,6 +22,16 @@
       "sizes": ["any"]
     }
   ],
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@digestseo/mcp-geo",
+      "version": "0.3.2",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ],
   "tools": [
     {
       "name": "check_visibility",
@@ -461,7 +471,7 @@
   "_meta": {
     "io.modelcontextprotocol.registry/publisher-provided": {
       "license": "MIT",
-      "notes": "Two deploy modes: run locally via `npx -y digestseo-mcp` (SQLite at ~/.digestseo, bring your own engine API keys), or self-host the Cloudflare Worker (D1 + cron auto-refresh; see SETUP.md or llms-install.md) and connect to your Worker URL at /mcp. Engines are opt-in: each of the five engines activates only when its API key is set.",
+      "notes": "Two deploy modes: run locally via `npx -y @digestseo/mcp-geo` (SQLite at ~/.digestseo, bring your own engine API keys), or self-host the Cloudflare Worker (D1 + cron auto-refresh; see SETUP.md or llms-install.md) and connect to your Worker URL at /mcp. Engines are opt-in: each of the five engines activates only when its API key is set.",
       "tags": [
         "geo",
         "aeo",

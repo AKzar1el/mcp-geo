@@ -4,11 +4,11 @@ All notable changes to this project are documented here. The format is loosely b
 
 ## [0.3.0] — July 2026
 
-A second distribution path: a local stdio CLI where users bring their own API keys, published to npm as `digestseo-mcp`, plus registry/marketplace metadata. The Cloudflare Workers path keeps every 0.2.1 behavior — the accuracy and security fixes now live in the runtime-agnostic core shared by both.
+A second distribution path: a local stdio CLI where users bring their own API keys, published to npm as `@digestseo/mcp-geo`, plus registry/marketplace metadata. The Cloudflare Workers path keeps every 0.2.1 behavior — the accuracy and security fixes now live in the runtime-agnostic core shared by both.
 
 ### Added
 
-- **Local stdio CLI** (`npx -y digestseo-mcp`): the same MCP tools backed by a local SQLite database (`~/.digestseo/digestseo.sqlite`, override with `DIGESTSEO_DB_PATH`). Engines run inline and sequentially — no fan-out needed locally. All logging goes to stderr; stdout is the JSON-RPC channel.
+- **Local stdio CLI** (`npx -y @digestseo/mcp-geo`): the same MCP tools backed by a local SQLite database (`~/.digestseo/digestseo.sqlite`, override with `DIGESTSEO_DB_PATH`). Engines run inline and sequentially — no fan-out needed locally. All logging goes to stderr; stdout is the JSON-RPC channel.
 - **Local brand-management tools** (CLI only): `track_brand` (creates a brand + generated prompt set; falls back to three starter prompts without `ANTHROPIC_API_KEY`; accepts the per-brand `aliases` and `exclude_terms` from 0.2.1), `list_brands` (brands with active prompt counts), `generate_prompts` (regenerate a brand's prompt set via Claude Haiku). On Workers deployments these operations remain behind the `X-Seed-Secret`-gated `/admin/*` routes; the Worker MCP surface still exposes exactly the original six tools.
 - `src/core/` — runtime-agnostic core shared by the Worker and the CLI: engine callers, scoring, prompt generation, content-gap analysis, brand seeding, and `registerTools`/`registerLocalManagementTools`.
 - `src/db/types.ts` (`Db` contract), `src/db/d1.ts` (D1 adapter), `src/db/sqlite.ts` (better-sqlite3 adapter with a `_migrations`-tracked migration runner). Both adapters carry the 0.2.1 brand columns (`aliases_json`, `exclude_terms_json`) and the partial-run-aware visibility-history query.
@@ -22,7 +22,7 @@ A second distribution path: a local stdio CLI where users bring their own API ke
 ### Changed
 
 - `hashPrompt` keeps 0.2.1's `HASH_FIELD_SEP = '\x1f'` field separator (cache keys are unchanged from 0.2.1).
-- npm manifest: `dependencies` now lists only what the published CLI actually needs at runtime (`@modelcontextprotocol/sdk`, `better-sqlite3`, `zod`); Worker-only packages (`@cloudflare/workers-oauth-provider`, `agents`) are `devDependencies` — wrangler bundles them into the Worker regardless, and `npx digestseo-mcp` installs stay small. This supersedes 0.2.1's "manifest tells the truth" arrangement, which predated the npm package.
+- npm manifest: `dependencies` now lists only what the published CLI actually needs at runtime (`@modelcontextprotocol/sdk`, `better-sqlite3`, `zod`); Worker-only packages (`@cloudflare/workers-oauth-provider`, `agents`) are `devDependencies` — wrangler bundles them into the Worker regardless, and `npx @digestseo/mcp-geo` installs stay small. This supersedes 0.2.1's "manifest tells the truth" arrangement, which predated the npm package.
 
 ## [0.2.1] — June 2026
 
