@@ -1,14 +1,20 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.AKzar1el/mcp-geo",
-  "title": "DigestSEO mcp-geo — AI Visibility MCP Server",
-  "description": "DigestSEO mcp-geo: track brand citations across five AI search engines.",
-  "version": "0.3.1",
+  "title": "GEO Tracker by DigestSEO",
+  "description": "DigestSEO GEO Tracker: track brand citations across five AI search engines.",
+  "version": "0.3.2",
   "repository": {
     "url": "https://github.com/AKzar1el/mcp-geo",
     "source": "github"
   },
   "websiteUrl": "https://digestseo.com/geo-mcp/",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://geo-mcp.digestseo.com/mcp"
+    }
+  ],
   "icons": [
     {
       "src": "https://digestseo.com/products/mcp-geo-mark.svg",
