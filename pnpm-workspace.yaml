@@ -1,0 +1,4 @@
+# pnpm 10 disables dependency install scripts unless explicitly approved.
+# better-sqlite3 needs its native binding for the local stdio server.
+onlyBuiltDependencies:
+  - better-sqlite3
