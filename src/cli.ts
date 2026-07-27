@@ -67,17 +67,12 @@ async function main(): Promise<void> {
 
   const available = getAvailableEngines(env);
   if (available.length === 0) {
-    process.stderr.write(
-      'digestseo-mcp needs at least one engine API key to do anything useful, ' +
-        'and none are set. Add one or more of these environment variables to ' +
-        'your MCP client config and restart: OPENAI_API_KEY (ChatGPT), ' +
-        'ANTHROPIC_API_KEY (Claude, plus prompt generation and content-gap ' +
-        'analysis), GEMINI_API_KEY (Gemini — free tier available), ' +
-        'PERPLEXITY_API_KEY (Perplexity), SERPAPI_API_KEY (Google AI ' +
-        'Overviews). Every key is optional on its own; engines without a ' +
-        'key are skipped gracefully.\n',
+    log(
+      'no engine API keys configured; MCP discovery is available, but ' +
+        'engine-backed scans require at least one of OPENAI_API_KEY, ' +
+        'ANTHROPIC_API_KEY, GEMINI_API_KEY, PERPLEXITY_API_KEY, or ' +
+        'SERPAPI_API_KEY. Engines without a key are skipped gracefully.',
     );
-    process.exit(1);
   }
 
   const dbPath = defaultDbPath();

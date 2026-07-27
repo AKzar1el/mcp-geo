@@ -209,7 +209,7 @@ test('stdio CLI: initialize + tools/list returns all nine tools, track_brand→l
   }
 });
 
-test('stdio CLI: zero engine keys prints a friendly error and exits 1', async () => {
+test('stdio CLI: zero engine keys still responds to MCP discovery', async () => {
   assert.ok(existsSync(CLI_PATH), `CLI artifact not found at ${CLI_PATH}`);
   const tmp = mkdtempSync(join(tmpdir(), 'digestseo-stdio-nokeys-'));
   const child = spawn(process.execPath, [CLI_PATH], {
@@ -225,24 +225,62 @@ test('stdio CLI: zero engine keys prints a friendly error and exits 1', async ()
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   let stderrText = '';
-  let stdoutText = '';
   child.stderr.on('data', (c) => (stderrText += c.toString('utf8')));
-  child.stdout.on('data', (c) => (stdoutText += c.toString('utf8')));
-  const exitCode = await new Promise((r) => child.once('close', r));
-  rmSync(tmp, { recursive: true, force: true });
+  let stdoutBuffer = '';
+  const responsesById = new Map();
+  child.stdout.on('data', (chunk) => {
+    stdoutBuffer += chunk.toString('utf8');
+    let nl;
+    while ((nl = stdoutBuffer.indexOf('\n')) !== -1) {
+      const line = stdoutBuffer.slice(0, nl).replace(/\r$/, '');
+      stdoutBuffer = stdoutBuffer.slice(nl + 1);
+      if (!line.trim()) continue;
+      const message = JSON.parse(line);
+      if (message.id !== undefined) responsesById.set(message.id, message);
+    }
+  });
 
-  assert.equal(exitCode, 1);
-  assert.equal(stdoutText, '', 'error message leaked onto stdout');
-  for (const key of [
-    'OPENAI_API_KEY',
-    'ANTHROPIC_API_KEY',
-    'GEMINI_API_KEY',
-    'PERPLEXITY_API_KEY',
-    'SERPAPI_API_KEY',
-  ]) {
-    assert.ok(
-      stderrText.includes(key),
-      `friendly error does not mention ${key}; stderr was:\n${stderrText}`,
-    );
+  const waitFor = (id, timeoutMs = 15_000) =>
+    new Promise((resolvePromise, rejectPromise) => {
+      const startedAt = Date.now();
+      const tick = () => {
+        if (responsesById.has(id)) return resolvePromise(responsesById.get(id));
+        if (Date.now() - startedAt > timeoutMs) {
+          return rejectPromise(
+            new Error(
+              `timed out waiting for JSON-RPC response id=${id}; stderr so far:\n${stderrText}`,
+            ),
+          );
+        }
+        setTimeout(tick, 25);
+      };
+      tick();
+    });
+
+  try {
+    rpc(child, {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2024-11-05',
+        capabilities: {},
+        clientInfo: { name: 'digestseo-stdio-nokeys', version: '1.0.0' },
+      },
+    });
+    const init = await waitFor(1);
+    assert.ok(!init.error, `initialize errored: ${JSON.stringify(init.error)}`);
+    assert.equal(init.result?.serverInfo?.name, 'digestseo-mcp');
+
+    rpc(child, { jsonrpc: '2.0', method: 'notifications/initialized' });
+    rpc(child, { jsonrpc: '2.0', id: 2, method: 'tools/list' });
+    const list = await waitFor(2);
+    assert.ok(!list.error, `tools/list errored: ${JSON.stringify(list.error)}`);
+    assert.equal(list.result?.tools?.length, EXPECTED_TOOLS.length);
+    assert.match(stderrText, /no engine API keys configured/i);
+  } finally {
+    child.kill();
+    await new Promise((resolvePromise) => child.once('close', resolvePromise));
+    rmSync(tmp, { recursive: true, force: true });
   }
 });

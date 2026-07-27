@@ -14,11 +14,11 @@ This file is written for AI agents (Cline, Claude Code, Cursor agents, etc.) ins
 ### Requirements
 
 - Node.js >= 18 (`node --version`)
-- At least one API key from the table below
+- API keys are optional for startup and MCP tool discovery; at least one is needed for engine-backed scans
 
 ### API keys
 
-All five keys are **optional individually, but at least one must be set** or the server prints an error and exits with code 1. Engines whose key is absent are skipped gracefully.
+All five keys are **optional individually**. With zero keys, the server still starts so MCP clients can discover its tools, while engine-backed scans report that no engines are available. Engines whose key is absent are skipped gracefully. Add only the provider keys the user chooses to use.
 
 | Environment variable | Provider / engine | Where to get the key | Notes |
 |---|---|---|---|
@@ -38,7 +38,7 @@ Data location: SQLite database at `~/.digestseo/digestseo.sqlite`, created autom
 npx -y @digestseo/mcp-geo
 ```
 
-With at least one key exported in the shell, this starts the server on stdio and logs `ready on stdio` to stderr (press Ctrl+C to stop). With zero keys it exits 1 with an error listing the five variable names.
+This starts the server on stdio and logs `ready on stdio` to stderr (press Ctrl+C to stop). With zero keys it still starts for MCP discovery and logs a warning; add one or more provider keys before running an engine-backed scan.
 
 ### Claude Desktop
 
@@ -77,7 +77,7 @@ Alternative for Claude Desktop: download the `.mcpb` desktop extension from the 
 claude mcp add --transport stdio digestseo -s user --env OPENAI_API_KEY=sk-REPLACE_ME -- npx -y @digestseo/mcp-geo
 ```
 
-Add one `--env NAME=VALUE` flag per key the user has (before the `--`). The base form without env flags is `claude mcp add --transport stdio digestseo -s user -- npx -y @digestseo/mcp-geo`, but remember the server exits at startup if it ends up with zero keys.
+Add one `--env NAME=VALUE` flag per key the user has (before the `--`). The base form without env flags is `claude mcp add --transport stdio digestseo -s user -- npx -y @digestseo/mcp-geo`; it starts for discovery, but engine-backed scans need at least one provider key.
 
 ### Cursor
 
