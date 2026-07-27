@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/AKzar1el/mcp-geo/actions/workflows/ci.yml/badge.svg)](https://github.com/AKzar1el/mcp-geo/actions/workflows/ci.yml)
 [![npm version](https://img.shields.io/npm/v/digestseo-mcp)](https://www.npmjs.com/package/digestseo-mcp)
-[![MCP Registry](https://img.shields.io/badge/MCP_Registry-io.github.AKzar1el%2Fdigestseo--mcp-0098FF)](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.AKzar1el/digestseo-mcp)
+[![MCP Registry](https://img.shields.io/badge/MCP_Registry-io.github.AKzar1el%2Fmcp--geo-0098FF)](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.AKzar1el/mcp-geo)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
@@ -49,6 +49,8 @@ AI agents installing this server: follow [llms-install.md](./llms-install.md). P
 ---
 
 **mcp-geo** is an open-source **AI visibility tracker** that measures how often your brand is cited by ChatGPT, Claude, Perplexity, Gemini, and Google AI Overviews. It's the **GEO** (Generative Engine Optimization) and **AEO** (Answer Engine Optimization) equivalent of Google Search Console — built as an MCP server so you can query your AI visibility data directly inside Claude.ai, Claude Desktop, Claude Code, Cursor, Codex CLI, or any MCP-compatible client.
+
+Canonical product page: [DigestSEO mcp-geo — AI Visibility MCP Server](https://digestseo.com/geo-mcp/)
 
 > **Prefer zero setup?** Try the hosted version at [digestseo.com](https://digestseo.com) — managed Cloudflare infra, no API keys to manage, multi-brand, scheduled refresh, web UI. Waitlist now open. [Join waitlist →](https://digestseo.com/#waitlist)
 

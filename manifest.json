@@ -1,9 +1,9 @@
 {
   "manifest_version": "0.2",
   "name": "digestseo-mcp",
-  "display_name": "DigestSEO AI Visibility",
-  "version": "0.3.0",
-  "description": "Track how ChatGPT, Claude, Perplexity, Gemini, and Google AI Overviews cite your brand.",
+  "display_name": "DigestSEO mcp-geo — AI Visibility MCP Server",
+  "version": "0.3.1",
+  "description": "DigestSEO mcp-geo: track brand citations across five AI search engines.",
   "long_description": "Self-hosted AI visibility tracking over MCP. Runs buyer-intent prompts against the AI engines you hold API keys for, records which ones cite your brand versus competitors, and exposes nine tools: track_brand, list_brands, generate_prompts, refresh_brand, check_visibility, get_visibility_history, compare_competitors, get_citations, get_content_gaps. All data stays in a local SQLite database under ~/.digestseo.",
   "author": {
     "name": "AKzar1el",

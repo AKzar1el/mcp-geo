@@ -1,14 +1,21 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.AKzar1el/digestseo-mcp",
-  "title": "DigestSEO AI Visibility",
-  "description": "Track how ChatGPT, Claude, Perplexity, Gemini, and Google AI Overviews cite your brand.",
-  "version": "0.3.0",
+  "name": "io.github.AKzar1el/mcp-geo",
+  "title": "DigestSEO mcp-geo — AI Visibility MCP Server",
+  "description": "DigestSEO mcp-geo: track brand citations across five AI search engines.",
+  "version": "0.3.1",
   "repository": {
     "url": "https://github.com/AKzar1el/mcp-geo",
     "source": "github"
   },
-  "websiteUrl": "https://github.com/AKzar1el/mcp-geo#readme",
+  "websiteUrl": "https://digestseo.com/geo-mcp/",
+  "icons": [
+    {
+      "src": "https://digestseo.com/products/mcp-geo-mark.svg",
+      "mimeType": "image/svg+xml",
+      "sizes": ["any"]
+    }
+  ],
   "tools": [
     {
       "name": "check_visibility",
