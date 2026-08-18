@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openSqliteDb, type SqliteDb } from '../../src/db/sqlite.ts';
 import { seedBrand } from '../../src/core/seed.ts';
+import { collectBatch } from '../../src/core/openai.ts';
 
 const EXPECTED_MIGRATIONS = [
   '0001_initial.sql',
@@ -264,6 +265,142 @@ test('getLatestCompletedRun skips runs whose rows all failed', async () => {
     assert.ok(latest);
     assert.equal(latest.id, goodRun.id);
   } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('collectBatch resolves submitted prompts after they are deactivated', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'digestseo.sqlite'));
+  const originalFetch = globalThis.fetch;
+  try {
+    seedBrandFixture(db, 'acme');
+    seedPromptFixture(db, 'acme', 'old-a', 'original prompt A');
+    seedPromptFixture(db, 'acme', 'old-b', 'original prompt B');
+    const brand = await db.getBrand('acme');
+    assert.ok(brand);
+    const submitted = await db.getActivePrompts(brand.id);
+    const run = await db.createRun(brand, 'chatgpt', 'batch', submitted.length);
+    await db.updateRun(run.id, { batch_id: 'batch-1' });
+
+    await db.replacePrompts(brand.id, [
+      { text: 'replacement prompt', intent_stage: null, shape: null },
+    ]);
+    assert.deepEqual(
+      (await db.getActivePrompts(brand.id)).map((prompt) => prompt.text),
+      ['replacement prompt'],
+    );
+    assert.deepEqual(
+      (await db.getPromptsByIds(['old-b', 'old-a'])).map((prompt) => prompt.id),
+      ['old-b', 'old-a'],
+    );
+
+    let fetchCount = 0;
+    globalThis.fetch = (async () => {
+      fetchCount += 1;
+      if (fetchCount === 1) {
+        return new Response(
+          JSON.stringify({ status: 'completed', output_file_id: 'output-1' }),
+        );
+      }
+      return new Response(
+        [
+          JSON.stringify({
+            custom_id: 'old-b',
+            response: {
+              body: {
+                choices: [{ message: { content: 'Acme answer for B.' } }],
+              },
+            },
+          }),
+          JSON.stringify({
+            custom_id: 'old-a',
+            response: {
+              body: {
+                choices: [{ message: { content: 'Acme answer for A.' } }],
+              },
+            },
+          }),
+        ].join('\n'),
+      );
+    }) as typeof fetch;
+
+    const result = await collectBatch(
+      { db, OPENAI_API_KEY: 'test-key' },
+      { ...run, batch_id: 'batch-1' },
+      brand,
+    );
+    assert.deepEqual(result, {
+      ready: true,
+      status: 'completed',
+      completed: 2,
+      failed: 0,
+    });
+    const responses = await db.getResponsesForRun(run.id);
+    assert.deepEqual(
+      responses.map((response) => response.prompt_id).sort(),
+      ['old-a', 'old-b'],
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('collectBatch rejects unknown output prompt IDs before writing responses', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'digestseo.sqlite'));
+  const originalFetch = globalThis.fetch;
+  try {
+    seedBrandFixture(db, 'acme');
+    seedPromptFixture(db, 'acme', 'known-prompt', 'known prompt');
+    const brand = await db.getBrand('acme');
+    assert.ok(brand);
+    const run = await db.createRun(brand, 'chatgpt', 'batch', 1);
+
+    let fetchCount = 0;
+    globalThis.fetch = (async () => {
+      fetchCount += 1;
+      if (fetchCount === 1) {
+        return new Response(
+          JSON.stringify({ status: 'completed', output_file_id: 'output-1' }),
+        );
+      }
+      return new Response(
+        [
+          JSON.stringify({
+            custom_id: 'known-prompt',
+            response: {
+              body: {
+                choices: [{ message: { content: 'Acme valid answer.' } }],
+              },
+            },
+          }),
+          JSON.stringify({
+            custom_id: 'missing-prompt',
+            response: {
+              body: {
+                choices: [{ message: { content: 'Unknown answer.' } }],
+              },
+            },
+          }),
+        ].join('\n'),
+      );
+    }) as typeof fetch;
+
+    await assert.rejects(
+      collectBatch(
+        { db, OPENAI_API_KEY: 'test-key' },
+        { ...run, batch_id: 'batch-1' },
+        brand,
+      ),
+      /OpenAI batch integrity error.*missing-prompt/,
+    );
+    assert.deepEqual(await db.getResponsesForRun(run.id), []);
+  } finally {
+    globalThis.fetch = originalFetch;
     db.close();
     rmSync(root, { recursive: true, force: true });
   }

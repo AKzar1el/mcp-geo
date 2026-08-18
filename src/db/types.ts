@@ -181,6 +181,9 @@ export interface CitationRow {
 export interface Db {
   getBrand(brandId: string): Promise<Brand | null>;
   getActivePrompts(brandId: string): Promise<Prompt[]>;
+  // Batch output custom_ids reference submitted prompt rows, which may have
+  // been soft-deactivated by later prompt regeneration.
+  getPromptsByIds(promptIds: string[]): Promise<Prompt[]>;
   // Seeding (core/seed.ts): INSERT OR IGNORE semantics on both — a
   // pre-existing user/brand row is left untouched, never clobbered.
   upsertUser(id: string, email: string): Promise<void>;

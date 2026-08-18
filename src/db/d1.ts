@@ -117,6 +117,24 @@ export function createD1Db(d1: D1Database): Db {
       return results ?? [];
     },
 
+    async getPromptsByIds(promptIds: string[]): Promise<Prompt[]> {
+      if (promptIds.length === 0) return [];
+      const placeholders = promptIds.map(() => '?').join(', ');
+      const { results } = await d1
+        .prepare(
+          `SELECT id, brand_id, text, intent_stage, shape, active, created_at
+             FROM prompts
+            WHERE id IN (${placeholders})`,
+        )
+        .bind(...promptIds)
+        .all<Prompt>();
+      const byId = new Map((results ?? []).map((prompt) => [prompt.id, prompt]));
+      return promptIds.flatMap((id) => {
+        const prompt = byId.get(id);
+        return prompt ? [prompt] : [];
+      });
+    },
+
     async upsertUser(id: string, email: string): Promise<void> {
       const now = Date.now();
       await d1

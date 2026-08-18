@@ -450,11 +450,34 @@ interface BatchOutputLine {
   error?: { message?: string };
 }
 
+function parseBatchOutputLines(body: string): BatchOutputLine[] {
+  const output: BatchOutputLine[] = [];
+  for (const rawLine of body.split('\n')) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      throw new Error('OpenAI batch integrity error: invalid JSON output line');
+    }
+    if (
+      !parsed ||
+      typeof parsed !== 'object' ||
+      typeof (parsed as { custom_id?: unknown }).custom_id !== 'string' ||
+      (parsed as { custom_id: string }).custom_id.length === 0
+    ) {
+      throw new Error('OpenAI batch integrity error: output line missing custom_id');
+    }
+    output.push(parsed as BatchOutputLine);
+  }
+  return output;
+}
+
 export async function collectBatch(
   env: OpenAiEnv,
   run: Run,
   brand: Brand,
-  prompts: Prompt[],
 ): Promise<CollectBatchResult> {
   if (!run.batch_id) {
     throw new Error(`run ${run.id} has no batch_id`);
@@ -491,20 +514,29 @@ export async function collectBatch(
   }
   const body = await outputResp.text();
 
-  const promptById = new Map(prompts.map((p) => [p.id, p]));
+  const outputLines = parseBatchOutputLines(body);
+  const promptIds = [...new Set(outputLines.map((line) => line.custom_id))];
+  const prompts = await env.db.getPromptsByIds(promptIds);
+  const promptById = new Map(prompts.map((prompt) => [prompt.id, prompt]));
+  const unresolved = promptIds.filter((id) => {
+    const prompt = promptById.get(id);
+    return !prompt || prompt.brand_id !== brand.id;
+  });
+  if (unresolved.length > 0) {
+    throw new Error(
+      `OpenAI batch integrity error: output custom_id(s) do not match stored prompts for brand ${brand.id}: ${unresolved.join(', ')}`,
+    );
+  }
+
   let completed = 0;
   let failed = 0;
-  for (const rawLine of body.split('\n')) {
-    const line = rawLine.trim();
-    if (!line) continue;
-    let parsed: BatchOutputLine;
-    try {
-      parsed = JSON.parse(line) as BatchOutputLine;
-    } catch {
-      continue;
-    }
+  for (const parsed of outputLines) {
     const prompt = promptById.get(parsed.custom_id);
-    if (!prompt) continue;
+    if (!prompt) {
+      throw new Error(
+        `OpenAI batch integrity error: unresolved custom_id ${parsed.custom_id}`,
+      );
+    }
     const content = parsed.response?.body?.choices?.[0]?.message?.content;
     if (typeof content !== 'string') {
       failed += 1;

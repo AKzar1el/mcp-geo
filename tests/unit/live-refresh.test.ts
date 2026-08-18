@@ -171,6 +171,8 @@ test('OpenAI Batch completion continues to populate its persistent cache', async
   const cachePuts: Array<{ rawResponse: string; ttlSeconds: number }> = [];
   const inserted: Array<{ raw_response: string }> = [];
   const db = {
+    getPromptsByIds: async (promptIds: string[]) =>
+      promptIds.includes(prompt.id) ? [prompt] : [],
     cachePut: async (
       _hash: string,
       _engine: string,
@@ -215,7 +217,6 @@ test('OpenAI Batch completion continues to populate its persistent cache', async
       { db, OPENAI_API_KEY: 'test-key' },
       run,
       brand,
-      [prompt],
     );
     assert.deepEqual(result, {
       ready: true,

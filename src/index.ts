@@ -358,12 +358,10 @@ async function handleAdminRunBatchCollect(
   if (!run) return jsonResponse({ error: 'run not found' }, 404);
   const brand = await db.getBrand(run.brand_id);
   if (!brand) return jsonResponse({ error: 'brand not found' }, 404);
-  const prompts = await db.getActivePrompts(brand.id);
   const result = await collectBatch(
     { db, OPENAI_API_KEY: env.OPENAI_API_KEY },
     run,
     brand,
-    prompts,
   );
   return jsonResponse({ run_id: run.id, ...result });
 }

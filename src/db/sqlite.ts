@@ -187,6 +187,23 @@ export function openSqliteDb(path?: string): SqliteDb {
         .all(brandId) as Prompt[];
     },
 
+    async getPromptsByIds(promptIds: string[]): Promise<Prompt[]> {
+      if (promptIds.length === 0) return [];
+      const placeholders = promptIds.map(() => '?').join(', ');
+      const rows = sqlite
+        .prepare(
+          `SELECT id, brand_id, text, intent_stage, shape, active, created_at
+             FROM prompts
+            WHERE id IN (${placeholders})`,
+        )
+        .all(...promptIds) as Prompt[];
+      const byId = new Map(rows.map((prompt) => [prompt.id, prompt]));
+      return promptIds.flatMap((id) => {
+        const prompt = byId.get(id);
+        return prompt ? [prompt] : [];
+      });
+    },
+
     async upsertUser(id: string, email: string): Promise<void> {
       const now = Date.now();
       sqlite
