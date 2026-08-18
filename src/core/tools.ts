@@ -227,7 +227,7 @@ export function registerTools(
           .array(engineSchema)
           .optional()
           .describe(
-            'Optional engine filter. If omitted, return results for every engine with stored data.',
+            'Optional engine filter. If omitted or empty, return results for every engine with stored data.',
           ),
       },
       outputSchema: visibilityOutputSchema,
@@ -247,27 +247,27 @@ export function registerTools(
       // by the subrequest cap, wall time, etc.) still surface their
       // ok rows. Use completed_at when available, started_at as a
       // fallback for in-progress runs.
-      const allResponses: PromptResponse[] = [];
+      const selectedEngines =
+        !engines || engines.length === 0 ? ALL_ENGINES : engines;
+      const selectedResponses: PromptResponse[] = [];
       let mostRecentTimestamp = 0;
-      for (const engine of ALL_ENGINES) {
+      for (const engine of selectedEngines) {
         const run = await deps.db.getLatestCompletedRun(brand_id, engine);
         if (!run) continue;
         const responses = await deps.db.getResponsesForRun(run.id);
         if (responses.length === 0) continue;
-        allResponses.push(...responses);
+        selectedResponses.push(...responses);
         const ts = run.completed_at ?? run.started_at;
         if (ts > mostRecentTimestamp) mostRecentTimestamp = ts;
       }
-      if (allResponses.length === 0) {
+      if (selectedResponses.length === 0) {
         throw new Error(
-          'No visibility data yet for this brand. Call refresh_brand to populate it.',
+          engines && engines.length > 0
+            ? 'No visibility data yet for the selected engines. Call refresh_brand to populate them.'
+            : 'No visibility data yet for this brand. Call refresh_brand to populate it.',
         );
       }
-      const scored = computeOverallScore(brand, allResponses);
-
-      const filteredPerEngine = engines
-        ? scored.per_engine.filter((e) => engines.includes(e.engine as any))
-        : scored.per_engine;
+      const scored = computeOverallScore(brand, selectedResponses);
 
       const payload = {
         brand: {
@@ -278,7 +278,7 @@ export function registerTools(
         },
         refreshed_at: new Date(mostRecentTimestamp).toISOString(),
         overall_score: scored.overall_score,
-        per_engine: filteredPerEngine,
+        per_engine: scored.per_engine,
         top_winning_prompts: scored.top_winning_prompts,
         top_losing_prompts: scored.top_losing_prompts,
       };
