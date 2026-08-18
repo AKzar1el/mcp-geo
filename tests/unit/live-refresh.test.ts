@@ -239,3 +239,89 @@ test('OpenAI Batch completion continues to populate its persistent cache', async
   assert.equal(cacheTtlSeconds, 30 * 24 * 60 * 60);
   assert.equal(replaceExisting, true);
 });
+
+test('OpenAI Batch rejects invalid error-file IDs before persistence', async () => {
+  const run: Run = {
+    id: 'batch-run',
+    brand_id: brand.id,
+    engine: 'chatgpt',
+    mode: 'batch',
+    status: 'in_progress',
+    prompts_total: 1,
+    prompts_completed: 0,
+    batch_id: 'batch-1',
+    batch_input_file_id: null,
+    started_at: 0,
+    completed_at: null,
+    error: null,
+  };
+
+  async function expectIntegrityFailure(
+    responses: Response[],
+    expected: RegExp,
+  ): Promise<void> {
+    let persisted = false;
+    const db = {
+      getPromptsByIds: async (promptIds: string[]) =>
+        promptIds.includes(prompt.id) ? [prompt] : [],
+      persistEngineRun: async () => {
+        persisted = true;
+      },
+      updateRun: async () => {},
+    } as Db;
+    let request = 0;
+    await withMockFetch(() => responses[request++], async () => {
+      await assert.rejects(
+        collectBatch({ db, OPENAI_API_KEY: 'test-key' }, run, brand),
+        expected,
+      );
+    });
+    assert.equal(persisted, false);
+  }
+
+  await expectIntegrityFailure(
+    [
+      jsonResponse({ status: 'completed', error_file_id: 'error-1' }),
+      new Response(JSON.stringify({ error: { message: 'missing ID' } })),
+    ],
+    /error file line missing custom_id/,
+  );
+  await expectIntegrityFailure(
+    [
+      jsonResponse({ status: 'completed', error_file_id: 'error-1' }),
+      new Response(
+        JSON.stringify({
+          custom_id: 'unknown-prompt',
+          error: { message: 'not submitted' },
+        }),
+      ),
+    ],
+    /custom_id.*unknown-prompt/,
+  );
+  await expectIntegrityFailure(
+    [
+      jsonResponse({
+        status: 'completed',
+        output_file_id: 'output-1',
+        error_file_id: 'error-1',
+      }),
+      new Response(
+        JSON.stringify({
+          custom_id: prompt.id,
+          response: {
+            body: {
+              choices: [{ message: { content: 'Acme success.' } }],
+            },
+          },
+        }),
+      ),
+      new Response(
+        JSON.stringify({
+          custom_id: prompt.id,
+          error: { message: 'conflicting failure' },
+        }),
+      ),
+    ],
+    /appears in both output and error files/,
+  );
+});

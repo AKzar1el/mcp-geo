@@ -445,12 +445,19 @@ export interface CollectBatchResult {
 interface BatchOutputLine {
   custom_id: string;
   response?: {
-    body?: { choices?: Array<{ message?: { content?: string } }> };
+    status_code?: number;
+    body?: {
+      choices?: Array<{ message?: { content?: string } }>;
+      error?: { message?: string };
+    };
   };
   error?: { message?: string };
 }
 
-function parseBatchOutputLines(body: string): BatchOutputLine[] {
+function parseBatchOutputLines(
+  body: string,
+  source: 'output' | 'error',
+): BatchOutputLine[] {
   const output: BatchOutputLine[] = [];
   for (const rawLine of body.split('\n')) {
     const line = rawLine.trim();
@@ -459,7 +466,9 @@ function parseBatchOutputLines(body: string): BatchOutputLine[] {
     try {
       parsed = JSON.parse(line);
     } catch {
-      throw new Error('OpenAI batch integrity error: invalid JSON output line');
+      throw new Error(
+        `OpenAI batch integrity error: invalid JSON ${source} file line`,
+      );
     }
     if (
       !parsed ||
@@ -467,11 +476,71 @@ function parseBatchOutputLines(body: string): BatchOutputLine[] {
       typeof (parsed as { custom_id?: unknown }).custom_id !== 'string' ||
       (parsed as { custom_id: string }).custom_id.length === 0
     ) {
-      throw new Error('OpenAI batch integrity error: output line missing custom_id');
+      throw new Error(
+        `OpenAI batch integrity error: ${source} file line missing custom_id`,
+      );
     }
     output.push(parsed as BatchOutputLine);
   }
   return output;
+}
+
+async function downloadBatchFile(
+  env: OpenAiEnv,
+  fileId: string,
+  source: 'output' | 'error',
+): Promise<string> {
+  const response = await fetch(`${OPENAI_BASE}/files/${fileId}/content`, {
+    headers: { Authorization: `Bearer ${requireOpenAiKey(env)}` },
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(
+      `OpenAI batch ${source} file failed: ${response.status} ${text}`,
+    );
+  }
+  return response.text();
+}
+
+function assertUniqueBatchCustomIds(
+  outputLines: BatchOutputLine[],
+  errorLines: BatchOutputLine[],
+): void {
+  const outputIds = new Set<string>();
+  for (const line of outputLines) {
+    if (outputIds.has(line.custom_id)) {
+      throw new Error(
+        `OpenAI batch integrity error: duplicate custom_id ${line.custom_id} in output file`,
+      );
+    }
+    outputIds.add(line.custom_id);
+  }
+  const errorIds = new Set<string>();
+  for (const line of errorLines) {
+    if (errorIds.has(line.custom_id)) {
+      throw new Error(
+        `OpenAI batch integrity error: duplicate custom_id ${line.custom_id} in error file`,
+      );
+    }
+    if (outputIds.has(line.custom_id)) {
+      throw new Error(
+        `OpenAI batch integrity error: custom_id ${line.custom_id} appears in both output and error files`,
+      );
+    }
+    errorIds.add(line.custom_id);
+  }
+}
+
+function batchErrorMessage(line: BatchOutputLine): string {
+  const message =
+    line.error?.message ?? line.response?.body?.error?.message;
+  if (typeof message === 'string' && message.length > 0) {
+    return truncateError(message);
+  }
+  if (typeof line.response?.status_code === 'number') {
+    return `OpenAI batch request failed with status ${line.response.status_code}`;
+  }
+  return 'no content in batch response';
 }
 
 export async function collectBatch(
@@ -495,27 +564,33 @@ export async function collectBatch(
     await env.db.updateRun(run.id, { status: 'in_progress' });
     return { ready: false, status: batch.status };
   }
-  if (!batch.output_file_id) {
+  if (!batch.output_file_id && !batch.error_file_id) {
     await env.db.updateRun(run.id, {
       status: 'failed',
-      error: 'batch completed without output_file_id',
+      error: 'batch completed without output_file_id or error_file_id',
       completed_at: Date.now(),
     });
-    throw new Error('batch completed without output_file_id');
+    throw new Error('batch completed without output_file_id or error_file_id');
   }
 
-  const outputResp = await fetch(
-    `${OPENAI_BASE}/files/${batch.output_file_id}/content`,
-    { headers: { Authorization: `Bearer ${env.OPENAI_API_KEY}` } },
-  );
-  if (!outputResp.ok) {
-    const text = await outputResp.text();
-    throw new Error(`OpenAI batch output failed: ${outputResp.status} ${text}`);
-  }
-  const body = await outputResp.text();
+  const outputLines = batch.output_file_id
+    ? parseBatchOutputLines(
+      await downloadBatchFile(env, batch.output_file_id, 'output'),
+      'output',
+    )
+    : [];
+  const errorLines = batch.error_file_id
+    ? parseBatchOutputLines(
+      await downloadBatchFile(env, batch.error_file_id, 'error'),
+      'error',
+    )
+    : [];
+  assertUniqueBatchCustomIds(outputLines, errorLines);
 
-  const outputLines = parseBatchOutputLines(body);
-  const promptIds = [...new Set(outputLines.map((line) => line.custom_id))];
+  const promptIds = [
+    ...outputLines.map((line) => line.custom_id),
+    ...errorLines.map((line) => line.custom_id),
+  ];
   const prompts = await env.db.getPromptsByIds(promptIds);
   const promptById = new Map(prompts.map((prompt) => [prompt.id, prompt]));
   const unresolved = promptIds.filter((id) => {
@@ -524,7 +599,7 @@ export async function collectBatch(
   });
   if (unresolved.length > 0) {
     throw new Error(
-      `OpenAI batch integrity error: output custom_id(s) do not match stored prompts for brand ${brand.id}: ${unresolved.join(', ')}`,
+      `OpenAI batch integrity error: batch custom_id(s) do not match stored prompts for brand ${brand.id}: ${unresolved.join(', ')}`,
     );
   }
 
@@ -546,9 +621,7 @@ export async function collectBatch(
         cited_urls: [],
         competitors_mentioned: [],
         status: 'failed',
-        error_message: truncateError(
-          parsed.error?.message ?? 'no content in batch response',
-        ),
+        error_message: batchErrorMessage(parsed),
       });
       continue;
     }
@@ -563,6 +636,24 @@ export async function collectBatch(
       competitors_mentioned: citations.competitors_mentioned,
       status: 'ok',
       cache_to_put: { prompt_hash: hash, raw_response: content },
+    });
+  }
+  for (const parsed of errorLines) {
+    const prompt = promptById.get(parsed.custom_id);
+    if (!prompt) {
+      throw new Error(
+        `OpenAI batch integrity error: unresolved custom_id ${parsed.custom_id}`,
+      );
+    }
+    results.push({
+      prompt_id: prompt.id,
+      raw_response: '',
+      brand_mentioned: 0,
+      brand_cited_with_link: 0,
+      cited_urls: [],
+      competitors_mentioned: [],
+      status: 'failed',
+      error_message: batchErrorMessage(parsed),
     });
   }
 

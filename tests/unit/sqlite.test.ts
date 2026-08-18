@@ -357,9 +357,10 @@ test('collectBatch replaces partial results when the same completed batch is col
     seedBrandFixture(db, 'acme');
     seedPromptFixture(db, 'acme', 'prompt-a', 'first prompt');
     seedPromptFixture(db, 'acme', 'prompt-b', 'second prompt');
+    seedPromptFixture(db, 'acme', 'prompt-c', 'third prompt');
     const brand = await db.getBrand('acme');
     assert.ok(brand);
-    const run = await db.createRun(brand, 'chatgpt', 'batch', 2);
+    const run = await db.createRun(brand, 'chatgpt', 'batch', 3);
     await db.updateRun(run.id, { batch_id: 'batch-1' });
 
     await db.insertPromptResponse({
@@ -378,13 +379,29 @@ test('collectBatch replaces partial results when the same completed batch is col
     let collection = 0;
     globalThis.fetch = (async () => {
       request += 1;
-      if (request % 2 === 1) {
+      const requestInCollection = request % 3;
+      if (requestInCollection === 1) {
         collection += 1;
         return new Response(
-          JSON.stringify({ status: 'completed', output_file_id: 'output-1' }),
+          JSON.stringify({
+            status: 'completed',
+            output_file_id: 'output-1',
+            error_file_id: 'error-1',
+          }),
         );
       }
       const suffix = collection === 1 ? 'first' : 'second';
+      if (requestInCollection === 0) {
+        return new Response(
+          JSON.stringify({
+            custom_id: 'prompt-c',
+            response: {
+              status_code: 429,
+              body: { error: { message: `Acme ${suffix} error C.` } },
+            },
+          }),
+        );
+      }
       return new Response(
         [
           JSON.stringify({
@@ -421,7 +438,7 @@ test('collectBatch replaces partial results when the same completed batch is col
     const responseCount = db.raw
       .prepare('SELECT COUNT(*) AS n FROM prompt_responses WHERE run_id = ?')
       .get(run.id) as { n: number };
-    assert.equal(responseCount.n, 2);
+    assert.equal(responseCount.n, 3);
     assert.deepEqual(
       (await db.getResponsesForRun(run.id))
         .map((response) => response.raw_response)
@@ -431,6 +448,22 @@ test('collectBatch replaces partial results when the same completed batch is col
     const refreshedRun = await db.getRunById(run.id);
     assert.equal(refreshedRun?.prompts_completed, 2);
     assert.deepEqual(
+      db.raw
+        .prepare(
+          'SELECT prompt_id, status, error_message FROM prompt_responses WHERE run_id = ? ORDER BY prompt_id',
+        )
+        .all(run.id),
+      [
+        { prompt_id: 'prompt-a', status: 'ok', error_message: null },
+        { prompt_id: 'prompt-b', status: 'ok', error_message: null },
+        {
+          prompt_id: 'prompt-c',
+          status: 'failed',
+          error_message: 'Acme second error C.',
+        },
+      ],
+    );
+    assert.deepEqual(
       (
         db.raw
           .prepare(
@@ -439,6 +472,64 @@ test('collectBatch replaces partial results when the same completed batch is col
           .all() as Array<{ raw_response: string }>
       ).map((row) => row.raw_response),
       ['Acme second answer A.', 'Acme second answer B.'],
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('collectBatch persists an all-failed batch from its error file', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'digestseo.sqlite'));
+  const originalFetch = globalThis.fetch;
+  try {
+    seedBrandFixture(db, 'acme');
+    seedPromptFixture(db, 'acme', 'failed-prompt', 'a failing prompt');
+    const brand = await db.getBrand('acme');
+    assert.ok(brand);
+    const run = await db.createRun(brand, 'chatgpt', 'batch', 1);
+
+    let request = 0;
+    globalThis.fetch = (async () => {
+      request += 1;
+      return request === 1
+        ? new Response(
+          JSON.stringify({ status: 'completed', error_file_id: 'error-1' }),
+        )
+        : new Response(
+          JSON.stringify({
+            custom_id: 'failed-prompt',
+            error: { message: 'OpenAI timed out the request.' },
+          }),
+        );
+    }) as typeof fetch;
+
+    const result = await collectBatch(
+      { db, OPENAI_API_KEY: 'test-key' },
+      { ...run, batch_id: 'batch-1' },
+      brand,
+    );
+    assert.deepEqual(result, {
+      ready: true,
+      status: 'completed',
+      completed: 0,
+      failed: 1,
+    });
+    assert.deepEqual(
+      db.raw
+        .prepare(
+          'SELECT prompt_id, status, error_message FROM prompt_responses WHERE run_id = ?',
+        )
+        .all(run.id),
+      [
+        {
+          prompt_id: 'failed-prompt',
+          status: 'failed',
+          error_message: 'OpenAI timed out the request.',
+        },
+      ],
     );
   } finally {
     globalThis.fetch = originalFetch;
