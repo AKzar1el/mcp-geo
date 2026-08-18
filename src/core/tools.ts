@@ -569,7 +569,7 @@ export function registerTools(
       outputSchema: contentGapsOutputSchema,
       annotations: {
         readOnlyHint: true,
-        openWorldHint: false,
+        openWorldHint: true,
       },
     },
     async ({ brand_id, max_recommendations }) => {

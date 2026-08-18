@@ -137,6 +137,12 @@ test('stdio CLI: initialize + tools/list returns all nine tools, track_brand→l
       EXPECTED_TOOLS.length,
       `expected exactly ${EXPECTED_TOOLS.length} tools, got ${names.size}`,
     );
+    const contentGaps = (list.result?.tools ?? []).find(
+      (tool) => tool.name === 'get_content_gaps',
+    );
+    assert.ok(contentGaps, 'get_content_gaps tool metadata missing');
+    assert.equal(contentGaps.annotations?.readOnlyHint, true);
+    assert.equal(contentGaps.annotations?.openWorldHint, true);
 
     // End-to-end seeding flow, fully offline: with no ANTHROPIC_API_KEY
     // the generator falls back to the three starter prompts, so
