@@ -73,7 +73,7 @@
     "serpapi_api_key": {
       "type": "string",
       "title": "SerpAPI Key (Google AI Overviews engine)",
-      "description": "Optional — free tier covers ~100 searches/month. At least one of the five engine keys is required.",
+      "description": "Optional — free tier covers 250 searches/month. At least one of the five engine keys is required.",
       "sensitive": true,
       "required": false
     }

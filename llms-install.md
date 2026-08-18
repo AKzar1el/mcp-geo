@@ -26,7 +26,7 @@ All five keys are **optional individually**. With zero keys, the server still st
 | `ANTHROPIC_API_KEY` | Anthropic — Claude engine (`claude-haiku-4-5`) | https://console.anthropic.com/ | Recommended starter; also powers prompt generation and `get_content_gaps` analysis |
 | `GEMINI_API_KEY` | Google AI Studio — Gemini engine (`gemini-2.5-flash-lite`) | https://aistudio.google.com/app/apikey | Free tier rate-limits brands with more than ~5 prompts — treat as an opt-in add-on |
 | `PERPLEXITY_API_KEY` | Perplexity — Sonar engine | https://www.perplexity.ai/settings/api | Paid only |
-| `SERPAPI_API_KEY` | SerpAPI — Google AI Overviews engine | https://serpapi.com/dashboard | Free tier ~100 searches/month |
+| `SERPAPI_API_KEY` | SerpAPI — Google AI Overviews engine | https://serpapi.com/dashboard | Free tier 250 searches/month |
 
 Recommend **OpenAI + Anthropic** as the starting pair — both bill per token with no rate-limit surprises, so the first scan returns clean, scorable data.
 

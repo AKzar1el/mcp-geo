@@ -113,7 +113,7 @@ npx wrangler secret put OPENAI_API_KEY      # ChatGPT engine — recommended sta
 npx wrangler secret put ANTHROPIC_API_KEY   # Claude engine + prompt generation — recommended starter
 npx wrangler secret put GEMINI_API_KEY      # Gemini engine (opt-in; free-tier rate limits, see Troubleshooting)
 npx wrangler secret put PERPLEXITY_API_KEY  # Perplexity engine (paid)
-npx wrangler secret put SERPAPI_API_KEY     # Google AI Overviews (free tier ~100 searches/month)
+npx wrangler secret put SERPAPI_API_KEY     # Google AI Overviews (free tier 250 searches/month)
 ```
 
 Recommended starting pair is **OpenAI + Anthropic (Claude)** — both bill per token with no rate-limit surprises, so your first scan returns clean, scorable data across the ChatGPT and Claude engines, and the Anthropic key also powers prompt generation. Solo evaluation runs comfortably under €1/month on the two together. Add Gemini, Perplexity, or SerpAPI once you want more coverage.
