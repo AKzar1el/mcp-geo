@@ -106,6 +106,10 @@ export interface EnginePromptResult {
   cache_to_put?: { prompt_hash: string; raw_response: string };
 }
 
+export interface PersistEngineRunOptions {
+  replaceExisting?: boolean;
+}
+
 export interface NewPromptInput {
   text: string;
   intent_stage: string | null;
@@ -215,6 +219,7 @@ export interface Db {
     model: string,
     cacheTtlSeconds: number,
     results: EnginePromptResult[],
+    options?: PersistEngineRunOptions,
   ): Promise<void>;
   // Only returns status='ok' rows — failed/skipped rows must never
   // reach scoring.

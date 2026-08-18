@@ -168,22 +168,23 @@ test('live scans bypass shared cached responses for every provider', async (t) =
 });
 
 test('OpenAI Batch completion continues to populate its persistent cache', async () => {
-  const cachePuts: Array<{ rawResponse: string; ttlSeconds: number }> = [];
-  const inserted: Array<{ raw_response: string }> = [];
+  let persisted: EnginePromptResult[] | undefined;
+  let replaceExisting = false;
+  let cacheTtlSeconds: number | undefined;
   const db = {
     getPromptsByIds: async (promptIds: string[]) =>
       promptIds.includes(prompt.id) ? [prompt] : [],
-    cachePut: async (
-      _hash: string,
+    persistEngineRun: async (
+      _runId: string,
       _engine: string,
       _model: string,
-      rawResponse: string,
-      ttlSeconds: number,
+      persistenceCacheTtlSeconds: number,
+      results: EnginePromptResult[],
+      options?: { replaceExisting?: boolean },
     ) => {
-      cachePuts.push({ rawResponse, ttlSeconds });
-    },
-    insertPromptResponse: async (response: { raw_response: string }) => {
-      inserted.push(response);
+      persisted = results;
+      replaceExisting = options?.replaceExisting === true;
+      cacheTtlSeconds = persistenceCacheTtlSeconds;
     },
     updateRun: async () => {},
   } as Db;
@@ -227,9 +228,14 @@ test('OpenAI Batch completion continues to populate its persistent cache', async
     assert.equal(calls.length, 2);
   });
 
-  assert.equal(inserted.length, 1);
-  assert.equal(inserted[0].raw_response, 'Fresh Acme provider response.');
-  assert.equal(cachePuts.length, 1);
-  assert.equal(cachePuts[0].rawResponse, 'Fresh Acme provider response.');
-  assert.equal(cachePuts[0].ttlSeconds, 30 * 24 * 60 * 60);
+  assert.ok(persisted);
+  assert.equal(persisted.length, 1);
+  assert.equal(persisted[0].raw_response, 'Fresh Acme provider response.');
+  assert.ok(persisted[0].cache_to_put);
+  assert.equal(
+    persisted[0].cache_to_put.raw_response,
+    'Fresh Acme provider response.',
+  );
+  assert.equal(cacheTtlSeconds, 30 * 24 * 60 * 60);
+  assert.equal(replaceExisting, true);
 });

@@ -384,10 +384,18 @@ export function createD1Db(d1: D1Database): Db {
       model: string,
       cacheTtlSeconds: number,
       results: EnginePromptResult[],
+      options = {},
     ): Promise<void> {
       const now = Date.now();
       const cacheExpiresAt = now + cacheTtlSeconds * 1000;
       const stmts: D1PreparedStatement[] = [];
+      if (options.replaceExisting) {
+        stmts.push(
+          d1
+            .prepare('DELETE FROM prompt_responses WHERE run_id = ?')
+            .bind(runId),
+        );
+      }
       for (const r of results) {
         stmts.push(
           d1

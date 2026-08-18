@@ -349,6 +349,104 @@ test('collectBatch resolves submitted prompts after they are deactivated', async
   }
 });
 
+test('collectBatch replaces partial results when the same completed batch is collected again', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'digestseo.sqlite'));
+  const originalFetch = globalThis.fetch;
+  try {
+    seedBrandFixture(db, 'acme');
+    seedPromptFixture(db, 'acme', 'prompt-a', 'first prompt');
+    seedPromptFixture(db, 'acme', 'prompt-b', 'second prompt');
+    const brand = await db.getBrand('acme');
+    assert.ok(brand);
+    const run = await db.createRun(brand, 'chatgpt', 'batch', 2);
+    await db.updateRun(run.id, { batch_id: 'batch-1' });
+
+    await db.insertPromptResponse({
+      run_id: run.id,
+      prompt_id: 'prompt-a',
+      engine: 'chatgpt',
+      raw_response: 'stale partial result',
+      brand_mentioned: 0,
+      brand_cited_with_link: 0,
+      cited_urls: [],
+      competitors_mentioned: [],
+      status: 'ok',
+    });
+
+    let request = 0;
+    let collection = 0;
+    globalThis.fetch = (async () => {
+      request += 1;
+      if (request % 2 === 1) {
+        collection += 1;
+        return new Response(
+          JSON.stringify({ status: 'completed', output_file_id: 'output-1' }),
+        );
+      }
+      const suffix = collection === 1 ? 'first' : 'second';
+      return new Response(
+        [
+          JSON.stringify({
+            custom_id: 'prompt-a',
+            response: {
+              body: {
+                choices: [{ message: { content: `Acme ${suffix} answer A.` } }],
+              },
+            },
+          }),
+          JSON.stringify({
+            custom_id: 'prompt-b',
+            response: {
+              body: {
+                choices: [{ message: { content: `Acme ${suffix} answer B.` } }],
+              },
+            },
+          }),
+        ].join('\n'),
+      );
+    }) as typeof fetch;
+
+    await collectBatch(
+      { db, OPENAI_API_KEY: 'test-key' },
+      { ...run, batch_id: 'batch-1' },
+      brand,
+    );
+    await collectBatch(
+      { db, OPENAI_API_KEY: 'test-key' },
+      { ...run, batch_id: 'batch-1' },
+      brand,
+    );
+
+    const responseCount = db.raw
+      .prepare('SELECT COUNT(*) AS n FROM prompt_responses WHERE run_id = ?')
+      .get(run.id) as { n: number };
+    assert.equal(responseCount.n, 2);
+    assert.deepEqual(
+      (await db.getResponsesForRun(run.id))
+        .map((response) => response.raw_response)
+        .sort(),
+      ['Acme second answer A.', 'Acme second answer B.'],
+    );
+    const refreshedRun = await db.getRunById(run.id);
+    assert.equal(refreshedRun?.prompts_completed, 2);
+    assert.deepEqual(
+      (
+        db.raw
+          .prepare(
+            "SELECT raw_response FROM shared_prompt_cache WHERE engine = 'chatgpt' ORDER BY raw_response",
+          )
+          .all() as Array<{ raw_response: string }>
+      ).map((row) => row.raw_response),
+      ['Acme second answer A.', 'Acme second answer B.'],
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('collectBatch rejects unknown output prompt IDs before writing responses', async () => {
   const root = tempRoot();
   const db = openSqliteDb(join(root, 'digestseo.sqlite'));

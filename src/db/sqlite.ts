@@ -437,6 +437,7 @@ export function openSqliteDb(path?: string): SqliteDb {
       model: string,
       cacheTtlSeconds: number,
       results: EnginePromptResult[],
+      options = {},
     ): Promise<void> {
       const now = Date.now();
       const cacheExpiresAt = now + cacheTtlSeconds * 1000;
@@ -463,7 +464,13 @@ export function openSqliteDb(path?: string): SqliteDb {
                 prompts_completed = ?
           WHERE id = ?`,
       );
+      const deleteResponses = sqlite.prepare(
+        'DELETE FROM prompt_responses WHERE run_id = ?',
+      );
       sqlite.transaction(() => {
+        if (options.replaceExisting) {
+          deleteResponses.run(runId);
+        }
         for (const r of results) {
           insertResponse.run(
             randomUUID(),

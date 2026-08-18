@@ -528,8 +528,7 @@ export async function collectBatch(
     );
   }
 
-  let completed = 0;
-  let failed = 0;
+  const results: EnginePromptResult[] = [];
   for (const parsed of outputLines) {
     const prompt = promptById.get(parsed.custom_id);
     if (!prompt) {
@@ -539,11 +538,8 @@ export async function collectBatch(
     }
     const content = parsed.response?.body?.choices?.[0]?.message?.content;
     if (typeof content !== 'string') {
-      failed += 1;
-      await env.db.insertPromptResponse({
-        run_id: run.id,
+      results.push({
         prompt_id: prompt.id,
-        engine: ENGINE,
         raw_response: '',
         brand_mentioned: 0,
         brand_cited_with_link: 0,
@@ -557,26 +553,28 @@ export async function collectBatch(
       continue;
     }
     const hash = await hashPrompt(prompt.text, ENGINE, MODEL);
-    await env.db.cachePut(hash, ENGINE, MODEL, content, BATCH_CACHE_TTL_SECONDS);
     const citations = extractCitations(brand, content);
-    await env.db.insertPromptResponse({
-      run_id: run.id,
+    results.push({
       prompt_id: prompt.id,
-      engine: ENGINE,
       raw_response: content,
       brand_mentioned: citations.brand_mentioned,
       brand_cited_with_link: citations.brand_cited_with_link,
       cited_urls: citations.cited_urls,
       competitors_mentioned: citations.competitors_mentioned,
       status: 'ok',
+      cache_to_put: { prompt_hash: hash, raw_response: content },
     });
-    completed += 1;
   }
 
-  await env.db.updateRun(run.id, {
-    status: 'completed',
-    prompts_completed: completed,
-    completed_at: Date.now(),
-  });
+  await env.db.persistEngineRun(
+    run.id,
+    ENGINE,
+    MODEL,
+    BATCH_CACHE_TTL_SECONDS,
+    results,
+    { replaceExisting: true },
+  );
+  const completed = results.filter((result) => result.status === 'ok').length;
+  const failed = results.filter((result) => result.status === 'failed').length;
   return { ready: true, status: batch.status, completed, failed };
 }
