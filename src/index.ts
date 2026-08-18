@@ -105,6 +105,7 @@ export class GeoMcpAgent extends McpAgent<Env, unknown, AgentProps> {
       {
         db,
         env: this.env,
+        refreshExecution: 'async',
         // Worker implementation of refresh_brand's engine dispatch:
         // per-engine fan-out via the SELF service binding so each engine
         // gets its own invocation (and its own 50-subrequest budget).

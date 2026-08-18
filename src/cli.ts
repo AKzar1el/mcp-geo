@@ -83,6 +83,7 @@ async function main(): Promise<void> {
   registerTools(server, {
     db,
     env,
+    refreshExecution: 'sync',
     // No fan-out and no subrequest budget locally: run each engine
     // inline and sequentially, then return. Progress goes to stderr.
     runEnginesInline: async (

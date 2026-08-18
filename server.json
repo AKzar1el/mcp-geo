@@ -382,7 +382,7 @@
     },
     {
       "name": "refresh_brand",
-      "description": "Manually trigger a fresh AI visibility scan for a tracked brand. Runs every engine that has its API key configured (ChatGPT, Claude, Perplexity, Gemini, Google AI Overviews) against the brand's current prompt set. Use when the user asks 'refresh my data', 'rerun the scan', or 'I want fresh data right now'. Returns immediately with run IDs; results populate in 30-60 seconds.",
+      "description": "Manually trigger a fresh AI visibility scan for a tracked brand. The hosted Worker returns immediately with run IDs while selected engine scans finish asynchronously; the local CLI runs selected configured engines sequentially and returns only after they finish. Use when the user asks 'refresh my data', 'rerun the scan', or 'I want fresh data right now'.",
       "inputSchema": {
         "def": {
           "type": "object",

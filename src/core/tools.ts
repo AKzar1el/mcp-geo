@@ -177,10 +177,11 @@ function toolResult(payload: Record<string, unknown>) {
 export interface Deps {
   db: Db;
   env: EngineKeys;
-  // Kicks off one run per engine and returns the run ids. The Worker
+  refreshExecution: 'async' | 'sync';
+  // Runs one refresh per engine and returns the run ids. The Worker
   // implementation dispatches each engine into its own invocation via
-  // the SELF service binding and returns immediately; the CLI
-  // implementation runs each engine to completion before returning.
+  // the SELF service binding, while the CLI implementation runs each
+  // engine to completion before returning.
   runEnginesInline: (
     brand: Brand,
     prompts: Prompt[],
@@ -208,6 +209,10 @@ export function registerTools(
 ): void {
   const toolName = (legacyName: keyof typeof HOSTED_TOOL_NAMES) =>
     options.namespaced ? HOSTED_TOOL_NAMES[legacyName] : legacyName;
+  const refreshIsAsync = deps.refreshExecution === 'async';
+  const refreshDescription = refreshIsAsync
+    ? "Manually trigger a fresh AI visibility scan for a tracked brand. Runs every engine that has its API key configured (ChatGPT, Claude, Perplexity, Gemini, Google AI Overviews) against the brand's current prompt set. Use when the user asks 'refresh my data', 'rerun the scan', or 'I want fresh data right now'. Returns immediately with run IDs; results populate in 30-60 seconds."
+    : "Manually trigger a fresh AI visibility scan for a tracked brand. Runs every selected configured engine (ChatGPT, Claude, Perplexity, Gemini, Google AI Overviews) against the brand's current prompt set sequentially. Use when the user asks 'refresh my data', 'rerun the scan', or 'I want fresh data right now'. Returns only after all selected engine scans finish.";
 
   server.registerTool(
     toolName('check_visibility'),
@@ -665,8 +670,7 @@ export function registerTools(
   server.registerTool(
     toolName('refresh_brand'),
     {
-      description:
-        "Manually trigger a fresh AI visibility scan for a tracked brand. Runs every engine that has its API key configured (ChatGPT, Claude, Perplexity, Gemini, Google AI Overviews) against the brand's current prompt set. Use when the user asks 'refresh my data', 'rerun the scan', or 'I want fresh data right now'. Returns immediately with run IDs; results populate in 30-60 seconds.",
+      description: refreshDescription,
       inputSchema: {
         brand_id: z
           .string()
@@ -717,9 +721,9 @@ export function registerTools(
       );
       const payload = {
         brand_id: brand.id,
-        message: `Refresh started for ${kicked.length} engine${kicked.length === 1 ? '' : 's'}`,
+        message: `Refresh ${refreshIsAsync ? 'started' : 'completed'} for ${kicked.length} engine${kicked.length === 1 ? '' : 's'}`,
         run_ids,
-        estimated_completion_seconds: 30,
+        estimated_completion_seconds: refreshIsAsync ? 30 : 0,
       };
       return toolResult(payload);
     },
