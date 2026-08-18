@@ -13,7 +13,6 @@
 
 import {
   extractCitations,
-  hashPrompt,
   hostMatchesDomain,
 } from './openai.js';
 import type {
@@ -143,7 +142,7 @@ export async function chatCompletion(
     google_domain: 'google.com',
     gl: 'us',
     hl: 'en',
-    no_cache: 'false',
+    no_cache: 'true',
   });
   const data = await fetchSerpApi(params);
   const overview = data.ai_overview;
@@ -162,6 +161,7 @@ export async function chatCompletion(
         api_key: apiKey,
         engine: 'google_ai_overview',
         page_token: overview.page_token,
+        no_cache: 'true',
       }),
     );
     if (!followUp.ai_overview) {
@@ -175,30 +175,6 @@ export async function chatCompletion(
   }
 
   return { text: NO_AI_OVERVIEW, citations: [] };
-}
-
-interface CachedPayload {
-  text: string;
-  citations: string[];
-}
-
-function packCached(payload: CachedPayload): string {
-  return JSON.stringify(payload);
-}
-
-function unpackCached(raw: string): CachedPayload {
-  try {
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object' && typeof parsed.text === 'string') {
-      const citations = Array.isArray(parsed.citations)
-        ? parsed.citations.filter((c: unknown): c is string => typeof c === 'string')
-        : [];
-      return { text: parsed.text, citations };
-    }
-  } catch {
-    // fall through to legacy plain-text cache rows
-  }
-  return { text: raw, citations: [] };
 }
 
 function normalizeHost(rawUrl: string): string | null {
@@ -263,8 +239,7 @@ function buildFailedResult(prompt: Prompt, err: unknown): EnginePromptResult {
 function buildResultFromPayload(
   brand: Brand,
   prompt: Prompt,
-  payload: CachedPayload,
-  cacheToPut?: EnginePromptResult['cache_to_put'],
+  payload: AiOverviewCompletion,
 ): EnginePromptResult {
   // No-overview sentinel: "Google's AI Overview didn't trigger for this
   // prompt" is a legitimate signal, not an error. status stays 'ok' so
@@ -279,7 +254,6 @@ function buildResultFromPayload(
       cited_urls: [],
       competitors_mentioned: [],
       status: 'ok',
-      cache_to_put: cacheToPut,
     };
   }
   const citations = extractCitations(brand, payload.text);
@@ -298,7 +272,6 @@ function buildResultFromPayload(
     competitors_mentioned: citations.competitors_mentioned,
     engine_citations: payload.citations,
     status: 'ok',
-    cache_to_put: cacheToPut,
   };
 }
 
@@ -308,13 +281,9 @@ export async function runLive(
   prompts: Prompt[],
   runId: string,
 ): Promise<void> {
-  // Bulk pattern — see src/openai.ts:runLive. AI Overviews caches the
-  // SerpAPI {text, citations} payload as JSON (see packCached), so
-  // cacheToPut wraps that, not raw text.
+  // Bound provider calls while writing every fresh response in one final
+  // batch. AI Overview citations are persisted alongside each response.
   const CONCURRENCY = 5;
-  const hashes = await Promise.all(
-    prompts.map((p) => hashPrompt(p.text, ENGINE, MODEL)),
-  );
 
   if (!env.SERPAPI_API_KEY) {
     const results = prompts.map(buildSkippedResult);
@@ -328,7 +297,6 @@ export async function runLive(
     return;
   }
 
-  const cacheMap = await env.db.bulkCacheGet(hashes, ENGINE, MODEL);
   const results: EnginePromptResult[] = new Array(prompts.length);
 
   for (let i = 0; i < prompts.length; i += CONCURRENCY) {
@@ -337,33 +305,12 @@ export async function runLive(
     await Promise.all(
       chunk.map(async (prompt, j) => {
         const idx = chunkStart + j;
-        const hash = hashes[idx];
-        const cached = cacheMap.get(hash);
         try {
-          let payload: CachedPayload;
-          let cacheToPut: EnginePromptResult['cache_to_put'];
-          if (cached !== undefined) {
-            payload = unpackCached(cached);
-          } else {
-            const completion = await chatCompletion(
-              requireSerpApiKey(env),
-              prompt.text,
-            );
-            payload = {
-              text: completion.text,
-              citations: completion.citations,
-            };
-            cacheToPut = {
-              prompt_hash: hash,
-              raw_response: packCached(payload),
-            };
-          }
-          results[idx] = buildResultFromPayload(
-            brand,
-            prompt,
-            payload,
-            cacheToPut,
+          const payload = await chatCompletion(
+            requireSerpApiKey(env),
+            prompt.text,
           );
+          results[idx] = buildResultFromPayload(brand, prompt, payload);
         } catch (err) {
           results[idx] = buildFailedResult(prompt, err);
         }

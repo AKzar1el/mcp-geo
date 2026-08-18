@@ -86,6 +86,7 @@ test('AI Overview page token is immediately resolved through the SerpAPI endpoin
       assert.equal(calls[1].url.searchParams.get('engine'), 'google_ai_overview');
       assert.equal(calls[1].url.searchParams.get('page_token'), 'short-lived-token');
       assert.equal(calls[1].url.searchParams.get('api_key'), 'test-key');
+      assert.equal(calls[1].url.searchParams.get('no_cache'), 'true');
     },
   );
 });

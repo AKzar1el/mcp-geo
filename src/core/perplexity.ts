@@ -7,7 +7,6 @@
 import {
   buildSystemPrompt,
   extractCitations,
-  hashPrompt,
   hostMatchesDomain,
 } from './openai.js';
 import type {
@@ -81,33 +80,6 @@ export async function chatCompletion(
   return { text, citations };
 }
 
-// Cache value packs text + citations so cache hits don't lose the
-// engine-native URLs. Stored as JSON in the existing raw_response column.
-interface CachedPayload {
-  text: string;
-  citations: string[];
-}
-
-function packCached(payload: CachedPayload): string {
-  return JSON.stringify(payload);
-}
-
-function unpackCached(raw: string): CachedPayload {
-  try {
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object' && typeof parsed.text === 'string') {
-      const citations = Array.isArray(parsed.citations)
-        ? parsed.citations.filter((c: unknown): c is string => typeof c === 'string')
-        : [];
-      return { text: parsed.text, citations };
-    }
-  } catch {
-    // fall through to legacy behavior
-  }
-  // Legacy cache rows written before this commit are plain text.
-  return { text: raw, citations: [] };
-}
-
 function normalizeHost(rawUrl: string): string | null {
   try {
     const u = new URL(rawUrl);
@@ -170,8 +142,7 @@ function buildFailedResult(prompt: Prompt, err: unknown): EnginePromptResult {
 function buildOkResult(
   brand: Brand,
   prompt: Prompt,
-  payload: CachedPayload,
-  cacheToPut?: EnginePromptResult['cache_to_put'],
+  payload: PerplexityCompletion,
 ): EnginePromptResult {
   const citations = extractCitations(brand, payload.text);
   const merged_cited = mergeUrls(citations.cited_urls, payload.citations);
@@ -189,7 +160,6 @@ function buildOkResult(
     competitors_mentioned: citations.competitors_mentioned,
     engine_citations: payload.citations,
     status: 'ok',
-    cache_to_put: cacheToPut,
   };
 }
 
@@ -199,13 +169,9 @@ export async function runLive(
   prompts: Prompt[],
   runId: string,
 ): Promise<void> {
-  // Bulk pattern — see src/openai.ts:runLive. Perplexity additionally
-  // packs {text, citations} as JSON in the cache, so cacheToPut wraps
-  // packCached(payload) instead of raw text.
+  // Bound provider calls while writing every fresh response in one final
+  // batch. Perplexity citations are persisted alongside each response.
   const CONCURRENCY = 5;
-  const hashes = await Promise.all(
-    prompts.map((p) => hashPrompt(p.text, ENGINE, MODEL)),
-  );
 
   if (!env.PERPLEXITY_API_KEY) {
     const results = prompts.map(buildSkippedResult);
@@ -219,7 +185,6 @@ export async function runLive(
     return;
   }
 
-  const cacheMap = await env.db.bulkCacheGet(hashes, ENGINE, MODEL);
   const results: EnginePromptResult[] = new Array(prompts.length);
 
   for (let i = 0; i < prompts.length; i += CONCURRENCY) {
@@ -228,29 +193,13 @@ export async function runLive(
     await Promise.all(
       chunk.map(async (prompt, j) => {
         const idx = chunkStart + j;
-        const hash = hashes[idx];
-        const cached = cacheMap.get(hash);
         try {
-          let payload: CachedPayload;
-          let cacheToPut: EnginePromptResult['cache_to_put'];
-          if (cached !== undefined) {
-            payload = unpackCached(cached);
-          } else {
-            const completion = await chatCompletion(
-              requirePerplexityKey(env),
-              prompt.text,
-              buildSystemPrompt(),
-            );
-            payload = {
-              text: completion.text,
-              citations: completion.citations,
-            };
-            cacheToPut = {
-              prompt_hash: hash,
-              raw_response: packCached(payload),
-            };
-          }
-          results[idx] = buildOkResult(brand, prompt, payload, cacheToPut);
+          const payload = await chatCompletion(
+            requirePerplexityKey(env),
+            prompt.text,
+            buildSystemPrompt(),
+          );
+          results[idx] = buildOkResult(brand, prompt, payload);
         } catch (err) {
           results[idx] = buildFailedResult(prompt, err);
         }

@@ -5,7 +5,6 @@
 import {
   buildSystemPrompt,
   extractCitations,
-  hashPrompt,
 } from './openai.js';
 import type {
   Brand,
@@ -134,9 +133,6 @@ export async function runLive(
   // failures now produce status='failed' rows instead of being
   // silently dropped.
   const CONCURRENCY = 5;
-  const hashes = await Promise.all(
-    prompts.map((p) => hashPrompt(p.text, ENGINE, MODEL)),
-  );
 
   if (!env.GEMINI_API_KEY) {
     const results = prompts.map(buildSkippedResult);
@@ -150,7 +146,6 @@ export async function runLive(
     return;
   }
 
-  const cacheMap = await env.db.bulkCacheGet(hashes, ENGINE, MODEL);
   const results: EnginePromptResult[] = new Array(prompts.length);
 
   for (let i = 0; i < prompts.length; i += CONCURRENCY) {
@@ -159,21 +154,12 @@ export async function runLive(
     await Promise.all(
       chunk.map(async (prompt, j) => {
         const idx = chunkStart + j;
-        const hash = hashes[idx];
-        const cached = cacheMap.get(hash);
         try {
-          let responseText: string;
-          let cacheToPut: EnginePromptResult['cache_to_put'];
-          if (cached !== undefined) {
-            responseText = cached;
-          } else {
-            responseText = await chatCompletion(
-              requireGeminiKey(env),
-              prompt.text,
-              buildSystemPrompt(),
-            );
-            cacheToPut = { prompt_hash: hash, raw_response: responseText };
-          }
+          const responseText = await chatCompletion(
+            requireGeminiKey(env),
+            prompt.text,
+            buildSystemPrompt(),
+          );
           const citations = extractCitations(brand, responseText);
           results[idx] = {
             prompt_id: prompt.id,
@@ -183,7 +169,6 @@ export async function runLive(
             cited_urls: citations.cited_urls,
             competitors_mentioned: citations.competitors_mentioned,
             status: 'ok',
-            cache_to_put: cacheToPut,
           };
         } catch (err) {
           results[idx] = buildFailedResult(prompt, err);
