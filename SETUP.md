@@ -4,7 +4,7 @@
 
 ## Prerequisites
 
-- **Node 18+** — verify with `node --version`.
+- **Node 22+** — verify with `node --version`.
 - A free **Cloudflare account** — sign up at [dash.cloudflare.com](https://dash.cloudflare.com/sign-up).
 - At least one engine API key — see the engine list in [README.md → Step 1 — Get API keys](./README.md#step-1--get-api-keys).
 

@@ -13,7 +13,7 @@ This file is written for AI agents (Cline, Claude Code, Cursor agents, etc.) ins
 
 ### Requirements
 
-- Node.js >= 18 (`node --version`)
+- Node.js >= 22 (`node --version`)
 - API keys are optional for startup and MCP tool discovery; at least one is needed for engine-backed scans
 
 ### API keys
