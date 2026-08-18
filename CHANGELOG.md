@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here. The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.2] — July 27, 2026
+
+Published to npm as `@digestseo/mcp-geo`.
+
+### Added
+
+- **Hosted MCP tool metadata:** hosted tools use `visibility.*` namespaces and provide typed input/output schemas; the local stdio CLI retains flat tool names.
+- **Dedicated Worker storage configuration:** Worker examples and migration documentation target the dedicated `mcp-geo-db` D1 database.
+- **Marketplace metadata:** Cursor and Claude Code plugin manifests, along with refreshed MCP Registry, MCPB, Cline, and Smithery metadata for the DigestSEO-branded server and hosted endpoint.
+
+### Changed
+
+- Package, registry, MCPB, and Worker-reported metadata are synchronized on version `0.3.2` and the `@digestseo/mcp-geo` package identity.
+- Production transitive dependencies are pinned to patched Hono, `fast-uri`, and `body-parser` versions.
+
 ## [0.3.0] — July 2026
 
 A second distribution path: a local stdio CLI where users bring their own API keys, published to npm as `@digestseo/mcp-geo`, plus registry/marketplace metadata. The Cloudflare Workers path keeps every 0.2.1 behavior — the accuracy and security fixes now live in the runtime-agnostic core shared by both.
