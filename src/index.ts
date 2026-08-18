@@ -367,12 +367,10 @@ async function handleAdminTriggerCronTest(db: Db): Promise<Response> {
 
 // Single-engine execution. Called by runEngines() via env.SELF.fetch so
 // each engine gets its own worker invocation and its own 50-subrequest
-// budget. Idempotent: INSERT OR IGNOREs the runs row (the upstream
-// run-live insert may not have replicated to this edge region yet —
-// D1 is eventually consistent across regions, and a missing parent
-// row makes persistEngineRun's batched insert fail with "FOREIGN KEY
-// constraint failed"), then deletes any prior prompt_responses for the
-// run_id before re-inserting, then dispatches the engine.
+// budget. Idempotent: INSERT OR IGNOREs the runs row as a defensive
+// parent-row/FK guard before persistEngineRun's batched insert, then
+// deletes any prior prompt_responses for the run_id before re-inserting,
+// then dispatches the engine.
 //
 // Trust-the-body model: this route is X-Seed-Secret-gated and only
 // ever called by the worker calling itself, so we deliberately do NOT
@@ -428,15 +426,11 @@ async function handleAdminRunEngine(
     });
     return jsonResponse({ error: 'no active prompts for brand' }, 400);
   }
-  // FK guard: prompt_responses.run_id REFERENCES runs(id). /admin/run-live
-  // inserts the runs row in region A; this handler can land in region B
-  // before D1 has replicated the row, causing persistEngineRun's batched
-  // INSERT to fail with "FOREIGN KEY constraint failed" and drop all
-  // prompt_responses rows on the floor. INSERT OR IGNORE makes the row
-  // exist locally: if the upstream row has replicated, this is a no-op;
-  // if not, we create the same row here. 'live' mode matches what
-  // runEngines passes to createRun so the row shape is identical
-  // either way.
+  // FK guard: prompt_responses.run_id REFERENCES runs(id). This handler
+  // runs in an independently dispatched Worker invocation, so INSERT OR
+  // IGNORE ensures the parent row exists before persistEngineRun's batched
+  // INSERT. It is idempotent: an existing run is left untouched; otherwise
+  // this creates the same live-run shape that runEngines creates.
   await env.DIGESTSEO_DB.prepare(
     `INSERT OR IGNORE INTO runs
        (id, brand_id, engine, mode, status, prompts_total,
