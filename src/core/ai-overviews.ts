@@ -62,6 +62,8 @@ interface SerpApiReference {
 interface SerpApiAiOverview {
   text_blocks?: SerpApiTextBlock[];
   references?: SerpApiReference[];
+  page_token?: string;
+  serpapi_link?: string;
 }
 
 interface SerpApiResponse {
@@ -99,6 +101,35 @@ function flattenReferences(refs: SerpApiReference[] | undefined): string[] {
   return out;
 }
 
+function completionFromOverview(
+  overview: SerpApiAiOverview,
+): AiOverviewCompletion {
+  const text = flattenTextBlocks(overview.text_blocks);
+  const citations = flattenReferences(overview.references);
+  return { text: text.length > 0 ? text : NO_AI_OVERVIEW, citations };
+}
+
+function hasOverviewContent(completion: AiOverviewCompletion): boolean {
+  return completion.text !== NO_AI_OVERVIEW || completion.citations.length > 0;
+}
+
+async function fetchSerpApi(
+  params: URLSearchParams,
+): Promise<SerpApiResponse> {
+  const resp = await fetch(`${SERPAPI_URL}?${params.toString()}`, {
+    method: 'GET',
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`SerpAPI search failed: ${resp.status} ${text}`);
+  }
+  const data = (await resp.json()) as SerpApiResponse;
+  if (typeof data.error === 'string' && data.error.length > 0) {
+    throw new Error(`SerpAPI error: ${data.error}`);
+  }
+  return data;
+}
+
 // SerpAPI doesn't take a system prompt — we're asking Google for an AI
 // Overview, not asking an LLM to generate one.
 export async function chatCompletion(
@@ -114,27 +145,36 @@ export async function chatCompletion(
     hl: 'en',
     no_cache: 'false',
   });
-  const resp = await fetch(`${SERPAPI_URL}?${params.toString()}`, {
-    method: 'GET',
-  });
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`SerpAPI search failed: ${resp.status} ${text}`);
-  }
-  const data = (await resp.json()) as SerpApiResponse;
-  if (typeof data.error === 'string' && data.error.length > 0) {
-    throw new Error(`SerpAPI error: ${data.error}`);
-  }
+  const data = await fetchSerpApi(params);
   const overview = data.ai_overview;
   if (!overview) {
     return { text: NO_AI_OVERVIEW, citations: [] };
   }
-  const text = flattenTextBlocks(overview.text_blocks);
-  const citations = flattenReferences(overview.references);
-  if (text.length === 0 && citations.length === 0) {
-    return { text: NO_AI_OVERVIEW, citations: [] };
+
+  const direct = completionFromOverview(overview);
+  if (hasOverviewContent(direct)) {
+    return direct;
   }
-  return { text: text.length > 0 ? text : NO_AI_OVERVIEW, citations };
+
+  if (typeof overview.page_token === 'string' && overview.page_token.length > 0) {
+    const followUp = await fetchSerpApi(
+      new URLSearchParams({
+        api_key: apiKey,
+        engine: 'google_ai_overview',
+        page_token: overview.page_token,
+      }),
+    );
+    if (!followUp.ai_overview) {
+      throw new Error('SerpAPI AI Overview follow-up returned no overview');
+    }
+    const resolved = completionFromOverview(followUp.ai_overview);
+    if (!hasOverviewContent(resolved)) {
+      throw new Error('SerpAPI AI Overview follow-up returned no usable content');
+    }
+    return resolved;
+  }
+
+  return { text: NO_AI_OVERVIEW, citations: [] };
 }
 
 interface CachedPayload {
