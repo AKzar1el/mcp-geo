@@ -7,7 +7,7 @@ import { OAuthProvider } from '@cloudflare/workers-oauth-provider';
 import { McpAgent } from 'agents/mcp';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { createD1Db } from './db/d1.js';
-import type { Db } from './db/types.js';
+import type { Db, Prompt } from './db/types.js';
 import {
   ALL_ENGINES,
   getAvailableEngines,
@@ -18,7 +18,12 @@ import {
 import { registerTools } from './core/tools.js';
 import { collectBatch, submitBatch } from './core/openai.js';
 import { generatePrompts } from './core/prompt-generation.js';
-import { runEngines, type WorkerEnginesEnv } from './engines.js';
+import {
+  PromptSnapshotIntegrityError,
+  resolveRunPromptSnapshot,
+  runEngines,
+  type WorkerEnginesEnv,
+} from './engines.js';
 import { seedBrand, type SeedBrandInput } from './core/seed.js';
 import { DomainInputError } from './core/domain.js';
 
@@ -396,16 +401,28 @@ async function handleAdminRunEngine(
     run_id?: string;
     brand_id?: string;
     engine?: string;
+    prompt_ids?: unknown;
   }>(request);
   const runId = body?.run_id;
   const brandId = body?.brand_id;
   const engine = body?.engine;
-  if (!runId || !brandId || !engine) {
+  const promptIds = body?.prompt_ids;
+  if (
+    !runId ||
+    !brandId ||
+    !engine ||
+    !Array.isArray(promptIds) ||
+    promptIds.length === 0 ||
+    !promptIds.every((id) => typeof id === 'string' && id.length > 0)
+  ) {
     console.log('/admin/run-engine returning 400', {
-      reason: 'run_id, brand_id, engine all required',
+      reason: 'run_id, brand_id, engine, nonempty prompt_ids all required',
     });
     return jsonResponse(
-      { error: 'run_id, brand_id, engine all required' },
+      {
+        error:
+          'run_id, brand_id, engine, and nonempty prompt_ids string array are required',
+      },
       400,
     );
   }
@@ -425,12 +442,29 @@ async function handleAdminRunEngine(
     console.log('/admin/run-engine returning 404', { reason: 'brand not found' });
     return jsonResponse({ error: 'brand not found' }, 404);
   }
-  const prompts = await db.getActivePrompts(brandId);
-  if (prompts.length === 0) {
-    console.log('/admin/run-engine returning 400', {
-      reason: 'no active prompts for brand',
+  let prompts: Prompt[];
+  try {
+    prompts = await resolveRunPromptSnapshot(db, brandId, promptIds);
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : 'prompt snapshot could not be resolved';
+    console.error('/admin/run-engine prompt snapshot integrity failure', {
+      run_id: runId,
+      brand_id: brandId,
+      message,
     });
-    return jsonResponse({ error: 'no active prompts for brand' }, 400);
+    await db
+      .updateRun(runId, {
+        status: 'failed',
+        error: message,
+        completed_at: Date.now(),
+      })
+      .catch(() => {});
+    const prefix =
+      err instanceof PromptSnapshotIntegrityError
+        ? 'Prompt snapshot integrity error'
+        : 'Prompt snapshot resolution error';
+    return jsonResponse({ error: `${prefix}: ${message}` }, 409);
   }
   // FK guard: prompt_responses.run_id REFERENCES runs(id). This handler
   // runs in an independently dispatched Worker invocation, so INSERT OR
@@ -443,7 +477,7 @@ async function handleAdminRunEngine(
         prompts_completed, started_at)
      VALUES (?, ?, ?, 'live', 'in_progress', ?, 0, ?)`,
   )
-    .bind(runId, brandId, engine, prompts.length, Date.now())
+    .bind(runId, brandId, engine, promptIds.length, Date.now())
     .run();
   // Idempotency: clear any prior rows for this run_id so a retry
   // produces exactly one row per prompt instead of duplicating them.

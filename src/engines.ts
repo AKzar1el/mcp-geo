@@ -44,6 +44,51 @@ export interface WaitUntilCtx {
   waitUntil(promise: Promise<unknown>): void;
 }
 
+export class PromptSnapshotIntegrityError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PromptSnapshotIntegrityError';
+  }
+}
+
+// Resolve the prompt snapshot captured before Worker fan-out. Prompt
+// regeneration soft-deactivates old rows, so this must not use
+// getActivePrompts(). Reconstructing from the requested IDs keeps engine
+// execution order stable even if an adapter returns rows in another order.
+export async function resolveRunPromptSnapshot(
+  db: Db,
+  brandId: string,
+  promptIds: string[],
+): Promise<Prompt[]> {
+  const requestedIds = new Set(promptIds);
+  if (requestedIds.size !== promptIds.length) {
+    throw new PromptSnapshotIntegrityError('prompt_ids contains duplicates');
+  }
+  const resolved = await db.getPromptsByIds(promptIds);
+  const byId = new Map(resolved.map((prompt) => [prompt.id, prompt]));
+  const unexpected = resolved.filter((prompt) => !requestedIds.has(prompt.id));
+  if (unexpected.length > 0) {
+    throw new PromptSnapshotIntegrityError(
+      `prompt lookup returned unexpected IDs: ${unexpected.map((prompt) => prompt.id).join(', ')}`,
+    );
+  }
+  const missing = promptIds.filter((id) => !byId.has(id));
+  if (missing.length > 0) {
+    throw new PromptSnapshotIntegrityError(
+      `prompt snapshot IDs not found: ${missing.join(', ')}`,
+    );
+  }
+  const wrongBrand = promptIds.filter(
+    (id) => byId.get(id)?.brand_id !== brandId,
+  );
+  if (wrongBrand.length > 0) {
+    throw new PromptSnapshotIntegrityError(
+      `prompt snapshot IDs do not belong to brand ${brandId}: ${wrongBrand.join(', ')}`,
+    );
+  }
+  return promptIds.map((id) => byId.get(id)!);
+}
+
 function resolveSelfUrl(env: WorkerEnginesEnv, request?: Request): string {
   if (env.SELF_URL && env.SELF_URL.length > 0) {
     return env.SELF_URL.replace(/\/$/, '');
@@ -74,6 +119,7 @@ export async function runEngines(
   engineNames?: EngineName[],
   request?: Request,
 ): Promise<RunEnginesResult> {
+  const promptIds = prompts.map((prompt) => prompt.id);
   const available = getAvailableEngines(env);
   const availableSet = new Set<EngineName>(available);
   const requested = engineNames ?? available;
@@ -108,6 +154,7 @@ export async function runEngines(
           run_id: er.run_id,
           brand_id: brand.id,
           engine: er.engine,
+          prompt_ids: promptIds,
         };
         // env.SELF.fetch() routes through Cloudflare's internal
         // service-binding fabric so this call doesn't trip the
