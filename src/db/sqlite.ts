@@ -346,6 +346,8 @@ export function openSqliteDb(path?: string): SqliteDb {
       return row ?? null;
     },
 
+    // Cron freshness uses the same usable-data definition as visibility:
+    // a run must contain at least one status='ok' prompt response.
     async getBrandsDueForRefresh(): Promise<Brand[]> {
       const now = Date.now();
       const weeklyCutoff = now - 7 * 24 * 60 * 60 * 1000;
@@ -355,17 +357,21 @@ export function openSqliteDb(path?: string): SqliteDb {
           `SELECT b.id, b.user_id, b.domain, b.name, b.category, b.competitors_json,
                   b.aliases_json, b.exclude_terms_json,
                   b.refresh_frequency, b.created_at, b.updated_at,
-                  MAX(r.completed_at) AS last_run
+                  MAX(COALESCE(r.completed_at, r.started_at)) AS last_usable_run
              FROM brands b
              LEFT JOIN runs r
-               ON r.brand_id = b.id AND r.status = 'completed'
+               ON r.brand_id = b.id
+              AND EXISTS (
+                SELECT 1 FROM prompt_responses pr
+                 WHERE pr.run_id = r.id AND pr.status = 'ok'
+              )
             GROUP BY b.id
-           HAVING last_run IS NULL
-              OR (b.refresh_frequency = 'weekly' AND last_run < ?)
-              OR (b.refresh_frequency = 'daily'  AND last_run < ?)`,
+           HAVING last_usable_run IS NULL
+              OR (b.refresh_frequency = 'weekly' AND last_usable_run < ?)
+              OR (b.refresh_frequency = 'daily'  AND last_usable_run < ?)`,
         )
         .all(weeklyCutoff, dailyCutoff) as Array<
-        BrandRow & { last_run: number | null }
+        BrandRow & { last_usable_run: number | null }
       >;
       return rows.map(rowToBrand);
     },

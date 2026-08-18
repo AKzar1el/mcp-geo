@@ -269,6 +269,79 @@ test('getLatestCompletedRun skips runs whose rows all failed', async () => {
   }
 });
 
+test('getBrandsDueForRefresh uses the latest run with usable responses', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'digestseo.sqlite'));
+  try {
+    await db.upsertUser('test-user', 'test@local');
+    const now = Date.now();
+    const recent = now - 24 * 60 * 60 * 1000;
+    const old = now - 8 * 24 * 60 * 60 * 1000;
+
+    async function createCadenceBrand(id: string) {
+      await db.createBrand({
+        id,
+        user_id: 'test-user',
+        domain: `${id}.com`,
+        name: id,
+        category: null,
+        competitors: [],
+        aliases: [],
+        exclude_terms: [],
+        refresh_frequency: 'weekly',
+      });
+      seedPromptFixture(db, id, `${id}-prompt`, `What is ${id}?`);
+      const brand = await db.getBrand(id);
+      assert.ok(brand);
+      return brand;
+    }
+
+    async function persistRun(
+      brand: NonNullable<Awaited<ReturnType<typeof db.getBrand>>>,
+      status: 'ok' | 'failed',
+      timestamp: number,
+    ) {
+      const run = await db.createRun(brand, 'chatgpt', 'live', 1);
+      await db.persistEngineRun(run.id, 'chatgpt', 'gpt-4o-mini', 3600, [
+        {
+          prompt_id: `${brand.id}-prompt`,
+          raw_response: status === 'ok' ? `${brand.name} is available.` : '',
+          brand_mentioned: status === 'ok' ? 1 : 0,
+          brand_cited_with_link: 0,
+          cited_urls: [],
+          competitors_mentioned: [],
+          status,
+          error_message: status === 'failed' ? 'provider unavailable' : null,
+        },
+      ]);
+      db.raw
+        .prepare('UPDATE runs SET started_at = ?, completed_at = ? WHERE id = ?')
+        .run(timestamp, timestamp, run.id);
+    }
+
+    const recentFailed = await createCadenceBrand('recent-failed');
+    await persistRun(recentFailed, 'failed', recent);
+
+    const recentUsable = await createCadenceBrand('recent-usable');
+    await persistRun(recentUsable, 'ok', recent);
+
+    const oldUsableThenFailed = await createCadenceBrand('old-usable-then-failed');
+    await persistRun(oldUsableThenFailed, 'ok', old);
+    await persistRun(oldUsableThenFailed, 'failed', recent);
+
+    await createCadenceBrand('no-runs');
+
+    const due = new Set((await db.getBrandsDueForRefresh()).map((brand) => brand.id));
+    assert.equal(due.has('recent-failed'), true);
+    assert.equal(due.has('recent-usable'), false);
+    assert.equal(due.has('old-usable-then-failed'), true);
+    assert.equal(due.has('no-runs'), true);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('read history: getVisibilityHistoryRows aggregates ok rows per run', async () => {
   const root = tempRoot();
   const db = openSqliteDb(join(root, 'digestseo.sqlite'));
