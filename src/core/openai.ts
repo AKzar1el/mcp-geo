@@ -215,8 +215,7 @@ export function extractCitations(
     if (hosts.length >= 20) break;
   }
 
-  // Linked-citation check uses the full brand.domain (not the root term).
-  // Mentions tolerate paraphrase ("we use Example"), but a link counts as a
+  // Brand mentions use configured plain-text terms. A link counts as a
   // citation only if the URL points at the brand's actual domain (or a
   // subdomain of it).
   const brandCitedWithLink = hosts.some((h) =>

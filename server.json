@@ -263,7 +263,7 @@
     },
     {
       "name": "get_citations",
-      "description": "Get the actual citation events where AI assistants mentioned or linked to the brand. Each citation includes the prompt that triggered it, the LLM's response excerpt, and whether it was a linked citation, a mention without a link, or a paraphrase. Use when the user asks 'show me where I'm cited', 'what are ChatGPT/Claude/Perplexity actually saying about my brand?', or 'give me proof of AI citations'.",
+      "description": "Get citation events where AI assistants mention the brand. Each event includes the prompt that triggered it, the LLM's response excerpt, whether the brand was mentioned with or without a link, and the matched brand URL from engine-native citation data when available. Use when the user asks 'show me where I'm cited', 'what are ChatGPT/Claude/Perplexity actually saying about my brand?', or 'give me proof of AI citations'.",
       "inputSchema": {
         "def": {
           "type": "object",
