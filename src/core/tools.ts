@@ -28,6 +28,10 @@ import {
 import { computeOverallScore } from './scoring.js';
 import { generatePrompts } from './prompt-generation.js';
 import { seedBrand } from './seed.js';
+import {
+  normalizeCompetitorDomains,
+  normalizeRequiredDomain,
+} from './domain.js';
 
 const BRAND_NOT_FOUND_MESSAGE =
   'Brand not found. Create it first: use the track_brand tool (local CLI), or POST /admin/seed on a Cloudflare Workers deployment.';
@@ -816,25 +820,11 @@ export function registerLocalManagementTools(
       exclude_terms,
       prompt_count,
     }) => {
-      const normalizedDomain = normalizeDomainInput(domain);
-      if (!normalizedDomain) {
-        throw new Error(
-          `'${domain}' does not look like a domain. Pass a bare domain like 'acme.com' (no scheme or path needed).`,
-        );
-      }
-      const normalizedCompetitors: string[] = [];
-      for (const raw of competitors ?? []) {
-        const host = normalizeDomainInput(raw);
-        if (!host) {
-          throw new Error(
-            `Competitor '${raw}' does not look like a domain. Pass bare domains like 'asana.com'.`,
-          );
-        }
-        if (host === normalizedDomain) continue;
-        if (!normalizedCompetitors.includes(host)) {
-          normalizedCompetitors.push(host);
-        }
-      }
+      const normalizedDomain = normalizeRequiredDomain(domain);
+      const normalizedCompetitors = normalizeCompetitorDomains(
+        competitors ?? [],
+        normalizedDomain,
+      );
 
       const result = await seedBrand(
         { db: deps.db, ANTHROPIC_API_KEY: deps.env.ANTHROPIC_API_KEY },
@@ -955,26 +945,6 @@ export function registerLocalManagementTools(
       return toolResult(payload);
     },
   );
-}
-
-// 'https://www.Acme.com/pricing?x=1' → 'acme.com'. Returns null when
-// the input doesn't reduce to something domain-shaped. Citation
-// matching compares lowercased hostnames with their www. prefix
-// stripped (see core/openai.ts normalizeHost), so storing the brand
-// domain in that same shape is what makes brand_cited_with_link work.
-function normalizeDomainInput(raw: string): string | null {
-  let s = raw.trim().toLowerCase();
-  s = s.replace(/^[a-z][a-z0-9+.-]*:\/\//, ''); // scheme
-  s = s.split('/')[0] ?? s; // path
-  s = s.split('?')[0] ?? s; // query without a path
-  s = s.split('#')[0] ?? s; // fragment without a path
-  s = s.replace(/:\d+$/, ''); // port
-  if (s.startsWith('www.')) s = s.slice(4);
-  if (s.length === 0 || s.length > 253) return null;
-  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(s)) {
-    return null;
-  }
-  return s;
 }
 
 function bucketStart(ts: number, granularity: 'daily' | 'weekly'): string {

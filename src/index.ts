@@ -20,6 +20,7 @@ import { collectBatch, submitBatch } from './core/openai.js';
 import { generatePrompts } from './core/prompt-generation.js';
 import { runEngines, type WorkerEnginesEnv } from './engines.js';
 import { seedBrand, type SeedBrandInput } from './core/seed.js';
+import { DomainInputError } from './core/domain.js';
 
 export interface Env {
   OAUTH_KV: KVNamespace;
@@ -173,11 +174,18 @@ async function handleAdminSeed(
   //     "competitors": ["asana.com", "monday.com"] }
   // Empty body returns a clean no-op.
   const body = await readJsonBody<SeedBrandInput>(request);
-  const result = await seedBrand(
-    { db, ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY },
-    body,
-  );
-  return jsonResponse(result);
+  try {
+    const result = await seedBrand(
+      { db, ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY },
+      body,
+    );
+    return jsonResponse(result);
+  } catch (err) {
+    if (err instanceof DomainInputError) {
+      return jsonResponse({ error: err.message }, 400);
+    }
+    throw err;
+  }
 }
 
 async function handleAdminRunLive(

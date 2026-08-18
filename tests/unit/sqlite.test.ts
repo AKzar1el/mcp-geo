@@ -545,6 +545,61 @@ test('seedBrand (core): fallback prompts without ANTHROPIC_API_KEY, $CATEGORY su
   }
 });
 
+test('seedBrand normalizes hosted domain and competitor inputs before writing', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'digestseo.sqlite'));
+  try {
+    const result = await seedBrand(
+      { db },
+      {
+        brand_id: 'acme',
+        name: 'Acme',
+        domain: 'https://www.Acme.com/pricing?source=seed',
+        competitors: [
+          'https://www.Asana.com/pricing',
+          'asana.com',
+          'WWW.MONDAY.COM:443',
+          'acme.com',
+        ],
+      },
+    );
+    assert.equal(result.seeded, true);
+    const brand = await db.getBrand('acme');
+    assert.ok(brand);
+    assert.equal(brand.domain, 'acme.com');
+    assert.deepEqual(brand.competitors, ['asana.com', 'monday.com']);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('seedBrand rejects malformed domains before writing any rows', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'digestseo.sqlite'));
+  try {
+    await assert.rejects(
+      seedBrand(
+        { db },
+        {
+          brand_id: 'invalid',
+          name: 'Invalid',
+          domain: 'not a domain',
+        },
+      ),
+      /does not look like a domain/,
+    );
+    assert.equal(await db.getBrand('invalid'), null);
+    const users = db.raw
+      .prepare('SELECT COUNT(*) AS count FROM users')
+      .get() as { count: number };
+    assert.equal(users.count, 0);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('seedBrand (core): already-existing brand is a clean no-op, empty input is a no-op', async () => {
   const root = tempRoot();
   const db = openSqliteDb(join(root, 'digestseo.sqlite'));

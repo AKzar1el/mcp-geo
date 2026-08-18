@@ -6,6 +6,10 @@
 // brand is immediately scannable.
 
 import type { Db, NewPromptInput } from '../db/types.js';
+import {
+  normalizeCompetitorDomains,
+  normalizeRequiredDomain,
+} from './domain.js';
 import { generatePrompts } from './prompt-generation.js';
 
 const DEFAULT_USER_ID = 'dev-user';
@@ -92,6 +96,12 @@ export async function seedBrand(
     };
   }
 
+  const domain = normalizeRequiredDomain(input.domain);
+  const competitors = normalizeCompetitorDomains(
+    input.competitors ?? [],
+    domain,
+  );
+
   const existing = await deps.db.getBrand(input.brand_id);
   if (existing) {
     return {
@@ -101,14 +111,13 @@ export async function seedBrand(
     };
   }
 
-  const competitors = input.competitors ?? [];
   const category = input.category ?? null;
 
   await deps.db.upsertUser(DEFAULT_USER_ID, DEFAULT_USER_EMAIL);
   await deps.db.createBrand({
     id: input.brand_id,
     user_id: DEFAULT_USER_ID,
-    domain: input.domain,
+    domain,
     name: input.name,
     category,
     competitors,

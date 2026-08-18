@@ -198,6 +198,7 @@ test('stdio CLI: initialize + tools/list returns all nine tools, track_brand→l
       (b) => b.brand_id === 'smoke-brand',
     );
     assert.ok(smoke, 'tracked brand missing from list_brands');
+    assert.equal(smoke.domain, 'smoke-test.example');
     assert.equal(Number(smoke.active_prompts), 3);
     assert.deepEqual(smoke.competitors, ['rival.example']);
 
