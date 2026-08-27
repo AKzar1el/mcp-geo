@@ -57,6 +57,8 @@ AI agents installing this server: follow [llms-install.md](./llms-install.md). P
 
 Canonical product page: [DigestSEO mcp-geo — AI Visibility MCP Server](https://digestseo.com/geo-mcp/)
 
+Engineering case study: [DigestSEO MCP Suite — AI visibility, Search Console, web validation, and trend intelligence](https://tomiseregi.si/projects/digestseo-mcp-suite)
+
 > **Prefer zero setup?** Try the hosted version at [digestseo.com](https://digestseo.com) — managed Cloudflare infra, no API keys to manage, multi-brand, scheduled refresh, web UI. Waitlist now open. [Join waitlist →](https://digestseo.com/#waitlist)
 
 ---
@@ -166,7 +168,7 @@ Engines are opt-in. Pick the ones you want; the rest skip silently.
 - **OpenAI** — ChatGPT engine. ~€0.0004 per prompt with `gpt-4o-mini`. Batch path roughly halves that. [platform.openai.com](https://platform.openai.com/api-keys)
 - **Anthropic** — Claude engine, plus prompt generation and content-gap analysis (both call Claude Haiku). ~€0.0002 per prompt. Free trial credits are usually enough to evaluate. [console.anthropic.com](https://console.anthropic.com/)
 - **Google AI Studio (Gemini)** — Gemini engine. ~€0.0001 per prompt. The free tier has a low per-minute cap, so brands with more than ~5 prompts hit HTTP 429 and drop out of scoring (see [Troubleshooting](#troubleshooting)) — treat it as an opt-in add-on, not a starting engine. [aistudio.google.com](https://aistudio.google.com/app/apikey)
-- **Perplexity** — Perplexity Sonar engine. ~€0.005-0.008 per prompt. Paid only. [perplexity.ai/settings/api](https://www.perplexity.ai/settings/api)
+- **Perplexity** — Perplexity Sonar engine. ~€0.005-0.008 per prompt. Paid only. [perplexity.ai/settings/api](https://perplexity.ai/settings/api)
 - **SerpAPI** — Google AI Overviews engine. ~€0.005 (free tier) / ~€0.0015 (volume) per prompt. Free tier covers 250 searches/month — enough for development. [serpapi.com/dashboard](https://serpapi.com/dashboard)
 
 **Recommended starting pair: OpenAI + Anthropic (Claude).** Both bill per token with no rate-limit surprises, so your first scan returns clean, scorable data across the ChatGPT and Claude engines — and the Anthropic key also powers prompt generation and content-gap analysis. Solo evaluation runs comfortably under €1/month on the two together. Add Gemini, Perplexity, or SerpAPI deliberately once you want more coverage; Gemini's free tier rate-limits and Google AI Overviews often returns no result (scored as a zero), so leading with the cheapest path can skew your first run.
@@ -397,56 +399,3 @@ When you run `digestseo-mcp` locally (npx, the desktop extension, or Docker), al
 ## License
 
 [MIT](./LICENSE).
-
-Built and maintained by [Tomi Šeregi](https://tomiseregi.si).
-
----
-
-## Changelog
-
-See [CHANGELOG.md](./CHANGELOG.md) for the full version history.
-
-### [0.3.2] — July 27, 2026
-
-- Published `@digestseo/mcp-geo` with synchronized Worker, MCP Registry, and MCPB metadata.
-- Hosted `visibility.*` tool namespaces with typed input/output schemas; local stdio names remain flat.
-- Dedicated `mcp-geo-db` D1 configuration and Cursor/Claude Code plugin metadata.
-- Patched production dependency pins.
-
-### [0.3.0] — July 2026
-
-- Local stdio CLI on npm (`npx -y @digestseo/mcp-geo`) with SQLite storage and inline engine runs.
-- Local brand-management tools: `track_brand`, `list_brands`, `generate_prompts`.
-- Runtime-agnostic core shared by Worker and CLI; D1 + better-sqlite3 `Db` adapters.
-- MCP Registry `server.json`, MCPB desktop extension, Dockerfile, `llms-install.md`.
-
-### [0.2.1] — June 2026
-
-- Optional `CONNECT_SECRET` gate on the OAuth connect flow.
-- Word-boundary brand/competitor matching; exact-domain-or-subdomain linked-citation checks.
-- Per-brand `aliases` and `exclude_terms` (migration 0005) for homograph brands like Monday/Notion.
-- `visibility.history` includes partial runs and drops fully-failed runs.
-- CI workflow (typecheck + unit tests) and a pure-function unit test suite.
-- Docs recommend OpenAI + Anthropic as the starting engine pair.
-- Constant-time secret comparison.
-
-### [0.2.0] — May 2026
-
-- Per-engine HTTP fan-out via `env.SELF` service binding (one worker invocation per engine, dodges Cloudflare's 1042 self-call guard).
-- `status` + `error_message` columns on `prompt_responses` — failed engine calls are now explicit rows, no more `ERROR:` strings in `raw_response`.
-- `INSERT OR IGNORE` on the runs row inside `/admin/run-engine` (handles D1 cross-region replication lag without dropping prompt_responses to FK violations).
-- Bulk D1 batch in each engine's `runLive` (~26 subrequests/invocation instead of ~89; full 20-prompt runs now fit under the free-plan cap).
-- `getLatestCompletedRun` anchored on `EXISTS(ok rows)`; partially-finished runs still show their data.
-- New `POST /admin/cleanup-failed-runs` admin route.
-
-### [0.1.1] — May 2026
-
-- Removed the unreliable bash setup script. Manual install via SETUP.md is now the canonical path.
-
-### [0.1.0] — May 2026
-
-- Initial public release.
-- 5-engine support: ChatGPT, Claude, Perplexity, Gemini, Google AI Overviews.
-- 6 MCP tools.
-- Engines opt-in based on which API keys you provide.
-- Cloudflare Cron Trigger for auto-refresh.
