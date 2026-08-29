@@ -10,7 +10,6 @@
 [![mcp-geo MCP server](https://glama.ai/mcp/servers/AKzar1el/mcp-geo/badges/score.svg)](https://glama.ai/mcp/servers/AKzar1el/mcp-geo)
 [![GitHub stars](https://img.shields.io/github/stars/AKzar1el/mcp-geo?style=social)](https://github.com/AKzar1el/mcp-geo/stargazers)
 
-[![smithery badge](https://smithery.ai/badge/digestseo/geo-mcp)](https://smithery.ai/servers/digestseo/geo-mcp)
 
 ## Quick Install
 
