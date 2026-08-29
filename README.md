@@ -45,6 +45,12 @@ claude mcp add --transport stdio digestseo -s user --env GEMINI_API_KEY=your_key
 
 [![Add to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=digestseo&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBkaWdlc3RzZW8vbWNwLWdlbyJdLCJlbnYiOnsiT1BFTkFJX0FQSV9LRVkiOiIiLCJBTlRIUk9QSUNfQVBJX0tFWSI6IiIsIkdFTUlOSV9BUElfS0VZIjoiIiwiUEVSUExFWElUWV9BUElfS0VZIjoiIiwiU0VSUEFQSV9BUElfS0VZIjoiIn19)
 
+**Kiro (hosted endpoint):**
+
+[![Add to Kiro](https://kiro.dev/images/add-to-kiro.svg)](https://kiro.dev/launch/mcp/add?name=mcp-geo&config=%7B%22url%22%3A%22https%3A%2F%2Fgeo-mcp.digestseo.com%2Fmcp%22%2C%22disabled%22%3Afalse%2C%22autoApprove%22%3A%5B%5D%7D)
+
+Uses the hosted OAuth endpoint, so no engine API keys are placed in the Kiro install link.
+
 **Claude Desktop extension (one-click):** download the `.mcpb` bundle from the [latest release](https://github.com/AKzar1el/mcp-geo/releases/latest) and double-click it — Claude Desktop prompts for the API keys.
 
 **First run:** ask your client to *"track acme.com as brand `acme`, then refresh it"* — `track_brand` creates the brand with generated prompts, `refresh_brand` runs the first scan, `check_visibility` shows the scores.
@@ -168,7 +174,7 @@ Engines are opt-in. Pick the ones you want; the rest skip silently.
 - **OpenAI** — ChatGPT engine. ~€0.0004 per prompt with `gpt-4o-mini`. Batch path roughly halves that. [platform.openai.com](https://platform.openai.com/api-keys)
 - **Anthropic** — Claude engine, plus prompt generation and content-gap analysis (both call Claude Haiku). ~€0.0002 per prompt. Free trial credits are usually enough to evaluate. [console.anthropic.com](https://console.anthropic.com/)
 - **Google AI Studio (Gemini)** — Gemini engine. ~€0.0001 per prompt. The free tier has a low per-minute cap, so brands with more than ~5 prompts hit HTTP 429 and drop out of scoring (see [Troubleshooting](#troubleshooting)) — treat it as an opt-in add-on, not a starting engine. [aistudio.google.com](https://aistudio.google.com/app/apikey)
-- **Perplexity** — Perplexity Sonar engine. ~€0.005-0.008 per prompt. Paid only. [perplexity.ai/settings/api](https://www.perplexity.ai/settings/api)
+- **Perplexity** — Perplexity Sonar engine. ~€0.005-0.008 per prompt. Paid only. [perplexity.ai/settings/api](https://perplexity.ai/settings/api)
 - **SerpAPI** — Google AI Overviews engine. ~€0.005 (free tier) / ~€0.0015 (volume) per prompt. Free tier covers 250 searches/month — enough for development. [serpapi.com/dashboard](https://serpapi.com/dashboard)
 
 **Recommended starting pair: OpenAI + Anthropic (Claude).** Both bill per token with no rate-limit surprises, so your first scan returns clean, scorable data across the ChatGPT and Claude engines — and the Anthropic key also powers prompt generation and content-gap analysis. Solo evaluation runs comfortably under €1/month on the two together. Add Gemini, Perplexity, or SerpAPI deliberately once you want more coverage; Gemini's free tier rate-limits and Google AI Overviews often returns no result (scored as a zero), so leading with the cheapest path can skew your first run.
