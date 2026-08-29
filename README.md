@@ -7,9 +7,9 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
 [![MCP](https://img.shields.io/badge/MCP-Server-blueviolet)](https://modelcontextprotocol.io/)
+[![mcp-geo MCP server](https://glama.ai/mcp/servers/AKzar1el/mcp-geo/badges/score.svg)](https://glama.ai/mcp/servers/AKzar1el/mcp-geo)
 [![GitHub stars](https://img.shields.io/github/stars/AKzar1el/mcp-geo?style=social)](https://github.com/AKzar1el/mcp-geo/stargazers)
 
-[![mcp-geo MCP server](https://glama.ai/mcp/servers/AKzar1el/mcp-geo/badges/card.svg)](https://glama.ai/mcp/servers/AKzar1el/mcp-geo)
 [![smithery badge](https://smithery.ai/badge/digestseo/geo-mcp)](https://smithery.ai/servers/digestseo/geo-mcp)
 
 ## Quick Install
