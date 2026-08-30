@@ -695,6 +695,7 @@ export function registerTools(
       outputSchema: refreshOutputSchema,
       annotations: {
         readOnlyHint: false,
+        destructiveHint: true,
         openWorldHint: true,
       },
     },
