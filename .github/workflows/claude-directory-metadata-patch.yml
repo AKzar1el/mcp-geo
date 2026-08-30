@@ -18,31 +18,26 @@ jobs:
         with:
           ref: chore/claude-directory-metadata
 
-      - name: Add hosted tool titles
+      - name: Classify refresh side effects
         run: |
           python - <<'PY'
           from pathlib import Path
 
           path = Path('src/core/tools.ts')
           text = path.read_text()
-          titles = {
-              'check_visibility': 'Check AI visibility',
-              'get_visibility_history': 'Get AI visibility history',
-              'compare_competitors': 'Compare competitor AI visibility',
-              'get_citations': 'Get AI citation evidence',
-              'get_content_gaps': 'Find AI visibility content gaps',
-              'refresh_brand': 'Refresh AI visibility scan',
-          }
+          marker = "toolName('refresh_brand')"
+          marker_index = text.find(marker)
+          if marker_index < 0:
+              raise SystemExit('refresh_brand registration not found')
 
-          for legacy_name, title in titles.items():
-              needle = f"    toolName('{legacy_name}'),\n    {{\n      description:"
-              replacement = f"    toolName('{legacy_name}'),\n    {{\n      title: '{title}',\n      description:"
-              count = text.count(needle)
-              if count != 1:
-                  raise SystemExit(f'expected one registration for {legacy_name}, found {count}')
-              text = text.replace(needle, replacement, 1)
-
-          path.write_text(text)
+          prefix = text[:marker_index]
+          tail = text[marker_index:]
+          old = "      annotations: {\n        readOnlyHint: false,\n        openWorldHint: true,\n      },"
+          new = "      annotations: {\n        readOnlyHint: false,\n        destructiveHint: true,\n        openWorldHint: true,\n      },"
+          if old not in tail:
+              raise SystemExit('refresh_brand annotation block not found')
+          tail = tail.replace(old, new, 1)
+          path.write_text(prefix + tail)
           PY
 
       - name: Commit source-only patch
@@ -52,5 +47,5 @@ jobs:
           git add src/core/tools.ts
           git diff --cached --check
           git diff --cached --stat
-          git commit -m "feat: add Claude directory tool titles"
+          git commit -m "fix: classify visibility refresh as destructive"
           git push origin HEAD:chore/claude-directory-metadata
