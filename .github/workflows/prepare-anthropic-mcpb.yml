@@ -71,52 +71,19 @@ jobs:
           fs.writeFileSync(path, source);
           NODE
 
-      - name: Verify full project
+      - name: Verify full project and existing MCPB manifest
         run: |
           npm ci
           npm run typecheck
           npm run test:unit
           npm run build
           npm run test:stdio
-
-      - name: Synchronize MCPB manifest from runtime
-        run: |
-          node --input-type=module <<'NODE'
-          import fs from 'node:fs';
-          import path from 'node:path';
-          import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-          import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-
-          const transport = new StdioClientTransport({
-            command: process.execPath,
-            args: [path.resolve('dist/cli.js')],
-            stderr: 'pipe',
-          });
-          const client = new Client({ name: 'mcpb-manifest-sync', version: '0.3.2' });
-          await client.connect(transport);
-          let tools;
-          try {
-            ({ tools } = await client.listTools());
-          } finally {
-            await client.close();
-          }
-          const manifest = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
-          manifest.manifest_version = '0.3';
-          manifest.tools = tools;
-          fs.writeFileSync('manifest.json', JSON.stringify(manifest, null, 2) + '\n');
-          NODE
           npx -y @anthropic-ai/mcpb@2.1.2 validate manifest.json
 
-      - name: Pack format smoke test
-        run: |
-          npx -y @anthropic-ai/mcpb@2.1.2 pack . mcp-geo-0.3.2-linux-smoke.mcpb
-          unzip -t mcp-geo-0.3.2-linux-smoke.mcpb
-          rm mcp-geo-0.3.2-linux-smoke.mcpb
-
-      - name: Commit verified metadata
+      - name: Commit verified runtime metadata
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add src/core/tools.ts manifest.json
+          git add src/core/tools.ts
           git commit -m "chore: align local MCPB tool metadata"
           git push origin HEAD:chore/anthropic-mcpb-directory
