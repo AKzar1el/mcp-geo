@@ -1,5 +1,0 @@
-Manifest schema validation passes!
-
-ERROR: Icon validation failed:
-
-  - Icon file must be PNG format. The file at "icon.jpg" does not appear to be a valid PNG file.
