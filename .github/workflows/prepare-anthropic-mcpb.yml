@@ -1,0 +1,122 @@
+name: Prepare Anthropic MCPB metadata
+
+on:
+  push:
+    branches:
+      - chore/anthropic-mcpb-directory
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chore/anthropic-mcpb-directory
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Apply local-tool metadata only
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const path = 'src/core/tools.ts';
+          let source = fs.readFileSync(path, 'utf8');
+
+          function patchTool(name, title, annotations) {
+            const marker = `server.registerTool(\n    '${name}',`;
+            const start = source.indexOf(marker);
+            if (start < 0) throw new Error(`Missing tool marker: ${name}`);
+            const next = source.indexOf('\n  server.registerTool(', start + marker.length);
+            const end = next < 0 ? source.length : next;
+            let block = source.slice(start, end);
+            const descriptionMarker = `    {\n      description:`;
+            if (!block.includes(descriptionMarker)) throw new Error(`Missing description marker: ${name}`);
+            block = block.replace(descriptionMarker, `    {\n      title: '${title}',\n      description:`);
+            const annotationsPattern = /      annotations: \{\n(?:        .*\n)+?      \},/;
+            if (!annotationsPattern.test(block)) throw new Error(`Missing annotations block: ${name}`);
+            const lines = Object.entries(annotations)
+              .map(([key, value]) => `        ${key}: ${value},`)
+              .join('\n');
+            block = block.replace(annotationsPattern, `      annotations: {\n${lines}\n      },`);
+            source = source.slice(0, start) + block + source.slice(end);
+          }
+
+          patchTool('track_brand', 'Track a brand', {
+            readOnlyHint: false,
+            destructiveHint: false,
+            idempotentHint: true,
+            openWorldHint: true,
+          });
+          patchTool('list_brands', 'List tracked brands', {
+            readOnlyHint: true,
+            destructiveHint: false,
+            idempotentHint: true,
+            openWorldHint: false,
+          });
+          patchTool('generate_prompts', 'Generate brand prompts', {
+            readOnlyHint: false,
+            destructiveHint: true,
+            idempotentHint: false,
+            openWorldHint: true,
+          });
+
+          fs.writeFileSync(path, source);
+          NODE
+
+      - name: Verify full project
+        run: |
+          npm ci
+          npm run typecheck
+          npm run test:unit
+          npm run build
+          npm run test:stdio
+
+      - name: Synchronize MCPB manifest from runtime
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+          import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+
+          const transport = new StdioClientTransport({
+            command: process.execPath,
+            args: [path.resolve('dist/cli.js')],
+            stderr: 'pipe',
+          });
+          const client = new Client({ name: 'mcpb-manifest-sync', version: '0.3.2' });
+          await client.connect(transport);
+          let tools;
+          try {
+            ({ tools } = await client.listTools());
+          } finally {
+            await client.close();
+          }
+          const manifest = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
+          manifest.manifest_version = '0.3';
+          manifest.tools = tools;
+          fs.writeFileSync('manifest.json', JSON.stringify(manifest, null, 2) + '\n');
+          NODE
+          npx -y @anthropic-ai/mcpb@2.1.2 validate manifest.json
+
+      - name: Pack format smoke test
+        run: |
+          npx -y @anthropic-ai/mcpb@2.1.2 pack . mcp-geo-0.3.2-linux-smoke.mcpb
+          unzip -t mcp-geo-0.3.2-linux-smoke.mcpb
+          rm mcp-geo-0.3.2-linux-smoke.mcpb
+
+      - name: Commit verified metadata
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src/core/tools.ts manifest.json
+          git commit -m "chore: align local MCPB tool metadata"
+          git push origin HEAD:chore/anthropic-mcpb-directory
