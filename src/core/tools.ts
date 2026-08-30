@@ -221,6 +221,7 @@ export function registerTools(
   server.registerTool(
     toolName('check_visibility'),
     {
+      title: 'Check AI visibility',
       description:
         "Get the latest AI visibility data for a tracked brand: which AI assistants (ChatGPT, Claude, Perplexity, Gemini, Google AI Overviews) cite this brand, for which prompts, and how it compares to competitors. Use when the user asks 'how visible am I on AI?', 'who's citing my brand?', or 'show me my AI visibility score'. Returns stored data — for fresh data, call refresh_brand.",
       inputSchema: {
@@ -293,6 +294,7 @@ export function registerTools(
   server.registerTool(
     toolName('get_visibility_history'),
     {
+      title: 'Get AI visibility history',
       description:
         "Get the time-series history of a brand's AI visibility score, broken down per engine. Use when the user asks 'how has my AI visibility changed over time?', 'is my visibility growing or shrinking?', or 'show me the trend for the last month'.",
       inputSchema: {
@@ -358,6 +360,7 @@ export function registerTools(
   server.registerTool(
     toolName('compare_competitors'),
     {
+      title: 'Compare competitor AI visibility',
       description:
         "Compare a brand's AI visibility against competitors for the same category. Returns share-of-voice percentages, prompts the user wins, and prompts where competitors win. Use when the user asks 'who beats me in AI search?', 'compare me to my competitors', or 'why does [competitor] get cited more?'.",
       inputSchema: {
@@ -502,6 +505,7 @@ export function registerTools(
   server.registerTool(
     toolName('get_citations'),
     {
+      title: 'Get AI citation evidence',
       description:
         "Get citation events where AI assistants mention the brand. Each event includes the prompt that triggered it, the LLM's response excerpt, whether the brand was mentioned with or without a link, and the matched brand URL from engine-native citation data when available. Use when the user asks 'show me where I'm cited', 'what are ChatGPT/Claude/Perplexity actually saying about my brand?', or 'give me proof of AI citations'.",
       inputSchema: {
@@ -562,6 +566,7 @@ export function registerTools(
   server.registerTool(
     toolName('get_content_gaps'),
     {
+      title: 'Find AI visibility content gaps',
       description:
         "Get actionable content recommendations based on AI visibility gaps. Returns prioritized topics and content formats that would close the gap between this brand and competitors winning the same prompts. Use when the user asks 'what should I write to improve AI visibility?', 'what content gaps do I have?', or 'how do I get cited more by AI?'.",
       inputSchema: {
@@ -674,6 +679,7 @@ export function registerTools(
   server.registerTool(
     toolName('refresh_brand'),
     {
+      title: 'Refresh AI visibility scan',
       description: refreshDescription,
       inputSchema: {
         brand_id: z
@@ -689,6 +695,7 @@ export function registerTools(
       outputSchema: refreshOutputSchema,
       annotations: {
         readOnlyHint: false,
+        destructiveHint: true,
         openWorldHint: true,
       },
     },
