@@ -71,13 +71,14 @@ jobs:
           fs.writeFileSync(path, source);
           NODE
 
-      - name: Normalize MCPB manifest to current static-tool schema
+      - name: Normalize MCPB manifest to current schema
         run: |
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
           const path = 'manifest.json';
           const manifest = JSON.parse(fs.readFileSync(path, 'utf8'));
           manifest.manifest_version = '0.3';
+          manifest.icon = 'icon.png';
           manifest.tools = (manifest.tools ?? []).map(({ name, description }) => ({
             name,
             ...(description ? { description } : {}),
@@ -85,36 +86,30 @@ jobs:
           fs.writeFileSync(path, JSON.stringify(manifest, null, 2) + '\n');
           NODE
 
-      - name: Verify full project
+      - name: Produce PNG icon from existing project icon
+        run: |
+          if ! command -v convert >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y imagemagick
+          fi
+          convert icon.jpg icon.png
+          file icon.png
+
+      - name: Verify full project and MCPB manifest
         run: |
           npm ci
           npm run typecheck
           npm run test:unit
           npm run build
           npm run test:stdio
-
-      - name: Capture MCPB manifest validation
-        shell: bash
-        run: |
-          set +e
-          npx -y @anthropic-ai/mcpb@2.1.2 validate manifest.json > mcpb-validation.txt 2>&1
-          STATUS=$?
-          set -e
-          cat mcpb-validation.txt
-          if [ "$STATUS" -ne 0 ]; then
-            git config user.name github-actions[bot]
-            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-            git add mcpb-validation.txt
-            git commit -m "chore: capture MCPB validation diagnostics"
-            git push origin HEAD:chore/anthropic-mcpb-directory
-            exit "$STATUS"
-          fi
+          npx -y @anthropic-ai/mcpb@2.1.2 validate manifest.json
 
       - name: Commit verified MCPB metadata
         run: |
           rm -f mcpb-validation.txt
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add src/core/tools.ts manifest.json
+          git add src/core/tools.ts manifest.json icon.png
+          git add -u mcpb-validation.txt || true
           git commit -m "chore: align local MCPB directory metadata"
           git push origin HEAD:chore/anthropic-mcpb-directory
