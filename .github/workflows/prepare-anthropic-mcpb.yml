@@ -85,17 +85,34 @@ jobs:
           fs.writeFileSync(path, JSON.stringify(manifest, null, 2) + '\n');
           NODE
 
-      - name: Verify full project and MCPB manifest
+      - name: Verify full project
         run: |
           npm ci
           npm run typecheck
           npm run test:unit
           npm run build
           npm run test:stdio
-          npx -y @anthropic-ai/mcpb@2.1.2 validate manifest.json
+
+      - name: Capture MCPB manifest validation
+        shell: bash
+        run: |
+          set +e
+          npx -y @anthropic-ai/mcpb@2.1.2 validate manifest.json > mcpb-validation.txt 2>&1
+          STATUS=$?
+          set -e
+          cat mcpb-validation.txt
+          if [ "$STATUS" -ne 0 ]; then
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git add mcpb-validation.txt
+            git commit -m "chore: capture MCPB validation diagnostics"
+            git push origin HEAD:chore/anthropic-mcpb-directory
+            exit "$STATUS"
+          fi
 
       - name: Commit verified MCPB metadata
         run: |
+          rm -f mcpb-validation.txt
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add src/core/tools.ts manifest.json
