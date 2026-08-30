@@ -1,0 +1,76 @@
+name: Prepare GEO portable SQLite MCPB
+
+on:
+  push:
+    branches:
+      - chore/geo-mcpb-portable-sqlite13
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chore/geo-mcpb-portable-sqlite13
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.2
+          cache: npm
+
+      - name: Upgrade SQLite dependency with npm
+        run: npm install --save 'better-sqlite3@^13.0.3'
+
+      - name: Verify v13 portability metadata
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs';
+          import { createRequire } from 'node:module';
+          const require = createRequire(import.meta.url);
+          const root = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const sqlite = JSON.parse(fs.readFileSync(require.resolve('better-sqlite3/package.json'), 'utf8'));
+          assert.match(root.dependencies['better-sqlite3'], /^\^13\./);
+          assert.match(sqlite.version, /^13\./);
+          for (const target of ['./darwin-x64', './darwin-arm64', './linux-x64', './linux-arm64', './win32-x64', './win32-arm64']) {
+            assert.ok(sqlite.exports?.[target], `missing ${target} bundled prebuild selector`);
+          }
+          NODE
+
+      - name: Run full project checks
+        run: |
+          npm run typecheck
+          npm run test:unit
+          npm run build
+          npm run test:stdio
+
+      - name: Validate and pack production MCPB
+        run: |
+          npx --yes @anthropic-ai/mcpb@2.1.2 validate manifest.json
+          npm ci --omit=dev
+          npx --yes @anthropic-ai/mcpb@2.1.2 pack . mcp-geo-0.3.2-portability-check.mcpb
+          unzip -t mcp-geo-0.3.2-portability-check.mcpb
+          entries="$(unzip -Z1 mcp-geo-0.3.2-portability-check.mcpb)"
+          for target in darwin-x64 darwin-arm64 linux-x64 linux-arm64 win32-x64 win32-arm64; do
+            printf '%s\n' "$entries" | grep -q "node_modules/better-sqlite3/prebuilds/$target/" || {
+              echo "MCPB is missing better-sqlite3 prebuilds/$target"
+              exit 1
+            }
+          done
+
+      - name: Commit generated dependency files
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add package.json package-lock.json
+          if git diff --cached --quiet; then
+            echo 'No dependency changes to commit'
+            exit 0
+          fi
+          git commit -m 'fix: upgrade better-sqlite3 to portable N-API v13'
+          git push origin HEAD:chore/geo-mcpb-portable-sqlite13
