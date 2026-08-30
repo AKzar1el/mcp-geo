@@ -1,0 +1,33 @@
+name: Restore existing PNG icon
+
+on:
+  push:
+    branches:
+      - chore/anthropic-mcpb-directory
+
+permissions:
+  contents: write
+
+jobs:
+  restore:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chore/anthropic-mcpb-directory
+          fetch-depth: 0
+      - name: Restore existing icon from default branch
+        run: |
+          git fetch origin main
+          git checkout origin/main -- icon.png
+          git diff --exit-code --quiet || true
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add icon.png
+          if git diff --cached --quiet; then
+            echo 'icon.png already matches main'
+            exit 0
+          fi
+          git commit -m "chore: preserve existing PNG icon"
+          git push origin HEAD:chore/anthropic-mcpb-directory
