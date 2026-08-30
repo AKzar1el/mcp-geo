@@ -1,0 +1,56 @@
+name: Apply Claude directory metadata patch
+
+on:
+  push:
+    branches:
+      - chore/claude-directory-metadata
+    paths:
+      - .github/workflows/claude-directory-metadata-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chore/claude-directory-metadata
+
+      - name: Add hosted tool titles
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/core/tools.ts')
+          text = path.read_text()
+          titles = {
+              'check_visibility': 'Check AI visibility',
+              'get_visibility_history': 'Get AI visibility history',
+              'compare_competitors': 'Compare competitor AI visibility',
+              'get_citations': 'Get AI citation evidence',
+              'get_content_gaps': 'Find AI visibility content gaps',
+              'refresh_brand': 'Refresh AI visibility scan',
+          }
+
+          for legacy_name, title in titles.items():
+              needle = f"    toolName('{legacy_name}'),\n    {{\n      description:"
+              replacement = f"    toolName('{legacy_name}'),\n    {{\n      title: '{title}',\n      description:"
+              count = text.count(needle)
+              if count != 1:
+                  raise SystemExit(f'expected one registration for {legacy_name}, found {count}')
+              text = text.replace(needle, replacement, 1)
+
+          path.write_text(text)
+          PY
+
+      - name: Commit source-only patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/core/tools.ts
+          git diff --cached --check
+          git diff --cached --stat
+          git commit -m "feat: add Claude directory tool titles"
+          git push origin HEAD:chore/claude-directory-metadata
