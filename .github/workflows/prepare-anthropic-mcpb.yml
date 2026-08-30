@@ -71,7 +71,21 @@ jobs:
           fs.writeFileSync(path, source);
           NODE
 
-      - name: Verify full project and existing MCPB manifest
+      - name: Normalize MCPB manifest to current static-tool schema
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const path = 'manifest.json';
+          const manifest = JSON.parse(fs.readFileSync(path, 'utf8'));
+          manifest.manifest_version = '0.3';
+          manifest.tools = (manifest.tools ?? []).map(({ name, description }) => ({
+            name,
+            ...(description ? { description } : {}),
+          }));
+          fs.writeFileSync(path, JSON.stringify(manifest, null, 2) + '\n');
+          NODE
+
+      - name: Verify full project and MCPB manifest
         run: |
           npm ci
           npm run typecheck
@@ -80,10 +94,10 @@ jobs:
           npm run test:stdio
           npx -y @anthropic-ai/mcpb@2.1.2 validate manifest.json
 
-      - name: Commit verified runtime metadata
+      - name: Commit verified MCPB metadata
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add src/core/tools.ts
-          git commit -m "chore: align local MCPB tool metadata"
+          git add src/core/tools.ts manifest.json
+          git commit -m "chore: align local MCPB directory metadata"
           git push origin HEAD:chore/anthropic-mcpb-directory
