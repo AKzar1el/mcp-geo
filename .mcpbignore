@@ -3,8 +3,10 @@
 # PRODUCTION node_modules (@modelcontextprotocol/sdk, zod, better-sqlite3
 # and their transitive deps). Everything else is repo/dev cruft.
 #
-# Note: better-sqlite3 is a native module — the bundle carries the
-# prebuilt binary of the platform that ran mcpb pack.
+# Note: better-sqlite3 v13 uses N-API and ships supported macOS, Linux,
+# and Windows prebuilt binaries inside node_modules/better-sqlite3/prebuilds/.
+# Keep that directory in the MCPB so one bundle can select the native binary
+# for the host platform at runtime.
 
 # Sources and tests (the bundle runs the compiled dist/)
 src/
