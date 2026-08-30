@@ -1,7 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { registerTools } from '../../src/core/tools.ts';
+import {
+  registerLocalManagementTools,
+  registerTools,
+} from '../../src/core/tools.ts';
 import type { Db } from '../../src/db/types.ts';
 
 type ToolConfig = {
@@ -9,6 +12,8 @@ type ToolConfig = {
   annotations?: {
     readOnlyHint?: boolean;
     destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    openWorldHint?: boolean;
   };
 };
 
@@ -34,6 +39,22 @@ function captureHostedToolConfigs(): Map<string, ToolConfig> {
   return tools;
 }
 
+function captureLocalManagementToolConfigs(): Map<string, ToolConfig> {
+  const tools = new Map<string, ToolConfig>();
+  const server = {
+    registerTool(name: string, config: ToolConfig) {
+      tools.set(name, config);
+    },
+  } as unknown as McpServer;
+
+  registerLocalManagementTools(server, {
+    db: {} as Db,
+    env: {},
+  });
+
+  return tools;
+}
+
 test('hosted tools expose Claude Directory titles and safety annotations', () => {
   const tools = captureHostedToolConfigs();
 
@@ -46,4 +67,43 @@ test('hosted tools expose Claude Directory titles and safety annotations', () =>
       `${name} must be explicitly read-only or destructive`,
     );
   }
+});
+
+test('local management tools expose precise Claude Desktop safety metadata', () => {
+  const tools = captureLocalManagementToolConfigs();
+
+  assert.equal(tools.size, 3, 'expected the three local management tools');
+
+  assert.deepEqual(tools.get('track_brand'), {
+    ...tools.get('track_brand'),
+    title: 'Track a brand',
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+  });
+
+  assert.deepEqual(tools.get('list_brands'), {
+    ...tools.get('list_brands'),
+    title: 'List tracked brands',
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  });
+
+  assert.deepEqual(tools.get('generate_prompts'), {
+    ...tools.get('generate_prompts'),
+    title: 'Generate brand prompts',
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+  });
 });

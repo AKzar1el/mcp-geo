@@ -758,6 +758,7 @@ export function registerLocalManagementTools(
   server.registerTool(
     'track_brand',
     {
+      title: 'Track a brand',
       description:
         "Start tracking a brand's AI visibility. Creates the brand in the local database and generates buyer-intent prompts for it — via Claude Haiku when ANTHROPIC_API_KEY is configured, otherwise three generic starter prompts (upgrade later with generate_prompts). Use when the user says 'track my brand', 'add my site', 'start monitoring acme.com', or when another tool reported the brand doesn't exist. After tracking, call refresh_brand to run the first scan.",
       inputSchema: {
@@ -814,6 +815,8 @@ export function registerLocalManagementTools(
       outputSchema: trackBrandOutputSchema,
       annotations: {
         readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
         openWorldHint: true,
       },
     },
@@ -873,12 +876,15 @@ export function registerLocalManagementTools(
   server.registerTool(
     'list_brands',
     {
+      title: 'List tracked brands',
       description:
         "List every brand tracked in the local database, with domain, category, competitors, refresh frequency, and how many prompts are active. Use when the user asks 'which brands am I tracking?' or to look up the brand_id the other tools need.",
       inputSchema: {},
       outputSchema: listBrandsOutputSchema,
       annotations: {
         readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
         openWorldHint: false,
       },
     },
@@ -907,6 +913,7 @@ export function registerLocalManagementTools(
   server.registerTool(
     'generate_prompts',
     {
+      title: 'Generate brand prompts',
       description:
         "Regenerate the buyer-intent prompt set for a tracked brand using Claude Haiku (requires ANTHROPIC_API_KEY). Replaces the brand's active prompts; historical run data is preserved. Use when the user wants better or more prompts, or to upgrade from the generic starter prompts after adding an Anthropic key.",
       inputSchema: {
@@ -924,6 +931,8 @@ export function registerLocalManagementTools(
       outputSchema: generatePromptsOutputSchema,
       annotations: {
         readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
         openWorldHint: true,
       },
     },
