@@ -2,6 +2,8 @@
 
 Thanks for being here. PRs and issues both welcome.
 
+By participating in this project, you agree to follow the [Code of Conduct](./CODE_OF_CONDUCT.md).
+
 ## Quick start
 
 ```bash
