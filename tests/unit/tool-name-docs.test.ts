@@ -21,8 +21,20 @@ test('hosted Worker and local stdio tool names stay explicitly mapped in docs', 
   for (const [localName, hostedName] of pairs) {
     assert.ok(toolsSource.includes(`${localName}: '${hostedName}'`));
     assert.ok(readme.includes(`| \`${hostedName}\` | \`${localName}\` |`));
+  }
+
+  for (const hostedName of [
+    'visibility.check',
+    'visibility.compare',
+    'visibility.citations',
+    'visibility.content_gaps',
+    'visibility.refresh',
+  ]) {
     assert.ok(setup.includes(`\`${hostedName}\``));
   }
 
+  assert.ok(setup.includes('local stdio'));
+  assert.ok(setup.includes('`check_visibility`'));
+  assert.ok(setup.includes('`refresh_brand`'));
   assert.doesNotMatch(setup, /Claude will call `check_visibility`/);
 });
