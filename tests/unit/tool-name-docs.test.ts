@@ -19,9 +19,9 @@ test('hosted Worker and local stdio tool names stay explicitly mapped in docs', 
   const setup = read('SETUP.md');
 
   for (const [localName, hostedName] of pairs) {
-    assert.match(toolsSource, new RegExp(`${localName}: '${hostedName.replace('.', '\\.')}'`));
-    assert.match(readme, new RegExp(`\\| \\`${hostedName.replace('.', '\\.')}\\` \\| \\`${localName}\\` \\|`));
-    assert.match(setup, new RegExp(`\\`${hostedName.replace('.', '\\.')}\\``));
+    assert.ok(toolsSource.includes(`${localName}: '${hostedName}'`));
+    assert.ok(readme.includes(`| \`${hostedName}\` | \`${localName}\` |`));
+    assert.ok(setup.includes(`\`${hostedName}\``));
   }
 
   assert.doesNotMatch(setup, /Claude will call `check_visibility`/);
