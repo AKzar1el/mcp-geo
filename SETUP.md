@@ -237,7 +237,7 @@ In a Claude.ai conversation, try:
 
 > Check the AI visibility for brand_id `acme`.
 
-Claude will call `check_visibility` and return per-engine scores. From there try `compare_competitors`, `get_citations`, `get_content_gaps`, `refresh_brand`.
+The Worker exposes the namespaced tools: Claude will call `visibility.check` and return per-engine scores. From there try `visibility.compare`, `visibility.citations`, `visibility.content_gaps`, and `visibility.refresh`. The local stdio package exposes the same six capabilities under the flat names `check_visibility`, `get_visibility_history`, `compare_competitors`, `get_citations`, `get_content_gaps`, and `refresh_brand`.
 
 ## Troubleshooting
 
