@@ -2,6 +2,8 @@ const AUDIT_EMAIL = 'info@tomiseregi.si';
 const AUDIT_SUBJECT = 'mcp-geo AI Visibility Audit - EUR 99';
 const PUBLIC_ORIGIN = 'https://geo-mcp.digestseo.com';
 const AUDIT_URL = `${PUBLIC_ORIGIN}/audit`;
+const SAMPLE_REPORT_URL =
+  'https://github.com/AKzar1el/mcp-geo/blob/main/docs/demo-report-full.png';
 const AUDIT_DESCRIPTION =
   'A one-time AI Visibility Audit using mcp-geo: 20 buyer-intent prompts, competitor comparison, citation evidence, and prioritized next actions.';
 const AUDIT_BODY = `Hi Tomi,
@@ -63,6 +65,8 @@ function auditHtml(origin: string): string {
     .price span { color: #9ba7b4; font-size: 16px; font-weight: 500; letter-spacing: 0; }
     ul { display: grid; gap: 12px; margin: 28px 0 36px; padding: 0; list-style: none; }
     li { padding: 14px 0; border-bottom: 1px solid #252a31; color: #dce2e8; line-height: 1.45; }
+    .proof { margin: -8px 0 34px; color: #c4ccd4; line-height: 1.6; }
+    .proof a { font-weight: 800; }
     .request-card { display: grid; gap: 18px; margin-top: 38px; padding: 24px; border: 1px solid #252a31; border-radius: 12px; background: #11151a; }
     label { display: grid; gap: 8px; color: #dce2e8; font-size: 14px; font-weight: 700; }
     input, textarea { width: 100%; border: 1px solid #343b45; border-radius: 8px; background: #0b0d10; color: #f4f6f8; font: inherit; font-weight: 500; padding: 12px 14px; }
@@ -93,6 +97,8 @@ function auditHtml(origin: string): string {
       <li>A prioritized content-gap and action memo grounded in the observed prompt results.</li>
       <li>Target delivery within two business days after usable brand and competitor input is received.</li>
     </ul>
+
+    <p class="proof"><a href="${SAMPLE_REPORT_URL}">See a sample report</a> generated through mcp-geo before you request the audit. It shows the output style and evidence depth; your paid audit is run for your own brand, prompts, and competitors.</p>
 
     <form id="audit-request-form" class="request-card">
       <label>
