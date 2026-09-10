@@ -567,21 +567,6 @@ const defaultHandler = {
     const auditResponse = handlePublicAudit(request);
     if (auditResponse) return auditResponse;
 
-    if (url.pathname === '/') {
-      if (request.method !== 'GET') {
-        return new Response('Method Not Allowed', {
-          status: 405,
-          headers: { Allow: 'GET' },
-        });
-      }
-      return new Response(
-        'digestseo-mcp — DigestSEO AI Visibility MCP server.\n' +
-          'Connect this URL as a custom MCP connector in Claude.ai:\n' +
-          `${url.origin}/mcp\n`,
-        { headers: { 'content-type': 'text/plain; charset=utf-8' } },
-      );
-    }
-
     if (url.pathname === '/healthz' && request.method === 'GET') {
       return new Response('ok', {
         headers: { 'content-type': 'text/plain; charset=utf-8' },
