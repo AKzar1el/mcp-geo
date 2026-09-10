@@ -12,7 +12,7 @@ All notable changes to this project are documented here. The format is loosely b
 ### Changed
 
 - Package, MCP Registry, MCPB, Cursor, Claude plugin, and Worker-reported version metadata are synchronized on `0.3.3`.
-- The public `/audit` implementation prefills the exact offer and buyer inputs; deployment of that Worker-side polish remains pending until the current Cloudflare token regains Worker Versions write access.
+- The public `/audit` implementation prefills the exact offer and buyer inputs; later sample-report and methodology polish is merged in the repository but still awaits production Worker promotion.
 
 ## [0.3.2] — July 27, 2026
 
