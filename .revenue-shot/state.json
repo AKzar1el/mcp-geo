@@ -4,16 +4,16 @@
     "generation":  1,
     "active_run_id":  "manual-20260910-031146",
     "lease_acquired_at":  "2026-09-10T03:11:46.0849582+02:00",
-    "lease_until":  "2026-09-10T04:37:10.3585852+02:00",
-    "phase":  "FREEZING_HYPOTHESIS",
-    "last_completed_phase":  "PLAN_READY",
-    "frozen_hypothesis_commit":  null,
+    "lease_until":  "2026-09-10T04:37:55.8944665+02:00",
+    "phase":  "IMPLEMENTING",
+    "last_completed_phase":  "HYPOTHESIS_FROZEN",
+    "frozen_hypothesis_commit":  "f6e45bfd8446d7aa478bee6541513b9532e2fb53",
     "active_work_branch":  "experiment/revenue-ai-visibility-audit",
     "active_pr_number":  null,
-    "expected_head_sha":  null,
+    "expected_head_sha":  "f6e45bfd8446d7aa478bee6541513b9532e2fb53",
     "candidate_deployment_version":  null,
     "last_known_good_deployment":  null,
     "revenue_status":  "UNVERIFIED",
     "terminal_status":  null,
-    "updated_at":  "2026-09-10T03:17:10.3585852+02:00"
+    "updated_at":  "2026-09-10T03:17:55.8944665+02:00"
 }
