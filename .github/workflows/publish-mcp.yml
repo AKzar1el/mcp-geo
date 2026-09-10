@@ -76,13 +76,39 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+  check-npm-version:
+    if: github.event_name == 'push'
+    needs: validate
+    runs-on: ubuntu-latest
+    outputs:
+      published: ${{ steps.package.outputs.published }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check whether the declared npm version already exists
+        id: package
+        shell: bash
+        run: |
+          PKG=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          if npm view "$PKG@$VERSION" version >/dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
   publish-mcp-registry:
     name: Publish to official MCP Registry
-    needs: [validate, publish-npm]
+    needs: [validate, publish-npm, check-npm-version]
     if: >-
       always() &&
       needs.validate.result == 'success' &&
-      (github.event_name == 'push' || needs.publish-npm.result == 'success')
+      ((github.event_name == 'release' && needs.publish-npm.result == 'success') ||
+       (github.event_name == 'push' && needs.check-npm-version.outputs.published == 'true'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
