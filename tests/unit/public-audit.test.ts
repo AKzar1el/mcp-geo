@@ -100,6 +100,23 @@ test('GET /robots.txt and /sitemap.xml expose the audit discovery URL', async ()
   );
 });
 
+test('GET / exposes both the MCP endpoint and the paid audit discovery path', async () => {
+  const { handlePublicAudit } = await loadAuditModule();
+  const response = handlePublicAudit(
+    new Request('https://geo-mcp.digestseo.com/'),
+  );
+
+  assert.ok(response);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type') ?? '', /text\/plain/);
+
+  const body = await response.text();
+  assert.match(body, /DigestSEO AI Visibility MCP server/);
+  assert.match(body, /https:\/\/geo-mcp\.digestseo\.com\/mcp/);
+  assert.match(body, /EUR 99 AI Visibility Audit/);
+  assert.match(body, /https:\/\/geo-mcp\.digestseo\.com\/audit/);
+});
+
 test('audit CTA opens a prefilled attributable request email', async () => {
   const { handlePublicAudit } = await loadAuditModule();
   const response = handlePublicAudit(
@@ -155,7 +172,7 @@ test('non-GET /audit requests are rejected without entering MCP or admin flows',
   assert.equal(response.headers.get('allow'), 'GET');
 });
 
-test('non-audit paths are ignored by the public audit router', async () => {
+test('non-public paths are ignored by the public audit router', async () => {
   const { handlePublicAudit } = await loadAuditModule();
   const response = handlePublicAudit(
     new Request('https://geo-mcp.digestseo.com/healthz'),

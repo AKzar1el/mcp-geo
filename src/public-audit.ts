@@ -26,6 +26,16 @@ const SITEMAP_BODY = `<?xml version="1.0" encoding="UTF-8"?>
   <url><loc>${AUDIT_URL}</loc></url>
 </urlset>`;
 
+function publicRootText(origin: string): string {
+  return (
+    'digestseo-mcp - DigestSEO AI Visibility MCP server.\n' +
+    'Connect this URL as a custom MCP connector in Claude.ai:\n' +
+    `${origin}/mcp\n\n` +
+    'EUR 99 AI Visibility Audit:\n' +
+    `${origin}/audit\n`
+  );
+}
+
 function auditHtml(origin: string): string {
   const mailto = `mailto:${AUDIT_EMAIL}?subject=${encodeURIComponent(AUDIT_SUBJECT)}&body=${encodeURIComponent(AUDIT_BODY)}`;
   const mcpUrl = `${origin}/mcp`;
@@ -210,7 +220,7 @@ function auditHtml(origin: string): string {
 
 export function handlePublicAudit(request: Request): Response | null {
   const url = new URL(request.url);
-  if (!['/audit', '/robots.txt', '/sitemap.xml'].includes(url.pathname)) {
+  if (!['/', '/audit', '/robots.txt', '/sitemap.xml'].includes(url.pathname)) {
     return null;
   }
 
@@ -223,6 +233,15 @@ export function handlePublicAudit(request: Request): Response | null {
 
   if (url.pathname === '/robots.txt') {
     return new Response(ROBOTS_BODY, {
+      headers: {
+        'content-type': 'text/plain; charset=utf-8',
+        'x-content-type-options': 'nosniff',
+      },
+    });
+  }
+
+  if (url.pathname === '/') {
+    return new Response(publicRootText(url.origin), {
       headers: {
         'content-type': 'text/plain; charset=utf-8',
         'x-content-type-options': 'nosniff',
