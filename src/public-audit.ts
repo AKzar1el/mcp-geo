@@ -1,8 +1,17 @@
 const AUDIT_EMAIL = 'info@tomiseregi.si';
-const AUDIT_SUBJECT = 'mcp-geo AI Visibility Audit';
+const AUDIT_SUBJECT = 'mcp-geo AI Visibility Audit - EUR 99';
+const AUDIT_BODY = `Hi Tomi,
+
+I'd like the EUR 99 mcp-geo AI Visibility Audit.
+
+Brand/domain:
+Competitors (up to 3):
+Context or priority (optional):
+
+Source: mcp-geo audit page`;
 
 function auditHtml(origin: string): string {
-  const mailto = `mailto:${AUDIT_EMAIL}?subject=${encodeURIComponent(AUDIT_SUBJECT)}`;
+  const mailto = `mailto:${AUDIT_EMAIL}?subject=${encodeURIComponent(AUDIT_SUBJECT)}&body=${encodeURIComponent(AUDIT_BODY)}`;
   const mcpUrl = `${origin}/mcp`;
 
   return `<!doctype html>

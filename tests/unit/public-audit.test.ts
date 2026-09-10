@@ -32,6 +32,29 @@ test('GET /audit serves the frozen EUR 99 audit offer', async () => {
   assert.doesNotMatch(body, /GitHub Sponsors is active/i);
 });
 
+test('audit CTA opens a prefilled attributable request email', async () => {
+  const { handlePublicAudit } = await loadAuditModule();
+  const response = handlePublicAudit(
+    new Request('https://geo-mcp.digestseo.com/audit'),
+  );
+
+  assert.ok(response);
+  const body = await response.text();
+  const href = body.match(/<a class=\"cta\" href=\"([^\"]+)\"/)?.[1];
+  assert.ok(href);
+
+  const mailto = new URL(href);
+  assert.equal(mailto.protocol, 'mailto:');
+  assert.equal(mailto.pathname, 'info@tomiseregi.si');
+  assert.equal(
+    mailto.searchParams.get('subject'),
+    'mcp-geo AI Visibility Audit - EUR 99',
+  );
+  assert.match(mailto.searchParams.get('body') ?? '', /Brand\/domain:/);
+  assert.match(mailto.searchParams.get('body') ?? '', /Competitors \(up to 3\):/);
+  assert.match(mailto.searchParams.get('body') ?? '', /Source: mcp-geo audit page/);
+});
+
 test('non-GET /audit requests are rejected without entering MCP or admin flows', async () => {
   const { handlePublicAudit } = await loadAuditModule();
   const response = handlePublicAudit(
