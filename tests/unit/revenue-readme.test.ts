@@ -26,6 +26,10 @@ test('README exposes audit details and an attributable direct request path', () 
     readme,
     /> \*\*Payment handoff:\*\* After fit and scope are confirmed, I reply with the normal invoice\/payment instructions\./,
   );
+  assert.match(
+    readme,
+    /> \*\*Methodology:\*\* The same 20 buyer-intent prompts are run as a point-in-time diagnostic and reported per engine/,
+  );
 
   const auditCta = readme.indexOf('> **Need a client-ready baseline without running the stack yourself?**');
   const waitlistCta = readme.indexOf('> **Prefer zero setup?**');

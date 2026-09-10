@@ -30,6 +30,9 @@ test('GET /audit serves the frozen EUR 99 audit offer', async () => {
   assert.match(body, /open-source/i);
   assert.match(body, /See a sample report/i);
   assert.match(body, /docs\/demo-report-full\.png/);
+  assert.match(body, /point-in-time diagnostic/i);
+  assert.match(body, /reported per engine/i);
+  assert.match(body, /same 20 buyer-intent prompts/i);
   assert.doesNotMatch(body, /guaranteed (?:rank|traffic|citation)/i);
   assert.doesNotMatch(body, /GitHub Sponsors is active/i);
 });
