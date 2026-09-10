@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
   "experiment_id": "mcp-geo-revenue-shot-2026-09",
-  "generation": 3,
-  "active_run_id": "auto-20260910-035911",
-  "lease_acquired_at": "2026-09-10T03:59:11+02:00",
-  "lease_until": "2026-09-10T04:01:30+02:00",
-  "phase": "WAITING_GITHUB",
-  "last_completed_phase": "FALLBACK_MERGED",
+  "generation": 4,
+  "active_run_id": "auto-20260910-050201",
+  "lease_acquired_at": "2026-09-10T05:02:01+02:00",
+  "lease_until": "2026-09-10T06:22:01+02:00",
+  "phase": "POST_MERGE_VERIFY",
+  "last_completed_phase": "MAIN_CI_GREEN",
   "frozen_hypothesis_commit": "f6e45bfd8446d7aa478bee6541513b9532e2fb53",
   "active_work_branch": "fix/revenue-audit-email-cta",
   "active_pr_number": 26,
@@ -15,7 +15,7 @@
   "last_known_good_deployment": "bd920cd5-2b4b-4f44-aa98-68d2d031fd78",
   "revenue_status": "UNVERIFIED",
   "terminal_status": null,
-  "updated_at": "2026-09-10T04:01:30+02:00",
+  "updated_at": "2026-09-10T05:02:01+02:00",
   "blocker": "Cloudflare deploy rejected: current CLOUDFLARE_API_TOKEN lacks Workers Scripts Write; no production version was created.",
   "merged_main_sha": "0860b13035110b41716a65d054a90980e8c2668b"
 }
