@@ -4,13 +4,13 @@
     "generation":  23,
     "active_run_id":  "manual-20260910-2356-g23",
     "lease_acquired_at":  "2026-09-10T23:56:26+02:00",
-    "last_heartbeat_at":  "2026-09-10T23:56:26+02:00",
-    "lease_until":  "2026-09-11T00:04:26+02:00",
+    "last_heartbeat_at":  "2026-09-10T23:57:31+02:00",
+    "lease_until":  "2026-09-11T00:05:31+02:00",
     "execution_backend":  "codexify-god",
     "wake_source":  "manual",
     "orchestration_doc_id":  "1hA33PhRbTAWG-zKwBGi8GKyIf5B330JxGhp9Vdh7UOM",
     "orchestration_doc_url":  "https://docs.google.com/document/d/1hA33PhRbTAWG-zKwBGi8GKyIf5B330JxGhp9Vdh7UOM/edit",
     "doc_revision_at_acquire":  "ANLCKQnI-ntFoRDrbDfNglyN1jR-MM6MxEVZFKTBlPeXYaW7ioXUgLtZzc9E1SWxZQEHrPKX9FHB2Xc6U8KIIoMQjCGD1PQG-8PD4aN5VL4",
     "terminal_status":  null,
-    "updated_at":  "2026-09-10T23:56:26+02:00"
+    "updated_at":  "2026-09-10T23:57:31+02:00"
 }
