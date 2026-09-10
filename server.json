@@ -2,8 +2,8 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.AKzar1el/mcp-geo",
   "title": "GEO Tracker by DigestSEO",
-  "description": "DigestSEO GEO Tracker: track brand citations across five AI search engines.",
-  "version": "0.3.2",
+  "description": "Track brand citations across five AI search engines. Free OSS; optional EUR 99 client-ready audit.",
+  "version": "0.3.3",
   "repository": {
     "url": "https://github.com/AKzar1el/mcp-geo",
     "source": "github"
@@ -26,7 +26,7 @@
     {
       "registryType": "npm",
       "identifier": "@digestseo/mcp-geo",
-      "version": "0.3.2",
+      "version": "0.3.3",
       "transport": {
         "type": "stdio"
       }

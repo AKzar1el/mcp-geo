@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here. The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.3] - September 10, 2026
+
+### Added
+
+- Optional EUR 99 one-time AI Visibility Audit for teams that want a client-ready baseline without operating mcp-geo themselves; the open-source package remains free.
+- Direct prefilled audit-request links with deterministic source markers on the repository README, plus a repo-native announcement for the same bounded offer.
+
+### Changed
+
+- Package, MCP Registry, MCPB, Cursor, Claude plugin, and Worker-reported version metadata are synchronized on `0.3.3`.
+- The public `/audit` implementation prefills the exact offer and buyer inputs; deployment of that Worker-side polish remains pending until the current Cloudflare token regains Worker Versions write access.
+
 ## [0.3.2] — July 27, 2026
 
 Published to npm as `@digestseo/mcp-geo`.
