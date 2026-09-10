@@ -33,7 +33,16 @@ function auditHtml(origin: string): string {
     .price span { color: #9ba7b4; font-size: 16px; font-weight: 500; letter-spacing: 0; }
     ul { display: grid; gap: 12px; margin: 28px 0 36px; padding: 0; list-style: none; }
     li { padding: 14px 0; border-bottom: 1px solid #252a31; color: #dce2e8; line-height: 1.45; }
-    .cta { display: inline-block; padding: 14px 20px; border-radius: 8px; background: #f4f6f8; color: #0b0d10; font-weight: 800; text-decoration: none; }
+    .request-card { display: grid; gap: 18px; margin-top: 38px; padding: 24px; border: 1px solid #252a31; border-radius: 12px; background: #11151a; }
+    label { display: grid; gap: 8px; color: #dce2e8; font-size: 14px; font-weight: 700; }
+    input, textarea { width: 100%; border: 1px solid #343b45; border-radius: 8px; background: #0b0d10; color: #f4f6f8; font: inherit; font-weight: 500; padding: 12px 14px; }
+    textarea { min-height: 96px; resize: vertical; }
+    input:focus, textarea:focus { outline: 2px solid #f4f6f8; outline-offset: 2px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; }
+    .cta, .secondary { display: inline-block; border: 0; padding: 14px 20px; border-radius: 8px; font: inherit; font-weight: 800; text-decoration: none; cursor: pointer; }
+    .cta { background: #f4f6f8; color: #0b0d10; }
+    .secondary { border: 1px solid #343b45; background: transparent; color: #f4f6f8; }
+    .status { min-height: 22px; margin: 0; color: #c4ccd4; font-size: 14px; line-height: 1.5; }
     .fine { margin-top: 18px; color: #929daa; font-size: 14px; line-height: 1.6; }
     .oss { margin-top: 56px; padding-top: 24px; border-top: 1px solid #252a31; color: #aeb8c2; line-height: 1.65; }
     a { color: inherit; }
@@ -55,11 +64,109 @@ function auditHtml(origin: string): string {
       <li>Target delivery within two business days after usable brand and competitor input is received.</li>
     </ul>
 
-    <a class="cta" href="${mailto}">Request the EUR 99 audit</a>
-    <p class="fine">Email ${AUDIT_EMAIL}. No subscription, no sales call required. The audit does not guarantee rankings, citations, traffic, or commercial outcomes.</p>
+    <form id="audit-request-form" class="request-card">
+      <label>
+        Brand/domain
+        <input name="brand" type="text" autocomplete="url" placeholder="example.com" required>
+      </label>
+      <label>
+        Competitors (up to 3)
+        <input name="competitors" type="text" placeholder="competitor-one.com, competitor-two.com">
+      </label>
+      <label>
+        Context or priority (optional)
+        <textarea name="context" placeholder="What market, product, or buyer journey matters most?"></textarea>
+      </label>
+      <div class="actions">
+        <button class="cta" type="submit">Request the EUR 99 audit</button>
+        <button class="secondary" type="button" id="copy-request">Copy request details</button>
+      </div>
+      <p id="request-status" class="status" role="status" aria-live="polite"></p>
+    </form>
+
+    <p class="fine">Email <a href="mailto:${AUDIT_EMAIL}">${AUDIT_EMAIL}</a> directly if your browser does not open an email app. No subscription, no sales call required. The audit does not guarantee rankings, citations, traffic, or commercial outcomes.</p>
+    <a class="cta" href="${mailto}">Email the EUR 99 audit request</a>
+    <noscript><p class="fine">JavaScript is optional. You can still <a href="${mailto}">email the prefilled audit request</a> directly.</p></noscript>
 
     <p class="oss">Prefer to run it yourself? <strong>mcp-geo remains free and open-source under MIT.</strong> Use the local npm package or connect to the MCP endpoint at <a href="${mcpUrl}">${mcpUrl}</a>. Source and setup instructions are on <a href="https://github.com/AKzar1el/mcp-geo">GitHub</a>.</p>
   </main>
+  <script>
+    (() => {
+      const form = document.getElementById('audit-request-form');
+      const copyButton = document.getElementById('copy-request');
+      const status = document.getElementById('request-status');
+      if (!(form instanceof HTMLFormElement) || !(copyButton instanceof HTMLButtonElement) || !status) return;
+
+      const requestBody = () => {
+        const data = new FormData(form);
+        const value = (name) => String(data.get(name) ?? '').trim();
+        return [
+          'Hi Tomi,',
+          '',
+          "I'd like the EUR 99 mcp-geo AI Visibility Audit.",
+          '',
+          'Brand/domain: ' + value('brand'),
+          'Competitors (up to 3): ' + value('competitors'),
+          'Context or priority (optional): ' + value('context'),
+          '',
+          'Source: mcp-geo audit page',
+        ].join('\\n');
+      };
+
+      const validate = () => {
+        if (form.reportValidity()) return true;
+        status.textContent = 'Add your brand/domain first.';
+        return false;
+      };
+
+      const mailtoForRequest = () =>
+        'mailto:${AUDIT_EMAIL}?subject=' +
+        encodeURIComponent('${AUDIT_SUBJECT}') +
+        '&body=' +
+        encodeURIComponent(requestBody());
+
+      const copyText = async (text) => {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          try {
+            await navigator.clipboard.writeText(text);
+            return;
+          } catch {
+            // Fall through to the legacy copy path for restrictive browsers.
+          }
+        }
+
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        const copied = document.execCommand('copy');
+        textarea.remove();
+        if (!copied) throw new Error('copy command failed');
+      };
+
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        if (!validate()) return;
+        status.textContent = 'Opening your email app. If nothing happens, use Copy request details.';
+        window.location.href = mailtoForRequest();
+      });
+
+      copyButton.addEventListener('click', async () => {
+        if (!validate()) return;
+        const copyPayload =
+          'To: ${AUDIT_EMAIL}\\nSubject: ${AUDIT_SUBJECT}\\n\\n' + requestBody();
+        try {
+          await copyText(copyPayload);
+          status.textContent = 'Request copied - email it to ${AUDIT_EMAIL}.';
+        } catch {
+          status.textContent = 'Copy failed. Email ${AUDIT_EMAIL} directly.';
+        }
+      });
+    })();
+  </script>
 </body>
 </html>`;
 }

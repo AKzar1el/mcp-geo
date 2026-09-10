@@ -55,6 +55,27 @@ test('audit CTA opens a prefilled attributable request email', async () => {
   assert.match(mailto.searchParams.get('body') ?? '', /Source: mcp-geo audit page/);
 });
 
+test('audit request flow provides form, clipboard, direct-email, and no-JS fallbacks', async () => {
+  const { handlePublicAudit } = await loadAuditModule();
+  const response = handlePublicAudit(
+    new Request('https://geo-mcp.digestseo.com/audit'),
+  );
+
+  assert.ok(response);
+  const body = await response.text();
+  assert.match(body, /<form id="audit-request-form"/);
+  assert.match(body, /name="brand"[^>]*required/);
+  assert.match(body, /name="competitors"/);
+  assert.match(body, /name="context"/);
+  assert.match(body, /type="submit"[^>]*>Request the EUR 99 audit</);
+  assert.match(body, /id="copy-request"[^>]*>Copy request details</);
+  assert.match(body, /navigator\.clipboard\.writeText/);
+  assert.match(body, /document\.execCommand\('copy'\)/);
+  assert.match(body, /aria-live="polite"/);
+  assert.match(body, /Email <a href="mailto:info@tomiseregi\.si"/);
+  assert.match(body, /<noscript>[\s\S]*mailto:info@tomiseregi\.si/);
+});
+
 test('non-GET /audit requests are rejected without entering MCP or admin flows', async () => {
   const { handlePublicAudit } = await loadAuditModule();
   const response = handlePublicAudit(
