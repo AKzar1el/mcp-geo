@@ -32,6 +32,69 @@ test('GET /audit serves the frozen EUR 99 audit offer', async () => {
   assert.doesNotMatch(body, /GitHub Sponsors is active/i);
 });
 
+test('GET /audit exposes canonical, social, and structured discovery metadata', async () => {
+  const { handlePublicAudit } = await loadAuditModule();
+  const response = handlePublicAudit(
+    new Request('https://geo-mcp.digestseo.com/audit'),
+  );
+
+  assert.ok(response);
+  const body = await response.text();
+  assert.match(
+    body,
+    /<link rel="canonical" href="https:\/\/geo-mcp\.digestseo\.com\/audit">/,
+  );
+  assert.match(
+    body,
+    /<meta property="og:url" content="https:\/\/geo-mcp\.digestseo\.com\/audit">/,
+  );
+  assert.match(body, /<meta property="og:type" content="website">/);
+  assert.match(body, /<meta name="twitter:card" content="summary">/);
+
+  const structuredData = body.match(
+    /<script type="application\/ld\+json">([^<]+)<\/script>/,
+  )?.[1];
+  assert.ok(structuredData);
+  const schema = JSON.parse(structuredData) as {
+    '@type'?: string;
+    url?: string;
+    offers?: { price?: string; priceCurrency?: string };
+  };
+  assert.equal(schema['@type'], 'Service');
+  assert.equal(schema.url, 'https://geo-mcp.digestseo.com/audit');
+  assert.deepEqual(schema.offers, { price: '99', priceCurrency: 'EUR' });
+});
+
+test('GET /robots.txt and /sitemap.xml expose the audit discovery URL', async () => {
+  const { handlePublicAudit } = await loadAuditModule();
+  const robots = handlePublicAudit(
+    new Request('https://geo-mcp.digestseo.com/robots.txt'),
+  );
+  const sitemap = handlePublicAudit(
+    new Request('https://geo-mcp.digestseo.com/sitemap.xml'),
+  );
+
+  assert.ok(robots);
+  assert.equal(robots.status, 200);
+  assert.match(robots.headers.get('content-type') ?? '', /text\/plain/);
+  const robotsBody = await robots.text();
+  assert.match(robotsBody, /User-agent: \*/);
+  assert.match(robotsBody, /Allow: \/audit/);
+  assert.match(
+    robotsBody,
+    /Sitemap: https:\/\/geo-mcp\.digestseo\.com\/sitemap\.xml/,
+  );
+
+  assert.ok(sitemap);
+  assert.equal(sitemap.status, 200);
+  assert.match(sitemap.headers.get('content-type') ?? '', /application\/xml/);
+  const sitemapBody = await sitemap.text();
+  assert.match(
+    sitemapBody,
+    /<loc>https:\/\/geo-mcp\.digestseo\.com\/audit<\/loc>/,
+  );
+});
+
 test('audit CTA opens a prefilled attributable request email', async () => {
   const { handlePublicAudit } = await loadAuditModule();
   const response = handlePublicAudit(
