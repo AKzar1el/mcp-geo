@@ -74,6 +74,8 @@ Engineering case study: [DigestSEO MCP Suite — AI visibility, Search Console, 
 > **Payment handoff:** After fit and scope are confirmed, I reply with the normal invoice/payment instructions.
 >
 > **Methodology:** The same 20 buyer-intent prompts are run as a point-in-time diagnostic and reported per engine, with citation/source evidence where available. The audit is an observed snapshot, not a proprietary ranking promise or guaranteed forecast.
+>
+> **Want the protocol before buying?** [Read the AI Visibility Audit methodology](docs/ai-visibility-audit-methodology.md), including scope, engine coverage, interpretation limits, and what the audit does not claim.
 
 > **Prefer zero setup?** Try the hosted version at [digestseo.com](https://digestseo.com) — managed Cloudflare infra, no API keys to manage, multi-brand, scheduled refresh, web UI. Waitlist now open. [Join waitlist →](https://digestseo.com/#waitlist)
 

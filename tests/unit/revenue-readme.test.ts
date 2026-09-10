@@ -30,6 +30,10 @@ test('README exposes audit details and an attributable direct request path', () 
     readme,
     /> \*\*Methodology:\*\* The same 20 buyer-intent prompts are run as a point-in-time diagnostic and reported per engine/,
   );
+  assert.match(
+    readme,
+    /\[Read the AI Visibility Audit methodology\]\(docs\/ai-visibility-audit-methodology\.md\)/,
+  );
 
   const auditCta = readme.indexOf('> **Need a client-ready baseline without running the stack yourself?**');
   const waitlistCta = readme.indexOf('> **Prefer zero setup?**');
