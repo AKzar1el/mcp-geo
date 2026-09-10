@@ -18,6 +18,6 @@
   "updated_at": "2026-09-10T13:00:23+02:00",
   "blocker": "Cloudflare deploy rejected: current CLOUDFLARE_API_TOKEN lacks Workers Scripts Write; no production version was created. The merged README mailto CTA remains the active conversion path.",
   "merged_main_sha": "0860b13035110b41716a65d054a90980e8c2668b",
-  "last_market_check_at": "2026-09-10T10:58:51+02:00",
-  "last_market_summary": "No attributable payment or inbound mcp-geo audit inquiry found in connected Gmail. Main remains at 0860b13035110b41716a65d054a90980e8c2668b; PR #26 remains merged. Repository remains at 44 stars and has no open issues. No material market change."
+  "last_market_check_at": "2026-09-10T13:00:23+02:00",
+  "last_market_summary": "No attributable payment or inbound mcp-geo audit inquiry found in connected Gmail. Main remains at 0860b13035110b41716a65d054a90980e8c2668b; PR #26 remains merged. Repository remains at 44 stars and has no open issues. Public Worker health could not be independently re-probed in this wake because the connected browser is unavailable; no new deploy was attempted. No material market change."
 }
