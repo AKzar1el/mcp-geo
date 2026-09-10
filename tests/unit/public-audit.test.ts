@@ -28,6 +28,8 @@ test('GET /audit serves the frozen EUR 99 audit offer', async () => {
   assert.match(body, /up to five/i);
   assert.match(body, /info@tomiseregi\.si/);
   assert.match(body, /open-source/i);
+  assert.match(body, /See a sample report/i);
+  assert.match(body, /docs\/demo-report-full\.png/);
   assert.doesNotMatch(body, /guaranteed (?:rank|traffic|citation)/i);
   assert.doesNotMatch(body, /GitHub Sponsors is active/i);
 });
