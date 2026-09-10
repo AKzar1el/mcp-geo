@@ -64,11 +64,11 @@ Canonical product page: [DigestSEO mcp-geo — AI Visibility MCP Server](https:/
 
 Engineering case study: [DigestSEO MCP Suite — AI visibility, Search Console, web validation, and trend intelligence](https://tomiseregi.si/projects/digestseo-mcp-suite)
 
-> **Prefer zero setup?** Try the hosted version at [digestseo.com](https://digestseo.com) — managed Cloudflare infra, no API keys to manage, multi-brand, scheduled refresh, web UI. Waitlist now open. [Join waitlist →](https://digestseo.com/#waitlist)
-
 > **Need a client-ready baseline without running the stack yourself?** The [mcp-geo AI Visibility Audit](https://geo-mcp.digestseo.com/audit) is EUR 99 one time: one brand, up to three competitors, 20 buyer-intent prompts, checks across up to five supported AI surfaces where configured providers return usable results, citation evidence, and a prioritized action memo. The open-source package remains free.
 >
 > **Ready to request it?** [Open a prefilled email](mailto:info@tomiseregi.si?subject=mcp-geo%20AI%20Visibility%20Audit%20-%20EUR%2099&body=Hi%20Tomi%2C%0A%0AI%27d%20like%20the%20EUR%2099%20mcp-geo%20AI%20Visibility%20Audit.%0A%0ABrand%2Fdomain%3A%0ACompetitors%20%28up%20to%203%29%3A%0AContext%20or%20priority%20%28optional%29%3A%0A%0ASource%3A%20mcp-geo%20README) with your brand/domain and up to three competitors. No subscription or sales call is required.
+
+> **Prefer zero setup?** Try the hosted version at [digestseo.com](https://digestseo.com) — managed Cloudflare infra, no API keys to manage, multi-brand, scheduled refresh, web UI. Waitlist now open. [Join waitlist →](https://digestseo.com/#waitlist)
 
 ---
 
