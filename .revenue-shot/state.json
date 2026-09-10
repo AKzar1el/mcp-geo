@@ -4,9 +4,9 @@
     "generation":  1,
     "active_run_id":  "manual-20260910-031146",
     "lease_acquired_at":  "2026-09-10T03:11:46.0849582+02:00",
-    "lease_until":  "2026-09-10T04:31:46.0849582+02:00",
-    "phase":  "PLANNING",
-    "last_completed_phase":  "LEASE_ACQUIRED",
+    "lease_until":  "2026-09-10T04:36:39.9409986+02:00",
+    "phase":  "RESEARCH_COMPLETE",
+    "last_completed_phase":  "PLAN_READY",
     "frozen_hypothesis_commit":  null,
     "active_work_branch":  null,
     "active_pr_number":  null,
@@ -15,5 +15,5 @@
     "last_known_good_deployment":  null,
     "revenue_status":  "UNVERIFIED",
     "terminal_status":  null,
-    "updated_at":  "2026-09-10T03:11:46.0849582+02:00"
+    "updated_at":  "2026-09-10T03:16:39.9409986+02:00"
 }
