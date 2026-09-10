@@ -18,6 +18,14 @@ test('README exposes audit details and an attributable direct request path', () 
     readme,
     /mailto:info@tomiseregi\.si\?subject=mcp-geo%20AI%20Visibility%20Audit%20-%20EUR%2099&body=[^\s)]*Source%3A%20mcp-geo%20README/,
   );
+  assert.match(
+    readme,
+    /> \*\*See proof first:\*\* \[Open the sample report\]\(docs\/demo-report-full\.png\)/,
+  );
+  assert.match(
+    readme,
+    /> \*\*Payment handoff:\*\* After fit and scope are confirmed, I reply with the normal invoice\/payment instructions\./,
+  );
 
   const auditCta = readme.indexOf('> **Need a client-ready baseline without running the stack yourself?**');
   const waitlistCta = readme.indexOf('> **Prefer zero setup?**');
