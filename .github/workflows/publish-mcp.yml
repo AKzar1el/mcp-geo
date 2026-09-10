@@ -19,6 +19,7 @@ on:
       - .github/workflows/publish-mcp.yml
   release:
     types: [published]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -55,15 +56,18 @@ jobs:
         run: ./mcp-publisher validate server.json
 
   publish-npm:
-    if: github.event_name == 'release'
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
     needs: validate
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
           registry-url: https://registry.npmjs.org
 
@@ -73,8 +77,6 @@ jobs:
       # prepublishOnly runs typecheck + unit tests + build before the tarball is created.
       - name: Publish to npm
         run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   check-npm-version:
     if: github.event_name == 'push'
@@ -107,7 +109,7 @@ jobs:
     if: >-
       always() &&
       needs.validate.result == 'success' &&
-      ((github.event_name == 'release' && needs.publish-npm.result == 'success') ||
+      (((github.event_name == 'release' || github.event_name == 'workflow_dispatch') && needs.publish-npm.result == 'success') ||
        (github.event_name == 'push' && needs.check-npm-version.outputs.published == 'true'))
     runs-on: ubuntu-latest
     permissions:
