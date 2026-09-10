@@ -26,6 +26,7 @@ import {
 } from './engines.js';
 import { seedBrand, type SeedBrandInput } from './core/seed.js';
 import { DomainInputError } from './core/domain.js';
+import { handlePublicAudit } from './public-audit.js';
 
 export interface Env {
   OAUTH_KV: KVNamespace;
@@ -562,6 +563,9 @@ const defaultHandler = {
     ctx: ExecutionContext,
   ): Promise<Response> {
     const url = new URL(request.url);
+
+    const auditResponse = handlePublicAudit(request);
+    if (auditResponse) return auditResponse;
 
     if (url.pathname === '/') {
       if (request.method !== 'GET') {
