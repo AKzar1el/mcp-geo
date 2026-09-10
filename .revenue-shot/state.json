@@ -2,15 +2,15 @@
     "schema_version":  2,
     "experiment_id":  "mcp-geo-revenue-shot-2026-09",
     "generation":  24,
-    "active_run_id":  "manual-20260911-0026-g24",
-    "lease_acquired_at":  "2026-09-11T00:26:46+02:00",
-    "last_heartbeat_at":  "2026-09-11T00:27:32+02:00",
-    "lease_until":  "2026-09-11T00:35:32+02:00",
+    "active_run_id":  null,
+    "lease_acquired_at":  null,
+    "last_heartbeat_at":  null,
+    "lease_until":  "2026-09-11T00:29:59+02:00",
     "execution_backend":  "codexify-god",
     "wake_source":  "manual",
     "orchestration_doc_id":  "1hA33PhRbTAWG-zKwBGi8GKyIf5B330JxGhp9Vdh7UOM",
     "orchestration_doc_url":  "https://docs.google.com/document/d/1hA33PhRbTAWG-zKwBGi8GKyIf5B330JxGhp9Vdh7UOM/edit",
     "doc_revision_at_acquire":  "ANLCKQnBlmksS4Uu60Iy5XGdYvcYzTJ0oHiI8BappMkld3OqunbypR2jVdxzSdGfB0zhkZ0Nhl3SwGRLlVNZs2DqyIz1UHZqgVLNuFdGG58",
     "terminal_status":  null,
-    "updated_at":  "2026-09-11T00:27:32+02:00"
+    "updated_at":  "2026-09-11T00:29:59+02:00"
 }
