@@ -67,7 +67,11 @@ Engineering case study: [DigestSEO MCP Suite — AI visibility, Search Console, 
 
 > **Need a client-ready baseline without running the stack yourself?** The [mcp-geo AI Visibility Audit](https://geo-mcp.digestseo.com/audit) is EUR 99 one time: one brand, up to three competitors, 20 buyer-intent prompts, checks across up to five supported AI surfaces where configured providers return usable results, citation evidence, and a prioritized action memo. The open-source package remains free.
 >
+> **See proof first:** [Open the sample report](docs/demo-report-full.png) generated through mcp-geo to see the output style and evidence depth before requesting the audit.
+>
 > **Ready to request it?** [Open a prefilled email](mailto:info@tomiseregi.si?subject=mcp-geo%20AI%20Visibility%20Audit%20-%20EUR%2099&body=Hi%20Tomi%2C%0A%0AI%27d%20like%20the%20EUR%2099%20mcp-geo%20AI%20Visibility%20Audit.%0A%0ABrand%2Fdomain%3A%0ACompetitors%20%28up%20to%203%29%3A%0AContext%20or%20priority%20%28optional%29%3A%0A%0ASource%3A%20mcp-geo%20README) with your brand/domain and up to three competitors. No subscription or sales call is required.
+>
+> **Payment handoff:** After fit and scope are confirmed, I reply with the normal invoice/payment instructions.
 
 > **Prefer zero setup?** Try the hosted version at [digestseo.com](https://digestseo.com) — managed Cloudflare infra, no API keys to manage, multi-brand, scheduled refresh, web UI. Waitlist now open. [Join waitlist →](https://digestseo.com/#waitlist)
 
