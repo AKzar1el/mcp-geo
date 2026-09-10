@@ -5,12 +5,12 @@
     "active_run_id":  null,
     "lease_acquired_at":  null,
     "last_heartbeat_at":  null,
-    "lease_until":  "2026-09-11T01:40:43.6695942+02:00",
+    "lease_until":  null,
     "execution_backend":  "codexify-god",
     "wake_source":  "manual",
     "orchestration_doc_id":  "1hA33PhRbTAWG-zKwBGi8GKyIf5B330JxGhp9Vdh7UOM",
     "orchestration_doc_url":  "https://docs.google.com/document/d/1hA33PhRbTAWG-zKwBGi8GKyIf5B330JxGhp9Vdh7UOM/edit",
     "doc_revision_at_acquire":  "ANLCKQlowxl4-yZO0T8ZSH-RkAk2K3lVSdK7DrXYzLLKVwtVEdS33bDjF42rIgpSSOHSbuFMI9hQcfyJxFWAvPcMVBXbYHzlJSoqsmoiNRI",
     "terminal_status":  null,
-    "updated_at":  "2026-09-11T01:40:43.6695942+02:00"
+    "updated_at":  "2026-09-11T01:55:26+02:00"
 }
