@@ -4,16 +4,16 @@
     "generation":  1,
     "active_run_id":  "manual-20260910-031146",
     "lease_acquired_at":  "2026-09-10T03:11:46.0849582+02:00",
-    "lease_until":  "2026-09-10T04:42:21.0652965+02:00",
-    "phase":  "PR_PENDING",
-    "last_completed_phase":  "LOCAL_QUALIFICATION_PASS",
+    "lease_until":  "2026-09-10T03:23:02.9778164+02:00",
+    "phase":  "WAITING_GITHUB",
+    "last_completed_phase":  "PR_CREATED",
     "frozen_hypothesis_commit":  "f6e45bfd8446d7aa478bee6541513b9532e2fb53",
     "active_work_branch":  "experiment/revenue-ai-visibility-audit",
-    "active_pr_number":  null,
+    "active_pr_number":  25,
     "expected_head_sha":  "942933c00f0636d4270f9566ad4acd806f4efe4e",
     "candidate_deployment_version":  null,
     "last_known_good_deployment":  null,
     "revenue_status":  "UNVERIFIED",
     "terminal_status":  null,
-    "updated_at":  "2026-09-10T03:22:21.0652965+02:00"
+    "updated_at":  "2026-09-10T03:23:02.9778164+02:00"
 }
