@@ -1,5 +1,9 @@
 const AUDIT_EMAIL = 'info@tomiseregi.si';
 const AUDIT_SUBJECT = 'mcp-geo AI Visibility Audit - EUR 99';
+const PUBLIC_ORIGIN = 'https://geo-mcp.digestseo.com';
+const AUDIT_URL = `${PUBLIC_ORIGIN}/audit`;
+const AUDIT_DESCRIPTION =
+  'A one-time AI Visibility Audit using mcp-geo: 20 buyer-intent prompts, competitor comparison, citation evidence, and prioritized next actions.';
 const AUDIT_BODY = `Hi Tomi,
 
 I'd like the EUR 99 mcp-geo AI Visibility Audit.
@@ -9,6 +13,16 @@ Competitors (up to 3):
 Context or priority (optional):
 
 Source: mcp-geo audit page`;
+
+const ROBOTS_BODY = `User-agent: *
+Allow: /audit
+Sitemap: ${PUBLIC_ORIGIN}/sitemap.xml
+`;
+
+const SITEMAP_BODY = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>${AUDIT_URL}</loc></url>
+</urlset>`;
 
 function auditHtml(origin: string): string {
   const mailto = `mailto:${AUDIT_EMAIL}?subject=${encodeURIComponent(AUDIT_SUBJECT)}&body=${encodeURIComponent(AUDIT_BODY)}`;
@@ -20,7 +34,23 @@ function auditHtml(origin: string): string {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>mcp-geo AI Visibility Audit - EUR 99</title>
-  <meta name="description" content="A one-time AI Visibility Audit using mcp-geo: 20 buyer-intent prompts, competitor comparison, citation evidence, and prioritized next actions.">
+  <meta name="description" content="${AUDIT_DESCRIPTION}">
+  <link rel="canonical" href="${AUDIT_URL}">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="${AUDIT_SUBJECT}">
+  <meta property="og:description" content="${AUDIT_DESCRIPTION}">
+  <meta property="og:url" content="${AUDIT_URL}">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="${AUDIT_SUBJECT}">
+  <meta name="twitter:description" content="${AUDIT_DESCRIPTION}">
+  <script type="application/ld+json">${JSON.stringify({
+    '@context': 'https://schema.org',
+    '@type': 'Service',
+    name: 'mcp-geo AI Visibility Audit',
+    description: AUDIT_DESCRIPTION,
+    url: AUDIT_URL,
+    offers: { price: '99', priceCurrency: 'EUR' },
+  })}</script>
   <style>
     :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     * { box-sizing: border-box; }
@@ -173,12 +203,32 @@ function auditHtml(origin: string): string {
 
 export function handlePublicAudit(request: Request): Response | null {
   const url = new URL(request.url);
-  if (url.pathname !== '/audit') return null;
+  if (!['/audit', '/robots.txt', '/sitemap.xml'].includes(url.pathname)) {
+    return null;
+  }
 
   if (request.method !== 'GET') {
     return new Response('Method Not Allowed', {
       status: 405,
       headers: { Allow: 'GET' },
+    });
+  }
+
+  if (url.pathname === '/robots.txt') {
+    return new Response(ROBOTS_BODY, {
+      headers: {
+        'content-type': 'text/plain; charset=utf-8',
+        'x-content-type-options': 'nosniff',
+      },
+    });
+  }
+
+  if (url.pathname === '/sitemap.xml') {
+    return new Response(SITEMAP_BODY, {
+      headers: {
+        'content-type': 'application/xml; charset=utf-8',
+        'x-content-type-options': 'nosniff',
+      },
     });
   }
 
