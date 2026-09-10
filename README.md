@@ -9,6 +9,7 @@
 [![MCP](https://img.shields.io/badge/MCP-Server-blueviolet)](https://modelcontextprotocol.io/)
 [![mcp-geo MCP server](https://glama.ai/mcp/servers/AKzar1el/mcp-geo/badges/score.svg)](https://glama.ai/mcp/servers/AKzar1el/mcp-geo)
 [![GitHub stars](https://img.shields.io/github/stars/AKzar1el/mcp-geo?style=social)](https://github.com/AKzar1el/mcp-geo/stargazers)
+[![EUR 99 AI Visibility Audit](https://img.shields.io/badge/AI_Visibility_Audit-EUR_99-2ea44f)](https://geo-mcp.digestseo.com/audit)
 
 
 ## Quick Install
