@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
   "experiment_id": "mcp-geo-revenue-shot-2026-09",
-  "generation": 18,
-  "active_run_id": null,
-  "lease_acquired_at": null,
-  "lease_until": "2026-09-10T21:16:48+02:00",
+  "generation": 19,
+  "active_run_id": "manual-20260910-2118-g19",
+  "lease_acquired_at": "2026-09-10T21:18:00+02:00",
+  "lease_until": "2026-09-10T21:58:00+02:00",
   "phase": "WAITING_DEPLOYMENT",
   "last_completed_phase": "AUDIT_SAMPLE_PROOF_MERGED_AND_MAIN_CI_GREEN",
   "frozen_hypothesis_commit": "f6e45bfd8446d7aa478bee6541513b9532e2fb53",
@@ -15,7 +15,7 @@
   "last_known_good_deployment": "1bea2b45-e7a8-4341-8a9e-b28d4c3ba499",
   "revenue_status": "UNVERIFIED",
   "terminal_status": null,
-  "updated_at": "2026-09-10T21:16:48+02:00",
+  "updated_at": "2026-09-10T21:18:00+02:00",
   "blocker": null,
   "merged_main_sha": "55ba078e6528890fb552f00d8974e840c523e71c",
   "last_market_check_at": "2026-09-10T21:16:00+02:00",
@@ -24,6 +24,8 @@
   "release_tag": "v0.3.3",
   "merged_pr_number": 38,
   "post_merge_ci_run": 34519116548,
+  "execution_backend": "codexify-god",
+  "wake_source": "manual",
   "pending_cleanup_branches": [
     "experiment/audit-sample-proof",
     "experiment/audit-sample-readme"
