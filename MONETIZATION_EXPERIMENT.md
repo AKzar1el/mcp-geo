@@ -93,3 +93,12 @@ The following may not change during this experiment:
 - fixed end date/time.
 
 Implementation details, exact wording, placement, and reliability fixes may change only when evidence supports them and only within this frozen offer.
+
+## Operational log
+
+### 2026-09-10
+
+- PR #25 merged the frozen experiment contract and tested `/audit` Worker surface into `main`; main CI passed.
+- A production Wrangler dry-run against the existing `digestseo-mcp` topology passed with the expected D1, KV, Durable Object, service, and `SELF_URL` bindings.
+- The real deploy was rejected before a new Worker version was created because the machine's current `CLOUDFLARE_API_TOKEN` lacks `Workers Scripts Write`. The previous production version remains the last-known-good deployment.
+- Because `https://geo-mcp.digestseo.com/audit` therefore remains undeployed, the public README audit CTA was changed to the already-frozen direct `mailto:info@tomiseregi.si` request path instead of leaving a broken conversion link. This is an implementation fallback inside the same frozen EUR 99 audit hypothesis, not a pivot.
