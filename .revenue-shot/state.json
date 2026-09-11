@@ -1,16 +1,1 @@
-{
-    "schema_version":  2,
-    "experiment_id":  "mcp-geo-revenue-shot-2026-09",
-    "generation":  27,
-    "active_run_id":  null,
-    "lease_acquired_at":  null,
-    "last_heartbeat_at":  null,
-    "lease_until":  null,
-    "execution_backend":  "codexify-god",
-    "wake_source":  "manual",
-    "orchestration_doc_id":  "1hA33PhRbTAWG-zKwBGi8GKyIf5B330JxGhp9Vdh7UOM",
-    "orchestration_doc_url":  "https://docs.google.com/document/d/1hA33PhRbTAWG-zKwBGi8GKyIf5B330JxGhp9Vdh7UOM/edit",
-    "doc_revision_at_acquire":  "ANLCKQmp32jP6UwEoyp4DQtNuEHjuJ7-nilnk4Wfd3cBDVFAzB2Md9qN0eOp_BO1topxw6hZ9BYONJDfZRWG2b8M_ueSiBfeyEYtnLjatPs",
-    "terminal_status":  null,
-    "updated_at":  "2026-09-11T02:35:40.9852267+02:00"
-}
+{"schema_version":2,"experiment_id":"mcp-geo-revenue-shot-2026-09","generation":28,"active_run_id":"manual-20260911-0251-g28-a6024d10","lease_acquired_at":"2026-09-11T02:51:55.7585122+02:00","last_heartbeat_at":"2026-09-11T02:51:55.7585122+02:00","lease_until":"2026-09-11T02:59:55.7585122+02:00","execution_backend":"codexify-god","wake_source":"manual","orchestration_doc_id":"1hA33PhRbTAWG-zKwBGi8GKyIf5B330JxGhp9Vdh7UOM","orchestration_doc_url":"https://docs.google.com/document/d/1hA33PhRbTAWG-zKwBGi8GKyIf5B330JxGhp9Vdh7UOM/edit","doc_revision_at_acquire":"ANLCKQkTqBPQyYAw6DZR3IsEwtbtxLH9IWhUoJTCsA_EAjfFC0N6pPKmWGb6BBVx4SRqMfL9o7XjPOzY6qvdSrdqkhMhcr6geYh-WVtx4yw","terminal_status":null,"updated_at":"2026-09-11T02:51:55.7585122+02:00"}
