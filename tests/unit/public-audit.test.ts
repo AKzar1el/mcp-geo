@@ -34,6 +34,7 @@ test('GET /audit serves the frozen EUR 99 audit offer', async () => {
   assert.match(body, /reported per engine/i);
   assert.match(body, /same 20 buyer-intent prompts/i);
   assert.match(body, /concise, plain-English prioritized content-gap and action memo/i);
+  assert.match(body, /implementation is not included/i);
   assert.match(body, /confirm fit and scope by email/i);
   assert.match(body, /existing invoice and payment process/i);
   assert.match(body, /does not collect payment details/i);

@@ -132,6 +132,7 @@ function auditHtml(origin: string): string {
     </form>
 
     <p class="fine">After you email the request, Tomi will confirm fit and scope by email, then use the existing invoice and payment process. This page does not collect payment details.</p>
+    <p class="fine">Implementation is not included; the prioritized action memo is intended for your own team or existing provider to execute.</p>
     <p class="fine">Email <a href="mailto:${AUDIT_EMAIL}">${AUDIT_EMAIL}</a> directly if your browser does not open an email app. No subscription, no sales call required. The audit does not guarantee rankings, citations, traffic, or commercial outcomes.</p>
     <a class="cta" href="${mailto}">Email the EUR 99 audit request</a>
     <noscript><p class="fine">JavaScript is optional. You can still <a href="${mailto}">email the prefilled audit request</a> directly.</p></noscript>
