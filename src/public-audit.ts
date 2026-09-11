@@ -104,7 +104,7 @@ function auditHtml(origin: string): string {
       <li>20 buyer-intent prompts tailored to the brand and category.</li>
       <li>Checks across up to five mcp-geo-supported AI surfaces where configured providers return usable results.</li>
       <li>Visibility/share-of-voice comparison plus citation and source evidence where returned.</li>
-      <li>A prioritized content-gap and action memo grounded in the observed prompt results.</li>
+      <li>A concise, plain-English prioritized content-gap and action memo grounded in the observed prompt results.</li>
       <li>Target delivery within two business days after usable brand and competitor input is received.</li>
     </ul>
 
