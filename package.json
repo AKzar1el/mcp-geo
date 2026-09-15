@@ -1,6 +1,6 @@
 {
   "name": "@digestseo/mcp-geo",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Self-hostable MCP server for AI visibility tracking across ChatGPT, Claude, Perplexity, Gemini, and Google AI Overviews. Free OSS with an optional EUR 99 one-time AI Visibility Audit for teams that want a client-ready baseline.",
   "private": false,
   "license": "MIT",
@@ -59,8 +59,10 @@
   "overrides": {
     "@hono/node-server": "2.0.12",
     "body-parser": "2.3.0",
-    "fast-uri": "3.1.4",
-    "hono": "4.12.32"
+    "fast-uri": "3.1.7",
+    "hono": "4.13.7",
+    "ip-address": "10.7.2",
+    "qs": "6.16.0"
   },
   "devDependencies": {
     "@cloudflare/workers-oauth-provider": "^0.6.0",
