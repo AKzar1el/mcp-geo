@@ -1,7 +1,8 @@
 {
   "mcpServers": {
     "digestseo-geo": {
-      "url": "https://geo-mcp.digestseo.com/mcp"
+      "command": "npx",
+      "args": ["-y", "@digestseo/mcp-geo"]
     }
   }
 }
