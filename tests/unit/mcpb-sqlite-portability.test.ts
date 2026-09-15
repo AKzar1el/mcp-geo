@@ -1,41 +1,53 @@
 import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-const require = createRequire(import.meta.url);
 const packageJson = JSON.parse(
   readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
 ) as {
   dependencies?: Record<string, string>;
+  engines?: { node?: string };
 };
-const sqlitePackage = JSON.parse(
-  readFileSync(require.resolve('better-sqlite3/package.json'), 'utf8'),
+const manifest = JSON.parse(
+  readFileSync(new URL('../../manifest.json', import.meta.url), 'utf8'),
 ) as {
-  version: string;
-  exports?: Record<string, unknown>;
+  compatibility?: { runtimes?: { node?: string } };
+  user_config?: Record<string, { required?: boolean; default?: string }>;
 };
 
-test('MCPB sqlite dependency uses the N-API release with bundled cross-platform prebuild selectors', () => {
-  assert.match(
-    packageJson.dependencies?.['better-sqlite3'] ?? '',
-    /^\^13\./,
-    'better-sqlite3 must stay on the N-API-based v13 line for portable MCPB bundles',
+test('MCPB sqlite runtime avoids native addons that Claude Desktop rejects on macOS', () => {
+  assert.equal(
+    packageJson.dependencies?.['better-sqlite3'],
+    undefined,
+    'MCPB must not bundle better-sqlite3 native .node binaries',
   );
+  assert.match(
+    packageJson.engines?.node ?? '',
+    /22\.13/,
+    'node:sqlite is flag-free from Node 22.13 onward',
+  );
+  assert.match(
+    manifest.compatibility?.runtimes?.node ?? '',
+    /22\.13/,
+    'MCPB runtime metadata must match the node:sqlite floor',
+  );
+});
 
-  assert.match(sqlitePackage.version, /^13\./);
 
-  for (const target of [
-    './darwin-x64',
-    './darwin-arm64',
-    './linux-x64',
-    './linux-arm64',
-    './win32-x64',
-    './win32-arm64',
-  ]) {
-    assert.ok(
-      sqlitePackage.exports?.[target],
-      `better-sqlite3 is missing its bundled ${target} prebuild selector`,
+test('optional MCPB API keys resolve to empty strings when omitted', () => {
+  const keys = [
+    'openai_api_key',
+    'anthropic_api_key',
+    'gemini_api_key',
+    'perplexity_api_key',
+    'serpapi_api_key',
+  ];
+  for (const key of keys) {
+    assert.equal(manifest.user_config?.[key]?.required, false);
+    assert.equal(
+      manifest.user_config?.[key]?.default,
+      '',
+      `optional user_config.${key} must default to an empty string`,
     );
   }
 });

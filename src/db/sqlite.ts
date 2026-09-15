@@ -1,4 +1,4 @@
-// better-sqlite3 implementation of the Db contract (src/db/types.ts)
+// node:sqlite implementation of the Db contract (src/db/types.ts)
 // for the local stdio CLI. D1 speaks SQLite dialect, so every query is
 // a 1:1 port of src/db/d1.ts — only the driver call shapes differ.
 //
@@ -11,7 +11,7 @@
 // Node-only file: excluded from the Worker tsconfig, compiled by
 // tsconfig.node.json.
 
-import Database from 'better-sqlite3';
+import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -38,7 +38,7 @@ import type {
 export interface SqliteDb extends Db {
   // Escape hatch for tests and power users (e.g. seeding a brand row —
   // the Db contract only mirrors the query helpers the tools use).
-  raw: Database.Database;
+  raw: DatabaseSync;
   close(): void;
 }
 
@@ -56,7 +56,22 @@ function migrationsDir(): string {
   return fileURLToPath(new URL('../../migrations/', import.meta.url));
 }
 
-function applyMigrations(db: Database.Database): void {
+function inTransaction(db: DatabaseSync, fn: () => void): void {
+  db.exec('BEGIN');
+  try {
+    fn();
+    db.exec('COMMIT');
+  } catch (error) {
+    try {
+      db.exec('ROLLBACK');
+    } catch {
+      // Preserve the original database error if rollback itself fails.
+    }
+    throw error;
+  }
+}
+
+function applyMigrations(db: DatabaseSync): void {
   db.exec(
     `CREATE TABLE IF NOT EXISTS _migrations (
        name       TEXT PRIMARY KEY,
@@ -75,12 +90,12 @@ function applyMigrations(db: Database.Database): void {
   for (const file of files) {
     if (applied.has(file)) continue;
     const sql = readFileSync(join(dir, file), 'utf8');
-    db.transaction(() => {
+    inTransaction(db, () => {
       db.exec(sql);
       db.prepare(
         'INSERT INTO _migrations (name, applied_at) VALUES (?, ?)',
       ).run(file, Date.now());
-    })();
+    });
   }
 }
 
@@ -156,11 +171,11 @@ function parseJsonArray(raw: string | null): string[] {
 export function openSqliteDb(path?: string): SqliteDb {
   const dbPath = path ?? defaultDbPath();
   mkdirSync(dirname(dbPath), { recursive: true });
-  const sqlite = new Database(dbPath);
+  const sqlite = new DatabaseSync(dbPath);
   // WAL keeps reads cheap while an engine run is writing; FK
   // enforcement matches D1 behavior (SQLite defaults it off).
-  sqlite.pragma('journal_mode = WAL');
-  sqlite.pragma('foreign_keys = ON');
+  sqlite.exec('PRAGMA journal_mode = WAL');
+  sqlite.exec('PRAGMA foreign_keys = ON');
   applyMigrations(sqlite);
 
   return {
@@ -184,7 +199,7 @@ export function openSqliteDb(path?: string): SqliteDb {
         .prepare(
           'SELECT id, brand_id, text, intent_stage, shape, active, created_at FROM prompts WHERE brand_id = ? AND active = 1 ORDER BY created_at ASC',
         )
-        .all(brandId) as Prompt[];
+        .all(brandId) as unknown as Prompt[];
     },
 
     async getPromptsByIds(promptIds: string[]): Promise<Prompt[]> {
@@ -196,7 +211,7 @@ export function openSqliteDb(path?: string): SqliteDb {
              FROM prompts
             WHERE id IN (${placeholders})`,
         )
-        .all(...promptIds) as Prompt[];
+        .all(...promptIds) as unknown as Prompt[];
       const byId = new Map(rows.map((prompt) => [prompt.id, prompt]));
       return promptIds.flatMap((id) => {
         const prompt = byId.get(id);
@@ -231,8 +246,8 @@ export function openSqliteDb(path?: string): SqliteDb {
           input.name,
           input.category,
           JSON.stringify(input.competitors),
-          JSON.stringify(input.aliases),
-          JSON.stringify(input.exclude_terms),
+          JSON.stringify(input.aliases ?? []),
+          JSON.stringify(input.exclude_terms ?? []),
           input.refresh_frequency,
           now,
           now,
@@ -251,7 +266,7 @@ export function openSqliteDb(path?: string): SqliteDb {
             GROUP BY b.id
             ORDER BY b.created_at ASC`,
         )
-        .all() as Array<BrandRow & { active_prompts: number }>;
+        .all() as unknown as Array<BrandRow & { active_prompts: number }>;
       return rows.map((row) => ({
         ...rowToBrand(row),
         active_prompts: Number(row.active_prompts ?? 0),
@@ -387,7 +402,7 @@ export function openSqliteDb(path?: string): SqliteDb {
               OR (b.refresh_frequency = 'weekly' AND last_usable_run < ?)
               OR (b.refresh_frequency = 'daily'  AND last_usable_run < ?)`,
         )
-        .all(weeklyCutoff, dailyCutoff) as Array<
+        .all(weeklyCutoff, dailyCutoff) as unknown as Array<
         BrandRow & { last_usable_run: number | null }
       >;
       return rows.map(rowToBrand);
@@ -467,7 +482,7 @@ export function openSqliteDb(path?: string): SqliteDb {
       const deleteResponses = sqlite.prepare(
         'DELETE FROM prompt_responses WHERE run_id = ?',
       );
-      sqlite.transaction(() => {
+      inTransaction(sqlite, () => {
         if (options.replaceExisting) {
           deleteResponses.run(runId);
         }
@@ -505,7 +520,7 @@ export function openSqliteDb(path?: string): SqliteDb {
         // check_visibility.
         const okCount = results.filter((r) => r.status === 'ok').length;
         closeRun.run(now, okCount, runId);
-      })();
+      });
     },
 
     // Only returns status='ok' rows — see d1.ts.
@@ -521,7 +536,7 @@ export function openSqliteDb(path?: string): SqliteDb {
             WHERE pr.run_id = ?
               AND pr.status = 'ok'`,
         )
-        .all(runId) as ResponseJoinRow[];
+        .all(runId) as unknown as ResponseJoinRow[];
       return rows.map((row) => ({
         id: row.id,
         run_id: row.run_id,
@@ -552,14 +567,14 @@ export function openSqliteDb(path?: string): SqliteDb {
         `INSERT INTO prompts (id, brand_id, text, intent_stage, shape, active, created_at)
          VALUES (?, ?, ?, ?, ?, 1, ?)`,
       );
-      sqlite.transaction(() => {
+      inTransaction(sqlite, () => {
         // Soft-delete: mark old prompts inactive so historical
         // prompt_responses rows keep their FK target.
         deactivate.run(brandId);
         for (const p of prompts) {
           insert.run(randomUUID(), brandId, p.text, p.intent_stage, p.shape, now);
         }
-      })();
+      });
       return prompts.length;
     },
 
@@ -651,7 +666,7 @@ export function openSqliteDb(path?: string): SqliteDb {
             GROUP BY r.id, r.engine
             ORDER BY COALESCE(r.completed_at, r.started_at) ASC`,
         )
-        .all(brandId, since) as VisibilityHistoryRow[];
+        .all(brandId, since) as unknown as VisibilityHistoryRow[];
     },
 
     async getCitationRows(
@@ -676,7 +691,7 @@ export function openSqliteDb(path?: string): SqliteDb {
         params.push(engine);
       }
       sql += ' ORDER BY pr.captured_at DESC LIMIT 50';
-      return sqlite.prepare(sql).all(...(params as never[])) as CitationRow[];
+      return sqlite.prepare(sql).all(...(params as never[])) as unknown as CitationRow[];
     },
   };
 }

@@ -47,35 +47,40 @@
       "title": "OpenAI API Key (ChatGPT engine)",
       "description": "Optional — every engine key is opt-in, but at least one of the five is required for the server to do anything useful. Engines without a key are skipped gracefully.",
       "sensitive": true,
-      "required": false
+      "required": false,
+      "default": ""
     },
     "anthropic_api_key": {
       "type": "string",
       "title": "Anthropic API Key (Claude engine)",
       "description": "Optional — also powers prompt generation and content-gap analysis via Claude Haiku. At least one of the five engine keys is required.",
       "sensitive": true,
-      "required": false
+      "required": false,
+      "default": ""
     },
     "gemini_api_key": {
       "type": "string",
       "title": "Google AI Studio API Key (Gemini engine)",
       "description": "Optional — free tier available at aistudio.google.com. At least one of the five engine keys is required.",
       "sensitive": true,
-      "required": false
+      "required": false,
+      "default": ""
     },
     "perplexity_api_key": {
       "type": "string",
       "title": "Perplexity API Key (Perplexity engine)",
       "description": "Optional — paid plans only. At least one of the five engine keys is required.",
       "sensitive": true,
-      "required": false
+      "required": false,
+      "default": ""
     },
     "serpapi_api_key": {
       "type": "string",
       "title": "SerpAPI Key (Google AI Overviews engine)",
       "description": "Optional — free tier covers 250 searches/month. At least one of the five engine keys is required.",
       "sensitive": true,
-      "required": false
+      "required": false,
+      "default": ""
     }
   },
   "tools": [
@@ -118,7 +123,7 @@
       "linux"
     ],
     "runtimes": {
-      "node": ">=22.0.0"
+      "node": ">=22.13.0"
     }
   }
 }

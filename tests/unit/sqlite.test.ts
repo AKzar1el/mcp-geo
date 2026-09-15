@@ -1,10 +1,10 @@
-// Unit tests for the better-sqlite3 Db adapter (src/db/sqlite.ts) and
+// Unit tests for the node:sqlite Db adapter (src/db/sqlite.ts) and
 // the core seeding flow (src/core/seed.ts) on top of it. Runs against a
 // throwaway database under the OS temp dir — no network, no Cloudflare.
 // Run with: npm run test:unit
 //
 // Some fixtures are still inserted through the adapter's exposed raw
-// better-sqlite3 handle where the test wants exact control over row
+// raw node:sqlite handle where the test wants exact control over row
 // shape, independent of the Db methods under test.
 
 import { test } from 'node:test';
@@ -452,7 +452,8 @@ test('collectBatch replaces partial results when the same completed batch is col
         .prepare(
           'SELECT prompt_id, status, error_message FROM prompt_responses WHERE run_id = ? ORDER BY prompt_id',
         )
-        .all(run.id),
+        .all(run.id)
+        .map((row) => ({ ...row })),
       [
         { prompt_id: 'prompt-a', status: 'ok', error_message: null },
         { prompt_id: 'prompt-b', status: 'ok', error_message: null },
@@ -522,7 +523,8 @@ test('collectBatch persists an all-failed batch from its error file', async () =
         .prepare(
           'SELECT prompt_id, status, error_message FROM prompt_responses WHERE run_id = ?',
         )
-        .all(run.id),
+        .all(run.id)
+        .map((row) => ({ ...row })),
       [
         {
           prompt_id: 'failed-prompt',

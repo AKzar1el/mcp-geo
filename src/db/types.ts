@@ -1,5 +1,5 @@
 // Runtime-agnostic database contract shared by the Cloudflare Worker
-// (D1, src/db/d1.ts) and the local stdio CLI (better-sqlite3,
+// (D1, src/db/d1.ts) and the local stdio CLI (node:sqlite,
 // src/db/sqlite.ts). All timestamps are unix-ms (Date.now()). JSON
 // columns are parsed at the boundary so callers never deal with raw
 // TEXT. This file must stay free of Workers and Node-specific imports.
