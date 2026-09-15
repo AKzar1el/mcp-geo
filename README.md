@@ -433,6 +433,15 @@ Issues and PRs welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md) for the short v
 
 When you run `digestseo-mcp` locally (npx, the desktop extension, or Docker), all of your data — brands, prompts, runs, responses, and the response cache — stays on your machine in a local SQLite database at `~/.digestseo/digestseo.sqlite` (override with `DIGESTSEO_DB_PATH`). The scan prompts are sent to whichever AI providers you configured with your own API keys (OpenAI, Anthropic, Google, Perplexity, and/or SerpAPI), and only to those; their handling of that traffic is governed by their respective privacy policies. Nothing is ever sent to the author of this project: no telemetry, no analytics, no account.
 
+
+**Data use and storage:** Local brand configuration, prompts, scan runs, responses, and cached responses are used only to provide the MCP server features you invoke. They remain in the local SQLite database described above; this project does not operate an account service or collect telemetry.
+
+**Third-party processing:** Prompt and scan traffic is sent only to the AI providers you explicitly configure. Those providers process and retain that traffic under their own privacy policies; the project author does not receive copies of it.
+
+**Retention and deletion:** Local data remains on your machine until you delete the SQLite database (or the custom `DIGESTSEO_DB_PATH` you configured). Removing that local database removes mcp-geo's stored local history and cache. Provider-side retention is controlled by each configured provider.
+
+**Contact:** Privacy questions about mcp-geo can be sent to `info@tomiseregi.si`.
+
 ---
 
 ## License
