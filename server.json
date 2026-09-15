@@ -9,12 +9,6 @@
     "source": "github"
   },
   "websiteUrl": "https://digestseo.com/geo-mcp/",
-  "remotes": [
-    {
-      "type": "streamable-http",
-      "url": "https://geo-mcp.digestseo.com/mcp"
-    }
-  ],
   "icons": [
     {
       "src": "https://digestseo.com/products/mcp-geo-mark.svg",
