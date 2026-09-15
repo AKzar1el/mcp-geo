@@ -2,6 +2,7 @@ const AUDIT_EMAIL = 'info@tomiseregi.si';
 const AUDIT_SUBJECT = 'mcp-geo AI Visibility Audit - EUR 99';
 const PUBLIC_ORIGIN = 'https://geo-mcp.digestseo.com';
 const AUDIT_URL = `${PUBLIC_ORIGIN}/audit`;
+const PRIVACY_URL = `${PUBLIC_ORIGIN}/privacy`;
 const SAMPLE_REPORT_URL =
   'https://github.com/AKzar1el/mcp-geo/blob/main/docs/demo-report-full.png';
 const AUDIT_DESCRIPTION =
@@ -35,6 +36,24 @@ function publicRootText(origin: string): string {
     `${origin}/audit\n`
   );
 }
+
+const PRIVACY_BODY = `mcp-geo Privacy Policy
+
+Scope
+This policy covers the local mcp-geo package and Claude Desktop extension.
+
+Data use and storage
+Brand configuration, prompts, scan runs, responses, and cached responses are used only to provide the MCP features you invoke. Local data is stored in the SQLite database at ~/.digestseo/digestseo.sqlite unless you set DIGESTSEO_DB_PATH. mcp-geo does not operate an account service and does not send telemetry or analytics to the project author.
+
+Third-party processing
+Prompt and scan traffic is sent only to the AI providers whose API keys you configure: OpenAI, Anthropic, Google, Perplexity, and/or SerpAPI. Those providers process and retain that traffic under their own privacy policies. The project author does not receive copies of that provider traffic.
+
+Retention and deletion
+Local data remains on your machine until you delete the SQLite database or the custom DIGESTSEO_DB_PATH you configured. Deleting that local database removes mcp-geo's stored local history and cache. Provider-side retention is controlled by each configured provider.
+
+Contact
+Privacy questions about mcp-geo can be sent to info@tomiseregi.si.
+`;
 
 function auditHtml(origin: string): string {
   const mailto = `mailto:${AUDIT_EMAIL}?subject=${encodeURIComponent(AUDIT_SUBJECT)}&body=${encodeURIComponent(AUDIT_BODY)}`;
@@ -222,7 +241,7 @@ function auditHtml(origin: string): string {
 
 export function handlePublicAudit(request: Request): Response | null {
   const url = new URL(request.url);
-  if (!['/', '/audit', '/robots.txt', '/sitemap.xml'].includes(url.pathname)) {
+  if (!['/', '/audit', '/privacy', '/robots.txt', '/sitemap.xml'].includes(url.pathname)) {
     return null;
   }
 
@@ -255,6 +274,16 @@ export function handlePublicAudit(request: Request): Response | null {
     return new Response(SITEMAP_BODY, {
       headers: {
         'content-type': 'application/xml; charset=utf-8',
+        'x-content-type-options': 'nosniff',
+      },
+    });
+  }
+
+  if (url.pathname === '/privacy') {
+    return new Response(PRIVACY_BODY, {
+      headers: {
+        'cache-control': 'no-store',
+        'content-type': 'text/plain; charset=utf-8',
         'x-content-type-options': 'nosniff',
       },
     });

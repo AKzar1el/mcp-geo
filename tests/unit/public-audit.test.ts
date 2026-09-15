@@ -78,6 +78,23 @@ test('GET /audit exposes canonical, social, and structured discovery metadata', 
   assert.deepEqual(schema.offers, { price: '99', priceCurrency: 'EUR' });
 });
 
+test('GET /privacy serves the owned local-connector privacy policy', async () => {
+  const { handlePublicAudit } = await loadAuditModule();
+  const response = handlePublicAudit(
+    new Request('https://geo-mcp.digestseo.com/privacy'),
+  );
+
+  assert.ok(response);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type') ?? '', /text\/plain/);
+  const body = await response.text();
+  assert.match(body, /local mcp-geo package and Claude Desktop extension/i);
+  assert.match(body, /Data use and storage/);
+  assert.match(body, /Third-party processing/);
+  assert.match(body, /Retention and deletion/);
+  assert.match(body, /info@tomiseregi\.si/);
+});
+
 test('GET /robots.txt and /sitemap.xml expose the audit discovery URL', async () => {
   const { handlePublicAudit } = await loadAuditModule();
   const robots = handlePublicAudit(
