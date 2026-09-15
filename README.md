@@ -224,15 +224,16 @@ npx wrangler d1 migrations apply mcp-geo-db --remote
 npx wrangler deploy
 ```
 
-The production MCP endpoint is the product-based custom domain:
+After deploying your own Worker, use that deployment's `/mcp` URL as the
+remote endpoint, for example:
 
 ```
-https://geo-mcp.digestseo.com/mcp
+https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev/mcp
 ```
 
-Use that exact URL when publishing `digestseo/mcp-geo` on Smithery.ai.
-The endpoint is OAuth-protected, so Smithery will complete its normal MCP
-authorization flow during inspection.
+Use your configured Worker URL for directory or client integrations. The
+public `geo-mcp.digestseo.com/mcp` endpoint is not a no-key hosted substitute
+for a deployment with engine provider credentials.
 
 ### Step 3 — Connect to your MCP client
 
