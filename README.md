@@ -431,6 +431,8 @@ Issues and PRs welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md) for the short v
 
 ## Privacy Policy
 
+Full policy for the local package and Claude Desktop extension: https://geo-mcp.digestseo.com/privacy
+
 When you run `digestseo-mcp` locally (npx, the desktop extension, or Docker), all of your data — brands, prompts, runs, responses, and the response cache — stays on your machine in a local SQLite database at `~/.digestseo/digestseo.sqlite` (override with `DIGESTSEO_DB_PATH`). The scan prompts are sent to whichever AI providers you configured with your own API keys (OpenAI, Anthropic, Google, Perplexity, and/or SerpAPI), and only to those; their handling of that traffic is governed by their respective privacy policies. Nothing is ever sent to the author of this project: no telemetry, no analytics, no account.
 
 

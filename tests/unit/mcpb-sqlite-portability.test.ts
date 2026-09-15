@@ -13,6 +13,7 @@ const manifest = JSON.parse(
 ) as {
   compatibility?: { runtimes?: { node?: string } };
   user_config?: Record<string, { required?: boolean; default?: string }>;
+  privacy_policies?: string[];
 };
 
 test('MCPB sqlite runtime avoids native addons that Claude Desktop rejects on macOS', () => {
@@ -33,6 +34,13 @@ test('MCPB sqlite runtime avoids native addons that Claude Desktop rejects on ma
   );
 });
 
+
+test('MCPB privacy policy points to the owned mcp-geo HTTPS policy', () => {
+  assert.equal(
+    manifest.privacy_policies?.[0],
+    'https://geo-mcp.digestseo.com/privacy',
+  );
+});
 
 test('optional MCPB API keys resolve to empty strings when omitted', () => {
   const keys = [
