@@ -15,8 +15,7 @@ FROM node:22-slim
 WORKDIR /app
 
 # Install with dev deps first — the TypeScript build needs them.
-# better-sqlite3 downloads a prebuilt linux binary during npm ci, so no
-# python/make/g++ toolchain is required on -slim.
+# The local CLI uses Node's built-in node:sqlite, so no native build toolchain is required.
 COPY package.json package-lock.json ./
 RUN npm ci
 

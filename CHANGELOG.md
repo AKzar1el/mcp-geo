@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented here. The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.4] - September 15, 2026
+
+### Fixed
+
+- Replaced the local/MCPB `better-sqlite3` dependency with Node's built-in `node:sqlite`, eliminating third-party native `.node` binaries that Claude Desktop on macOS can reject under Library Validation.
+- The one-click MCPB and local stdio runtime now require Node.js 22.13+, where `node:sqlite` is available without an enable flag.
+- Refreshed the MCP SDK and security-sensitive transitive pins so the production dependency tree audits with zero known vulnerabilities at release qualification time.
+- Official MCP Registry metadata no longer advertises the public `geo-mcp.digestseo.com/mcp` remote while that endpoint is not configured as a turnkey fresh-scan service; the npm stdio package remains the canonical registry package.
+
 ## [0.3.3] - September 10, 2026
 
 ### Added
