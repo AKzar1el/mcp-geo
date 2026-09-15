@@ -2,23 +2,7 @@
 
 mcp-geo works with Windsurf / Devin Desktop through Cascade's native MCP support.
 
-## Hosted setup (recommended)
-
-Open `~/.codeium/windsurf/mcp_config.json` and merge this server into the existing `mcpServers` object:
-
-```json
-{
-  "mcpServers": {
-    "digestseo-geo": {
-      "serverUrl": "https://geo-mcp.digestseo.com/mcp"
-    }
-  }
-}
-```
-
-The hosted endpoint uses Streamable HTTP and follows its normal MCP/OAuth authentication flow. Do not replace existing MCP entries when adding this configuration.
-
-## Local stdio setup
+## Local stdio setup (recommended)
 
 For a local installation with your own engine API keys:
 
@@ -41,6 +25,22 @@ For a local installation with your own engine API keys:
 ```
 
 Set only the engine keys you intend to use; unconfigured engines are skipped.
+
+## Self-hosted Worker setup
+
+If you deploy the Worker yourself with the engine API keys you intend to use, point Windsurf at your own `/mcp` URL:
+
+```json
+{
+  "mcpServers": {
+    "digestseo-geo": {
+      "serverUrl": "https://YOUR-WORKER.example.workers.dev/mcp"
+    }
+  }
+}
+```
+
+The public `geo-mcp.digestseo.com/mcp` endpoint is not a turnkey fresh-scan service. Do not use it as a no-key substitute for a configured Worker.
 
 ## Verify
 
