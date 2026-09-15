@@ -28,6 +28,9 @@ test('GET /audit serves the frozen EUR 99 audit offer', async () => {
   assert.match(body, /up to five/i);
   assert.match(body, /info@tomiseregi\.si/);
   assert.match(body, /open-source/i);
+  assert.match(body, /self-hosting instructions/i);
+  assert.doesNotMatch(body, /connect to the MCP endpoint/i);
+  assert.doesNotMatch(body, /https:\/\/geo-mcp\.digestseo\.com\/mcp/);
   assert.match(body, /See a sample report/i);
   assert.match(body, /docs\/demo-report-full\.png/);
   assert.match(body, /point-in-time diagnostic/i);
