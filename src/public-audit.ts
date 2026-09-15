@@ -137,7 +137,7 @@ function auditHtml(origin: string): string {
     <a class="cta" href="${mailto}">Email the EUR 99 audit request</a>
     <noscript><p class="fine">JavaScript is optional. You can still <a href="${mailto}">email the prefilled audit request</a> directly.</p></noscript>
 
-    <p class="oss">Prefer to run it yourself? <strong>mcp-geo remains free and open-source under MIT.</strong> Use the local npm package or connect to the MCP endpoint at <a href="${mcpUrl}">${mcpUrl}</a>. Source and setup instructions are on <a href="https://github.com/AKzar1el/mcp-geo">GitHub</a>.</p>
+    <p class="oss">Prefer to run it yourself? <strong>mcp-geo remains free and open-source under MIT.</strong> Use the local npm package, or follow the self-hosting instructions to deploy your own configured Worker. Source and setup instructions are on <a href="https://github.com/AKzar1el/mcp-geo">GitHub</a>.</p>
   </main>
   <script>
     (() => {
