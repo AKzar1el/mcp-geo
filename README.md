@@ -250,6 +250,18 @@ https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev/mcp
 
 Complete the OAuth handshake. The connector turns green when ready.
 
+#### ChatGPT (remote MCP)
+
+ChatGPT custom MCP apps connect to remote MCP servers, so use the `/mcp` URL
+from your configured Worker deployment above. In ChatGPT, enable Developer
+Mode/custom apps for your workspace and add that remote MCP URL. Availability
+depends on your ChatGPT plan and workspace admin policy; OpenAI's current MCP
+support does not require special `search` or `fetch` tool names.
+
+```
+https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev/mcp
+```
+
 #### Claude Code
 
 ```bash
