@@ -16,7 +16,7 @@
 
 Runs locally over stdio with your own API keys — all data stays on your machine (see [Privacy Policy](#privacy-policy)). Set at least one engine key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `PERPLEXITY_API_KEY`, `SERPAPI_API_KEY`); engines without a key skip gracefully.
 
-**Runtime:** Node.js 22+ (CI exercises Node 22 and 24).
+**Runtime:** Node.js 22.13+ (CI exercises Node 22 and 24).
 
 **Claude Desktop / any MCP client (npx):**
 
