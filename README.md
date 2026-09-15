@@ -45,11 +45,7 @@ claude mcp add --transport stdio digestseo -s user --env GEMINI_API_KEY=your_key
 
 [![Add to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=digestseo&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBkaWdlc3RzZW8vbWNwLWdlbyJdLCJlbnYiOnsiT1BFTkFJX0FQSV9LRVkiOiIiLCJBTlRIUk9QSUNfQVBJX0tFWSI6IiIsIkdFTUlOSV9BUElfS0VZIjoiIiwiUEVSUExFWElUWV9BUElfS0VZIjoiIiwiU0VSUEFQSV9BUElfS0VZIjoiIn19)
 
-**Kiro (hosted endpoint):**
-
-[![Add to Kiro](https://kiro.dev/images/add-to-kiro.svg)](https://kiro.dev/launch/mcp/add?name=mcp-geo&config=%7B%22url%22%3A%22https%3A%2F%2Fgeo-mcp.digestseo.com%2Fmcp%22%2C%22disabled%22%3Afalse%2C%22autoApprove%22%3A%5B%5D%7D)
-
-Uses the hosted OAuth endpoint, so no engine API keys are placed in the Kiro install link.
+**Kiro (remote MCP):** self-host the Worker below with the engine API keys you want to use, then add your own deployed `/mcp` URL to Kiro. The public `geo-mcp.digestseo.com/mcp` endpoint is not a turnkey fresh-scan service and should not be used as a no-key substitute for a configured Worker.
 
 **Claude Desktop extension (one-click):** download the `.mcpb` bundle from the [latest release](https://github.com/AKzar1el/mcp-geo/releases/latest) and double-click it — Claude Desktop prompts for the API keys.
 
