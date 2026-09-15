@@ -1,124 +1,129 @@
 {
-  "manifest_version": "0.3",
-  "name": "digestseo-mcp",
-  "display_name": "GEO Tracker by DigestSEO",
-  "version": "0.3.3",
-  "description": "DigestSEO mcp-geo: track brand citations across five AI search engines. Free OSS with an optional EUR 99 one-time AI Visibility Audit.",
-  "long_description": "Self-hosted AI visibility tracking over MCP. Runs buyer-intent prompts against the AI engines you hold API keys for, records which ones cite your brand versus competitors, and exposes nine tools: track_brand, list_brands, generate_prompts, refresh_brand, check_visibility, get_visibility_history, compare_competitors, get_citations, get_content_gaps. All data stays in a local SQLite database under ~/.digestseo.",
-  "author": {
-    "name": "AKzar1el",
-    "url": "https://github.com/AKzar1el"
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/AKzar1el/mcp-geo"
-  },
-  "homepage": "https://digestseo.com/geo-mcp/",
-  "license": "MIT",
-  "icon": "icon.png",
-  "privacy_policies": [
-    "https://github.com/AKzar1el/mcp-geo#privacy-policy",
-    "https://openai.com/policies/privacy-policy",
-    "https://www.anthropic.com/legal/privacy",
-    "https://policies.google.com/privacy",
-    "https://www.perplexity.ai/hub/legal/privacy-policy",
-    "https://serpapi.com/legal"
-  ],
-  "server": {
-    "type": "node",
-    "entry_point": "dist/cli.js",
-    "mcp_config": {
-      "command": "node",
-      "args": [
-        "${__dirname}/dist/cli.js"
-      ],
-      "env": {
-        "OPENAI_API_KEY": "${user_config.openai_api_key}",
-        "ANTHROPIC_API_KEY": "${user_config.anthropic_api_key}",
-        "GEMINI_API_KEY": "${user_config.gemini_api_key}",
-        "PERPLEXITY_API_KEY": "${user_config.perplexity_api_key}",
-        "SERPAPI_API_KEY": "${user_config.serpapi_api_key}"
-      }
-    }
-  },
-  "user_config": {
-    "openai_api_key": {
-      "type": "string",
-      "title": "OpenAI API Key (ChatGPT engine)",
-      "description": "Optional — every engine key is opt-in, but at least one of the five is required for the server to do anything useful. Engines without a key are skipped gracefully.",
-      "sensitive": true,
-      "required": false
-    },
-    "anthropic_api_key": {
-      "type": "string",
-      "title": "Anthropic API Key (Claude engine)",
-      "description": "Optional — also powers prompt generation and content-gap analysis via Claude Haiku. At least one of the five engine keys is required.",
-      "sensitive": true,
-      "required": false
-    },
-    "gemini_api_key": {
-      "type": "string",
-      "title": "Google AI Studio API Key (Gemini engine)",
-      "description": "Optional — free tier available at aistudio.google.com. At least one of the five engine keys is required.",
-      "sensitive": true,
-      "required": false
-    },
-    "perplexity_api_key": {
-      "type": "string",
-      "title": "Perplexity API Key (Perplexity engine)",
-      "description": "Optional — paid plans only. At least one of the five engine keys is required.",
-      "sensitive": true,
-      "required": false
-    },
-    "serpapi_api_key": {
-      "type": "string",
-      "title": "SerpAPI Key (Google AI Overviews engine)",
-      "description": "Optional — free tier covers 250 searches/month. At least one of the five engine keys is required.",
-      "sensitive": true,
-      "required": false
-    }
-  },
-  "tools": [
-    {
-      "name": "check_visibility",
-      "description": "Get the latest AI visibility data for a tracked brand: which AI assistants (ChatGPT, Claude, Perplexity, Gemini, Google AI Overviews) cite this brand, for which prompts, and how it compares to competitors. Use when the user asks 'how visible am I on AI?', 'who's citing my brand?', or 'show me my AI visibility score'. Returns stored data — for fresh data, call refresh_brand."
-    },
-    {
-      "name": "get_visibility_history",
-      "description": "Get the time-series history of a brand's AI visibility score, broken down per engine. Use when the user asks 'how has my AI visibility changed over time?', 'is my visibility growing or shrinking?', or 'show me the trend for the last month'."
-    },
-    {
-      "name": "compare_competitors",
-      "description": "Compare a brand's AI visibility against competitors for the same category. Returns share-of-voice percentages, prompts the user wins, and prompts where competitors win. Use when the user asks 'who beats me in AI search?', 'compare me to my competitors', or 'why does [competitor] get cited more?'."
-    },
-    {
-      "name": "get_citations",
-      "description": "Get citation events where AI assistants mention the brand. Each event includes the prompt that triggered it, the LLM's response excerpt, whether the brand was mentioned with or without a link, and the matched brand URL from engine-native citation data when available. Use when the user asks 'show me where I'm cited', 'what are ChatGPT/Claude/Perplexity actually saying about my brand?', or 'give me proof of AI citations'."
-    },
-    {
-      "name": "get_content_gaps",
-      "description": "Get actionable content recommendations based on AI visibility gaps. Returns prioritized topics and content formats that would close the gap between this brand and competitors winning the same prompts. Use when the user asks 'what should I write to improve AI visibility?', 'what content gaps do I have?', or 'how do I get cited more by AI?'."
-    },
-    {
-      "name": "refresh_brand",
-      "description": "Manually trigger a fresh AI visibility scan for a tracked brand. Runs every selected configured engine (ChatGPT, Claude, Perplexity, Gemini, Google AI Overviews) against the brand's current prompt set sequentially. Use when the user asks 'refresh my data', 'rerun the scan', or 'I want fresh data right now'. Returns only after all selected engine scans finish."
-    }
-  ],
-  "keywords": [
-    "seo",
-    "geo",
-    "ai-visibility",
-    "brand-monitoring",
-    "generative-engine-optimization"
-  ],
-  "compatibility": {
-    "platforms": [
-      "darwin",
-      "win32",
-      "linux"
-    ],
-    "runtimes": {
-      "node": ">=22.13.0"
-    }
-  }
+    "manifest_version":  "0.3",
+    "name":  "digestseo-mcp",
+    "display_name":  "GEO Tracker by DigestSEO",
+    "version":  "0.3.3",
+    "description":  "DigestSEO mcp-geo: track brand citations across five AI search engines. Free OSS with an optional EUR 99 one-time AI Visibility Audit.",
+    "long_description":  "Self-hosted AI visibility tracking over MCP. Runs buyer-intent prompts against the AI engines you hold API keys for, records which ones cite your brand versus competitors, and exposes nine tools: track_brand, list_brands, generate_prompts, refresh_brand, check_visibility, get_visibility_history, compare_competitors, get_citations, get_content_gaps. All data stays in a local SQLite database under ~/.digestseo.",
+    "author":  {
+                   "name":  "AKzar1el",
+                   "url":  "https://github.com/AKzar1el"
+               },
+    "repository":  {
+                       "type":  "git",
+                       "url":  "https://github.com/AKzar1el/mcp-geo"
+                   },
+    "homepage":  "https://digestseo.com/geo-mcp/",
+    "license":  "MIT",
+    "icon":  "icon.png",
+    "privacy_policies":  [
+                             "https://github.com/AKzar1el/mcp-geo#privacy-policy",
+                             "https://openai.com/policies/privacy-policy",
+                             "https://www.anthropic.com/legal/privacy",
+                             "https://policies.google.com/privacy",
+                             "https://www.perplexity.ai/hub/legal/privacy-policy",
+                             "https://serpapi.com/legal"
+                         ],
+    "server":  {
+                   "type":  "node",
+                   "entry_point":  "dist/cli.js",
+                   "mcp_config":  {
+                                      "command":  "node",
+                                      "args":  [
+                                                   "${__dirname}/dist/cli.js"
+                                               ],
+                                      "env":  {
+                                                  "OPENAI_API_KEY":  "${user_config.openai_api_key}",
+                                                  "ANTHROPIC_API_KEY":  "${user_config.anthropic_api_key}",
+                                                  "GEMINI_API_KEY":  "${user_config.gemini_api_key}",
+                                                  "PERPLEXITY_API_KEY":  "${user_config.perplexity_api_key}",
+                                                  "SERPAPI_API_KEY":  "${user_config.serpapi_api_key}"
+                                              }
+                                  }
+               },
+    "user_config":  {
+                        "openai_api_key":  {
+                                               "type":  "string",
+                                               "title":  "OpenAI API Key (ChatGPT engine)",
+                                               "description":  "Optional â€” every engine key is opt-in, but at least one of the five is required for the server to do anything useful. Engines without a key are skipped gracefully.",
+                                               "sensitive":  true,
+                                               "required":  false,
+                                               "default":  ""
+                                           },
+                        "anthropic_api_key":  {
+                                                  "type":  "string",
+                                                  "title":  "Anthropic API Key (Claude engine)",
+                                                  "description":  "Optional â€” also powers prompt generation and content-gap analysis via Claude Haiku. At least one of the five engine keys is required.",
+                                                  "sensitive":  true,
+                                                  "required":  false,
+                                                  "default":  ""
+                                              },
+                        "gemini_api_key":  {
+                                               "type":  "string",
+                                               "title":  "Google AI Studio API Key (Gemini engine)",
+                                               "description":  "Optional â€” free tier available at aistudio.google.com. At least one of the five engine keys is required.",
+                                               "sensitive":  true,
+                                               "required":  false,
+                                               "default":  ""
+                                           },
+                        "perplexity_api_key":  {
+                                                   "type":  "string",
+                                                   "title":  "Perplexity API Key (Perplexity engine)",
+                                                   "description":  "Optional â€” paid plans only. At least one of the five engine keys is required.",
+                                                   "sensitive":  true,
+                                                   "required":  false,
+                                                   "default":  ""
+                                               },
+                        "serpapi_api_key":  {
+                                                "type":  "string",
+                                                "title":  "SerpAPI Key (Google AI Overviews engine)",
+                                                "description":  "Optional â€” free tier covers 250 searches/month. At least one of the five engine keys is required.",
+                                                "sensitive":  true,
+                                                "required":  false,
+                                                "default":  ""
+                                            }
+                    },
+    "tools":  [
+                  {
+                      "name":  "check_visibility",
+                      "description":  "Get the latest AI visibility data for a tracked brand: which AI assistants (ChatGPT, Claude, Perplexity, Gemini, Google AI Overviews) cite this brand, for which prompts, and how it compares to competitors. Use when the user asks \u0027how visible am I on AI?\u0027, \u0027who\u0027s citing my brand?\u0027, or \u0027show me my AI visibility score\u0027. Returns stored data â€” for fresh data, call refresh_brand."
+                  },
+                  {
+                      "name":  "get_visibility_history",
+                      "description":  "Get the time-series history of a brand\u0027s AI visibility score, broken down per engine. Use when the user asks \u0027how has my AI visibility changed over time?\u0027, \u0027is my visibility growing or shrinking?\u0027, or \u0027show me the trend for the last month\u0027."
+                  },
+                  {
+                      "name":  "compare_competitors",
+                      "description":  "Compare a brand\u0027s AI visibility against competitors for the same category. Returns share-of-voice percentages, prompts the user wins, and prompts where competitors win. Use when the user asks \u0027who beats me in AI search?\u0027, \u0027compare me to my competitors\u0027, or \u0027why does [competitor] get cited more?\u0027."
+                  },
+                  {
+                      "name":  "get_citations",
+                      "description":  "Get citation events where AI assistants mention the brand. Each event includes the prompt that triggered it, the LLM\u0027s response excerpt, whether the brand was mentioned with or without a link, and the matched brand URL from engine-native citation data when available. Use when the user asks \u0027show me where I\u0027m cited\u0027, \u0027what are ChatGPT/Claude/Perplexity actually saying about my brand?\u0027, or \u0027give me proof of AI citations\u0027."
+                  },
+                  {
+                      "name":  "get_content_gaps",
+                      "description":  "Get actionable content recommendations based on AI visibility gaps. Returns prioritized topics and content formats that would close the gap between this brand and competitors winning the same prompts. Use when the user asks \u0027what should I write to improve AI visibility?\u0027, \u0027what content gaps do I have?\u0027, or \u0027how do I get cited more by AI?\u0027."
+                  },
+                  {
+                      "name":  "refresh_brand",
+                      "description":  "Manually trigger a fresh AI visibility scan for a tracked brand. Runs every selected configured engine (ChatGPT, Claude, Perplexity, Gemini, Google AI Overviews) against the brand\u0027s current prompt set sequentially. Use when the user asks \u0027refresh my data\u0027, \u0027rerun the scan\u0027, or \u0027I want fresh data right now\u0027. Returns only after all selected engine scans finish."
+                  }
+              ],
+    "keywords":  [
+                     "seo",
+                     "geo",
+                     "ai-visibility",
+                     "brand-monitoring",
+                     "generative-engine-optimization"
+                 ],
+    "compatibility":  {
+                          "platforms":  [
+                                            "darwin",
+                                            "win32",
+                                            "linux"
+                                        ],
+                          "runtimes":  {
+                                           "node":  "\u003e=22.13.0"
+                                       }
+                      }
 }
