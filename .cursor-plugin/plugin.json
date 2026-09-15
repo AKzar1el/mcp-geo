@@ -25,5 +25,47 @@
     "generative-engine-optimization",
     "ai-search"
   ],
-  "mcpServers": ".mcp.json"
+  "variables": {
+    "type": "object",
+    "properties": {
+      "OPENAI_API_KEY": {
+        "type": "string",
+        "title": "OpenAI API key",
+        "description": "Optional. Enables ChatGPT visibility scans."
+      },
+      "ANTHROPIC_API_KEY": {
+        "type": "string",
+        "title": "Anthropic API key",
+        "description": "Optional. Enables Claude visibility scans."
+      },
+      "GEMINI_API_KEY": {
+        "type": "string",
+        "title": "Gemini API key",
+        "description": "Optional. Enables Gemini visibility scans."
+      },
+      "PERPLEXITY_API_KEY": {
+        "type": "string",
+        "title": "Perplexity API key",
+        "description": "Optional. Enables Perplexity visibility scans."
+      },
+      "SERPAPI_API_KEY": {
+        "type": "string",
+        "title": "SerpAPI key",
+        "description": "Optional. Enables Google AI Overviews scans."
+      }
+    }
+  },
+  "mcpServers": {
+    "digestseo-geo": {
+      "command": "npx",
+      "args": ["-y", "@digestseo/mcp-geo"],
+      "env": {
+        "OPENAI_API_KEY": "${OPENAI_API_KEY}",
+        "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}",
+        "GEMINI_API_KEY": "${GEMINI_API_KEY}",
+        "PERPLEXITY_API_KEY": "${PERPLEXITY_API_KEY}",
+        "SERPAPI_API_KEY": "${SERPAPI_API_KEY}"
+      }
+    }
+  }
 }
