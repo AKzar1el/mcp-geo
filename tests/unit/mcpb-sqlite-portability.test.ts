@@ -7,6 +7,7 @@ const packageJson = JSON.parse(
 ) as {
   dependencies?: Record<string, string>;
   engines?: { node?: string };
+  scripts?: Record<string, string>;
 };
 const manifest = JSON.parse(
   readFileSync(new URL('../../manifest.json', import.meta.url), 'utf8'),
@@ -35,6 +36,13 @@ test('MCPB sqlite runtime avoids native addons that Claude Desktop rejects on ma
 });
 
 
+test('MCPB pack prunes dev dependencies before creating the bundle', () => {
+  assert.match(
+    packageJson.scripts?.['mcpb:pack'] ?? '',
+    /^npm prune --omit=dev && /,
+    'MCPB packing must remove dev-only transitive dependencies before archiving',
+  );
+});
 test('MCPB privacy policy points to the owned mcp-geo HTTPS policy', () => {
   assert.equal(
     manifest.privacy_policies?.[0],
