@@ -5,6 +5,8 @@ const AUDIT_URL = `${PUBLIC_ORIGIN}/audit`;
 const PRIVACY_URL = `${PUBLIC_ORIGIN}/privacy`;
 const SAMPLE_REPORT_URL =
   'https://github.com/AKzar1el/mcp-geo/blob/main/docs/demo-report-full.png';
+const AUDIT_METHODOLOGY_URL =
+  'https://github.com/AKzar1el/mcp-geo/blob/main/docs/ai-visibility-audit-methodology.md';
 const AUDIT_DESCRIPTION =
   'A one-time AI Visibility Audit using mcp-geo: 20 buyer-intent prompts, competitor comparison, citation evidence, and prioritized next actions.';
 const AUDIT_BODY = `Hi Tomi,
@@ -128,7 +130,7 @@ function auditHtml(origin: string): string {
     </ul>
 
     <p class="proof"><a href="${SAMPLE_REPORT_URL}">See a sample report</a> generated through mcp-geo before you request the audit. It shows the output style and evidence depth; your paid audit is run for your own brand, prompts, and competitors.</p>
-    <p class="proof"><strong>Methodology:</strong> The same 20 buyer-intent prompts are run as a point-in-time diagnostic and reported per engine, with citation/source evidence where the provider returns it. The report is a bounded observed snapshot, not a proprietary ranking promise or guaranteed forecast.</p>
+    <p class="proof"><strong>Methodology:</strong> The same 20 buyer-intent prompts are run as a point-in-time diagnostic and reported per engine, with citation/source evidence where the provider returns it. The report is a bounded observed snapshot, not a proprietary ranking promise or guaranteed forecast. <a href="${AUDIT_METHODOLOGY_URL}">See the exact score calculation and interpretation limits.</a></p>
 
     <form id="audit-request-form" class="request-card">
       <label>

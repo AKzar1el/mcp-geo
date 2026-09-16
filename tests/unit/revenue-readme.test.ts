@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const readme = readFileSync('README.md', 'utf8');
+const methodology = readFileSync('docs/ai-visibility-audit-methodology.md', 'utf8');
 
 test('README exposes audit details and an attributable direct request path', () => {
   assert.match(
@@ -45,4 +46,22 @@ test('README exposes audit details and an attributable direct request path', () 
   assert.ok(auditCta >= 0);
   assert.ok(waitlistCta >= 0);
   assert.ok(auditCta < waitlistCta, 'paid audit CTA should appear before the non-revenue waitlist CTA');
+});
+test('audit methodology exposes the score formulas buyers need to verify', () => {
+  assert.match(
+    methodology,
+    /Per-engine visibility score:[\s\S]*round\(100 \* usable prompt responses that mention the brand \/ usable prompt responses returned by that engine\)/,
+  );
+  assert.match(
+    methodology,
+    /Overall visibility score:[\s\S]*rounded arithmetic mean of the included per-engine visibility scores/,
+  );
+  assert.match(
+    methodology,
+    /Competitor share of voice:[\s\S]*that brand's mention count \/ total tracked-brand-plus-competitor mention count/,
+  );
+  assert.match(
+    methodology,
+    /Failed or skipped provider responses are excluded rather than counted as zero-visibility observations/,
+  );
 });

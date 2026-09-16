@@ -36,6 +36,11 @@ test('GET /audit serves the frozen EUR 99 audit offer', async () => {
   assert.match(body, /point-in-time diagnostic/i);
   assert.match(body, /reported per engine/i);
   assert.match(body, /same 20 buyer-intent prompts/i);
+  assert.match(body, /See the exact score calculation and interpretation limits/i);
+  assert.match(
+    body,
+    /https:\/\/github\.com\/AKzar1el\/mcp-geo\/blob\/main\/docs\/ai-visibility-audit-methodology\.md/,
+  );
   assert.match(body, /concise, plain-English prioritized content-gap and action memo/i);
   assert.match(body, /implementation is not included/i);
   assert.match(body, /confirm fit and scope by email/i);
