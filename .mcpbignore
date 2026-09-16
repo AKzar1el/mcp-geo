@@ -1,12 +1,7 @@
 # Files excluded from the .mcpb desktop-extension bundle (npm run mcpb:pack).
-# The bundle needs: manifest.json, dist/, migrations/, assets/, and the
-# PRODUCTION node_modules (@modelcontextprotocol/sdk, zod, better-sqlite3
-# and their transitive deps). Everything else is repo/dev cruft.
-#
-# Note: better-sqlite3 v13 uses N-API and ships supported macOS, Linux,
-# and Windows prebuilt binaries inside node_modules/better-sqlite3/prebuilds/.
-# Keep that directory in the MCPB so one bundle can select the native binary
-# for the host platform at runtime.
+# The bundle needs: manifest.json, dist/, migrations/, assets/, and production
+# node_modules only. The pack script prunes dev dependencies first so transitive
+# build tooling cannot leak into the desktop-extension archive.
 
 # Sources and tests (the bundle runs the compiled dist/)
 src/
@@ -36,8 +31,8 @@ tsconfig.node.json
 *.tgz
 *.mcpb
 
-# Dev-only dependency trees (runtime deps stay bundled). Equivalent
-# alternative: run `npm ci --omit=dev` before `npm run mcpb:pack`.
+# Belt-and-suspenders exclusions for dev-only dependency trees. The pack script
+# already runs `npm prune --omit=dev` before archiving.
 node_modules/wrangler/
 node_modules/workerd/
 node_modules/miniflare/

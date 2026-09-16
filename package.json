@@ -49,7 +49,7 @@
     "test:unit": "node --import tsx --test \"tests/matching.test.ts\" \"tests/unit/*.test.ts\"",
     "test:stdio": "node --test tests/stdio-smoke.test.mjs",
     "test:smoke": "node --test tests/smoke.test.mjs",
-    "mcpb:pack": "npx @anthropic-ai/mcpb pack",
+    "mcpb:pack": "npm prune --omit=dev && npx @anthropic-ai/mcpb pack",
     "prepublishOnly": "npm run typecheck && npm run test:unit && npm run build"
   },
   "dependencies": {
