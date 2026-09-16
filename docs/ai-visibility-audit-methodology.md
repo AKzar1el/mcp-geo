@@ -27,6 +27,14 @@ Target delivery is within two business days after usable brand and competitor in
 
 ## What the numbers mean
 
+### Visibility score calculation
+
+The visibility score is a transparent mention-rate calculation, not a proprietary confidence score:
+
+- **Per-engine visibility score:** `round(100 * usable prompt responses that mention the brand / usable prompt responses returned by that engine)`. Failed or skipped provider responses are excluded rather than counted as zero-visibility observations.
+- **Overall visibility score:** the rounded arithmetic mean of the included per-engine visibility scores. Engines with no usable responses are not silently filled in.
+- **Competitor share of voice:** across the latest usable responses in the comparison window, mcp-geo counts response-level mentions of the tracked brand and requested competitors. Each brand's share is `round(100 * that brand's mention count / total tracked-brand-plus-competitor mention count)`. A response can mention more than one brand, so this is observed mention share, not an exclusive probability.
+
 The audit is a snapshot of the answers returned for the defined prompt set at the time it is run. AI answers can vary across time, models, interfaces, provider behavior, geography, and prompt wording. For that reason, the audit is designed for directional diagnosis and evidence review rather than treating one number as a permanent search ranking.
 
 The useful questions are:
