@@ -1,12 +1,18 @@
 # mcp-geo Monetization Experiment
 
-## Experiment contract
+## Current authority notice
+
+The original seven-day launch contract below is preserved as historical evidence, but its fixed-end/runtime-stop semantics were superseded on 2026-09-16. The current standing mission keeps the same EUR 99 offer, buyer, scope, request/payment path, attribution standard, and OSS boundary, with no automatic terminal date. A verified payment is a positive revenue event rather than a stop condition; the mission continues until Tomi explicitly stops/pauses it or replaces it with a project-specific goal or kill criterion.
+
+This notice supersedes only the launch window's status/deadline-based success/failure semantics. It does not authorize a price, scope, payment, safety, or product-boundary change.
+
+## Original launch experiment contract
 
 - Start date: 2026-09-10 (Europe/Ljubljana)
 - Starting main SHA: `f48c265fdac3e8aa5881564b9b10b2158e0bec71`
-- Fixed end: 2026-09-17 04:05 Europe/Ljubljana
-- Status: RUNNING
-- Revenue status: UNVERIFIED
+- Original fixed end (superseded as a runtime stop condition): 2026-09-17 04:05 Europe/Ljubljana
+- Original status: RUNNING
+- Revenue status at contract creation: UNVERIFIED
 
 ## Frozen hypothesis
 
@@ -60,13 +66,17 @@ Compared with sponsorship-only, a paid hosted SaaS tier, affiliate monetization,
 
 The EUR 99 price is intentionally aligned with current one-time category audits rather than invented from internal cost. It is high enough to represent a real purchase but low enough to be a bounded diagnostic rather than a consulting engagement.
 
-## Success and failure
+## Original launch-window success and failure criteria
 
-**SUCCESS:** at least one independently verifiable, attributable monetary event greater than EUR 0 caused by this frozen mcp-geo audit offer before the fixed end time.
+These criteria are retained as historical launch evidence and no longer determine whether the standing mission stops.
 
-**FAIL:** no such verified monetary event by 2026-09-17 04:05 Europe/Ljubljana.
+**SUCCESS (original launch window):** at least one independently verifiable, attributable monetary event greater than EUR 0 caused by this frozen mcp-geo audit offer before the original fixed end time.
 
-**UNVERIFIED:** credible evidence suggests a payment may have occurred, but independent confirmation is unavailable by the fixed end time.
+**FAIL (original launch window):** no such verified monetary event by 2026-09-17 04:05 Europe/Ljubljana.
+
+**UNVERIFIED (original launch window):** credible evidence suggests a payment may have occurred, but independent confirmation is unavailable by the original fixed end time.
+
+**Current standing mission:** continue pursuing independently verifiable, directly attributable revenue from the same frozen offer without an automatic terminal date. A first verified payment is a strong positive signal to reproduce, improve, or scale the causal path; it is not an instruction to stop.
 
 ## Diagnostic metrics that do not count as success
 
@@ -83,14 +93,14 @@ The EUR 99 price is intentionally aligned with current one-time category audits 
 
 ## Frozen fields
 
-The following may not change during this experiment:
+The following commercial fields remain frozen for the standing mission:
 
 - monetization hypothesis: fixed-price one-time AI Visibility Audit;
 - target paying user: indie SaaS founders and small marketing/SEO teams responsible for one active brand;
 - offer category/value exchange: EUR 99 for setup/execution/interpretation of a bounded mcp-geo audit, with the OSS product remaining free;
-- success criterion;
-- failure criterion;
-- fixed end date/time.
+- independently verified and directly attributable money greater than EUR 0 as the revenue-event standard.
+
+The original success criterion, failure criterion, and fixed end date/time remain immutable historical launch evidence, but they are superseded as current runtime stop conditions by the authority notice above.
 
 Implementation details, exact wording, placement, and reliability fixes may change only when evidence supports them and only within this frozen offer.
 
