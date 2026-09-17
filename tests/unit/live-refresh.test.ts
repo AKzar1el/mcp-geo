@@ -136,8 +136,18 @@ test('live scans bypass shared cached responses for every provider', async (t) =
       runPerplexityLive as LiveRunner,
       { PERPLEXITY_API_KEY: 'test-key' },
       {
-        choices: [{ message: { content: 'Fresh Acme provider response.' } }],
-        citations: ['https://acme.com/fresh'],
+        status: 'completed',
+        output: [
+          {
+            type: 'search_results',
+            queries: ['Acme'],
+            results: [{ url: 'https://acme.com/fresh' }],
+          },
+          {
+            type: 'message',
+            content: [{ type: 'output_text', text: 'Fresh Acme provider response.' }],
+          },
+        ],
       },
     ));
   await t.test('Gemini', () =>
