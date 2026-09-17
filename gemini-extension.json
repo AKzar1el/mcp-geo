@@ -1,0 +1,43 @@
+{
+  "name": "digestseo-geo",
+  "version": "0.3.5",
+  "description": "Track brand citations and AI visibility across ChatGPT, Claude, Perplexity, Gemini, and Google AI Overviews with the mcp-geo MCP server.",
+  "settings": [
+    {
+      "name": "OpenAI API key",
+      "description": "Optional. Enables ChatGPT visibility scans.",
+      "envVar": "OPENAI_API_KEY",
+      "sensitive": true
+    },
+    {
+      "name": "Anthropic API key",
+      "description": "Optional. Enables Claude visibility scans.",
+      "envVar": "ANTHROPIC_API_KEY",
+      "sensitive": true
+    },
+    {
+      "name": "Gemini API key",
+      "description": "Optional. Enables Gemini visibility scans.",
+      "envVar": "GEMINI_API_KEY",
+      "sensitive": true
+    },
+    {
+      "name": "Perplexity API key",
+      "description": "Optional. Enables Perplexity visibility scans.",
+      "envVar": "PERPLEXITY_API_KEY",
+      "sensitive": true
+    },
+    {
+      "name": "SerpAPI key",
+      "description": "Optional. Enables Google AI Overviews scans.",
+      "envVar": "SERPAPI_API_KEY",
+      "sensitive": true
+    }
+  ],
+  "mcpServers": {
+    "digestseo-geo": {
+      "command": "npx",
+      "args": ["-y", "@digestseo/mcp-geo"]
+    }
+  }
+}
