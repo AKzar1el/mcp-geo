@@ -16,11 +16,11 @@ import type {
   Prompt,
 } from '../db/types.js';
 
-export const MODEL = 'sonar';
+export const MODEL = 'perplexity/sonar';
 export const ENGINE = 'perplexity';
 
 const LIVE_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60;
-const PERPLEXITY_URL = 'https://api.perplexity.ai/chat/completions';
+const PERPLEXITY_URL = 'https://api.perplexity.ai/v1/agent';
 
 export interface PerplexityEnv {
   db: Db;
@@ -34,14 +34,68 @@ function requirePerplexityKey(env: PerplexityEnv): string {
   return env.PERPLEXITY_API_KEY;
 }
 
+interface PerplexityMessageOutput {
+  type: 'message';
+  content?: Array<{ type?: string; text?: unknown }>;
+}
+
+interface PerplexitySearchResultsOutput {
+  type: 'search_results';
+  results?: Array<{ url?: unknown }>;
+}
+
+type PerplexityOutput =
+  | PerplexityMessageOutput
+  | PerplexitySearchResultsOutput
+  | { type?: string; [key: string]: unknown };
+
 interface PerplexityResponse {
-  choices?: Array<{ message?: { content?: string } }>;
-  citations?: unknown;
+  status?: string;
+  error?: unknown;
+  output?: PerplexityOutput[];
 }
 
 export interface PerplexityCompletion {
   text: string;
   citations: string[];
+}
+
+function extractAgentText(data: PerplexityResponse): string {
+  const chunks: string[] = [];
+  for (const item of data.output ?? []) {
+    if (item.type !== 'message' || !('content' in item) || !Array.isArray(item.content)) continue;
+    for (const part of item.content) {
+      if (part.type === 'output_text' && typeof part.text === 'string') {
+        chunks.push(part.text);
+      }
+    }
+  }
+  return chunks.join('');
+}
+
+function extractAgentCitations(data: PerplexityResponse): string[] {
+  const urls: string[] = [];
+  for (const item of data.output ?? []) {
+    if (
+      item.type !== 'search_results' ||
+      !('results' in item) ||
+      !Array.isArray(item.results)
+    ) continue;
+    for (const result of item.results) {
+      if (typeof result.url === 'string') urls.push(result.url);
+    }
+  }
+  return urls;
+}
+
+function describeAgentError(data: PerplexityResponse): string {
+  if (typeof data.error === 'string') return data.error;
+  if (data.error && typeof data.error === 'object') {
+    try {
+      return JSON.stringify(data.error);
+    } catch {}
+  }
+  return 'unknown error';
 }
 
 export async function chatCompletion(
@@ -57,26 +111,34 @@ export async function chatCompletion(
     },
     body: JSON.stringify({
       model: MODEL,
-      messages: [
+      input: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userText },
       ],
+      tools: [{ type: 'web_search' }],
+      tool_choice: { type: 'web_search' },
       temperature: 0.3,
-      max_tokens: 600,
+      max_output_tokens: 600,
     }),
   });
   if (!resp.ok) {
     const text = await resp.text();
-    throw new Error(`Perplexity completion failed: ${resp.status} ${text}`);
+    throw new Error(`Perplexity Agent API failed: ${resp.status} ${text}`);
   }
   const data = (await resp.json()) as PerplexityResponse;
-  const text = data.choices?.[0]?.message?.content;
-  if (typeof text !== 'string' || text.length === 0) {
-    throw new Error('Perplexity response missing choices[0].message.content');
+  if (data.status !== 'completed') {
+    throw new Error(
+      'Perplexity Agent API status ' +
+        (data.status ?? 'unknown') +
+        ': ' +
+        describeAgentError(data),
+    );
   }
-  const citations = Array.isArray(data.citations)
-    ? data.citations.filter((c): c is string => typeof c === 'string')
-    : [];
+  const text = extractAgentText(data);
+  if (text.length === 0) {
+    throw new Error('Perplexity Agent API response missing output_text');
+  }
+  const citations = extractAgentCitations(data);
   return { text, citations };
 }
 
