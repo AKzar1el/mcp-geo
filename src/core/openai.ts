@@ -10,7 +10,8 @@ import type {
   Run,
 } from '../db/types.js';
 
-export const MODEL = 'gpt-4o-mini';
+export const MODEL = 'gpt-5-search-api';
+const BATCH_MODEL = 'gpt-4o-mini';
 const ENGINE = 'chatgpt';
 
 const LIVE_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60;
@@ -60,13 +61,26 @@ export async function hashPrompt(
 }
 
 interface ChatCompletionResponse {
-  choices?: Array<{ message?: { content?: string } }>;
+  choices?: Array<{
+    message?: {
+      content?: string;
+      annotations?: Array<{
+        type?: string;
+        url_citation?: { url?: unknown };
+      }>;
+    };
+  }>;
+}
+
+interface OpenAiCompletion {
+  text: string;
+  citations: string[];
 }
 
 export async function chatCompletion(
   apiKey: string,
   userText: string,
-): Promise<string> {
+): Promise<OpenAiCompletion> {
   const resp = await fetch(`${OPENAI_BASE}/chat/completions`, {
     method: 'POST',
     headers: {
@@ -75,12 +89,11 @@ export async function chatCompletion(
     },
     body: JSON.stringify({
       model: MODEL,
+      web_search_options: { search_context_size: 'medium' },
       messages: [
         { role: 'system', content: buildSystemPrompt() },
         { role: 'user', content: userText },
       ],
-      temperature: 0.3,
-      max_tokens: 600,
     }),
   });
   if (!resp.ok) {
@@ -88,11 +101,16 @@ export async function chatCompletion(
     throw new Error(`OpenAI chat completion failed: ${resp.status} ${text}`);
   }
   const data = (await resp.json()) as ChatCompletionResponse;
-  const content = data.choices?.[0]?.message?.content;
+  const message = data.choices?.[0]?.message;
+  const content = message?.content;
   if (typeof content !== 'string') {
     throw new Error('OpenAI response missing choices[0].message.content');
   }
-  return content;
+  const citations = (message?.annotations ?? [])
+    .filter((annotation) => annotation.type === 'url_citation')
+    .map((annotation) => annotation.url_citation?.url)
+    .filter((url): url is string => typeof url === 'string');
+  return { text: content, citations };
 }
 
 export interface CitationExtraction {
@@ -303,18 +321,29 @@ export async function runLive(
       chunk.map(async (prompt, j) => {
         const idx = chunkStart + j;
         try {
-          const responseText = await chatCompletion(
+          const completion = await chatCompletion(
             requireOpenAiKey(env),
             prompt.text,
           );
-          const citations = extractCitations(brand, responseText);
+          const citations = extractCitations(brand, completion.text);
+          const engineHosts = completion.citations
+            .map(normalizeHost)
+            .filter((host): host is string => host !== null);
+          const citedUrls = Array.from(
+            new Set([...citations.cited_urls, ...engineHosts]),
+          ).slice(0, 30);
           results[idx] = {
             prompt_id: prompt.id,
-            raw_response: responseText,
+            raw_response: completion.text,
             brand_mentioned: citations.brand_mentioned,
-            brand_cited_with_link: citations.brand_cited_with_link,
-            cited_urls: citations.cited_urls,
+            brand_cited_with_link:
+              citations.brand_cited_with_link === 1 ||
+              citedUrls.some((host) => hostMatchesDomain(host, brand.domain))
+                ? 1
+                : 0,
+            cited_urls: citedUrls,
             competitors_mentioned: citations.competitors_mentioned,
+            engine_citations: completion.citations,
             status: 'ok',
           };
         } catch (err) {
@@ -364,7 +393,7 @@ interface OpenAiBatch {
 
 function buildBatchLine(prompt: Prompt): string {
   const body = {
-    model: MODEL,
+    model: BATCH_MODEL,
     messages: [
       { role: 'system', content: buildSystemPrompt() },
       { role: 'user', content: prompt.text },
@@ -625,7 +654,7 @@ export async function collectBatch(
       });
       continue;
     }
-    const hash = await hashPrompt(prompt.text, ENGINE, MODEL);
+    const hash = await hashPrompt(prompt.text, ENGINE, BATCH_MODEL);
     const citations = extractCitations(brand, content);
     results.push({
       prompt_id: prompt.id,
@@ -660,7 +689,7 @@ export async function collectBatch(
   await env.db.persistEngineRun(
     run.id,
     ENGINE,
-    MODEL,
+    BATCH_MODEL,
     BATCH_CACHE_TTL_SECONDS,
     results,
     { replaceExisting: true },

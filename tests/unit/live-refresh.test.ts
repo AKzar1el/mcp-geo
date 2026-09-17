@@ -80,6 +80,7 @@ async function assertLiveRunBypassesSharedCache(
   env: Record<string, string>,
   providerResponse: unknown,
   assertRequest?: (call: FetchCall) => void,
+  assertResult?: (result: EnginePromptResult) => void,
 ): Promise<void> {
   let cacheReads = 0;
   let persisted: EnginePromptResult[] | undefined;
@@ -116,6 +117,7 @@ async function assertLiveRunBypassesSharedCache(
   assert.equal(persisted[0].brand_mentioned, 1);
   assert.equal(persisted[0].status, 'ok');
   assert.equal(persisted[0].cache_to_put, undefined);
+  assertResult?.(persisted[0]);
 }
 
 test('live scans bypass shared cached responses for every provider', async (t) => {
@@ -123,7 +125,30 @@ test('live scans bypass shared cached responses for every provider', async (t) =
     assertLiveRunBypassesSharedCache(
       runOpenAiLive as LiveRunner,
       { OPENAI_API_KEY: 'test-key' },
-      { choices: [{ message: { content: 'Fresh Acme provider response.' } }] },
+      {
+        choices: [{
+          message: {
+            content: 'Fresh Acme provider response.',
+            annotations: [{
+              type: 'url_citation',
+              url_citation: { url: 'https://acme.com/source' },
+            }],
+          },
+        }],
+      },
+      (call) => {
+        assert.equal(call.url.pathname, '/v1/chat/completions');
+        const body = JSON.parse(String(call.init?.body)) as Record<string, unknown>;
+        assert.equal(body.model, 'gpt-5-search-api');
+        assert.deepEqual(body.web_search_options, { search_context_size: 'medium' });
+        assert.equal('temperature' in body, false);
+        assert.equal('max_tokens' in body, false);
+      },
+      (result) => {
+        assert.deepEqual(result.engine_citations, ['https://acme.com/source']);
+        assert.deepEqual(result.cited_urls, ['acme.com']);
+        assert.equal(result.brand_cited_with_link, 1);
+      },
     ));
   await t.test('Anthropic', () =>
     assertLiveRunBypassesSharedCache(
