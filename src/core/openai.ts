@@ -149,11 +149,33 @@ interface MatchTerms {
   excludeTerms?: string[];
 }
 
-function mentionsTermSet(text: string, terms: MatchTerms): boolean {
+function domainAppearsInText(text: string, domain: string): boolean {
   const fullDomain =
-    terms.domain.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0]?.toLowerCase() ?? '';
-  // 1. Full domain substring — highest confidence, never suppressed.
-  if (fullDomain.length > 0 && text.toLowerCase().includes(fullDomain)) return true;
+    domain.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0]?.toLowerCase() ?? '';
+  if (fullDomain.length === 0) return false;
+
+  // Match the exact host or one of its subdomains, never a lookalike host
+  // that merely contains the configured domain as a suffix or prefix.
+  const re = new RegExp(
+    `(?:^|[^\\p{L}\\p{N}-])(?:[a-z0-9-]+\\.)*${escapeRegExp(fullDomain)}(?=$|[^\\p{L}\\p{N}.-])`,
+    'iu',
+  );
+  return re.test(text);
+}
+
+function rootTermAppearsOutsideHostname(text: string, term: string): boolean {
+  const t = term.trim();
+  if (t.length === 0) return false;
+  const re = new RegExp(
+    `(?<![\\p{L}\\p{N}.])${escapeRegExp(t)}(?![\\p{L}\\p{N}]|\\.(?=[\\p{L}\\p{N}-]))`,
+    'iu',
+  );
+  return re.test(text);
+}
+
+function mentionsTermSet(text: string, terms: MatchTerms): boolean {
+  // 1. Exact domain/subdomain reference - highest confidence, never suppressed.
+  if (domainAppearsInText(text, terms.domain)) return true;
   // 2. Explicit aliases — user-declared, count as word matches, never suppressed.
   for (const a of terms.aliases ?? []) {
     if (termAppearsAsWord(text, a)) return true;
@@ -165,7 +187,7 @@ function mentionsTermSet(text: string, terms: MatchTerms): boolean {
   }
   // 4. Bare domain root as a standalone word — unless excluded.
   const root = rootTermFromDomain(terms.domain);
-  if (root.length > 0 && !excluded.has(root) && termAppearsAsWord(text, root)) return true;
+  if (root.length > 0 && !excluded.has(root) && rootTermAppearsOutsideHostname(text, root)) return true;
   return false;
 }
 
