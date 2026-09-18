@@ -25,13 +25,13 @@ All five keys are **optional individually**. With zero keys, the server still st
 
 | Environment variable | Provider / engine | Where to get the key | Notes |
 |---|---|---|---|
-| `OPENAI_API_KEY` | OpenAI — ChatGPT engine (`gpt-4o-mini`) | https://platform.openai.com/api-keys | ~€0.0004 per prompt — recommended starter |
+| `OPENAI_API_KEY` | OpenAI — ChatGPT engine (`gpt-5-search-api`, web search) | https://platform.openai.com/api-keys | Grounded search; OpenAI bills web-search calls plus model tokens — check current API pricing |
 | `ANTHROPIC_API_KEY` | Anthropic — Claude engine (`claude-haiku-4-5`) | https://console.anthropic.com/ | Recommended starter; also powers prompt generation and `get_content_gaps` analysis |
 | `GEMINI_API_KEY` | Google AI Studio — Gemini engine (`gemini-2.5-flash-lite`) | https://aistudio.google.com/app/apikey | Free tier rate-limits brands with more than ~5 prompts — treat as an opt-in add-on |
 | `PERPLEXITY_API_KEY` | Perplexity — Sonar engine | https://www.perplexity.ai/settings/api | Paid only |
 | `SERPAPI_API_KEY` | SerpAPI — Google AI Overviews engine | https://serpapi.com/dashboard | Free tier 250 searches/month |
 
-Recommend **OpenAI + Anthropic** as the starting pair — both bill per token with no rate-limit surprises, so the first scan returns clean, scorable data.
+Recommend **OpenAI + Anthropic** as the starting pair. OpenAI provides grounded ChatGPT visibility through web search and bills search calls plus model tokens; Anthropic also powers prompt generation and content-gap analysis. Check current provider pricing before estimating scan cost.
 
 Data location: SQLite database at `~/.digestseo/digestseo.sqlite`, created automatically on first start. Override with the optional `DIGESTSEO_DB_PATH` environment variable.
 

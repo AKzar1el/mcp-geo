@@ -191,13 +191,13 @@ The local stdio CLI (npx, desktop extension, Docker) additionally provides brand
 
 Engines are opt-in. Pick the ones you want; the rest skip silently.
 
-- **OpenAI** — ChatGPT engine. ~€0.0004 per prompt with `gpt-4o-mini`. Batch path roughly halves that. [platform.openai.com](https://platform.openai.com/api-keys)
+- **OpenAI** — ChatGPT engine (`gpt-5-search-api`) with web search. OpenAI currently bills web search at $10 per 1,000 calls plus model token charges; see [API pricing](https://developers.openai.com/api/docs/pricing) and [API keys](https://platform.openai.com/api-keys).
 - **Anthropic** — Claude engine, plus prompt generation and content-gap analysis (both call Claude Haiku). ~€0.0002 per prompt. Free trial credits are usually enough to evaluate. [console.anthropic.com](https://console.anthropic.com/)
 - **Google AI Studio (Gemini)** — Gemini engine. ~€0.0001 per prompt. The free tier has a low per-minute cap, so brands with more than ~5 prompts hit HTTP 429 and drop out of scoring (see [Troubleshooting](#troubleshooting)) — treat it as an opt-in add-on, not a starting engine. [aistudio.google.com](https://aistudio.google.com/app/apikey)
 - **Perplexity** — Perplexity Sonar engine. ~€0.005-0.008 per prompt. Paid only. [perplexity.ai/settings/api](https://www.perplexity.ai/settings/api)
 - **SerpAPI** — Google AI Overviews engine. ~€0.005 (free tier) / ~€0.0015 (volume) per prompt. Free tier covers 250 searches/month — enough for development. [serpapi.com/dashboard](https://serpapi.com/dashboard)
 
-**Recommended starting pair: OpenAI + Anthropic (Claude).** Both bill per token with no rate-limit surprises, so your first scan returns clean, scorable data across the ChatGPT and Claude engines — and the Anthropic key also powers prompt generation and content-gap analysis. Solo evaluation runs comfortably under €1/month on the two together. Add Gemini, Perplexity, or SerpAPI deliberately once you want more coverage; Gemini's free tier rate-limits and Google AI Overviews often returns no result (scored as a zero), so leading with the cheapest path can skew your first run.
+**Recommended starting pair: OpenAI + Anthropic (Claude).** OpenAI provides grounded ChatGPT visibility through web search and bills search calls plus model tokens; Anthropic also powers prompt generation and content-gap analysis. Review current provider pricing before estimating recurring scan cost. Add Gemini, Perplexity, or SerpAPI deliberately once you want more coverage; Gemini's free tier rate-limits and Google AI Overviews often returns no result (scored as a zero), so leading with the cheapest path can skew your first run.
 
 ### Step 2 — Deploy to your Cloudflare account
 
@@ -218,7 +218,7 @@ npx wrangler kv namespace create OAUTH_KV
 npx wrangler d1 create mcp-geo-db
 
 # 5. Set the required secret + at least one engine API key
-#    Recommended starting pair — both bill per token, clean first-run data:
+#    Recommended starting pair — OpenAI uses web search plus model tokens; check current pricing:
 npx wrangler secret put SEED_SECRET
 npx wrangler secret put CONNECT_SECRET      # recommended — gates who can connect (see SECURITY.md)
 npx wrangler secret put OPENAI_API_KEY      # ChatGPT engine
