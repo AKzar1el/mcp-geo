@@ -69,11 +69,15 @@ function extractJsonArrayText(text: string): string {
 
 const VALID_STAGES = new Set(['awareness', 'comparison', 'decision']);
 
-function validateAndShape(raw: unknown): NewPromptInput[] {
+function validateAndShape(
+  raw: unknown,
+  expectedCount: number,
+): NewPromptInput[] {
   if (!Array.isArray(raw)) {
     throw new Error('Generator returned non-array');
   }
   const out: NewPromptInput[] = [];
+  const seen = new Set<string>();
   for (const item of raw) {
     if (!item || typeof item !== 'object') continue;
     const obj = item as Record<string, unknown>;
@@ -87,14 +91,22 @@ function validateAndShape(raw: unknown): NewPromptInput[] {
         : null;
     const normalizedShape =
       typeof shape === 'string' && shape.trim().length > 0 ? shape : null;
+    const normalizedText = text.trim();
+    const dedupeKey = normalizedText
+      .replace(/\s+/g, ' ')
+      .toLocaleLowerCase('en-US');
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
     out.push({
-      text: text.trim(),
+      text: normalizedText,
       intent_stage: normalizedStage,
       shape: normalizedShape,
     });
   }
-  if (out.length === 0) {
-    throw new Error('Generator returned no valid prompt items');
+  if (out.length !== expectedCount) {
+    throw new Error(
+      `Generator returned ${out.length} unique valid prompts; expected ${expectedCount}`,
+    );
   }
   return out;
 }
@@ -117,7 +129,7 @@ async function callGenerator(
   );
   const jsonText = extractJsonArrayText(responseText);
   const parsed = JSON.parse(jsonText);
-  return validateAndShape(parsed);
+  return validateAndShape(parsed, count);
 }
 
 export async function generatePrompts(
