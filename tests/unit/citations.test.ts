@@ -55,8 +55,9 @@ test('markdown link to brand domain counts as linked citation', () => {
   assert.ok(r.cited_urls.includes('asana.com'));
 });
 
-test('subdomain link counts as linked citation', () => {
-  const r = extractCitations(acme, 'See https://docs.acme.com/setup for the guide. Acme is solid.');
+test('subdomain link counts as brand mention and linked citation', () => {
+  const r = extractCitations(acme, 'See https://docs.acme.com/setup for the guide.');
+  assert.equal(r.brand_mentioned, 1);
   assert.equal(r.brand_cited_with_link, 1);
 });
 
@@ -65,12 +66,22 @@ test('www link counts as linked citation', () => {
   assert.equal(r.brand_cited_with_link, 1);
 });
 
-test('lookalike domain does NOT count as linked citation', () => {
+test('lookalike domain does NOT count as brand mention or linked citation', () => {
   const r = extractCitations(
     acme,
     'You might also like https://notacme.com which is unrelated.',
   );
+  assert.equal(r.brand_mentioned, 0);
   assert.equal(r.brand_cited_with_link, 0);
+});
+
+test('lookalike and superdomain text do NOT count as competitor mentions', () => {
+  const brandWithAcmeCompetitor = { ...acme, competitors: ['acme.com'] };
+  const r = extractCitations(
+    brandWithAcmeCompetitor,
+    'Unrelated sites include https://notacme.com and acme.com.evil.io.',
+  );
+  assert.deepEqual(r.competitors_mentioned, []);
 });
 
 test('competitors detected with word boundaries', () => {
