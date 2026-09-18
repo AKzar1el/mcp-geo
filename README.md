@@ -45,6 +45,8 @@ claude mcp add --transport stdio digestseo -s user --env GEMINI_API_KEY=your_key
 
 [![Add to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=digestseo&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBkaWdlc3RzZW8vbWNwLWdlbyJdLCJlbnYiOnsiT1BFTkFJX0FQSV9LRVkiOiIiLCJBTlRIUk9QSUNfQVBJX0tFWSI6IiIsIkdFTUlOSV9BUElfS0VZIjoiIiwiUEVSUExFWElUWV9BUElfS0VZIjoiIiwiU0VSUEFQSV9BUElfS0VZIjoiIn19)
 
+**VS Code:** [Install the local stdio server in VS Code](vscode:mcp/install?%7B%22name%22%3A%22digestseo%22%2C%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22%40digestseo%2Fmcp-geo%22%5D%7D). The base install starts with no provider keys so tool discovery works; add only the API keys you want in your VS Code MCP user configuration before running scans.
+
 **Kiro (remote MCP):** self-host the Worker below with the engine API keys you want to use, then add your own deployed `/mcp` URL to Kiro. The public `geo-mcp.digestseo.com/mcp` endpoint is not a turnkey fresh-scan service and should not be used as a no-key substitute for a configured Worker.
 
 **Claude Desktop extension (one-click):** download the `.mcpb` bundle from the [latest release](https://github.com/AKzar1el/mcp-geo/releases/latest) and double-click it — Claude Desktop prompts for the API keys.

@@ -100,6 +100,14 @@ Edit `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` in the project root, sa
 }
 ```
 
+### VS Code
+
+Use VS Code's MCP install URL for the local stdio package:
+
+[Install `digestseo` in VS Code](vscode:mcp/install?%7B%22name%22%3A%22digestseo%22%2C%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22%40digestseo%2Fmcp-geo%22%5D%7D)
+
+The one-click link installs the zero-key base command (`npx -y @digestseo/mcp-geo`), which is enough for MCP tool discovery. Before engine-backed scans, run **MCP: Open User Configuration** and add only the provider API keys the user chose under this server's environment. Avoid hardcoding secrets in a shared workspace configuration.
+
 ### Cline
 
 Open Cline → MCP Servers → Configure MCP Servers (this opens `cline_mcp_settings.json`) and merge:
