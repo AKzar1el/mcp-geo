@@ -224,6 +224,9 @@ export interface Db {
   // Only returns status='ok' rows — failed/skipped rows must never
   // reach scoring.
   getResponsesForRun(runId: string): Promise<PromptResponse[]>;
+  // All usable responses captured for a brand at/after `since`, across runs
+  // and engines. Used for bounded-window competitor/share-of-voice analysis.
+  getResponsesSince(brandId: string, since: number): Promise<PromptResponse[]>;
   replacePrompts(brandId: string, prompts: NewPromptInput[]): Promise<number>;
   cacheGet(
     promptHash: string,

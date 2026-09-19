@@ -53,7 +53,7 @@ Use mcp-geo's reported scoring. Do not recalculate failed/skipped responses as m
 Create a compact table:
 Brand/competitor | Observed mentions | Share of voice
 
-Then identify the 3 most important winning or losing prompt patterns. Do not imply exclusivity when a response mentions multiple brands.
+Use `your_mentions` for the tracked brand and each competitor's `mentions` value from `compare_competitors`; do not infer counts from rounded percentages. Then identify the 3 most important winning or losing prompt patterns. Do not imply exclusivity when a response mentions multiple brands.
 
 ## 5. Citation/source evidence
 List the strongest concrete citation examples returned by the engines:
