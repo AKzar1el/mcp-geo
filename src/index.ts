@@ -17,6 +17,7 @@ import {
   type EngineName,
 } from './core/engines.js';
 import { registerTools } from './core/tools.js';
+import { getScheduledRefreshTargets } from './core/scheduling.js';
 import { collectBatch, submitBatch } from './core/openai.js';
 import { generatePrompts } from './core/prompt-generation.js';
 import {
@@ -815,15 +816,15 @@ export default {
       return;
     }
     const db = createD1Db(env.DIGESTSEO_DB);
-    const brandsDue = await db.getBrandsDueForRefresh(available);
+    const refreshTargets = await getScheduledRefreshTargets(db, available);
     console.log('scheduled trigger', {
       cron: event.cron,
-      brands_due: brandsDue.length,
+      brands_due: refreshTargets.length,
       engines: available,
     });
-    if (brandsDue.length === 0) return;
+    if (refreshTargets.length === 0) return;
     const results = await Promise.allSettled(
-      brandsDue.map(async (brand) => {
+      refreshTargets.map(async ({ brand, engines }) => {
         const prompts = await db.getActivePrompts(brand.id);
         if (prompts.length === 0) {
           return { brand_id: brand.id, skipped: true };
@@ -833,7 +834,7 @@ export default {
           ctx,
           brand,
           prompts,
-          available,
+          engines,
         );
       }),
     );
