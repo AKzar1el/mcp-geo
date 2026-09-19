@@ -135,60 +135,72 @@ function escapeRegExp(s: string): string {
 
 // Matches `term` only as a standalone token — not buried inside a larger
 // word. Boundaries = "no adjacent letter/digit" (Unicode-friendlier than \b).
-function termAppearsAsWord(text: string, term: string): boolean {
+function termMatchIndex(text: string, term: string): number {
   const t = term.trim();
-  if (t.length === 0) return false;
+  if (t.length === 0) return -1;
   const re = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(t)}(?![\\p{L}\\p{N}])`, 'iu');
-  return re.test(text);
+  return re.exec(text)?.index ?? -1;
 }
 
-interface MatchTerms {
+export interface MatchTerms {
   domain: string;
   name?: string;
   aliases?: string[];
   excludeTerms?: string[];
 }
 
-function domainAppearsInText(text: string, domain: string): boolean {
+function domainMatchIndex(text: string, domain: string): number {
   const fullDomain =
     domain.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0]?.toLowerCase() ?? '';
-  if (fullDomain.length === 0) return false;
+  if (fullDomain.length === 0) return -1;
 
   // Match the exact host or one of its subdomains, never a lookalike host
   // that merely contains the configured domain as a suffix or prefix.
   const re = new RegExp(
-    `(?:^|[^\\p{L}\\p{N}-])(?:[a-z0-9-]+\\.)*${escapeRegExp(fullDomain)}(?=$|[^\\p{L}\\p{N}.-])`,
+    `(?:^|[^\\p{L}\\p{N}-])((?:[a-z0-9-]+\\.)*${escapeRegExp(fullDomain)})(?=$|[^\\p{L}\\p{N}.-])`,
     'iu',
   );
-  return re.test(text);
+  const match = re.exec(text);
+  if (!match || !match[1]) return -1;
+  return match.index + match[0].indexOf(match[1]);
 }
 
-function rootTermAppearsOutsideHostname(text: string, term: string): boolean {
+function rootTermMatchIndexOutsideHostname(text: string, term: string): number {
   const t = term.trim();
-  if (t.length === 0) return false;
+  if (t.length === 0) return -1;
   const re = new RegExp(
     `(?<![\\p{L}\\p{N}.])${escapeRegExp(t)}(?![\\p{L}\\p{N}]|\\.(?=[\\p{L}\\p{N}-]))`,
     'iu',
   );
-  return re.test(text);
+  return re.exec(text)?.index ?? -1;
 }
 
-function mentionsTermSet(text: string, terms: MatchTerms): boolean {
+export function findTermSetMatchIndex(text: string, terms: MatchTerms): number {
   // 1. Exact domain/subdomain reference - highest confidence, never suppressed.
-  if (domainAppearsInText(text, terms.domain)) return true;
+  const domainIndex = domainMatchIndex(text, terms.domain);
+  if (domainIndex !== -1) return domainIndex;
   // 2. Explicit aliases — user-declared, count as word matches, never suppressed.
   for (const a of terms.aliases ?? []) {
-    if (termAppearsAsWord(text, a)) return true;
+    const aliasIndex = termMatchIndex(text, a);
+    if (aliasIndex !== -1) return aliasIndex;
   }
   const excluded = new Set((terms.excludeTerms ?? []).map((e) => e.trim().toLowerCase()));
   // 3. Brand name as a standalone word — unless excluded.
-  if (terms.name && !excluded.has(terms.name.trim().toLowerCase()) && termAppearsAsWord(text, terms.name)) {
-    return true;
+  if (terms.name && !excluded.has(terms.name.trim().toLowerCase())) {
+    const nameIndex = termMatchIndex(text, terms.name);
+    if (nameIndex !== -1) return nameIndex;
   }
   // 4. Bare domain root as a standalone word — unless excluded.
   const root = rootTermFromDomain(terms.domain);
-  if (root.length > 0 && !excluded.has(root) && rootTermAppearsOutsideHostname(text, root)) return true;
-  return false;
+  if (root.length > 0 && !excluded.has(root)) {
+    const rootIndex = rootTermMatchIndexOutsideHostname(text, root);
+    if (rootIndex !== -1) return rootIndex;
+  }
+  return -1;
+}
+
+function mentionsTermSet(text: string, terms: MatchTerms): boolean {
+  return findTermSetMatchIndex(text, terms) !== -1;
 }
 
 // True when host IS the domain or a subdomain of it. A substring check

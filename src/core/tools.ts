@@ -11,7 +11,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { Brand, Db, Prompt, PromptResponse } from '../db/types.js';
-import { hostMatchesDomain } from './openai.js';
+import { findTermSetMatchIndex, hostMatchesDomain } from './openai.js';
 import {
   ALL_ENGINES,
   getAvailableEngines,
@@ -994,21 +994,15 @@ function citationId(runId: string, promptId: string): string {
   return `cit_${runId.slice(0, 8)}_${promptId.slice(0, 8)}`;
 }
 
-function buildResponseExcerpt(text: string, brand: Brand): string {
+export function buildResponseExcerpt(text: string, brand: Brand): string {
   if (!text) return '';
   if (text === '[NO_AI_OVERVIEW]') return text;
-  const lower = text.toLowerCase();
-  const root = brand.domain.toLowerCase().split('.')[0] ?? '';
-  const targets = [
-    brand.name.toLowerCase(),
-    brand.domain.toLowerCase(),
-    root,
-  ].filter((s) => s.length > 0);
-  let idx = -1;
-  for (const t of targets) {
-    idx = lower.indexOf(t);
-    if (idx !== -1) break;
-  }
+  const idx = findTermSetMatchIndex(text, {
+    domain: brand.domain,
+    name: brand.name,
+    aliases: brand.aliases,
+    excludeTerms: brand.exclude_terms,
+  });
   if (idx === -1) return text.slice(0, 250);
   const start = Math.max(0, idx - 100);
   const end = Math.min(text.length, idx + 150);
