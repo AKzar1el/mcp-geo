@@ -100,6 +100,17 @@ copilot mcp add digestseo -- npx -y @digestseo/mcp-geo
 
 This zero-key base command is enough for tool discovery. Add provider keys with repeated `--env NAME=VALUE` options supported by Copilot CLI before the `digestseo -- ...` portion when engine-backed scans are needed.
 
+### Amazon Q Developer (IDE)
+
+Open the Amazon Q Developer chat panel, select **Tools**, choose **+**, and add a **STDIO** MCP server with:
+
+- Name: `digestseo`
+- Command: `npx`
+- Arguments: `-y` and `@digestseo/mcp-geo`
+- Environment variables: only the provider keys the user chose to use
+
+Amazon Q Developer supports local STDIO MCP servers and environment variables in this configuration UI. The zero-key command is enough for tool discovery; engine-backed scans still need at least one provider key.
+
 ### Cursor
 
 Edit `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` in the project root, same shape as Claude Desktop:

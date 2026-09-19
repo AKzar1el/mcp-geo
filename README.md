@@ -57,6 +57,8 @@ copilot mcp add digestseo -- npx -y @digestseo/mcp-geo
 
 The base install starts with zero provider keys so tool discovery works. Add only the engine keys you want with Copilot CLI's `--env NAME=VALUE` option before running scans.
 
+**Amazon Q Developer (IDE):** open the Q Developer chat panel ? **Tools** ? **+**, choose **STDIO**, name the server `digestseo`, set Command to `npx`, and add Arguments `-y` and `@digestseo/mcp-geo`. Add only the provider environment variables you want before running scans; zero keys still allow MCP tool discovery.
+
 **Cursor:**
 
 [![Add to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=digestseo&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBkaWdlc3RzZW8vbWNwLWdlbyJdLCJlbnYiOnsiT1BFTkFJX0FQSV9LRVkiOiIiLCJBTlRIUk9QSUNfQVBJX0tFWSI6IiIsIkdFTUlOSV9BUElfS0VZIjoiIiwiUEVSUExFWElUWV9BUElfS0VZIjoiIiwiU0VSUEFQSV9BUElfS0VZIjoiIn19)

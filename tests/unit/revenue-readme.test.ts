@@ -51,6 +51,10 @@ test('README exposes audit details and an attributable direct request path', () 
     readme,
     /\*\*Windsurf:\*\*[\s\S]*"command": "npx"[\s\S]*"@digestseo\/mcp-geo"/,
   );
+  assert.match(
+    readme,
+    /\*\*Amazon Q Developer \(IDE\):\*\*[\s\S]*choose \*\*STDIO\*\*[\s\S]*`npx`[\s\S]*`@digestseo\/mcp-geo`/,
+  );
   assert.match(readme, /### \[0\.3\.7\] - September 19, 2026/);
 
   const auditCta = readme.indexOf('> **Need a client-ready baseline without running the stack yourself?**');
