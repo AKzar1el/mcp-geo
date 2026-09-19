@@ -14,4 +14,8 @@ test('AI-agent install guide exposes the frozen managed audit alternative withou
     guide,
     /mailto:info@tomiseregi\.si\?subject=mcp-geo%20AI%20Visibility%20Audit%20-%20EUR%2099&body=[^\s)]*Source%3A%20mcp-geo%20llms-install/,
   );
+  assert.match(
+    guide,
+    /### Amazon Q Developer \(IDE\)[\s\S]*STDIO[\s\S]*Command: `npx`[\s\S]*@digestseo\/mcp-geo/,
+  );
 });
