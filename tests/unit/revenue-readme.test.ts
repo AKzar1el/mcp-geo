@@ -45,6 +45,10 @@ test('README exposes audit details and an attributable direct request path', () 
   );
   assert.match(
     readme,
+    /\*\*ChatGPT desktop app:\*\*[\s\S]*Settings → MCP servers → Add server[\s\S]*npx -y @digestseo\/mcp-geo/,
+  );
+  assert.match(
+    readme,
     /\*\*Windsurf:\*\*[\s\S]*"command": "npx"[\s\S]*"@digestseo\/mcp-geo"/,
   );
   assert.match(readme, /### \[0\.3\.7\] - September 19, 2026/);
