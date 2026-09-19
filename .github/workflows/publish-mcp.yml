@@ -125,5 +125,22 @@ jobs:
       - name: Login to the MCP Registry (GitHub OIDC)
         run: ./mcp-publisher login github-oidc
 
+      - name: Wait for npm package propagation
+        shell: bash
+        run: |
+          PKG=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          for attempt in {1..12}; do
+            if npm view "$PKG@$VERSION" version >/dev/null 2>&1; then
+              echo "$PKG@$VERSION is visible on npm"
+              exit 0
+            fi
+            if [ "$attempt" -eq 12 ]; then
+              echo "::error::$PKG@$VERSION is still not visible on npm after bounded propagation wait"
+              exit 1
+            fi
+            sleep 5
+          done
+
       - name: Publish server.json
         run: ./mcp-publisher publish server.json
