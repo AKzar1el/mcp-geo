@@ -59,6 +59,7 @@ type ComparisonTool = {
   handler: (args: {
     brand_id: string;
     days?: number;
+    competitor_domains?: string[];
   }) => Promise<{ structuredContent: ComparisonResult }>;
 };
 
@@ -111,4 +112,40 @@ test('compare_competitors uses the full response window and exposes raw mention 
       { domain: 'monday.com', mentions: 2, share_of_voice_pct: 40 },
     ],
   );
+});
+
+
+test('compare_competitors normalizes explicit competitor URL inputs before matching', async () => {
+  let comparison: ComparisonTool | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, handler: unknown) {
+      if (name === 'compare_competitors') {
+        comparison = { handler: handler as ComparisonTool['handler'] };
+      }
+    },
+  } as unknown as McpServer;
+
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getResponsesSince: async () => [
+        response('url', 'best project tools', 0, ['asana.com']),
+      ],
+    } as Db,
+    env: {},
+    refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+
+  assert.ok(comparison, 'compare_competitors tool registration missing');
+  const result = await comparison.handler({
+    brand_id: brand.id,
+    days: 7,
+    competitor_domains: ['https://www.Asana.com/pricing'],
+  });
+
+  assert.equal(result.structuredContent.competitors.length, 1);
+  assert.equal(result.structuredContent.competitors[0].domain, 'asana.com');
+  assert.equal(result.structuredContent.competitors[0].mentions, 1);
+  assert.equal(result.structuredContent.competitors[0].share_of_voice_pct, 100);
 });

@@ -395,7 +395,7 @@ export function registerTools(
       }
       const targets =
         competitor_domains && competitor_domains.length > 0
-          ? competitor_domains
+          ? normalizeCompetitorDomains(competitor_domains, brand.domain)
           : brand.competitors;
       if (targets.length === 0) {
         const payload = {
