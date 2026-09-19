@@ -166,6 +166,7 @@ test('audit CTA opens a prefilled attributable request email', async () => {
     'mcp-geo AI Visibility Audit - EUR 99',
   );
   assert.match(mailto.searchParams.get('body') ?? '', /Brand\/domain:/);
+  assert.match(mailto.searchParams.get('body') ?? '', /Category \/ product type:/);
   assert.match(mailto.searchParams.get('body') ?? '', /Competitors \(up to 3\):/);
   assert.match(mailto.searchParams.get('body') ?? '', /Source: mcp-geo audit page/);
 });
@@ -180,6 +181,8 @@ test('audit request flow provides form, clipboard, direct-email, and no-JS fallb
   const body = await response.text();
   assert.match(body, /<form id="audit-request-form"/);
   assert.match(body, /name="brand"[^>]*required/);
+  assert.match(body, /name="category"[^>]*required/);
+  assert.match(body, /Category \/ product type/);
   assert.match(body, /name="competitors"/);
   assert.match(body, /name="context"/);
   assert.match(body, /type="submit"[^>]*>Request the EUR 99 audit</);

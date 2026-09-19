@@ -14,6 +14,7 @@ const AUDIT_BODY = `Hi Tomi,
 I'd like the EUR 99 mcp-geo AI Visibility Audit.
 
 Brand/domain:
+Category / product type:
 Competitors (up to 3):
 Context or priority (optional):
 
@@ -138,6 +139,10 @@ function auditHtml(origin: string): string {
         <input name="brand" type="text" autocomplete="url" placeholder="example.com" required>
       </label>
       <label>
+        Category / product type
+        <input name="category" type="text" placeholder="Project management software" required>
+      </label>
+      <label>
         Competitors (up to 3)
         <input name="competitors" type="text" placeholder="competitor-one.com, competitor-two.com">
       </label>
@@ -176,6 +181,7 @@ function auditHtml(origin: string): string {
           "I'd like the EUR 99 mcp-geo AI Visibility Audit.",
           '',
           'Brand/domain: ' + value('brand'),
+          'Category / product type: ' + value('category'),
           'Competitors (up to 3): ' + value('competitors'),
           'Context or priority (optional): ' + value('context'),
           '',
@@ -185,7 +191,7 @@ function auditHtml(origin: string): string {
 
       const validate = () => {
         if (form.reportValidity()) return true;
-        status.textContent = 'Add your brand/domain first.';
+        status.textContent = 'Add your brand/domain and category first.';
         return false;
       };
 
