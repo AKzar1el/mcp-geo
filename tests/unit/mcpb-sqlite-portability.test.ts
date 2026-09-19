@@ -16,6 +16,10 @@ const manifest = JSON.parse(
   user_config?: Record<string, { required?: boolean; default?: string }>;
   privacy_policies?: string[];
 };
+const publishWorkflow = readFileSync(
+  new URL('../../.github/workflows/publish-mcp.yml', import.meta.url),
+  'utf8',
+);
 
 test('MCPB sqlite runtime avoids native addons that Claude Desktop rejects on macOS', () => {
   assert.equal(
@@ -43,6 +47,17 @@ test('MCPB pack prunes dev dependencies before creating the bundle', () => {
     'MCPB packing must remove dev-only transitive dependencies before archiving',
   );
 });
+
+test('release workflow publishes the MCPB asset promised by the README', () => {
+  assert.match(publishWorkflow, /publish-mcpb:/);
+  assert.match(publishWorkflow, /npm run mcpb:pack/);
+  assert.match(
+    publishWorkflow,
+    /ASSET="digestseo-mcp-\$VERSION\.mcpb"/,
+  );
+  assert.match(publishWorkflow, /gh release upload/);
+});
+
 test('MCPB privacy policy points to the owned mcp-geo HTTPS policy', () => {
   assert.equal(
     manifest.privacy_policies?.[0],

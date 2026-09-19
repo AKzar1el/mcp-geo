@@ -16,7 +16,6 @@ on:
       - main
     paths:
       - server.json
-      - .github/workflows/publish-mcp.yml
   release:
     types: [published]
   workflow_dispatch:
@@ -77,6 +76,52 @@ jobs:
       # prepublishOnly runs typecheck + unit tests + build before the tarball is created.
       - name: Publish to npm
         run: npm publish --access public
+
+  publish-mcpb:
+    name: Publish Claude Desktop MCPB asset
+    if: github.event_name == 'release'
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build MCPB release asset
+        id: mcpb
+        shell: bash
+        run: |
+          npm run build
+          npm run mcpb:pack
+          VERSION=$(node -p "require('./package.json').version")
+          SOURCE=$(find . -maxdepth 1 -type f -name '*.mcpb' -print -quit)
+          if [ -z "$SOURCE" ]; then
+            echo "::error::mcpb:pack did not produce a top-level .mcpb asset"
+            exit 1
+          fi
+          ASSET="digestseo-mcp-$VERSION.mcpb"
+          mv "$SOURCE" "$ASSET"
+          echo "asset=$ASSET" >> "$GITHUB_OUTPUT"
+
+      - name: Upload MCPB to this release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ASSET: ${{ steps.mcpb.outputs.asset }}
+        shell: bash
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name' | grep -Fxq "$ASSET"; then
+            echo "$ASSET already exists on $GITHUB_REF_NAME; leaving it unchanged"
+            exit 0
+          fi
+          gh release upload "$GITHUB_REF_NAME" "$ASSET"
 
   check-npm-version:
     if: github.event_name == 'push'
