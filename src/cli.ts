@@ -19,6 +19,7 @@ import {
   type EngineKeys,
   type RunEnginesResult,
 } from './core/engines.js';
+import { LOCAL_SERVER_INSTRUCTIONS } from './core/server-instructions.js';
 import { registerLocalManagementTools, registerTools } from './core/tools.js';
 import { defaultDbPath, openSqliteDb } from './db/sqlite.js';
 import type { Brand, Prompt } from './db/types.js';
@@ -79,7 +80,10 @@ async function main(): Promise<void> {
   const db = openSqliteDb(dbPath);
   const version = packageVersion();
 
-  const server = new McpServer({ name: 'digestseo-mcp', version });
+  const server = new McpServer(
+    { name: 'digestseo-mcp', version },
+    { instructions: LOCAL_SERVER_INSTRUCTIONS },
+  );
   registerTools(server, {
     db,
     env,

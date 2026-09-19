@@ -3,9 +3,10 @@
 // Spawns the BUILT artifact with a fake engine key, drives a real
 // JSON-RPC handshake over stdin/stdout, and asserts:
 //   1. initialize succeeds,
-//   2. tools/list returns all nine tools (six shared + three local
+//   2. initialize advertises cross-tool workflow instructions,
+//   3. tools/list returns all nine tools (six shared + three local
 //      management tools),
-//   3. nothing non-JSON ever appears on stdout (stdout is the JSON-RPC
+//   4. nothing non-JSON ever appears on stdout (stdout is the JSON-RPC
 //      channel; all logging must go to stderr).
 //
 // Requires `npm run build` first. Run with: npm run test:stdio
@@ -120,6 +121,9 @@ test('stdio CLI: initialize + tools/list returns all nine tools, track_brand→l
     const init = await waitFor(1);
     assert.ok(!init.error, `initialize errored: ${JSON.stringify(init.error)}`);
     assert.equal(init.result?.serverInfo?.name, 'digestseo-mcp');
+    assert.match(init.result?.instructions ?? '', /track_brand/);
+    assert.match(init.result?.instructions ?? '', /refresh_brand/);
+    assert.match(init.result?.instructions ?? '', /not be treated as zero visibility/);
 
     rpc(child, { jsonrpc: '2.0', method: 'notifications/initialized' });
     rpc(child, { jsonrpc: '2.0', id: 2, method: 'tools/list' });

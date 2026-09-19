@@ -17,6 +17,7 @@ import {
   type EngineName,
 } from './core/engines.js';
 import { registerTools } from './core/tools.js';
+import { HOSTED_SERVER_INSTRUCTIONS } from './core/server-instructions.js';
 import { getScheduledRefreshTargets } from './core/scheduling.js';
 import { collectBatch, submitBatch } from './core/openai.js';
 import { generatePrompts } from './core/prompt-generation.js';
@@ -102,10 +103,13 @@ function workerEnginesEnv(env: Env, db: Db): WorkerEnginesEnv {
 const SERVER_VERSION = '0.3.11';
 
 export class GeoMcpAgent extends McpAgent<Env, unknown, AgentProps> {
-  server = new McpServer({
-    name: 'digestseo-mcp',
-    version: SERVER_VERSION,
-  });
+  server = new McpServer(
+    {
+      name: 'digestseo-mcp',
+      version: SERVER_VERSION,
+    },
+    { instructions: HOSTED_SERVER_INSTRUCTIONS },
+  );
 
   async init() {
     const db = createD1Db(this.env.DIGESTSEO_DB);
