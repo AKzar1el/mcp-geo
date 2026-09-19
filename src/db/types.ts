@@ -206,7 +206,7 @@ export interface Db {
   // partially-finished runs still surface their data.
   getLatestCompletedRun(brandId: string, engine: string): Promise<Run | null>;
   getRunById(runId: string): Promise<Run | null>;
-  getBrandsDueForRefresh(): Promise<Brand[]>;
+  getBrandsDueForRefresh(engines?: string[]): Promise<Brand[]>;
   insertPromptResponse(input: InsertPromptResponseInput): Promise<void>;
   // Idempotency for re-running an engine against an existing run row:
   // wipe any prompt_responses already written for that run first.

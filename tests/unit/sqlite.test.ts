@@ -727,6 +727,66 @@ test('getBrandsDueForRefresh uses the latest run with usable responses', async (
   }
 });
 
+test('getBrandsDueForRefresh keeps a brand due when one configured engine is stale', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'digestseo.sqlite'));
+  try {
+    await db.upsertUser('test-user', 'test@local');
+    await db.createBrand({
+      id: 'mixed-freshness',
+      user_id: 'test-user',
+      domain: 'mixed-freshness.com',
+      name: 'Mixed Freshness',
+      category: null,
+      competitors: [],
+      aliases: [],
+      exclude_terms: [],
+      refresh_frequency: 'weekly',
+    });
+    seedPromptFixture(db, 'mixed-freshness', 'mixed-prompt', 'best tools');
+    const brand = await db.getBrand('mixed-freshness');
+    assert.ok(brand);
+
+    const now = Date.now();
+    const old = now - 8 * 24 * 60 * 60 * 1000;
+    for (const [engine, timestamp] of [
+      ['claude', old],
+      ['chatgpt', now],
+    ] as const) {
+      const run = await db.createRun(brand, engine, 'live', 1);
+      await db.persistEngineRun(run.id, engine, 'test-model', 3600, [
+        {
+          prompt_id: 'mixed-prompt',
+          raw_response: 'Mixed Freshness is visible.',
+          brand_mentioned: 1,
+          brand_cited_with_link: 0,
+          cited_urls: [],
+          competitors_mentioned: [],
+          status: 'ok',
+        },
+      ]);
+      db.raw
+        .prepare('UPDATE runs SET started_at = ?, completed_at = ? WHERE id = ?')
+        .run(timestamp, timestamp, run.id);
+    }
+
+    const onlyFreshEngine = new Set(
+      (await db.getBrandsDueForRefresh(['chatgpt'])).map((item) => item.id),
+    );
+    assert.equal(onlyFreshEngine.has('mixed-freshness'), false);
+
+    const allConfiguredEngines = new Set(
+      (await db.getBrandsDueForRefresh(['chatgpt', 'claude'])).map(
+        (item) => item.id,
+      ),
+    );
+    assert.equal(allConfiguredEngines.has('mixed-freshness'), true);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('read history: getVisibilityHistoryRows aggregates ok rows per run', async () => {
   const root = tempRoot();
   const db = openSqliteDb(join(root, 'digestseo.sqlite'));

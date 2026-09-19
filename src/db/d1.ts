@@ -305,14 +305,49 @@ export function createD1Db(d1: D1Database): Db {
       return row ?? null;
     },
 
-    // Cron-driven refresh selection. A brand is due if:
-    //   - it has no run with usable (status='ok') data yet, OR
-    //   - its latest usable run is older than the cadence implied by
-    //     refresh_frequency ('weekly' → 7d, 'daily' → 1d).
-    async getBrandsDueForRefresh(): Promise<Brand[]> {
+    // Cron-driven refresh selection. When the configured engine list is
+    // supplied, a brand is due if ANY configured engine is missing usable
+    // data or is older than the brand cadence. This prevents a fresh manual
+    // run for one engine from postponing scheduled refreshes for stale peers.
+    async getBrandsDueForRefresh(engines?: string[]): Promise<Brand[]> {
       const now = Date.now();
       const weeklyCutoff = now - 7 * 24 * 60 * 60 * 1000;
       const dailyCutoff = now - 24 * 60 * 60 * 1000;
+      const targetEngines = [...new Set(engines ?? [])];
+      if (targetEngines.length > 0) {
+        const values = targetEngines.map(() => '(?)').join(', ');
+        const { results } = await d1
+          .prepare(
+            `WITH target_engines(engine) AS (VALUES ${values}),
+                  latest_usable AS (
+                    SELECT r.brand_id, r.engine,
+                           MAX(COALESCE(r.completed_at, r.started_at)) AS last_usable_run
+                      FROM runs r
+                     WHERE EXISTS (
+                       SELECT 1 FROM prompt_responses pr
+                        WHERE pr.run_id = r.id AND pr.status = 'ok'
+                     )
+                     GROUP BY r.brand_id, r.engine
+                  )
+             SELECT b.id, b.user_id, b.domain, b.name, b.category, b.competitors_json,
+                    b.aliases_json, b.exclude_terms_json,
+                    b.refresh_frequency, b.created_at, b.updated_at
+               FROM brands b
+              WHERE EXISTS (
+                SELECT 1
+                  FROM target_engines te
+                  LEFT JOIN latest_usable lu
+                    ON lu.brand_id = b.id AND lu.engine = te.engine
+                 WHERE lu.last_usable_run IS NULL
+                    OR (b.refresh_frequency = 'weekly' AND lu.last_usable_run < ?)
+                    OR (b.refresh_frequency = 'daily'  AND lu.last_usable_run < ?)
+              )`,
+          )
+          .bind(...targetEngines, weeklyCutoff, dailyCutoff)
+          .all<BrandRow>();
+        return (results ?? []).map(rowToBrand);
+      }
+
       const { results } = await d1
         .prepare(
           `SELECT b.id, b.user_id, b.domain, b.name, b.category, b.competitors_json,
