@@ -16,7 +16,6 @@ on:
       - main
     paths:
       - server.json
-      - .github/workflows/publish-mcp.yml
   release:
     types: [published]
   workflow_dispatch:
