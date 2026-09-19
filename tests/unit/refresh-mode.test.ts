@@ -98,3 +98,18 @@ test('sync refresh metadata and result report completed scans', async () => {
   assert.equal(result.structuredContent.message, 'Refresh completed for 2 engines');
   assert.equal(result.structuredContent.estimated_completion_seconds, 0);
 });
+
+test('refresh deduplicates explicitly requested engines before dispatch', async () => {
+  const refresh = registerRefreshTool('sync');
+
+  const result = await refresh.handler({
+    brand_id: brand.id,
+    engines: ['chatgpt', 'chatgpt', 'claude', 'chatgpt'],
+  });
+
+  assert.equal(result.structuredContent.message, 'Refresh completed for 2 engines');
+  assert.deepEqual(result.structuredContent.run_ids, {
+    chatgpt: 'run-chatgpt',
+    claude: 'run-claude',
+  });
+});

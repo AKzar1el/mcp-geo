@@ -217,7 +217,7 @@ function filterRequestedEngines(
 ): EngineName[] {
   const available = new Set(getAvailableEngines(env));
   if (!requested || requested.length === 0) return [...available];
-  return requested.filter((e) => available.has(e));
+  return [...new Set(requested)].filter((e) => available.has(e));
 }
 
 export interface ToolRegistrationOptions {
