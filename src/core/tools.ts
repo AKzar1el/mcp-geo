@@ -298,7 +298,7 @@ export function registerTools(
       // ok rows. Use completed_at when available, started_at as a
       // fallback for in-progress runs.
       const selectedEngines =
-        !engines || engines.length === 0 ? ALL_ENGINES : engines;
+        !engines || engines.length === 0 ? ALL_ENGINES : uniqueEngineNames(engines);
       const selectedResponses: PromptResponse[] = [];
       const refreshedAtByEngine = new Map<string, string>();
       let mostRecentTimestamp = 0;
