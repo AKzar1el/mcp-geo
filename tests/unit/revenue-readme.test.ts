@@ -35,6 +35,10 @@ test('README exposes audit details and an attributable direct request path', () 
     readme,
     /\[Read the AI Visibility Audit methodology\]\(docs\/ai-visibility-audit-methodology\.md\)/,
   );
+  assert.match(
+    readme,
+    /copilot mcp add digestseo -- npx -y @digestseo\/mcp-geo/,
+  );
 
   const auditCta = readme.indexOf('> **Need a client-ready baseline without running the stack yourself?**');
   const waitlistCta = readme.indexOf('> **Prefer zero setup?**');
