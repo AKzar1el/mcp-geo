@@ -25,6 +25,10 @@ test('README exposes audit details and an attributable direct request path', () 
   );
   assert.match(
     readme,
+    /\[reusable AI Visibility Audit report prompt\]\(docs\/ai-visibility-audit-report-prompt\.md\)/,
+  );
+  assert.match(
+    readme,
     /> \*\*Payment handoff:\*\* After fit and scope are confirmed, I reply with the normal invoice\/payment instructions\./,
   );
   assert.match(
@@ -67,5 +71,9 @@ test('audit methodology exposes the score formulas buyers need to verify', () =>
   assert.match(
     methodology,
     /Failed or skipped provider responses are excluded rather than counted as zero-visibility observations/,
+  );
+  assert.match(
+    methodology,
+    /\[Use the reusable evidence-first report prompt\]\(\.\/ai-visibility-audit-report-prompt\.md\)/,
   );
 });

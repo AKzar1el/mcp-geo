@@ -62,6 +62,7 @@ Any engine coverage limitations are stated in the delivered report rather than s
 The report is built from mcp-geo's visibility, competitor-comparison, citation, and content-gap capabilities. You can inspect the output style before requesting the paid audit:
 
 - [View the existing sample report](./demo-report-full.png)
+- [Use the reusable evidence-first report prompt](./ai-visibility-audit-report-prompt.md)
 - [See the mcp-geo tool definitions](../README.md#available-tools)
 
 The sample demonstrates reporting format and evidence depth. A paid audit is run for the buyer's own brand, prompt set, and named competitors.
