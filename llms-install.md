@@ -74,6 +74,16 @@ Restart Claude Desktop after saving.
 
 Alternative for Claude Desktop: download the `.mcpb` desktop extension from the [latest GitHub release](https://github.com/AKzar1el/mcp-geo/releases/latest), double-click it, and enter the keys in the settings UI it presents.
 
+### ChatGPT desktop app
+
+Open **Settings → MCP servers → Add server**, choose **STDIO**, set the server name to `digestseo`, and use this command:
+
+```text
+npx -y @digestseo/mcp-geo
+```
+
+The zero-key command is enough for MCP discovery. Add only the provider API keys the user chose to the server environment before engine-backed scans. ChatGPT desktop shares MCP configuration with Codex clients, so avoid duplicating conflicting entries for the same server.
+
 ### Claude Code (CLI)
 
 ```bash
