@@ -85,6 +85,18 @@
   },
   "tools": [
     {
+      "name": "track_brand",
+      "description": "Start tracking a brand locally, including its domain, competitors, prompt set, and refresh cadence. Use before the first visibility refresh."
+    },
+    {
+      "name": "list_brands",
+      "description": "List locally tracked brands with their domains, categories, competitors, refresh cadence, and active prompt counts."
+    },
+    {
+      "name": "generate_prompts",
+      "description": "Regenerate buyer-intent prompts for a tracked brand using Claude Haiku when ANTHROPIC_API_KEY is configured."
+    },
+    {
       "name": "check_visibility",
       "description": "Get the latest AI visibility data for a tracked brand: which AI assistants (ChatGPT, Claude, Perplexity, Gemini, Google AI Overviews) cite this brand, for which prompts, and how it compares to competitors. Use when the user asks 'how visible am I on AI?', 'who's citing my brand?', or 'show me my AI visibility score'. Returns stored data — for fresh data, call refresh_brand."
     },
