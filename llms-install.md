@@ -108,6 +108,26 @@ Edit `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` in the project root, sa
 }
 ```
 
+### Windsurf
+
+Open Windsurf → **Manage MCPs → View raw config** and add:
+
+```json
+{
+  "mcpServers": {
+    "digestseo": {
+      "command": "npx",
+      "args": ["-y", "@digestseo/mcp-geo"],
+      "env": {
+        "OPENAI_API_KEY": "sk-REPLACE_ME"
+      }
+    }
+  }
+}
+```
+
+Windsurf supports local stdio MCP servers. Keep only the provider keys the user chose; the zero-key base command still starts for tool discovery.
+
 ### VS Code
 
 Use VS Code's MCP install URL for the local stdio package:
