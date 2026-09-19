@@ -97,7 +97,7 @@ function workerEnginesEnv(env: Env, db: Db): WorkerEnginesEnv {
 }
 
 // Keep in sync with package.json "version".
-const SERVER_VERSION = '0.3.7';
+const SERVER_VERSION = '0.3.8';
 
 export class GeoMcpAgent extends McpAgent<Env, unknown, AgentProps> {
   server = new McpServer({
