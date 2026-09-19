@@ -23,7 +23,44 @@
       "version": "0.3.9",
       "transport": {
         "type": "stdio"
-      }
+      },
+      "environmentVariables": [
+        {
+          "name": "OPENAI_API_KEY",
+          "description": "Optional OpenAI API key for ChatGPT visibility scans. Configure at least one provider key to run scans.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "ANTHROPIC_API_KEY",
+          "description": "Optional Anthropic API key for Claude scans, prompt generation, and content-gap analysis.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "GEMINI_API_KEY",
+          "description": "Optional Google AI Studio API key for Gemini visibility scans.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "PERPLEXITY_API_KEY",
+          "description": "Optional Perplexity API key for Perplexity visibility scans.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "SERPAPI_API_KEY",
+          "description": "Optional SerpAPI key for Google AI Overviews visibility scans.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        }
+      ]
     }
   ],
   "tools": [
