@@ -224,6 +224,63 @@ test('record a run: createRun + persistEngineRun + getResponsesForRun', async ()
   }
 });
 
+test('getResponsesSince returns every usable response in the requested brand window', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'digestseo.sqlite'));
+  try {
+    seedBrandFixture(db, 'acme');
+    seedPromptFixture(db, 'acme', 'p1', 'best project management tools');
+    const brand = await db.getBrand('acme');
+    assert.ok(brand);
+
+    const first = await db.createRun(brand, 'chatgpt', 'live', 1);
+    await db.persistEngineRun(first.id, 'chatgpt', 'gpt-4o-mini', 3600, [
+      {
+        prompt_id: 'p1',
+        raw_response: 'Acme and Asana are popular.',
+        brand_mentioned: 1,
+        brand_cited_with_link: 0,
+        cited_urls: [],
+        competitors_mentioned: ['asana.com'],
+        status: 'ok',
+      },
+    ]);
+    const second = await db.createRun(brand, 'chatgpt', 'live', 1);
+    await db.persistEngineRun(second.id, 'chatgpt', 'gpt-4o-mini', 3600, [
+      {
+        prompt_id: 'p1',
+        raw_response: 'Asana and Monday are popular.',
+        brand_mentioned: 0,
+        brand_cited_with_link: 0,
+        cited_urls: [],
+        competitors_mentioned: ['asana.com', 'monday.com'],
+        status: 'ok',
+      },
+    ]);
+
+    const all = await db.getResponsesSince('acme', Date.now() - 60_000);
+    assert.equal(
+      all.length,
+      2,
+      'comparison windows must include more than the latest run',
+    );
+    assert.deepEqual(
+      all.map((r) => r.run_id),
+      [first.id, second.id],
+    );
+
+    db.raw
+      .prepare('UPDATE prompt_responses SET captured_at = ? WHERE run_id = ?')
+      .run(Date.now() - 120_000, first.id);
+    const recent = await db.getResponsesSince('acme', Date.now() - 60_000);
+    assert.equal(recent.length, 1);
+    assert.equal(recent[0].run_id, second.id);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('getLatestCompletedRun skips runs whose rows all failed', async () => {
   const root = tempRoot();
   const db = openSqliteDb(join(root, 'digestseo.sqlite'));

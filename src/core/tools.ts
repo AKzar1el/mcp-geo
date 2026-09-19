@@ -77,10 +77,12 @@ const compareOutputSchema = z.object({
   brand_id: z.string(),
   days: z.number(),
   your_share_of_voice_pct: z.number(),
+  your_mentions: z.number(),
   competitors: z.array(
     z.object({
       domain: z.string(),
       share_of_voice_pct: z.number(),
+      mentions: z.number(),
       prompts_won_against_you: z.array(z.string()),
     }),
   ),
@@ -393,7 +395,7 @@ export function registerTools(
       }
       const targets =
         competitor_domains && competitor_domains.length > 0
-          ? competitor_domains
+          ? normalizeCompetitorDomains(competitor_domains, brand.domain)
           : brand.competitors;
       if (targets.length === 0) {
         const payload = {
@@ -402,6 +404,7 @@ export function registerTools(
           message:
             'No competitor list configured for this brand. Pass competitor_domains or set brand.competitors.',
           your_share_of_voice_pct: 0,
+          your_mentions: 0,
           competitors: [],
           prompts_you_win: [],
           requested_competitor_domains: competitor_domains ?? null,
@@ -410,15 +413,7 @@ export function registerTools(
       }
 
       const since = Date.now() - days * 86_400_000;
-      const allResponses: PromptResponse[] = [];
-      for (const engine of ALL_ENGINES) {
-        const run = await deps.db.getLatestCompletedRun(brand_id, engine);
-        if (!run) continue;
-        const ts = run.completed_at ?? run.started_at;
-        if (ts < since) continue;
-        const responses = await deps.db.getResponsesForRun(run.id);
-        allResponses.push(...responses);
-      }
+      const allResponses = await deps.db.getResponsesSince(brand_id, since);
 
       const brandMentions = allResponses.reduce(
         (s, r) => s + (r.brand_mentioned === 1 ? 1 : 0),
@@ -448,9 +443,11 @@ export function registerTools(
             wonPrompts.set(r.prompt_id, r.prompt_text);
           }
         }
+        const mentions = competitorMentions.get(domain) ?? 0;
         return {
           domain,
-          share_of_voice_pct: pct(competitorMentions.get(domain) ?? 0),
+          share_of_voice_pct: pct(mentions),
+          mentions,
           prompts_won_against_you: [...wonPrompts.values()].slice(0, 5),
         };
       });
@@ -494,6 +491,7 @@ export function registerTools(
         brand_id,
         days,
         your_share_of_voice_pct: pct(brandMentions),
+        your_mentions: brandMentions,
         competitors: competitorsOut,
         prompts_you_win,
         requested_competitor_domains: competitor_domains ?? null,

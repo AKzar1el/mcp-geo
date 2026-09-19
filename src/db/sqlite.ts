@@ -555,6 +555,43 @@ export function openSqliteDb(path?: string): SqliteDb {
       }));
     },
 
+    async getResponsesSince(
+      brandId: string,
+      since: number,
+    ): Promise<PromptResponse[]> {
+      const rows = sqlite
+        .prepare(
+          `SELECT pr.id, pr.run_id, pr.prompt_id, p.text AS prompt_text, pr.engine,
+                  pr.raw_response, pr.brand_mentioned, pr.brand_cited_with_link,
+                  pr.cited_urls_json, pr.competitors_mentioned_json,
+                  pr.engine_citations_json, pr.status, pr.error_message, pr.captured_at
+             FROM prompt_responses pr
+             JOIN runs r ON r.id = pr.run_id
+             JOIN prompts p ON p.id = pr.prompt_id
+            WHERE r.brand_id = ?
+              AND pr.captured_at >= ?
+              AND pr.status = 'ok'
+            ORDER BY pr.captured_at ASC`,
+        )
+        .all(brandId, since) as unknown as ResponseJoinRow[];
+      return rows.map((row) => ({
+        id: row.id,
+        run_id: row.run_id,
+        prompt_id: row.prompt_id,
+        prompt_text: row.prompt_text,
+        engine: row.engine,
+        raw_response: row.raw_response,
+        brand_mentioned: row.brand_mentioned,
+        brand_cited_with_link: row.brand_cited_with_link,
+        cited_urls: parseJsonArray(row.cited_urls_json),
+        competitors_mentioned: parseJsonArray(row.competitors_mentioned_json),
+        engine_citations: parseJsonArray(row.engine_citations_json),
+        status: (row.status as ResponseStatus) ?? 'ok',
+        error_message: row.error_message,
+        captured_at: row.captured_at,
+      }));
+    },
+
     async replacePrompts(
       brandId: string,
       prompts: NewPromptInput[],
