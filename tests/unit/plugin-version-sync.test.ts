@@ -6,9 +6,12 @@ function readVersion(path: string): string {
   return (JSON.parse(readFileSync(path, 'utf8')) as { version: string }).version;
 }
 
-test('marketplace plugin manifests track the published package version', () => {
+test('published metadata and Worker server info track the package version', () => {
   const packageVersion = readVersion('package.json');
+  const workerSource = readFileSync('src/index.ts', 'utf8');
+  const workerVersion = workerSource.match(/const SERVER_VERSION = '([^']+)'/)?.[1];
 
   assert.equal(readVersion('.cursor-plugin/plugin.json'), packageVersion);
   assert.equal(readVersion('.claude-plugin/plugin.json'), packageVersion);
+  assert.equal(workerVersion, packageVersion);
 });
