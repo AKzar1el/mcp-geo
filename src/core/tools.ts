@@ -46,6 +46,31 @@ const ENGINE_NAMES = [
 
 const engineSchema = z.enum(ENGINE_NAMES);
 
+const winningPromptOutputSchema = z.object({
+  prompt: z.string(),
+  engines_cited_in: z.array(z.string()),
+});
+
+const losingPromptOutputSchema = z.object({
+  prompt: z.string(),
+  competitors_cited: z.array(z.string()),
+});
+
+const contentGapRecommendationOutputSchema = z.object({
+  priority: z.number().int().min(1).max(5),
+  topic: z.string(),
+  rationale: z.string(),
+  suggested_format: z.enum([
+    'comparison_page',
+    'listicle',
+    'how_to_guide',
+    'faq_page',
+    'case_study',
+    'pricing_page',
+    'integration_landing_page',
+  ]),
+});
+
 const visibilityOutputSchema = z.object({
   brand: z.object({
     id: z.string(),
@@ -64,8 +89,8 @@ const visibilityOutputSchema = z.object({
       refreshed_at: z.string(),
     }),
   ),
-  top_winning_prompts: z.array(z.unknown()),
-  top_losing_prompts: z.array(z.unknown()),
+  top_winning_prompts: z.array(winningPromptOutputSchema),
+  top_losing_prompts: z.array(losingPromptOutputSchema),
 });
 
 const historyOutputSchema = z.object({
@@ -131,7 +156,7 @@ const citationsOutputSchema = z.object({
 
 const contentGapsOutputSchema = z.object({
   brand_id: z.string(),
-  recommendations: z.array(z.unknown()),
+  recommendations: z.array(contentGapRecommendationOutputSchema),
   prompt_source: z.enum(['generated', 'fallback']),
   reason: z.string().optional(),
 });
