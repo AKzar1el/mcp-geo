@@ -82,6 +82,14 @@ claude mcp add --transport stdio digestseo -s user --env OPENAI_API_KEY=sk-REPLA
 
 Add one `--env NAME=VALUE` flag per key the user has (before the `--`). The base form without env flags is `claude mcp add --transport stdio digestseo -s user -- npx -y @digestseo/mcp-geo`; it starts for discovery, but engine-backed scans need at least one provider key.
 
+### GitHub Copilot CLI
+
+```bash
+copilot mcp add digestseo -- npx -y @digestseo/mcp-geo
+```
+
+This zero-key base command is enough for tool discovery. Add provider keys with repeated `--env NAME=VALUE` options supported by Copilot CLI before the `digestseo -- ...` portion when engine-backed scans are needed.
+
 ### Cursor
 
 Edit `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` in the project root, same shape as Claude Desktop:
