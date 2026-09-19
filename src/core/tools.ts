@@ -77,6 +77,14 @@ const historyOutputSchema = z.object({
       date: z.string(),
       overall_score: z.number(),
       per_engine: z.record(z.string(), z.number()),
+      per_engine_evidence: z.record(
+        z.string(),
+        z.object({
+          brand_mentions: z.number(),
+          usable_prompts: z.number(),
+          observed_at: z.string(),
+        }),
+      ),
     }),
   ),
 });
@@ -338,7 +346,18 @@ export function registerTools(
       const since = Date.now() - days * 86_400_000;
       const results = await deps.db.getVisibilityHistoryRows(brand_id, since);
 
-      const buckets = new Map<string, Map<string, number>>();
+      const buckets = new Map<
+        string,
+        Map<
+          string,
+          {
+            score: number;
+            brand_mentions: number;
+            usable_prompts: number;
+            observed_at: string;
+          }
+        >
+      >();
       for (const row of results) {
         const date = bucketStart(row.completed_at, granularity);
         const total = Number(row.total ?? 0);
@@ -349,12 +368,17 @@ export function registerTools(
           perEngine = new Map();
           buckets.set(date, perEngine);
         }
-        perEngine.set(row.engine, score);
+        perEngine.set(row.engine, {
+          score,
+          brand_mentions: hits,
+          usable_prompts: total,
+          observed_at: new Date(row.completed_at).toISOString(),
+        });
       }
       const series = [...buckets.entries()]
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([date, perEngine]) => {
-          const scores = [...perEngine.values()];
+          const scores = [...perEngine.values()].map((point) => point.score);
           const overall_score =
             scores.length === 0
               ? 0
@@ -364,7 +388,19 @@ export function registerTools(
           return {
             date,
             overall_score,
-            per_engine: Object.fromEntries(perEngine),
+            per_engine: Object.fromEntries(
+              [...perEngine].map(([engine, point]) => [engine, point.score]),
+            ),
+            per_engine_evidence: Object.fromEntries(
+              [...perEngine].map(([engine, point]) => [
+                engine,
+                {
+                  brand_mentions: point.brand_mentions,
+                  usable_prompts: point.usable_prompts,
+                  observed_at: point.observed_at,
+                },
+              ]),
+            ),
           };
         });
 
