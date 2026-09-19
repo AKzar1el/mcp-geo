@@ -962,6 +962,7 @@ test('seedBrand (core): fallback prompts without ANTHROPIC_API_KEY, $CATEGORY su
         domain: 'acme.com',
         category: 'Project management software',
         competitors: ['asana.com'],
+        refresh_frequency: 'daily',
       },
     );
     assert.equal(result.seeded, true);
@@ -972,6 +973,7 @@ test('seedBrand (core): fallback prompts without ANTHROPIC_API_KEY, $CATEGORY su
     const brand = await db.getBrand('acme');
     assert.ok(brand);
     assert.deepEqual(brand.competitors, ['asana.com']);
+    assert.equal(brand.refresh_frequency, 'daily');
 
     const prompts = await db.getActivePrompts('acme');
     assert.equal(prompts.length, 3);

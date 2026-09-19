@@ -54,6 +54,7 @@ export interface SeedBrandInput {
   domain: string;
   category?: string;
   competitors?: string[];
+  refresh_frequency?: 'daily' | 'weekly';
   // Extra terms that always count as a brand mention.
   aliases?: string[];
   // Terms suppressed from the bare-word match on the brand name and
@@ -123,7 +124,7 @@ export async function seedBrand(
     competitors,
     aliases: input.aliases ?? [],
     exclude_terms: input.exclude_terms ?? [],
-    refresh_frequency: 'weekly',
+    refresh_frequency: input.refresh_frequency ?? 'weekly',
   });
 
   const brand = await deps.db.getBrand(input.brand_id);

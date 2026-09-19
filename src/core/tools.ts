@@ -176,6 +176,7 @@ const trackBrandOutputSchema = z.object({
   prompt_source: z.enum(['generated', 'fallback']).optional(),
   domain: z.string().optional(),
   competitors: z.array(z.string()).optional(),
+  refresh_frequency: z.enum(['daily', 'weekly']).optional(),
   next_steps: z.string(),
 });
 
@@ -887,6 +888,12 @@ export function registerLocalManagementTools(
           .max(50)
           .default(20)
           .describe('Number of buyer-intent prompts to generate for the brand.'),
+        refresh_frequency: z
+          .enum(['daily', 'weekly'])
+          .default('weekly')
+          .describe(
+            'Refresh cadence used by self-hosted Worker cron scheduling. Local stdio stores this setting but does not run a background scheduler.',
+          ),
       },
       outputSchema: trackBrandOutputSchema,
       annotations: {
@@ -905,6 +912,7 @@ export function registerLocalManagementTools(
       aliases,
       exclude_terms,
       prompt_count,
+      refresh_frequency,
     }) => {
       const normalizedDomain = normalizeRequiredDomain(domain);
       const normalizedCompetitors = normalizeCompetitorDomains(
@@ -922,6 +930,7 @@ export function registerLocalManagementTools(
           competitors: normalizedCompetitors,
           aliases,
           exclude_terms,
+          refresh_frequency,
         },
         prompt_count,
       );
@@ -943,6 +952,7 @@ export function registerLocalManagementTools(
         ...result,
         domain: result.seeded ? normalizedDomain : undefined,
         competitors: result.seeded ? normalizedCompetitors : undefined,
+        refresh_frequency: result.seeded ? refresh_frequency : undefined,
         next_steps,
       };
       return toolResult(payload);

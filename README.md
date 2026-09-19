@@ -251,7 +251,7 @@ The local stdio CLI (npx, desktop extension, Docker) additionally provides brand
 
 | Tool (local CLI only) | What it does | What you provide |
 |---|---|---|
-| `track_brand` | Start tracking a brand: creates it locally and generates its buyer-intent prompt set (Claude Haiku when `ANTHROPIC_API_KEY` is set, three starter prompts otherwise). | `brand_id`, `name`, `domain`, optional `category`, `competitors[]`, `aliases[]`, `exclude_terms[]`, `prompt_count` |
+| `track_brand` | Start tracking a brand: creates it locally and generates its buyer-intent prompt set (Claude Haiku when `ANTHROPIC_API_KEY` is set, three starter prompts otherwise). | `brand_id`, `name`, `domain`, optional `category`, `competitors[]`, `aliases[]`, `exclude_terms[]`, `prompt_count`, `refresh_frequency` (`daily`/`weekly`, default `weekly`) |
 | `list_brands` | List tracked brands with domains, competitors, and active prompt counts. | — |
 | `generate_prompts` | Regenerate a brand's prompt set via Claude Haiku (replaces active prompts, keeps history). | `brand_id`, optional `count` (default 20) |
 
