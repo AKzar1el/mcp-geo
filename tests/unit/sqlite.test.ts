@@ -1047,6 +1047,29 @@ test('seedBrand rejects malformed domains before writing any rows', async () => 
   }
 });
 
+test('seedBrand rejects invalid refresh_frequency before writing any rows', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'digestseo.sqlite'));
+  try {
+    await assert.rejects(
+      seedBrand(
+        { db },
+        {
+          brand_id: 'invalid-cadence',
+          name: 'Invalid cadence',
+          domain: 'example.com',
+          refresh_frequency: 'hourly' as 'daily',
+        },
+      ),
+      /refresh_frequency must be either daily or weekly/,
+    );
+    assert.equal(await db.getBrand('invalid-cadence'), null);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('seedBrand (core): already-existing brand is a clean no-op, empty input is a no-op', async () => {
   const root = tempRoot();
   const db = openSqliteDb(join(root, 'digestseo.sqlite'));
