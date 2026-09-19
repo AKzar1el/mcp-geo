@@ -22,7 +22,7 @@ import {
 } from './engines.js';
 import {
   analyzeContentGaps,
-  FALLBACK_RECOMMENDATIONS,
+  buildFallbackRecommendations,
   type LosingPromptSummary,
 } from './content-gap-analysis.js';
 import { computeOverallScore } from './scoring.js';
@@ -663,7 +663,10 @@ export function registerTools(
           brand_id,
           message: (err as Error).message,
         });
-        recommendations = FALLBACK_RECOMMENDATIONS.slice(0, max_recommendations);
+        recommendations = buildFallbackRecommendations(
+          losingPrompts,
+          max_recommendations,
+        );
         prompt_source = 'fallback';
       }
 

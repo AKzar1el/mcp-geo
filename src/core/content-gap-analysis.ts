@@ -1,8 +1,8 @@
 // Day 5: Claude-Haiku-synthesized content gap recommendations.
 // Same flow as src/prompt-generation.ts (call Haiku, parse JSON, retry
 // once with a stricter suffix, validate shape, throw on second failure).
-// The caller (get_content_gaps tool) falls back to FALLBACK_RECOMMENDATIONS
-// if this function throws.
+// The caller (get_content_gaps tool) falls back to deterministic,
+// evidence-grounded recommendations if this function throws.
 
 import { chatCompletion as anthropicChat } from './anthropic.js';
 import type { Brand } from '../db/types.js';
@@ -65,46 +65,67 @@ const BASE_SYSTEM_PROMPT = [
 const STRICT_SUFFIX =
   '\nReturn ONLY a JSON array. No prose. No code fences.';
 
-// Used by get_content_gaps when the Claude call fails (network, parse,
-// validation). Same shape Haiku is expected to produce so the response
-// schema is identical regardless of source.
-export const FALLBACK_RECOMMENDATIONS: ContentGapRecommendation[] = [
-  {
-    priority: 1,
-    topic: 'Direct competitor comparison page',
-    rationale:
-      'The most common losing-prompt shape is "X vs Y" or "alternatives to X". A head-to-head comparison page targeting the top winning competitor gives AI assistants concrete content to cite.',
-    suggested_format: 'comparison_page',
-  },
-  {
-    priority: 2,
-    topic: 'Category roundup with current year',
-    rationale:
-      'Year-keyed roundup prompts ("best X 2026") favor recently dated long-form content. A roundup that names competitors honestly (and explains where this brand wins) is the path into those answers.',
-    suggested_format: 'listicle',
-  },
-  {
-    priority: 3,
-    topic: 'Use-case landing page for the dominant winning prompt shape',
-    rationale:
-      "Where the brand currently wins, double down with 3-5 use-case pages so AI assistants can cite the brand for adjacent prompts in the same category.",
-    suggested_format: 'integration_landing_page',
-  },
-  {
-    priority: 4,
-    topic: 'Pricing/free-tier transparency page',
-    rationale:
-      "Free-tier and pricing prompts are conversion-critical and easy to win with a single canonical page that lists limits clearly.",
-    suggested_format: 'pricing_page',
-  },
-  {
-    priority: 5,
-    topic: 'FAQ page targeting buyer objections',
-    rationale:
-      'Decision-stage prompts ("is X right for me", "X for [use case]") respond well to FAQ structure. Pull the exact prompt language from losing prompts and answer it directly.',
-    suggested_format: 'faq_page',
-  },
-];
+function inferFallbackFormat(promptText: string): string {
+  const prompt = promptText.toLowerCase();
+  if (/\b(vs\.?|versus|compare|comparison|alternative|alternatives)\b/.test(prompt)) {
+    return 'comparison_page';
+  }
+  if (/\b(price|pricing|cost|free|cheap|cheapest|affordable)\b/.test(prompt)) {
+    return 'pricing_page';
+  }
+  if (/\b(integrate|integration|connect|connector|works with)\b/.test(prompt)) {
+    return 'integration_landing_page';
+  }
+  if (/\b(how|guide|tutorial|setup|set up|configure)\b/.test(prompt)) {
+    return 'how_to_guide';
+  }
+  if (/\b(best|top|tools|software|platforms|products)\b/.test(prompt)) {
+    return 'listicle';
+  }
+  return 'faq_page';
+}
+
+function formatLabel(format: string): string {
+  return format.replaceAll('_', ' ');
+}
+
+// Provider-free fallback used when the analyzer is unavailable. It must stay
+// grounded in the same observed losing prompts that the model-backed path uses;
+// otherwise a missing Anthropic key would silently degrade into generic GEO tips.
+export function buildFallbackRecommendations(
+  losingPrompts: LosingPromptSummary[],
+  maxRecommendations: number,
+): ContentGapRecommendation[] {
+  return [...losingPrompts]
+    .sort(
+      (a, b) =>
+        b.competitors_winning.length - a.competitors_winning.length ||
+        b.engines_lost_on.length - a.engines_lost_on.length ||
+        a.prompt_text.localeCompare(b.prompt_text),
+    )
+    .slice(0, maxRecommendations)
+    .map((losingPrompt, index) => {
+      const prompt = losingPrompt.prompt_text.trim();
+      const competitors = [...new Set(losingPrompt.competitors_winning)].slice(0, 5);
+      const engines = [...new Set(losingPrompt.engines_lost_on)].sort();
+      const suggestedFormat = inferFallbackFormat(prompt);
+      const competitorEvidence =
+        competitors.length > 0
+          ? competitors.join(', ')
+          : 'at least one observed competitor';
+      const engineEvidence =
+        engines.length > 0 ? engines.join(', ') : 'the observed AI results';
+
+      return {
+        priority: Math.min(index + 1, 5) as 1 | 2 | 3 | 4 | 5,
+        topic: `Address losing prompt: "${prompt}"`,
+        rationale:
+          `The brand is absent for "${prompt}" on ${engineEvidence} while ${competitorEvidence} are mentioned. ` +
+          `Create a ${formatLabel(suggestedFormat)} that answers this exact buyer intent with specific, verifiable differentiation.`,
+        suggested_format: suggestedFormat,
+      };
+    });
+}
 
 function buildUserPrompt(
   brand: Brand,
