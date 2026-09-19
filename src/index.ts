@@ -372,8 +372,8 @@ async function handleAdminRunBatchCollect(
   return jsonResponse({ run_id: run.id, ...result });
 }
 
-async function handleAdminTriggerCronTest(db: Db): Promise<Response> {
-  const brandsDue = await db.getBrandsDueForRefresh();
+async function handleAdminTriggerCronTest(env: Env, db: Db): Promise<Response> {
+  const brandsDue = await db.getBrandsDueForRefresh(getAvailableEngines(env));
   return jsonResponse({ brands_due_count: brandsDue.length });
 }
 
@@ -620,7 +620,7 @@ const defaultHandler = {
     ) {
       const denied = requireSeedSecret(request, env);
       if (denied) return denied;
-      return handleAdminTriggerCronTest(db);
+      return handleAdminTriggerCronTest(env, db);
     }
 
     if (url.pathname === '/admin/run-engine' && request.method === 'POST') {
@@ -814,7 +814,7 @@ export default {
       return;
     }
     const db = createD1Db(env.DIGESTSEO_DB);
-    const brandsDue = await db.getBrandsDueForRefresh();
+    const brandsDue = await db.getBrandsDueForRefresh(available);
     console.log('scheduled trigger', {
       cron: event.cron,
       brands_due: brandsDue.length,

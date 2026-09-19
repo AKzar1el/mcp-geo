@@ -378,12 +378,47 @@ export function openSqliteDb(path?: string): SqliteDb {
       return row ?? null;
     },
 
-    // Cron freshness uses the same usable-data definition as visibility:
-    // a run must contain at least one status='ok' prompt response.
-    async getBrandsDueForRefresh(): Promise<Brand[]> {
+    // Cron freshness uses the same usable-data definition as visibility.
+    // When configured engines are supplied, every one of them must have a
+    // fresh usable run; one fresh engine must not mask stale peers.
+    async getBrandsDueForRefresh(engines?: string[]): Promise<Brand[]> {
       const now = Date.now();
       const weeklyCutoff = now - 7 * 24 * 60 * 60 * 1000;
       const dailyCutoff = now - 24 * 60 * 60 * 1000;
+      const targetEngines = [...new Set(engines ?? [])];
+      if (targetEngines.length > 0) {
+        const values = targetEngines.map(() => '(?)').join(', ');
+        const rows = sqlite
+          .prepare(
+            `WITH target_engines(engine) AS (VALUES ${values}),
+                  latest_usable AS (
+                    SELECT r.brand_id, r.engine,
+                           MAX(COALESCE(r.completed_at, r.started_at)) AS last_usable_run
+                      FROM runs r
+                     WHERE EXISTS (
+                       SELECT 1 FROM prompt_responses pr
+                        WHERE pr.run_id = r.id AND pr.status = 'ok'
+                     )
+                     GROUP BY r.brand_id, r.engine
+                  )
+             SELECT b.id, b.user_id, b.domain, b.name, b.category, b.competitors_json,
+                    b.aliases_json, b.exclude_terms_json,
+                    b.refresh_frequency, b.created_at, b.updated_at
+               FROM brands b
+              WHERE EXISTS (
+                SELECT 1
+                  FROM target_engines te
+                  LEFT JOIN latest_usable lu
+                    ON lu.brand_id = b.id AND lu.engine = te.engine
+                 WHERE lu.last_usable_run IS NULL
+                    OR (b.refresh_frequency = 'weekly' AND lu.last_usable_run < ?)
+                    OR (b.refresh_frequency = 'daily'  AND lu.last_usable_run < ?)
+              )`,
+          )
+          .all(...targetEngines, weeklyCutoff, dailyCutoff) as unknown as BrandRow[];
+        return rows.map(rowToBrand);
+      }
+
       const rows = sqlite
         .prepare(
           `SELECT b.id, b.user_id, b.domain, b.name, b.category, b.competitors_json,
