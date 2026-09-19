@@ -7,7 +7,37 @@ All notable changes to this project are documented here. The format is loosely b
 ### Fixed
 
 - Cursor plugin MCP metadata now launches the published local stdio package instead of routing users to the public Worker endpoint, which is not configured as a turnkey fresh-scan service.
-- Windsurf guidance now recommends local stdio or a configured self-hosted Worker, and Cursor/Claude plugin manifests are synchronized to `0.3.4`.
+- Windsurf guidance now recommends local stdio or a configured self-hosted Worker, and Cursor/Claude plugin manifests are synchronized to `0.3.7`.
+
+## [0.3.7] - September 19, 2026
+
+### Fixed
+
+- Prompt generation now persists exactly the requested number of unique prompts or leaves the existing prompt set untouched, protecting fixed-scope audit runs from silently undersized prompt sets.
+
+## [0.3.6] - September 18, 2026
+
+### Added
+
+- Gemini CLI extension metadata plus direct one-click install guidance for VS Code and LM Studio.
+
+### Fixed
+
+- Live ChatGPT scans use grounded web search, domain-lookalike mentions no longer inflate brand/competitor scoring, and the conflicting GitHub Sponsors rail was removed.
+- OpenAI model/pricing documentation was refreshed against the live search-backed implementation.
+
+## [0.3.5] - September 17, 2026
+
+### Added
+
+- Owned privacy-policy and directory-readiness disclosure for local/Desktop distribution.
+- Transparent audit score-calculation documentation.
+
+### Fixed
+
+- Perplexity visibility migrated to the current Agent API.
+- Cursor/plugin installs use the published local stdio package instead of the unconfigured public Worker, with provider-key configuration preserved.
+- MCPB bundles remain production-only.
 
 ## [0.3.4] - September 15, 2026
 
