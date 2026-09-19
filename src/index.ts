@@ -13,6 +13,7 @@ import {
   getAvailableEngines,
   isEngineName,
   runEngineInProcess,
+  uniqueEngineNames,
   type EngineName,
 } from './core/engines.js';
 import { registerTools } from './core/tools.js';
@@ -229,7 +230,7 @@ async function handleAdminRunLive(
         400,
       );
     }
-    engineNames = body!.engines! as EngineName[];
+    engineNames = uniqueEngineNames(body!.engines! as EngineName[]);
   } else {
     engineNames = available;
   }

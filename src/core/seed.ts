@@ -7,6 +7,7 @@
 
 import type { Db, NewPromptInput } from '../db/types.js';
 import {
+  DomainInputError,
   normalizeCompetitorDomains,
   normalizeRequiredDomain,
 } from './domain.js';
@@ -95,6 +96,16 @@ export async function seedBrand(
       brand_id: input?.brand_id ?? '',
       reason: 'no brand payload provided',
     };
+  }
+
+  if (
+    input.refresh_frequency !== undefined &&
+    input.refresh_frequency !== 'daily' &&
+    input.refresh_frequency !== 'weekly'
+  ) {
+    throw new DomainInputError(
+      'refresh_frequency must be either daily or weekly',
+    );
   }
 
   const domain = normalizeRequiredDomain(input.domain);

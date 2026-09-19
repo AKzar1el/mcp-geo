@@ -39,6 +39,12 @@ export function isEngineName(s: string): s is EngineName {
   return (ALL_ENGINES as readonly string[]).includes(s);
 }
 
+export function uniqueEngineNames(
+  engines: readonly EngineName[],
+): EngineName[] {
+  return [...new Set(engines)];
+}
+
 // Public OSS opt-in model: engines are enabled by the presence of their
 // API key. Users only set credentials for the engines they want, and
 // the rest are silently skipped. getAvailableEngines(env) is the
