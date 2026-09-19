@@ -55,7 +55,15 @@ const visibilityOutputSchema = z.object({
   }),
   refreshed_at: z.string(),
   overall_score: z.number(),
-  per_engine: z.array(z.unknown()),
+  per_engine: z.array(
+    z.object({
+      engine: z.string(),
+      score: z.number(),
+      prompts_appeared_in: z.number(),
+      total_prompts: z.number(),
+      refreshed_at: z.string(),
+    }),
+  ),
   top_winning_prompts: z.array(z.unknown()),
   top_losing_prompts: z.array(z.unknown()),
 });
@@ -257,6 +265,7 @@ export function registerTools(
       const selectedEngines =
         !engines || engines.length === 0 ? ALL_ENGINES : engines;
       const selectedResponses: PromptResponse[] = [];
+      const refreshedAtByEngine = new Map<string, string>();
       let mostRecentTimestamp = 0;
       for (const engine of selectedEngines) {
         const run = await deps.db.getLatestCompletedRun(brand_id, engine);
@@ -265,6 +274,7 @@ export function registerTools(
         if (responses.length === 0) continue;
         selectedResponses.push(...responses);
         const ts = run.completed_at ?? run.started_at;
+        refreshedAtByEngine.set(engine, new Date(ts).toISOString());
         if (ts > mostRecentTimestamp) mostRecentTimestamp = ts;
       }
       if (selectedResponses.length === 0) {
@@ -275,6 +285,10 @@ export function registerTools(
         );
       }
       const scored = computeOverallScore(brand, selectedResponses);
+      const perEngine = scored.per_engine.map((engine) => ({
+        ...engine,
+        refreshed_at: refreshedAtByEngine.get(engine.engine)!,
+      }));
 
       const payload = {
         brand: {
@@ -285,7 +299,7 @@ export function registerTools(
         },
         refreshed_at: new Date(mostRecentTimestamp).toISOString(),
         overall_score: scored.overall_score,
-        per_engine: scored.per_engine,
+        per_engine: perEngine,
         top_winning_prompts: scored.top_winning_prompts,
         top_losing_prompts: scored.top_losing_prompts,
       };

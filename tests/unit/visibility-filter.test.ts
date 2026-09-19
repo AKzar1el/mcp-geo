@@ -83,7 +83,7 @@ const responses = {
 type VisibilitySnapshot = {
   refreshed_at: string;
   overall_score: number;
-  per_engine: Array<{ engine: string; score: number }>;
+  per_engine: Array<{ engine: string; score: number; refreshed_at: string }>;
   top_winning_prompts: Array<{ prompt: string; engines_cited_in: string[] }>;
   top_losing_prompts: Array<{ prompt: string; competitors_cited: string[] }>;
 };
@@ -131,7 +131,13 @@ test('check_visibility scopes every snapshot field to the requested engine', asy
 
   assert.equal(result.structuredContent.overall_score, 50);
   assert.deepEqual(result.structuredContent.per_engine, [
-    { engine: 'claude', score: 50, prompts_appeared_in: 1, total_prompts: 2 },
+    {
+      engine: 'claude',
+      score: 50,
+      prompts_appeared_in: 1,
+      total_prompts: 2,
+      refreshed_at: new Date(claudeTimestamp).toISOString(),
+    },
   ]);
   assert.deepEqual(result.structuredContent.top_winning_prompts, [
     { prompt: 'Claude winner', engines_cited_in: ['claude'] },
@@ -159,6 +165,22 @@ test('check_visibility treats omitted and empty engine filters as all engines', 
   assert.equal(
     omitted.structuredContent.refreshed_at,
     new Date(chatgptTimestamp).toISOString(),
+  );
+  assert.deepEqual(
+    omitted.structuredContent.per_engine.map(({ engine, refreshed_at }) => ({
+      engine,
+      refreshed_at,
+    })),
+    [
+      {
+        engine: 'chatgpt',
+        refreshed_at: new Date(chatgptTimestamp).toISOString(),
+      },
+      {
+        engine: 'claude',
+        refreshed_at: new Date(claudeTimestamp).toISOString(),
+      },
+    ],
   );
   assert.deepEqual(empty.structuredContent, omitted.structuredContent);
 });
