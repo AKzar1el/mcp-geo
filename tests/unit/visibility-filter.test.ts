@@ -151,6 +151,26 @@ test('check_visibility scopes every snapshot field to the requested engine', asy
   );
 });
 
+test('check_visibility deduplicates repeated engine filters before scoring', async () => {
+  const visibility = registerVisibilityTool();
+
+  const result = await visibility.handler({
+    brand_id: brand.id,
+    engines: ['claude', 'claude'],
+  });
+
+  assert.equal(result.structuredContent.overall_score, 50);
+  assert.deepEqual(result.structuredContent.per_engine, [
+    {
+      engine: 'claude',
+      score: 50,
+      prompts_appeared_in: 1,
+      total_prompts: 2,
+      refreshed_at: new Date(claudeTimestamp).toISOString(),
+    },
+  ]);
+});
+
 test('check_visibility treats omitted and empty engine filters as all engines', async () => {
   const visibility = registerVisibilityTool();
 
