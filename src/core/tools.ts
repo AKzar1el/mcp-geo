@@ -1095,13 +1095,21 @@ export function buildResponseExcerpt(text: string, brand: Brand): string {
 
 function pickBrandUrl(
   brand: Brand,
-  engineHosts: string[],
+  engineCitations: string[],
   citedHosts: string[],
 ): string | null {
-  const fromEngine = engineHosts.find((h) =>
-    hostMatchesDomain(h, brand.domain),
-  );
-  if (fromEngine) return `https://${fromEngine}/`;
+  for (const rawUrl of engineCitations) {
+    try {
+      const parsed = new URL(rawUrl);
+      if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') continue;
+      let host = parsed.hostname.toLowerCase();
+      if (host.startsWith('www.')) host = host.slice(4);
+      if (hostMatchesDomain(host, brand.domain)) return rawUrl;
+    } catch {
+      // Engine citation payloads are external data. Ignore malformed URLs
+      // and fall back to the normalized host evidence persisted separately.
+    }
+  }
   const fromExtracted = citedHosts.find((h) =>
     hostMatchesDomain(h, brand.domain),
   );
