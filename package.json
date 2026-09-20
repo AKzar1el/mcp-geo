@@ -53,7 +53,7 @@
     "prepublishOnly": "npm run typecheck && npm run test:unit && npm run build"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "zod": "^4.4.3"
   },
   "overrides": {
@@ -66,11 +66,11 @@
   },
   "devDependencies": {
     "@cloudflare/workers-oauth-provider": "^0.6.0",
-    "@cloudflare/workers-types": "^4.20260520.1",
+    "@cloudflare/workers-types": "^5.20260920.1",
     "@types/node": "^25.9.3",
-    "agents": "^0.13.1",
+    "agents": "^0.24.0",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
-    "wrangler": "^4.93.0"
+    "wrangler": "4.131.0"
   }
 }
