@@ -788,6 +788,12 @@ const oauthProvider = new OAuthProvider({
   authorizeEndpoint: '/authorize',
   tokenEndpoint: '/token',
   clientRegistrationEndpoint: '/register',
+  // MCP 2026-07-28 prefers Client ID Metadata Documents (CIMD) over
+  // Dynamic Client Registration. Keep DCR enabled for older clients,
+  // while allowing current clients to use their HTTPS metadata URL as
+  // client_id. The matching Wrangler SSRF-protection flag is required
+  // before the provider advertises CIMD support.
+  clientIdMetadataDocumentEnabled: true,
 });
 
 export default {

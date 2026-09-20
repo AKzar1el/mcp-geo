@@ -65,7 +65,7 @@
     "qs": "6.16.0"
   },
   "devDependencies": {
-    "@cloudflare/workers-oauth-provider": "^0.6.0",
+    "@cloudflare/workers-oauth-provider": "^0.10.3",
     "@cloudflare/workers-types": "^5.20260920.1",
     "@types/node": "^25.9.3",
     "agents": "^0.24.0",
