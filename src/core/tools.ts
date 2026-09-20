@@ -197,6 +197,20 @@ const listBrandsOutputSchema = z.object({
   hint: z.string().optional(),
 });
 
+const listPromptsOutputSchema = z.object({
+  brand_id: z.string(),
+  prompts: z.array(
+    z.object({
+      id: z.string(),
+      text: z.string(),
+      intent_stage: z.string().nullable(),
+      shape: z.string().nullable(),
+      created_at: z.string(),
+    }),
+  ),
+  count: z.number(),
+});
+
 const generatePromptsOutputSchema = z.object({
   brand_id: z.string(),
   prompts_inserted: z.number(),
@@ -992,6 +1006,46 @@ export function registerLocalManagementTools(
           brands.length === 0
             ? 'No brands tracked yet — call track_brand to add one.'
             : undefined,
+      };
+      return toolResult(payload);
+    },
+  );
+
+  server.registerTool(
+    'list_prompts',
+    {
+      title: 'List active prompts',
+      description:
+        "List the exact active buyer-intent prompts for one tracked brand without changing them. Use before a scan or audit when the user wants to inspect the measurement set, verify prompt coverage, or review what generate_prompts produced.",
+      inputSchema: {
+        brand_id: z
+          .string()
+          .describe('Stable identifier of the tracked brand whose active prompts to inspect.'),
+      },
+      outputSchema: listPromptsOutputSchema,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async ({ brand_id }) => {
+      const brand = await deps.db.getBrand(brand_id);
+      if (!brand) {
+        throw new Error(BRAND_NOT_FOUND_MESSAGE);
+      }
+      const prompts = await deps.db.getActivePrompts(brand_id);
+      const payload = {
+        brand_id,
+        prompts: prompts.map((prompt) => ({
+          id: prompt.id,
+          text: prompt.text,
+          intent_stage: prompt.intent_stage,
+          shape: prompt.shape,
+          created_at: new Date(prompt.created_at).toISOString(),
+        })),
+        count: prompts.length,
       };
       return toolResult(payload);
     },

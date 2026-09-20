@@ -4,7 +4,7 @@
 // JSON-RPC handshake over stdin/stdout, and asserts:
 //   1. initialize succeeds,
 //   2. initialize advertises cross-tool workflow instructions,
-//   3. tools/list returns all nine tools (six shared + three local
+//   3. tools/list returns all ten tools (six shared + four local
 //      management tools),
 //   4. nothing non-JSON ever appears on stdout (stdout is the JSON-RPC
 //      channel; all logging must go to stderr).
@@ -35,6 +35,7 @@ const EXPECTED_TOOLS = [
   // Local management tools — CLI only, not present on the Worker.
   'track_brand',
   'list_brands',
+  'list_prompts',
   'generate_prompts',
 ];
 
@@ -42,7 +43,7 @@ function rpc(child, body) {
   child.stdin.write(JSON.stringify(body) + '\n');
 }
 
-test('stdio CLI: initialize + tools/list returns all nine tools, track_brand→list_brands works offline, stdout stays pure JSON', async () => {
+test('stdio CLI: initialize + tools/list returns all ten tools, track_brand→list_brands works offline, stdout stays pure JSON', async () => {
   assert.ok(
     existsSync(CLI_PATH),
     `CLI artifact not found at ${CLI_PATH} — run \`npm run build\` first`,
@@ -205,6 +206,23 @@ test('stdio CLI: initialize + tools/list returns all nine tools, track_brand→l
     assert.equal(smoke.domain, 'smoke-test.example');
     assert.equal(Number(smoke.active_prompts), 3);
     assert.deepEqual(smoke.competitors, ['rival.example']);
+
+    rpc(child, {
+      jsonrpc: '2.0',
+      id: 5,
+      method: 'tools/call',
+      params: { name: 'list_prompts', arguments: { brand_id: 'smoke-brand' } },
+    });
+    const listedPrompts = await waitFor(5);
+    assert.ok(
+      !listedPrompts.error && !listedPrompts.result?.isError,
+      `list_prompts failed: ${JSON.stringify(listedPrompts.error ?? listedPrompts.result)}`,
+    );
+    const promptsPayload = JSON.parse(listedPrompts.result.content[0].text);
+    assert.equal(promptsPayload.brand_id, 'smoke-brand');
+    assert.equal(promptsPayload.count, 3);
+    assert.equal(promptsPayload.prompts.length, 3);
+    assert.ok(promptsPayload.prompts.every((prompt) => typeof prompt.text === 'string' && prompt.text.length > 0));
 
     // stdout purity: every line the process ever wrote must be JSON.
     for (const line of stdoutLines) {

@@ -173,7 +173,7 @@ Open Cline → MCP Servers → Configure MCP Servers (this opens `cline_mcp_sett
 
 ### Verify the install
 
-Ask the client to list tools. Exactly nine must appear: `check_visibility`, `get_visibility_history`, `compare_competitors`, `get_citations`, `get_content_gaps`, `refresh_brand`, `track_brand`, `list_brands`, `generate_prompts`.
+Ask the client to list tools. Exactly ten must appear: `check_visibility`, `get_visibility_history`, `compare_competitors`, `get_citations`, `get_content_gaps`, `refresh_brand`, `track_brand`, `list_brands`, `list_prompts`, `generate_prompts`.
 
 ### First brand: track → refresh → check
 
@@ -195,7 +195,7 @@ The database starts empty. Run this three-call sequence through the MCP client (
 
 2. **`refresh_brand`** with `{"brand_id": "acme"}` — runs every configured engine inline; progress is logged to stderr.
 
-3. **`check_visibility`** with `{"brand_id": "acme"}` — returns the per-engine scores. `list_brands` (no arguments) recalls the `brand_id` later.
+3. **`check_visibility`** with `{"brand_id": "acme"}` — returns the per-engine scores. `list_brands` (no arguments) recalls the `brand_id` later. `list_prompts` with that `brand_id` shows the exact active measurement set without changing it.
 
 ---
 
