@@ -111,7 +111,7 @@ async function main(): Promise<void> {
       return { run_ids, engines };
     },
   });
-  // Local-only brand management (track_brand, list_brands,
+  // Local-only brand management (track_brand, list_brands, list_prompts,
   // generate_prompts). The Worker keeps these behind /admin/* instead.
   registerLocalManagementTools(server, { db, env });
 
