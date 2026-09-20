@@ -105,6 +105,23 @@ Open the Amazon Q Developer chat panel, select **Tools**, choose **+**, and add 
 
 Amazon Q Developer supports local STDIO MCP servers and environment variables in this configuration UI. The zero-key command is enough for tool discovery; engine-backed scans still need at least one provider key.
 
+### JetBrains AI Assistant (IDE)
+
+Open **Settings > Tools > AI Assistant > Model Context Protocol (MCP)**, choose **Add > STDIO**, and paste:
+
+```json
+{
+  "mcpServers": {
+    "digestseo": {
+      "command": "npx",
+      "args": ["-y", "@digestseo/mcp-geo"]
+    }
+  }
+}
+```
+
+JetBrains AI Assistant supports local STDIO MCP servers and NPX launch commands. The zero-key configuration is sufficient for MCP discovery. Before an engine-backed scan, ensure only the chosen provider API keys are present in the environment inherited by the IDE process; alternatively, JetBrains can import an existing Claude MCP configuration.
+
 ### Cursor
 
 Edit `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` in the project root, same shape as Claude Desktop:

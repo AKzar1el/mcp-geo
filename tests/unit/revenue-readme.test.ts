@@ -91,3 +91,10 @@ test('audit methodology exposes the score formulas buyers need to verify', () =>
     /\[Use the reusable evidence-first report prompt\]\(\.\/ai-visibility-audit-report-prompt\.md\)/,
   );
 });
+
+test('README documents JetBrains AI Assistant local stdio setup', () => {
+  assert.match(
+    readme,
+    /\*\*JetBrains AI Assistant \(IDE\):\*\*[\s\S]*Model Context Protocol \(MCP\)[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/,
+  );
+});

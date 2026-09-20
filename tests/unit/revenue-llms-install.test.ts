@@ -24,3 +24,10 @@ test('AI-agent install guide exposes the frozen managed audit alternative withou
   );
   assert.doesNotMatch(guide, /### ChatGPT desktop app[\s\S]*npx -y @digestseo\/mcp-geo/);
 });
+
+test('AI-agent guide documents JetBrains AI Assistant local stdio setup', () => {
+  assert.match(
+    guide,
+    /### JetBrains AI Assistant \(IDE\)[\s\S]*Add > STDIO[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/,
+  );
+});
