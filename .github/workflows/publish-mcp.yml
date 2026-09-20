@@ -175,12 +175,16 @@ jobs:
         run: |
           PKG=$(node -p "require('./package.json').name")
           VERSION=$(node -p "require('./package.json').version")
-          for attempt in {1..12}; do
+          # npm has repeatedly needed more than a minute to make a just-published
+          # scoped package visible to a fresh registry lookup. Keep this bounded,
+          # but allow enough time for the observed propagation window so the MCP
+          # Registry job does not fail after npm publication already succeeded.
+          for attempt in {1..36}; do
             if npm view "$PKG@$VERSION" version >/dev/null 2>&1; then
               echo "$PKG@$VERSION is visible on npm"
               exit 0
             fi
-            if [ "$attempt" -eq 12 ]; then
+            if [ "$attempt" -eq 36 ]; then
               echo "::error::$PKG@$VERSION is still not visible on npm after bounded propagation wait"
               exit 1
             fi
