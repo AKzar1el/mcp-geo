@@ -46,6 +46,7 @@
     "deploy": "wrangler deploy",
     "build": "tsc -p tsconfig.node.json && node -e \"require('fs').chmodSync('dist/cli.js', 0o755)\"",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.node.json --noEmit",
+    "test:compat:v2-client": "node --test tests/mcp-v2-client-compat.test.mjs",
     "test:unit": "node --import tsx --test \"tests/matching.test.ts\" \"tests/unit/*.test.ts\"",
     "test:stdio": "node --test tests/stdio-smoke.test.mjs",
     "test:smoke": "node --test tests/smoke.test.mjs",
@@ -67,6 +68,7 @@
   "devDependencies": {
     "@cloudflare/workers-oauth-provider": "^0.10.3",
     "@cloudflare/workers-types": "^5.20260920.1",
+    "@modelcontextprotocol/client": "^2.0.0",
     "@types/node": "^25.9.3",
     "agents": "^0.24.0",
     "tsx": "^4.22.4",
