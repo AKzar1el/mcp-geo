@@ -47,4 +47,6 @@ test('AI-agent guide does not hard-code Gemini quota assumptions', () => {
   assert.match(guide, /active Gemini API limits in Google AI Studio/);
   assert.match(guide, /limits vary by model, project, and usage tier/);
   assert.doesNotMatch(guide, /Gemini free-tier rate limit; drop the key or upgrade/);
+  assert.doesNotMatch(guide, /more than ~5 prompts/i);
+  assert.doesNotMatch(guide, /Free tier rate-limits brands/i);
 });

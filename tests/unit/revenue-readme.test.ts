@@ -138,6 +138,8 @@ test('README keeps Gemini pricing and rate-limit guidance tied to current provid
   assert.match(readme, /check your project's active limits in AI Studio/i);
   assert.match(readme, /ai\.google\.dev\/gemini-api\/docs\/rate-limits/);
   assert.doesNotMatch(readme, /single-digit requests per minute/);
-  assert.doesNotMatch(readme, /more than ~5 prompts hit HTTP 429/);
+  assert.doesNotMatch(readme, /more than ~5 prompts/i);
+  assert.doesNotMatch(readme, /Gemini(?:'s)? free tier rate-limits/i);
+  assert.doesNotMatch(readme, /Free tier is rate-limited for brands/i);
   assert.doesNotMatch(readme, /~€0\.0001 per prompt/);
 });

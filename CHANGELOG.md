@@ -120,7 +120,7 @@ A security + accuracy pass ahead of wider distribution.
 
 ### Changed
 
-- Docs (`README.md`, `SETUP.md`) now recommend **OpenAI + Anthropic (Claude)** as the starting engine pair instead of the Gemini free tier. The Gemini free tier 429s for brands with more than ~5 prompts (excluding it from scoring), and Google AI Overviews frequently returns `NO_AI_OVERVIEW` (scored as a zero), so the cheapest documented path produced misleading first-run data. Gemini and SerpAPI stay documented as opt-in engines; engine availability is unchanged and remains key-driven (`getAvailableEngines` untouched).
+- Docs (`README.md`, `SETUP.md`) now recommend **OpenAI + Anthropic (Claude)** as the starting engine pair instead of leading with Gemini's free tier. Gemini capacity varies by model, project, and usage tier, so project-specific 429s can exclude Gemini rows from scoring; Google AI Overviews also frequently returns `NO_AI_OVERVIEW` (scored as a zero). The cheapest documented path could therefore produce misleading first-run data. Gemini and SerpAPI stay documented as opt-in engines; engine availability is unchanged and remains key-driven (`getAvailableEngines` untouched).
 - `SEED_SECRET` and `CONNECT_SECRET` comparisons are constant-time.
 - MCP server version string now tracks the package version (was stuck at an older value).
 - Runtime dependencies (`@cloudflare/workers-oauth-provider`, `@modelcontextprotocol/sdk`, `agents`, `zod`) moved from `devDependencies` to `dependencies` — wrangler bundles either way, but the manifest now tells the truth.
