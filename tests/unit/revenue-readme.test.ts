@@ -108,6 +108,10 @@ test('audit methodology exposes the score formulas buyers need to verify', () =>
   );
 });
 
+test('README documents Roo Code local stdio setup and Windows fallback', () => {
+  assert.match(readme, /\*\*Roo Code:\*\*[\s\S]*\.roo\/mcp\.json[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/);
+  assert.match(readme, /"command": "cmd"[\s\S]*Windows fallback/);
+});
 test('README documents JetBrains AI Assistant local stdio setup', () => {
   assert.match(
     readme,

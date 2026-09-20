@@ -31,3 +31,7 @@ test('AI-agent guide documents JetBrains AI Assistant local stdio setup', () => 
     /### JetBrains AI Assistant \(IDE\)[\s\S]*Add > STDIO[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/,
   );
 });
+test('AI-agent guide documents Roo Code global and project stdio setup', () => {
+  assert.match(guide, /### Roo Code[\s\S]*Edit Global MCP[\s\S]*\.roo\/mcp\.json[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/);
+  assert.match(guide, /Roo's documented fallback[\s\S]*"command": "cmd"/);
+});
