@@ -78,6 +78,13 @@ test('README exposes audit details and an attributable direct request path', () 
   assert.ok(auditCta < waitlistCta, 'paid audit CTA should appear before the non-revenue waitlist CTA');
 });
 
+test('README exposes independently observed MCP reliability', () => {
+  assert.match(
+    readme,
+    /\[!\[Wellknown reliability\]\(https:\/\/wellknown\.network\/agents\/geo-tracker-by-digestseo\/badge\.svg\)\]\(https:\/\/wellknown\.network\/agents\/geo-tracker-by-digestseo\)/,
+  );
+});
+
 test('published README uses durable URLs for files excluded from the npm tarball', () => {
   for (const relativeTarget of [
     './llms-install.md',
