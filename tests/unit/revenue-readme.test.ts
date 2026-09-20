@@ -45,8 +45,9 @@ test('README exposes audit details and an attributable direct request path', () 
   );
   assert.match(
     readme,
-    /\*\*ChatGPT desktop app:\*\*[\s\S]*Settings → MCP servers → Add server[\s\S]*npx -y @digestseo\/mcp-geo/,
+    /\*\*ChatGPT \(remote MCP\):\*\*[\s\S]*does not connect directly to local STDIO MCP servers[\s\S]*self-hosted remote MCP setup/,
   );
+  assert.doesNotMatch(readme, /ChatGPT desktop app:[\s\S]*npx -y @digestseo\/mcp-geo/);
   assert.match(
     readme,
     /\*\*Windsurf:\*\*[\s\S]*"command": "npx"[\s\S]*"@digestseo\/mcp-geo"/,

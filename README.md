@@ -35,13 +35,7 @@ Runs locally over stdio with your own API keys — all data stays on your machin
 }
 ```
 
-**ChatGPT desktop app:** open **Settings → MCP servers → Add server**, choose **STDIO**, name it `digestseo`, and use:
-
-```text
-npx -y @digestseo/mcp-geo
-```
-
-The zero-key command is enough for tool discovery. Add only the provider API keys you want in the server environment before running scans.
+**ChatGPT (remote MCP):** ChatGPT does not connect directly to local STDIO MCP servers. For ChatGPT, use the [self-hosted remote MCP setup](#chatgpt-remote-mcp) below, or OpenAI Secure MCP Tunnel for a server running on a local/private machine. The public `geo-mcp.digestseo.com/mcp` endpoint is not a turnkey no-key fresh-scan service.
 
 **Claude Code:**
 
@@ -95,7 +89,7 @@ AI agents installing this server: follow [llms-install.md](./llms-install.md). P
 
 ---
 
-**mcp-geo** is an open-source **AI visibility tracker** that measures how often your brand is cited by ChatGPT, Claude, Perplexity, Gemini, and Google AI Overviews. It's the **GEO** (Generative Engine Optimization) and **AEO** (Answer Engine Optimization) equivalent of Google Search Console — built as an MCP server so you can query your AI visibility data directly inside ChatGPT desktop, Claude.ai, Claude Desktop, Claude Code, GitHub Copilot CLI, Cursor, Codex CLI, or any MCP-compatible client.
+**mcp-geo** is an open-source **AI visibility tracker** that measures how often your brand is cited by ChatGPT, Claude, Perplexity, Gemini, and Google AI Overviews. It's the **GEO** (Generative Engine Optimization) and **AEO** (Answer Engine Optimization) equivalent of Google Search Console — built as an MCP server so you can query your AI visibility data directly inside ChatGPT through a configured remote MCP app, Claude.ai, Claude Desktop, Claude Code, GitHub Copilot CLI, Cursor, Codex CLI, or any MCP-compatible client.
 
 Canonical product page: [DigestSEO mcp-geo — AI Visibility MCP Server](https://digestseo.com/geo-mcp/)
 
