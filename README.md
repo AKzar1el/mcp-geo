@@ -68,6 +68,15 @@ copilot mcp add digestseo -- npx -y @digestseo/mcp-geo
 
 The base install starts with zero provider keys so tool discovery works. Add only the engine keys you want with Copilot CLI's `--env NAME=VALUE` option before running scans.
 
+**Factory Droid:**
+
+```bash
+droid mcp add digestseo "npx -y @digestseo/mcp-geo"
+droid mcp list
+```
+
+Droid runs this as a local STDIO MCP server. The zero-key install is enough for tool discovery; add only the provider keys you choose in Droid's user-level MCP configuration before engine-backed scans. Keep provider secrets out of project-level `.factory/mcp.json` files.
+
 **Amazon Q Developer (IDE):** open the Q Developer chat panel ? **Tools** ? **+**, choose **STDIO**, name the server `digestseo`, set Command to `npx`, and add Arguments `-y` and `@digestseo/mcp-geo`. Add only the provider environment variables you want before running scans; zero keys still allow MCP tool discovery.
 
 **JetBrains AI Assistant (IDE):** open **Settings > Tools > AI Assistant > Model Context Protocol (MCP) > Add**, choose **STDIO**, and use:

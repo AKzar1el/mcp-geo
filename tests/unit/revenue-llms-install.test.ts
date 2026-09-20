@@ -39,6 +39,11 @@ test('AI-agent guide documents JetBrains AI Assistant local stdio setup', () => 
     /### JetBrains AI Assistant \(IDE\)[\s\S]*Add > STDIO[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/,
   );
 });
+test('AI-agent guide documents Factory Droid local stdio setup', () => {
+  assert.match(guide, /### Factory Droid[\s\S]*droid mcp add digestseo "npx -y @digestseo\/mcp-geo"[\s\S]*droid mcp list/);
+  assert.match(guide, /~\/\.factory\/mcp\.json/);
+  assert.match(guide, /keep secrets out of project-level `\.factory\/mcp\.json`/i);
+});
 test('AI-agent guide documents Roo Code global and project stdio setup', () => {
   assert.match(guide, /### Roo Code[\s\S]*Edit Global MCP[\s\S]*\.roo\/mcp\.json[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/);
   assert.match(guide, /Roo's documented fallback[\s\S]*"command": "cmd"/);

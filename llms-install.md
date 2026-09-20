@@ -110,6 +110,15 @@ copilot mcp add digestseo -- npx -y @digestseo/mcp-geo
 
 This zero-key base command is enough for tool discovery. Add provider keys with repeated `--env NAME=VALUE` options supported by Copilot CLI before the `digestseo -- ...` portion when engine-backed scans are needed.
 
+### Factory Droid
+
+```bash
+droid mcp add digestseo "npx -y @digestseo/mcp-geo"
+droid mcp list
+```
+
+Droid treats the quoted command as a local STDIO server and stores servers added by `droid mcp add` in the user-level `~/.factory/mcp.json`. The zero-key command is enough for MCP discovery. Before an engine-backed scan, add only the provider keys the user chose to the user-level server config; keep secrets out of project-level `.factory/mcp.json`. Droid supports `${NAME}` expansion for STDIO `env` values, so a user can reference an API key already present in their shell environment without committing the value to disk.
+
 ### Amazon Q Developer (IDE)
 
 Open the Amazon Q Developer chat panel, select **Tools**, choose **+**, and add a **STDIO** MCP server with:
