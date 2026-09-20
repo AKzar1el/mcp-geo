@@ -43,6 +43,12 @@ test('AI-agent guide documents Roo Code global and project stdio setup', () => {
   assert.match(guide, /### Roo Code[\s\S]*Edit Global MCP[\s\S]*\.roo\/mcp\.json[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/);
   assert.match(guide, /Roo's documented fallback[\s\S]*"command": "cmd"/);
 });
+test('AI-agent guide documents Kiro user and workspace stdio setup', () => {
+  assert.match(
+    guide,
+    /### Kiro[\s\S]*~\/\.kiro\/settings\/mcp\.json[\s\S]*\.kiro\/settings\/mcp\.json[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/,
+  );
+});
 test('AI-agent guide does not hard-code Gemini quota assumptions', () => {
   assert.match(guide, /active Gemini API limits in Google AI Studio/);
   assert.match(guide, /limits vary by model, project, and usage tier/);

@@ -221,6 +221,23 @@ Open **MCP Servers > Edit Global MCP** for a global install, or create `.roo/mcp
 
 This zero-key STDIO config is enough for discovery. Add only the provider environment variables the user chose before engine-backed scans. On Windows, Roo's documented fallback is `"command": "cmd"` with `"args": ["/c", "npx", "-y", "@digestseo/mcp-geo"]` when direct `npx` launch is unavailable.
 
+### Kiro
+
+Open **Kiro: Open user MCP config (JSON)** for a global install, or **Kiro: Open workspace MCP config (JSON)** for a project-scoped install (`~/.kiro/settings/mcp.json` and `.kiro/settings/mcp.json` respectively), then add:
+
+```json
+{
+  "mcpServers": {
+    "digestseo": {
+      "command": "npx",
+      "args": ["-y", "@digestseo/mcp-geo"]
+    }
+  }
+}
+```
+
+Kiro supports local STDIO MCP servers and reconnects after the JSON config is saved. The zero-key config is enough for MCP discovery; add only the provider environment variables the user chose before engine-backed scans. For a remote deployment, Kiro also supports HTTP MCP servers via a `url` entry, but use the user's configured self-hosted Worker rather than the public `geo-mcp.digestseo.com/mcp` endpoint.
+
 ### Verify the install
 
 Ask the client to list tools. Exactly ten must appear: `check_visibility`, `get_visibility_history`, `compare_competitors`, `get_citations`, `get_content_gaps`, `refresh_brand`, `track_brand`, `list_brands`, `list_prompts`, `generate_prompts`.

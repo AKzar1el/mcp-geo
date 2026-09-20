@@ -133,6 +133,12 @@ test('README documents JetBrains AI Assistant local stdio setup', () => {
     /\*\*JetBrains AI Assistant \(IDE\):\*\*[\s\S]*Model Context Protocol \(MCP\)[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/,
   );
 });
+test('README documents Kiro local stdio setup', () => {
+  assert.match(
+    readme,
+    /\*\*Kiro:\*\*[\s\S]*kiro\.dev\/launch\/mcp\/add\?name=digestseo[\s\S]*\.kiro\/settings\/mcp\.json[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/,
+  );
+});
 test('README keeps Gemini pricing and rate-limit guidance tied to current provider reality', () => {
   assert.match(readme, /Rate limits vary by model, project, and usage tier/);
   assert.match(readme, /check your project's active limits in AI Studio/i);
