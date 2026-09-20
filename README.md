@@ -126,7 +126,20 @@ Roo Code supports local STDIO MCP servers. The zero-key form is enough for tool 
 
 **LM Studio:** [Add the local stdio server to LM Studio](https://lmstudio.ai/install-mcp?name=digestseo&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBkaWdlc3RzZW8vbWNwLWdlbyJdfQ%3D%3D). The base install starts with no provider keys so tool discovery works; add only the API keys you want in LM Studio's `mcp.json` before running scans.
 
-**Kiro (remote MCP):** self-host the Worker below with the engine API keys you want to use, then add your own deployed `/mcp` URL to Kiro. The public `geo-mcp.digestseo.com/mcp` endpoint is not a turnkey fresh-scan service and should not be used as a no-key substitute for a configured Worker.
+**Kiro:** open the user MCP config (`~/.kiro/settings/mcp.json`) or workspace config (`.kiro/settings/mcp.json`) and add the local stdio package:
+
+```json
+{
+  "mcpServers": {
+    "digestseo": {
+      "command": "npx",
+      "args": ["-y", "@digestseo/mcp-geo"]
+    }
+  }
+}
+```
+
+Kiro supports local STDIO MCP servers across its current surfaces. The zero-key form is enough for discovery; add only the provider environment variables you want before engine-backed scans. For remote use, self-host the Worker below and configure your own deployed `/mcp` URL instead. The public `geo-mcp.digestseo.com/mcp` endpoint is not a turnkey no-key fresh-scan service.
 
 **Claude Desktop extension (one-click):** download the `.mcpb` bundle from the [latest release](https://github.com/AKzar1el/mcp-geo/releases/latest) and double-click it — Claude Desktop prompts for the API keys.
 
