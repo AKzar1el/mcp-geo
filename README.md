@@ -126,7 +126,7 @@ Roo Code supports local STDIO MCP servers. The zero-key form is enough for tool 
 
 **LM Studio:** [Add the local stdio server to LM Studio](https://lmstudio.ai/install-mcp?name=digestseo&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBkaWdlc3RzZW8vbWNwLWdlbyJdfQ%3D%3D). The base install starts with no provider keys so tool discovery works; add only the API keys you want in LM Studio's `mcp.json` before running scans.
 
-**Kiro:** open the user MCP config (`~/.kiro/settings/mcp.json`) or workspace config (`.kiro/settings/mcp.json`) and add the local stdio package:
+**Kiro:** [![Add to Kiro](https://kiro.dev/images/add-to-kiro.svg)](https://kiro.dev/launch/mcp/add?name=digestseo&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22%40digestseo%2Fmcp-geo%22%5D%7D) for a one-click local install, or open the user MCP config (`~/.kiro/settings/mcp.json`) / workspace config (`.kiro/settings/mcp.json`) and add the local stdio package manually:
 
 ```json
 {

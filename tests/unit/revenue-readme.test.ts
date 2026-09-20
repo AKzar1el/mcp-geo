@@ -136,7 +136,7 @@ test('README documents JetBrains AI Assistant local stdio setup', () => {
 test('README documents Kiro local stdio setup', () => {
   assert.match(
     readme,
-    /\*\*Kiro:\*\*[\s\S]*\.kiro\/settings\/mcp\.json[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/,
+    /\*\*Kiro:\*\*[\s\S]*kiro\.dev\/launch\/mcp\/add\?name=digestseo[\s\S]*\.kiro\/settings\/mcp\.json[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/,
   );
 });
 test('README keeps Gemini pricing and rate-limit guidance tied to current provider reality', () => {
