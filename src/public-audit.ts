@@ -33,8 +33,11 @@ const SITEMAP_BODY = `<?xml version="1.0" encoding="UTF-8"?>
 function publicRootText(origin: string): string {
   return (
     'digestseo-mcp - DigestSEO AI Visibility MCP server.\n' +
-    'Connect this URL as a custom MCP connector in Claude.ai:\n' +
-    `${origin}/mcp\n\n` +
+    'Run the local MCP server with your own provider keys:\n' +
+    'npx -y @digestseo/mcp-geo\n\n' +
+    'For remote MCP, self-host a configured Worker from:\n' +
+    'https://github.com/AKzar1el/mcp-geo/blob/main/SETUP.md\n' +
+    'The public DigestSEO Worker is not a turnkey fresh-scan service.\n\n' +
     'EUR 99 AI Visibility Audit:\n' +
     `${origin}/audit\n`
   );

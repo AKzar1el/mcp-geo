@@ -130,7 +130,7 @@ test('GET /robots.txt and /sitemap.xml expose the audit discovery URL', async ()
   );
 });
 
-test('GET / exposes both the MCP endpoint and the paid audit discovery path', async () => {
+test('GET / routes users to supported local or self-hosted setup, not the unconfigured public MCP endpoint', async () => {
   const { handlePublicAudit } = await loadAuditModule();
   const response = handlePublicAudit(
     new Request('https://geo-mcp.digestseo.com/'),
@@ -142,7 +142,11 @@ test('GET / exposes both the MCP endpoint and the paid audit discovery path', as
 
   const body = await response.text();
   assert.match(body, /DigestSEO AI Visibility MCP server/);
-  assert.match(body, /https:\/\/geo-mcp\.digestseo\.com\/mcp/);
+  assert.match(body, /npx -y @digestseo\/mcp-geo/);
+  assert.match(body, /github\.com\/AKzar1el\/mcp-geo\/blob\/main\/SETUP\.md/);
+  assert.match(body, /not a turnkey fresh-scan service/i);
+  assert.doesNotMatch(body, /https:\/\/geo-mcp\.digestseo\.com\/mcp/);
+  assert.doesNotMatch(body, /Connect this URL as a custom MCP connector/i);
   assert.match(body, /EUR 99 AI Visibility Audit/);
   assert.match(body, /https:\/\/geo-mcp\.digestseo\.com\/audit/);
 });
