@@ -35,6 +35,9 @@ jobs:
       - name: stdio smoke test (spawns dist/cli.js over JSON-RPC)
         run: npm run test:stdio
 
+      - name: MCP v2 client compatibility
+        run: npm run test:compat:v2-client
+
       - name: Switch to minimum supported Node for packed-package smoke
         if: matrix.node == 22
         uses: actions/setup-node@v7.0.0
