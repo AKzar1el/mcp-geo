@@ -126,3 +126,11 @@ test('README documents JetBrains AI Assistant local stdio setup', () => {
     /\*\*JetBrains AI Assistant \(IDE\):\*\*[\s\S]*Model Context Protocol \(MCP\)[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/,
   );
 });
+test('README keeps Gemini pricing and rate-limit guidance tied to current provider reality', () => {
+  assert.match(readme, /Rate limits vary by model, project, and usage tier/);
+  assert.match(readme, /check your project's active limits in AI Studio/i);
+  assert.match(readme, /ai\.google\.dev\/gemini-api\/docs\/rate-limits/);
+  assert.doesNotMatch(readme, /single-digit requests per minute/);
+  assert.doesNotMatch(readme, /more than ~5 prompts hit HTTP 429/);
+  assert.doesNotMatch(readme, /~€0\.0001 per prompt/);
+});
