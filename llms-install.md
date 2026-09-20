@@ -448,4 +448,4 @@ The client should call `check_visibility` and return per-engine scores for every
 - **`401 unauthorized` from `/admin/*`** — the `X-Seed-Secret` header doesn't match the deployed `SEED_SECRET`.
 - **Connector won't connect** — the URL must end in `/mcp`; if `CONNECT_SECRET` is set the browser form must be completed. If OAuth loops, remove and re-add the connector.
 - **Error 1042 / 404 on self-fetch** — the `services` binding's `service` value doesn't match the worker's `name` field in `wrangler.jsonc`. Fix and redeploy.
-- **Gemini rows all `failed` with 429** — Gemini free-tier rate limit; drop the key or upgrade. See [README Troubleshooting](README.md#troubleshooting) for the full list.
+- **Gemini rows all `failed` with 429** — check the project's active Gemini API limits in Google AI Studio; limits vary by model, project, and usage tier. Wait/retry or reduce request rate first, then consider a paid tier if the project consistently needs more capacity. See [README Troubleshooting](README.md#troubleshooting) for the full list.
