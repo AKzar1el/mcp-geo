@@ -13,5 +13,6 @@ test('published metadata and Worker server info track the package version', () =
 
   assert.equal(readVersion('.cursor-plugin/plugin.json'), packageVersion);
   assert.equal(readVersion('.claude-plugin/plugin.json'), packageVersion);
+  assert.equal(readVersion('gemini-extension.json'), packageVersion);
   assert.equal(workerVersion, packageVersion);
 });
