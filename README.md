@@ -43,6 +43,22 @@ Runs locally over stdio with your own API keys — all data stays on your machin
 claude mcp add --transport stdio digestseo -s user --env GEMINI_API_KEY=your_key_here -- npx -y @digestseo/mcp-geo
 ```
 
+**Codex CLI:**
+
+```bash
+codex mcp add digestseo -- npx -y @digestseo/mcp-geo
+```
+
+The zero-key command is enough for tool discovery. Add only the provider keys you want with repeated `--env NAME=VALUE` options before the `--` when engine-backed scans are needed.
+
+**OpenCode v2:**
+
+```bash
+opencode mcp add digestseo --global -- npx -y @digestseo/mcp-geo
+```
+
+OpenCode v2 runs this as a local STDIO server. Omit `--global` for project-only configuration; add only the provider keys you want with `--env NAME=VALUE` before the `--`. Zero keys still allow MCP tool discovery.
+
 **GitHub Copilot CLI:**
 
 ```bash

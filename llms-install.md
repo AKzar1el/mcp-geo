@@ -86,6 +86,22 @@ claude mcp add --transport stdio digestseo -s user --env OPENAI_API_KEY=sk-REPLA
 
 Add one `--env NAME=VALUE` flag per key the user has (before the `--`). The base form without env flags is `claude mcp add --transport stdio digestseo -s user -- npx -y @digestseo/mcp-geo`; it starts for discovery, but engine-backed scans need at least one provider key.
 
+### Codex CLI
+
+```bash
+codex mcp add digestseo -- npx -y @digestseo/mcp-geo
+```
+
+The base command starts the local STDIO server with zero provider keys for tool discovery. Add one `--env NAME=VALUE` option per provider key before the `--` when engine-backed scans are needed, then use `codex mcp list` to verify the server is configured.
+
+### OpenCode v2
+
+```bash
+opencode mcp add digestseo --global -- npx -y @digestseo/mcp-geo
+```
+
+OpenCode v2 stores local MCP servers under `mcp.servers` and launches the command over STDIO. Omit `--global` for project-only configuration. The zero-key command is enough for discovery; add only the provider keys the user chose with `--env NAME=VALUE` before the `--` when scans are needed, then verify the connection with `opencode mcp list`.
+
 ### GitHub Copilot CLI
 
 ```bash
