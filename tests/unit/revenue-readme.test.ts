@@ -21,11 +21,11 @@ test('README exposes audit details and an attributable direct request path', () 
   );
   assert.match(
     readme,
-    /> \*\*See proof first:\*\* \[Open the sample report\]\(docs\/demo-report-full\.png\)/,
+    /> \*\*See proof first:\*\* \[Open the sample report\]\(https:\/\/github\.com\/AKzar1el\/mcp-geo\/blob\/main\/docs\/demo-report-full\.png\)/,
   );
   assert.match(
     readme,
-    /\[reusable AI Visibility Audit report prompt\]\(docs\/ai-visibility-audit-report-prompt\.md\)/,
+    /\[reusable AI Visibility Audit report prompt\]\(https:\/\/github\.com\/AKzar1el\/mcp-geo\/blob\/main\/docs\/ai-visibility-audit-report-prompt\.md\)/,
   );
   assert.match(
     readme,
@@ -37,7 +37,7 @@ test('README exposes audit details and an attributable direct request path', () 
   );
   assert.match(
     readme,
-    /\[Read the AI Visibility Audit methodology\]\(docs\/ai-visibility-audit-methodology\.md\)/,
+    /\[Read the AI Visibility Audit methodology\]\(https:\/\/github\.com\/AKzar1el\/mcp-geo\/blob\/main\/docs\/ai-visibility-audit-methodology\.md\)/,
   );
   assert.match(
     readme,
@@ -68,6 +68,22 @@ test('README exposes audit details and an attributable direct request path', () 
   assert.ok(auditCta >= 0);
   assert.ok(waitlistCta >= 0);
   assert.ok(auditCta < waitlistCta, 'paid audit CTA should appear before the non-revenue waitlist CTA');
+});
+
+test('published README uses durable URLs for files excluded from the npm tarball', () => {
+  for (const relativeTarget of [
+    './llms-install.md',
+    './SECURITY.md',
+    './SETUP.md',
+    './CONTRIBUTING.md',
+    './CHANGELOG.md',
+    'docs/demo-report-full.png',
+    'docs/demo-report-hero.png',
+    'docs/ai-visibility-audit-methodology.md',
+    'docs/ai-visibility-audit-report-prompt.md',
+  ]) {
+    assert.ok(!readme.includes(`](${relativeTarget})`), `README should not link to npm-excluded ${relativeTarget}`);
+  }
 });
 test('audit methodology exposes the score formulas buyers need to verify', () => {
   assert.match(
