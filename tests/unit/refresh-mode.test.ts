@@ -4,6 +4,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerTools } from '../../src/core/tools.ts';
 import type { Brand, Db, Prompt } from '../../src/db/types.ts';
 import type { EngineName } from '../../src/core/engines.ts';
+import type { EngineKeys } from '../../src/core/engines.ts';
 
 const brand: Brand = {
   id: 'acme',
@@ -39,6 +40,10 @@ type RefreshTool = {
 function registerRefreshTool(
   refreshExecution: 'async' | 'sync',
   namespaced = false,
+  env: EngineKeys = {
+    OPENAI_API_KEY: 'test-openai-key',
+    ANTHROPIC_API_KEY: 'test-anthropic-key',
+  },
 ): RefreshTool {
   const tools = new Map<string, RefreshTool>();
   const server = {
@@ -57,10 +62,7 @@ function registerRefreshTool(
         getBrand: async () => brand,
         getActivePrompts: async () => [prompt],
       } as Db,
-      env: {
-        OPENAI_API_KEY: 'test-openai-key',
-        ANTHROPIC_API_KEY: 'test-anthropic-key',
-      },
+      env,
       refreshExecution,
       runEnginesInline: async (_brand, _prompts, engines) => ({
         run_ids: Object.fromEntries(
@@ -97,6 +99,17 @@ test('sync refresh metadata and result report completed scans', async () => {
   const result = await refresh.handler({ brand_id: brand.id });
   assert.equal(result.structuredContent.message, 'Refresh completed for 2 engines');
   assert.equal(result.structuredContent.estimated_completion_seconds, 0);
+});
+
+test('refresh names an explicitly requested engine when its provider key is unavailable', async () => {
+  const refresh = registerRefreshTool('sync', false, {
+    OPENAI_API_KEY: 'test-openai-key',
+  });
+
+  await assert.rejects(
+    refresh.handler({ brand_id: brand.id, engines: ['claude'] }),
+    /requested engines are not configured: claude/i,
+  );
 });
 
 test('refresh deduplicates explicitly requested engines before dispatch', async () => {

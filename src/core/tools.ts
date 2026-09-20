@@ -813,6 +813,11 @@ export function registerTools(
       }
       const filtered = filterRequestedEngines(deps.env, requested);
       if (filtered.length === 0) {
+        if (requested && requested.length > 0) {
+          throw new Error(
+            `Requested engines are not configured: ${uniqueEngineNames(requested).join(', ')}. Configure the matching provider API key, or omit engines to refresh every configured engine.`,
+          );
+        }
         throw new Error(
           'No engines available. Set at least one of OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, PERPLEXITY_API_KEY, SERPAPI_API_KEY.',
         );
