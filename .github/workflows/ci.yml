@@ -34,3 +34,13 @@ jobs:
 
       - name: stdio smoke test (spawns dist/cli.js over JSON-RPC)
         run: npm run test:stdio
+
+      - name: Packed-package stdio smoke (minimum supported Node)
+        if: matrix.node == 22
+        shell: bash
+        run: |
+          tarball="$(npm pack --ignore-scripts --silent)"
+          consumer="$RUNNER_TEMP/mcp-geo-consumer"
+          mkdir -p "$consumer"
+          npm install --prefix "$consumer" --ignore-scripts --no-audit --no-fund "./$tarball"
+          STDIO_CLI_PATH="$consumer/node_modules/@digestseo/mcp-geo/dist/cli.js" npm run test:stdio
