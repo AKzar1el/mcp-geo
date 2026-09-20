@@ -45,6 +45,14 @@ test('README exposes audit details and an attributable direct request path', () 
   );
   assert.match(
     readme,
+    /codex mcp add digestseo -- npx -y @digestseo\/mcp-geo/,
+  );
+  assert.match(
+    readme,
+    /opencode mcp add digestseo --global -- npx -y @digestseo\/mcp-geo/,
+  );
+  assert.match(
+    readme,
     /\*\*ChatGPT \(remote MCP\):\*\*[\s\S]*does not connect directly to local STDIO MCP servers[\s\S]*self-hosted remote MCP setup/,
   );
   assert.doesNotMatch(readme, /ChatGPT desktop app:[\s\S]*npx -y @digestseo\/mcp-geo/);

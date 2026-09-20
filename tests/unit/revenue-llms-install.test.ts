@@ -23,6 +23,14 @@ test('AI-agent install guide exposes the frozen managed audit alternative withou
     /### ChatGPT[\s\S]*does \*\*not\*\* connect directly to local STDIO MCP servers[\s\S]*Use \*\*Path B\*\*/,
   );
   assert.doesNotMatch(guide, /### ChatGPT desktop app[\s\S]*npx -y @digestseo\/mcp-geo/);
+  assert.match(
+    guide,
+    /### Codex CLI[\s\S]*codex mcp add digestseo -- npx -y @digestseo\/mcp-geo[\s\S]*codex mcp list/,
+  );
+  assert.match(
+    guide,
+    /### OpenCode v2[\s\S]*opencode mcp add digestseo --global -- npx -y @digestseo\/mcp-geo[\s\S]*mcp\.servers[\s\S]*opencode mcp list/,
+  );
 });
 
 test('AI-agent guide documents JetBrains AI Assistant local stdio setup', () => {
