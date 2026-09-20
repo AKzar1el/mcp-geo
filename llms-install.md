@@ -188,6 +188,23 @@ Open Cline → MCP Servers → Configure MCP Servers (this opens `cline_mcp_sett
 }
 ```
 
+### Roo Code
+
+Open **MCP Servers > Edit Global MCP** for a global install, or create `.roo/mcp.json` in the project root, and add:
+
+```json
+{
+  "mcpServers": {
+    "digestseo": {
+      "command": "npx",
+      "args": ["-y", "@digestseo/mcp-geo"]
+    }
+  }
+}
+```
+
+This zero-key STDIO config is enough for discovery. Add only the provider environment variables the user chose before engine-backed scans. On Windows, Roo's documented fallback is `"command": "cmd"` with `"args": ["/c", "npx", "-y", "@digestseo/mcp-geo"]` when direct `npx` launch is unavailable.
+
 ### Verify the install
 
 Ask the client to list tools. Exactly ten must appear: `check_visibility`, `get_visibility_history`, `compare_competitors`, `get_citations`, `get_content_gaps`, `refresh_brand`, `track_brand`, `list_brands`, `list_prompts`, `generate_prompts`.

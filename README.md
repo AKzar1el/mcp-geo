@@ -90,6 +90,21 @@ JetBrains AI Assistant supports local STDIO and NPX MCP servers. The zero-key fo
 
 Use only the provider keys you want; zero keys still allow MCP tool discovery.
 
+**Roo Code:** open **MCP Servers > Edit Global MCP**, or create `.roo/mcp.json` for a project-scoped install, and add:
+
+```json
+{
+  "mcpServers": {
+    "digestseo": {
+      "command": "npx",
+      "args": ["-y", "@digestseo/mcp-geo"]
+    }
+  }
+}
+```
+
+Roo Code supports local STDIO MCP servers. The zero-key form is enough for tool discovery; add only the provider keys you want before scans. On Windows, if Roo cannot launch `npx` directly, use `"command": "cmd"` with `"args": ["/c", "npx", "-y", "@digestseo/mcp-geo"]`, matching Roo's documented Windows fallback.
+
 **VS Code:** [Install the local stdio server in VS Code](vscode:mcp/install?%7B%22name%22%3A%22digestseo%22%2C%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22%40digestseo%2Fmcp-geo%22%5D%7D). The base install starts with no provider keys so tool discovery works; add only the API keys you want in your VS Code MCP user configuration before running scans.
 
 **LM Studio:** [Add the local stdio server to LM Studio](https://lmstudio.ai/install-mcp?name=digestseo&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBkaWdlc3RzZW8vbWNwLWdlbyJdfQ%3D%3D). The base install starts with no provider keys so tool discovery works; add only the API keys you want in LM Studio's `mcp.json` before running scans.
