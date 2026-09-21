@@ -97,6 +97,14 @@ copilot mcp add digestseo -- npx -y @digestseo/mcp-geo
 
 The base install starts with zero provider keys so tool discovery works. Add only the engine keys you want with Copilot CLI's `--env NAME=VALUE` option before running scans.
 
+**Portable Agent Plugin (GitHub Copilot / VS Code / Kiro and other Agent Plugins 1.0 clients):** this repository now ships the standard root `plugin.json` + `mcp.json` pair. GitHub Copilot CLI can install it directly from GitHub:
+
+```bash
+copilot plugin install AKzar1el/mcp-geo
+```
+
+In VS Code, run **Chat: Install Plugin from Source** and enter `https://github.com/AKzar1el/mcp-geo`. In Kiro, use **Powers -> Add Custom Power -> Import power from GitHub** with the same repository URL. The portable plugin launches `npx -y @digestseo/mcp-geo`; zero provider keys are enough for discovery, while engine-backed scans inherit only the provider keys you intentionally make available to the host client. Existing native install paths above remain valid.
+
 **Qoder CLI:**
 
 ```bash
