@@ -34,7 +34,7 @@ test('AI-agent install guide exposes the frozen managed audit alternative withou
   );
   assert.match(
     guide,
-    /### OpenCode v2[\s\S]*opencode mcp add digestseo --global -- npx -y @digestseo\/mcp-geo[\s\S]*mcp\.servers[\s\S]*opencode mcp list/,
+    /### OpenCode v2[\s\S]*opencode mcp add digestseo --global -- npx -y @digestseo\/mcp-geo[\s\S]*mcp\.servers\.digestseo\.environment[\s\S]*\{env:OPENAI_API_KEY\}[\s\S]*opencode mcp list[\s\S]*opencode\.ai\/v2\/docs\/mcp-servers/,
   );
 });
 
