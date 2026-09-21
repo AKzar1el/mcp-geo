@@ -60,6 +60,7 @@ test('stdio CLI: initialize + tools/list returns all eleven tools, local prompt 
       ANTHROPIC_API_KEY: '',
       GEMINI_API_KEY: '',
       PERPLEXITY_API_KEY: '',
+      XAI_API_KEY: '',
       SERPAPI_API_KEY: '',
       // Never touch the developer's real ~/.digestseo database.
       DIGESTSEO_DB_PATH: join(tmp, 'smoke.sqlite'),
@@ -308,6 +309,7 @@ test('stdio CLI: zero engine keys still responds to MCP discovery', async () => 
       ANTHROPIC_API_KEY: '',
       GEMINI_API_KEY: '',
       PERPLEXITY_API_KEY: '',
+      XAI_API_KEY: '',
       SERPAPI_API_KEY: '',
       DIGESTSEO_DB_PATH: join(tmp, 'smoke.sqlite'),
     },

@@ -12,7 +12,7 @@
     {
       "name": "digestseo-geo",
       "source": "./",
-      "description": "Track brand citations and AI visibility across ChatGPT, Claude, Perplexity, Gemini, and Google AI Overviews.",
+      "description": "Track brand citations and AI visibility across ChatGPT, Claude, Perplexity, Gemini, Grok, and Google AI Overviews.",
       "category": "productivity",
       "tags": ["mcp", "seo", "geo", "ai-visibility"]
     }

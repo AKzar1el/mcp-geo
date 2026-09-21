@@ -1,8 +1,8 @@
-// Worker-only per-engine HTTP fan-out across the 5 LLM/SERP engines.
+// Worker-only per-engine HTTP fan-out across the supported LLM/SERP engines.
 // runEngines() creates one runs row per engine then fires one
 // self-fetch per engine to /admin/run-engine, so each engine executes
 // in its OWN worker invocation with its own 50-subrequest budget. A
-// naive "Promise.all five engines in one invocation" exceeds the
+// naive "Promise.all every engine in one invocation" exceeds the
 // free-plan cap with ~100 LLM fetches and half the rows go missing.
 //
 // The self-fetch goes through env.SELF.fetch() — a Cloudflare service
@@ -133,7 +133,7 @@ export async function runEngines(
 
   if (filtered.length === 0) {
     console.error(
-      'runEngines: no engines available — set at least one of OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, PERPLEXITY_API_KEY, SERPAPI_API_KEY',
+      'runEngines: no engines available — set at least one of OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, PERPLEXITY_API_KEY, XAI_API_KEY, SERPAPI_API_KEY',
     );
     return { run_ids: {}, engines: [] };
   }

@@ -9,6 +9,7 @@ OPENAI_API_KEY=your_key_here
 ANTHROPIC_API_KEY=your_key_here
 GEMINI_API_KEY=your_key_here
 PERPLEXITY_API_KEY=your_key_here
+XAI_API_KEY=your_key_here
 SERPAPI_API_KEY=your_key_here
 SEED_SECRET=your_key_here
 # Optional but recommended: gates the OAuth connect flow with a one-field

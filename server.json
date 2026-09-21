@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.AKzar1el/mcp-geo",
   "title": "GEO Tracker by DigestSEO",
-  "description": "Track brand citations across five AI search engines. Free OSS; optional EUR 99 client-ready audit.",
+  "description": "Track brand citations across six AI search engines. Free OSS; optional EUR 99 client-ready audit.",
   "version": "0.3.17",
   "repository": {
     "url": "https://github.com/AKzar1el/mcp-geo",
@@ -54,6 +54,13 @@
           "isSecret": true
         },
         {
+          "name": "XAI_API_KEY",
+          "description": "Optional xAI API key for grounded Grok visibility scans with web search.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        },
+        {
           "name": "SERPAPI_API_KEY",
           "description": "Optional SerpAPI key for Google AI Overviews visibility scans.",
           "isRequired": false,
@@ -66,7 +73,7 @@
   "tools": [
     {
       "name": "check_visibility",
-      "description": "Get the latest AI visibility data for a tracked brand: which AI assistants (ChatGPT, Claude, Perplexity, Gemini, Google AI Overviews) cite this brand, for which prompts, and how it compares to competitors. Use when the user asks 'how visible am I on AI?', 'who's citing my brand?', or 'show me my AI visibility score'. Returns stored data — for fresh data, call refresh_brand.",
+      "description": "Get the latest AI visibility data for a tracked brand: which AI assistants (ChatGPT, Claude, Perplexity, Gemini, Grok, Google AI Overviews) cite this brand, for which prompts, and how it compares to competitors. Use when the user asks 'how visible am I on AI?', 'who's citing my brand?', or 'show me my AI visibility score'. Returns stored data — for fresh data, call refresh_brand.",
       "inputSchema": {
         "def": {
           "type": "object",
@@ -94,6 +101,7 @@
                           "claude": "claude",
                           "perplexity": "perplexity",
                           "gemini": "gemini",
+                          "grok": "grok",
                           "ai_overviews": "ai_overviews"
                         }
                       },
@@ -103,6 +111,7 @@
                         "claude": "claude",
                         "perplexity": "perplexity",
                         "gemini": "gemini",
+                        "grok": "grok",
                         "ai_overviews": "ai_overviews"
                       },
                       "options": [
@@ -110,6 +119,7 @@
                         "claude",
                         "perplexity",
                         "gemini",
+                        "grok",
                         "ai_overviews"
                       ]
                     }
@@ -123,6 +133,7 @@
                         "claude": "claude",
                         "perplexity": "perplexity",
                         "gemini": "gemini",
+                        "grok": "grok",
                         "ai_overviews": "ai_overviews"
                       }
                     },
@@ -132,6 +143,7 @@
                       "claude": "claude",
                       "perplexity": "perplexity",
                       "gemini": "gemini",
+                      "grok": "grok",
                       "ai_overviews": "ai_overviews"
                     },
                     "options": [
@@ -139,6 +151,7 @@
                       "claude",
                       "perplexity",
                       "gemini",
+                      "grok",
                       "ai_overviews"
                     ]
                   }
@@ -341,6 +354,7 @@
                       "claude": "claude",
                       "perplexity": "perplexity",
                       "gemini": "gemini",
+                      "grok": "grok",
                       "ai_overviews": "ai_overviews"
                     }
                   },
@@ -350,6 +364,7 @@
                     "claude": "claude",
                     "perplexity": "perplexity",
                     "gemini": "gemini",
+                    "grok": "grok",
                     "ai_overviews": "ai_overviews"
                   },
                   "options": [
@@ -357,6 +372,7 @@
                     "claude",
                     "perplexity",
                     "gemini",
+                    "grok",
                     "ai_overviews"
                   ]
                 }
@@ -441,6 +457,7 @@
                           "claude": "claude",
                           "perplexity": "perplexity",
                           "gemini": "gemini",
+                          "grok": "grok",
                           "ai_overviews": "ai_overviews"
                         }
                       },
@@ -450,6 +467,7 @@
                         "claude": "claude",
                         "perplexity": "perplexity",
                         "gemini": "gemini",
+                        "grok": "grok",
                         "ai_overviews": "ai_overviews"
                       },
                       "options": [
@@ -457,6 +475,7 @@
                         "claude",
                         "perplexity",
                         "gemini",
+                        "grok",
                         "ai_overviews"
                       ]
                     }
@@ -470,6 +489,7 @@
                         "claude": "claude",
                         "perplexity": "perplexity",
                         "gemini": "gemini",
+                        "grok": "grok",
                         "ai_overviews": "ai_overviews"
                       }
                     },
@@ -479,6 +499,7 @@
                       "claude": "claude",
                       "perplexity": "perplexity",
                       "gemini": "gemini",
+                      "grok": "grok",
                       "ai_overviews": "ai_overviews"
                     },
                     "options": [
@@ -486,6 +507,7 @@
                       "claude",
                       "perplexity",
                       "gemini",
+                      "grok",
                       "ai_overviews"
                     ]
                   }
@@ -502,7 +524,7 @@
   "_meta": {
     "io.modelcontextprotocol.registry/publisher-provided": {
       "license": "MIT",
-      "notes": "Two deploy modes: run locally via `npx -y @digestseo/mcp-geo` (SQLite at ~/.digestseo, bring your own engine API keys), or self-host the Cloudflare Worker (D1 + cron auto-refresh; see SETUP.md or llms-install.md) and connect to your Worker URL at /mcp. Engines are opt-in: each of the five engines activates only when its API key is set.",
+      "notes": "Two deploy modes: run locally via `npx -y @digestseo/mcp-geo` (SQLite at ~/.digestseo, bring your own engine API keys), or self-host the Cloudflare Worker (D1 + cron auto-refresh; see SETUP.md or llms-install.md) and connect to your Worker URL at /mcp. Engines are opt-in: each supported engine activates only when its API key is set.",
       "tags": [
         "geo",
         "aeo",

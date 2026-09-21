@@ -30,6 +30,7 @@ const ENGINE_KEY_NAMES = [
   'ANTHROPIC_API_KEY',
   'GEMINI_API_KEY',
   'PERPLEXITY_API_KEY',
+  'XAI_API_KEY',
   'SERPAPI_API_KEY',
 ] as const;
 
@@ -56,6 +57,7 @@ async function main(): Promise<void> {
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
     GEMINI_API_KEY: process.env.GEMINI_API_KEY,
     PERPLEXITY_API_KEY: process.env.PERPLEXITY_API_KEY,
+    XAI_API_KEY: process.env.XAI_API_KEY,
     SERPAPI_API_KEY: process.env.SERPAPI_API_KEY,
   };
   // Empty strings count as unset so blank lines in client configs skip
@@ -71,7 +73,7 @@ async function main(): Promise<void> {
     log(
       'no engine API keys configured; MCP discovery is available, but ' +
         'engine-backed scans require at least one of OPENAI_API_KEY, ' +
-        'ANTHROPIC_API_KEY, GEMINI_API_KEY, PERPLEXITY_API_KEY, or ' +
+        'ANTHROPIC_API_KEY, GEMINI_API_KEY, PERPLEXITY_API_KEY, XAI_API_KEY, or ' +
         'SERPAPI_API_KEY. Engines without a key are skipped gracefully.',
     );
   }

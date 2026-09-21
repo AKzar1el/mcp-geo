@@ -15,7 +15,7 @@
 
 ## Quick Install
 
-Runs locally over stdio with your own API keys — all data stays on your machine (see [Privacy Policy](#privacy-policy)). Set at least one engine key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `PERPLEXITY_API_KEY`, `SERPAPI_API_KEY`); engines without a key skip gracefully.
+Runs locally over stdio with your own API keys — all data stays on your machine (see [Privacy Policy](#privacy-policy)). Set at least one engine key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `PERPLEXITY_API_KEY`, `XAI_API_KEY`, `SERPAPI_API_KEY`); engines without a key skip gracefully.
 
 **Runtime:** Node.js 22.13+ (CI exercises Node 22 and 24).
 
@@ -249,7 +249,7 @@ AI agents installing this server: follow [llms-install.md](https://github.com/AK
 
 ---
 
-**mcp-geo** is an open-source **AI visibility tracker** that measures how often your brand is cited by ChatGPT, Claude, Perplexity, Gemini, and Google AI Overviews. It's the **GEO** (Generative Engine Optimization) and **AEO** (Answer Engine Optimization) equivalent of Google Search Console — built as an MCP server so you can query your AI visibility data directly inside ChatGPT through a configured remote MCP app, Claude.ai, Claude Desktop, Claude Code, GitHub Copilot CLI, Cursor, Codex CLI, or any MCP-compatible client.
+**mcp-geo** is an open-source **AI visibility tracker** that measures how often your brand is cited by ChatGPT, Claude, Perplexity, Gemini, Grok, and Google AI Overviews. It's the **GEO** (Generative Engine Optimization) and **AEO** (Answer Engine Optimization) equivalent of Google Search Console — built as an MCP server so you can query your AI visibility data directly inside ChatGPT through a configured remote MCP app, Claude.ai, Claude Desktop, Claude Code, GitHub Copilot CLI, Cursor, Codex CLI, or any MCP-compatible client.
 
 Canonical product page: [DigestSEO mcp-geo — AI Visibility MCP Server](https://digestseo.com/geo-mcp/)
 
@@ -457,9 +457,10 @@ Engines are opt-in. Pick the ones you want; the rest skip silently.
 - **Anthropic** — Claude engine, plus prompt generation and content-gap analysis (both call Claude Haiku). ~€0.0002 per prompt. Free trial credits are usually enough to evaluate. [console.anthropic.com](https://console.anthropic.com/)
 - **Google AI Studio (Gemini)** — Gemini engine (`gemini-3.1-flash-lite`). Google currently offers free-tier token usage for this model, while paid usage is token-priced. Rate limits vary by model, project, and usage tier, and Google says actual capacity can vary; check your project's active limits in AI Studio rather than relying on a fixed RPM/RPD assumption. See [Gemini pricing](https://ai.google.dev/gemini-api/docs/pricing) and [rate limits](https://ai.google.dev/gemini-api/docs/rate-limits).
 - **Perplexity** — Perplexity Sonar engine. ~€0.005-0.008 per prompt. Paid only. [perplexity.ai/settings/api](https://www.perplexity.ai/settings/api)
+- **xAI** — Grok engine (`grok-4.6`) with required Web Search grounding. xAI currently prices Web Search at $5 per 1,000 calls plus model tokens. [console.x.ai](https://console.x.ai/) · [pricing](https://docs.x.ai/developers/pricing)
 - **SerpAPI** — Google AI Overviews engine. ~€0.005 (free tier) / ~€0.0015 (volume) per prompt. Free tier covers 250 searches/month — enough for development. [serpapi.com/dashboard](https://serpapi.com/dashboard)
 
-**Recommended starting pair: OpenAI + Anthropic (Claude).** OpenAI provides grounded ChatGPT visibility through web search and bills search calls plus model tokens; Anthropic also powers prompt generation and content-gap analysis. Review current provider pricing before estimating recurring scan cost. Add Gemini, Perplexity, or SerpAPI deliberately once you want more coverage; Gemini capacity varies by model, project, and usage tier, and Google AI Overviews often returns no result (scored as a zero), so leading with the cheapest path can skew your first run.
+**Recommended starting pair: OpenAI + Anthropic (Claude).** OpenAI provides grounded ChatGPT visibility through web search and bills search calls plus model tokens; Anthropic also powers prompt generation and content-gap analysis. Review current provider pricing before estimating recurring scan cost. Add Gemini, Perplexity, Grok, or SerpAPI deliberately once you want more coverage; Gemini capacity varies by model, project, and usage tier, and Google AI Overviews often returns no result (scored as a zero), so leading with the cheapest path can skew your first run.
 
 ### Step 2 — Deploy to your Cloudflare account
 
@@ -628,6 +629,7 @@ args = [
 | `ANTHROPIC_API_KEY` | opt-in | unset | Enables the Claude engine *and* the Claude-Haiku-powered prompt generator + content-gap analyzer. |
 | `GEMINI_API_KEY` | opt-in | unset | Enables the Gemini engine. Rate limits vary by model, project, and usage tier; check the project's active limits in Google AI Studio (see Troubleshooting). |
 | `PERPLEXITY_API_KEY` | opt-in | unset | Enables the Perplexity Sonar engine. Paid only. |
+| `XAI_API_KEY` | opt-in | unset | Enables the Grok engine (`grok-4.6`) with required Web Search grounding. |
 | `SERPAPI_API_KEY` | opt-in | unset | Enables the Google AI Overviews engine (via SerpAPI). |
 | `SEED_SECRET` | **yes** | unset | Shared secret that gates every `/admin/*` route. Pick a high-entropy string. |
 | `CONNECT_SECRET` | recommended | unset | When set, the OAuth connect flow asks for this secret in the browser before issuing a token. Without it, anyone who knows your worker URL can connect an MCP client. See [SECURITY.md](https://github.com/AKzar1el/mcp-geo/blob/main/SECURITY.md). |
@@ -650,7 +652,8 @@ flowchart LR
     RE --> E2["Anthropic"]
     RE --> E3["Gemini"]
     RE --> E4["Perplexity"]
-    RE --> E5["SerpAPI<br/>(AI Overviews)"]
+    RE --> E5["xAI<br/>(Grok)"]
+    RE --> E6["SerpAPI<br/>(AI Overviews)"]
     RE --> DB[("D1<br/>brands / prompts / runs /<br/>responses / cache")]
     DO --> DB
 ```
@@ -696,7 +699,7 @@ If you'd rather not run your own Cloudflare account, manage API keys, or pay ind
 ## Troubleshooting
 
 - **Worker deploys but tools return empty data** — at least one engine API key is missing. Check `wrangler secret list` and add the keys you intend to use. Engines without keys are silently skipped, which can leave `visibility.check` with no data.
-- **`no engines available` error in logs** — no engine API keys are set at all. Set at least one of `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `PERPLEXITY_API_KEY`, `SERPAPI_API_KEY`.
+- **`no engines available` error in logs** — no engine API keys are set at all. Set at least one of `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `PERPLEXITY_API_KEY`, `XAI_API_KEY`, `SERPAPI_API_KEY`.
 - **D1 migration fails** — make sure you've run `npx wrangler d1 migrations apply mcp-geo-db --remote` (and also `--local` for `wrangler dev`). For ad-hoc fixes, `npx wrangler d1 execute mcp-geo-db --remote --file=migrations/0001_initial.sql`.
 - **Custom MCP connector in Claude.ai not connecting** — the URL must end in `/mcp`. The OAuth handshake auto-completes in the OSS build (single dev user); if you set `CONNECT_SECRET`, the browser step shows a one-field form — enter the secret you set during deploy. If it loops, clear the connector and re-add it. Double-check the Worker is publicly reachable (`curl https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev/healthz` should return `ok`).
 - **Cron not firing** — check the Cloudflare dashboard at **Workers & Pages → digestseo-mcp → Settings → Triggers**. The "Cron Triggers" section should list `0 */6 * * *`. If it's missing, run `npx wrangler deploy` again — the trigger is registered on deploy. The handler also only dispatches engines for brands whose `refresh_frequency` cadence has elapsed, so a freshly-seeded brand might not fire on the next 6h boundary.
@@ -717,7 +720,7 @@ Issues and PRs welcome. See [CONTRIBUTING.md](https://github.com/AKzar1el/mcp-ge
 
 Full policy for the local package and Claude Desktop extension: https://geo-mcp.digestseo.com/privacy
 
-When you run `digestseo-mcp` locally (npx, the desktop extension, or Docker), all of your data — brands, prompts, runs, responses, and the response cache — stays on your machine in a local SQLite database at `~/.digestseo/digestseo.sqlite` (override with `DIGESTSEO_DB_PATH`). The scan prompts are sent to whichever AI providers you configured with your own API keys (OpenAI, Anthropic, Google, Perplexity, and/or SerpAPI), and only to those; their handling of that traffic is governed by their respective privacy policies. Nothing is ever sent to the author of this project: no telemetry, no analytics, no account.
+When you run `digestseo-mcp` locally (npx, the desktop extension, or Docker), all of your data — brands, prompts, runs, responses, and the response cache — stays on your machine in a local SQLite database at `~/.digestseo/digestseo.sqlite` (override with `DIGESTSEO_DB_PATH`). The scan prompts are sent only to the AI providers whose API keys you configure (OpenAI, Anthropic, Google, Perplexity, xAI, and/or SerpAPI); their handling of that traffic is governed by their respective privacy policies. Nothing is ever sent to the author of this project: no telemetry, no analytics, no account.
 
 
 **Data use and storage:** Local brand configuration, prompts, scan runs, responses, and cached responses are used only to provide the MCP server features you invoke. They remain in the local SQLite database described above; this project does not operate an account service or collect telemetry.

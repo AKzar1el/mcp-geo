@@ -319,6 +319,7 @@ test(
       'claude',
       'perplexity',
       'gemini',
+      'grok',
       'ai_overviews',
     ]);
     for (const pe of payload.per_engine) {

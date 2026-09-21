@@ -52,7 +52,7 @@ Data use and storage
 Brand configuration, prompts, scan runs, responses, and cached responses are used only to provide the MCP features you invoke. Local data is stored in the SQLite database at ~/.digestseo/digestseo.sqlite unless you set DIGESTSEO_DB_PATH. mcp-geo does not operate an account service and does not send telemetry or analytics to the project author.
 
 Third-party processing
-Prompt and scan traffic is sent only to the AI providers whose API keys you configure: OpenAI, Anthropic, Google, Perplexity, and/or SerpAPI. Those providers process and retain that traffic under their own privacy policies. The project author does not receive copies of that provider traffic.
+Prompt and scan traffic is sent only to the AI providers whose API keys you configure: OpenAI, Anthropic, Google, Perplexity, xAI, and/or SerpAPI. Those providers process and retain that traffic under their own privacy policies. The project author does not receive copies of that provider traffic.
 
 Retention and deletion
 Local data remains on your machine until you delete the SQLite database or the custom DIGESTSEO_DB_PATH you configured. Deleting that local database removes mcp-geo's stored local history and cache. Provider-side retention is controlled by each configured provider.

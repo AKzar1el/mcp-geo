@@ -17,6 +17,7 @@ For a local installation with your own engine API keys:
         "ANTHROPIC_API_KEY": "${env:ANTHROPIC_API_KEY}",
         "GEMINI_API_KEY": "${env:GEMINI_API_KEY}",
         "PERPLEXITY_API_KEY": "${env:PERPLEXITY_API_KEY}",
+        "XAI_API_KEY": "${env:XAI_API_KEY}",
         "SERPAPI_API_KEY": "${env:SERPAPI_API_KEY}"
       }
     }

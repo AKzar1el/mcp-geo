@@ -7,6 +7,7 @@ import {
 import { runLive as runAnthropicLive } from '../../src/core/anthropic.ts';
 import { runLive as runPerplexityLive } from '../../src/core/perplexity.ts';
 import { runLive as runGeminiLive } from '../../src/core/gemini.ts';
+import { runLive as runXAiLive } from '../../src/core/xai.ts';
 import { runLive as runAiOverviewsLive } from '../../src/core/ai-overviews.ts';
 import type {
   Brand,
@@ -186,6 +187,34 @@ test('live scans bypass shared cached responses for every provider', async (t) =
             content: { parts: [{ text: 'Fresh Acme provider response.' }] },
           },
         ],
+      },
+    ));
+  await t.test('Grok', () =>
+    assertLiveRunBypassesSharedCache(
+      runXAiLive as LiveRunner,
+      { XAI_API_KEY: 'test-key' },
+      {
+        output: [
+          {
+            type: 'message',
+            content: [
+              { type: 'output_text', text: 'Fresh Acme provider response.' },
+            ],
+          },
+        ],
+        citations: ['https://acme.com/fresh'],
+      },
+      (call) => {
+        assert.equal(call.url.pathname, '/v1/responses');
+        const body = JSON.parse(String(call.init?.body)) as Record<string, unknown>;
+        assert.equal(body.model, 'grok-4.6');
+        assert.deepEqual(body.tools, [{ type: 'web_search' }]);
+        assert.equal(body.tool_choice, 'required');
+      },
+      (result) => {
+        assert.deepEqual(result.engine_citations, ['https://acme.com/fresh']);
+        assert.deepEqual(result.cited_urls, ['acme.com']);
+        assert.equal(result.brand_cited_with_link, 1);
       },
     ));
   await t.test('AI Overviews', () =>

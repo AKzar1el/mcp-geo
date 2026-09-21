@@ -113,10 +113,11 @@ npx wrangler secret put OPENAI_API_KEY      # ChatGPT engine — recommended sta
 npx wrangler secret put ANTHROPIC_API_KEY   # Claude engine + prompt generation — recommended starter
 npx wrangler secret put GEMINI_API_KEY      # Gemini engine (opt-in; free-tier rate limits, see Troubleshooting)
 npx wrangler secret put PERPLEXITY_API_KEY  # Perplexity engine (paid)
+npx wrangler secret put XAI_API_KEY         # Grok engine with web search (paid)
 npx wrangler secret put SERPAPI_API_KEY     # Google AI Overviews (free tier 250 searches/month)
 ```
 
-Recommended starting pair is **OpenAI + Anthropic (Claude)**. OpenAI provides grounded ChatGPT visibility through web search and bills search calls plus model tokens; Anthropic also powers prompt generation. Review current provider pricing before estimating recurring scan cost, then add Gemini, Perplexity, or SerpAPI when you want broader coverage.
+Recommended starting pair is **OpenAI + Anthropic (Claude)**. OpenAI provides grounded ChatGPT visibility through web search and bills search calls plus model tokens; Anthropic also powers prompt generation. Review current provider pricing before estimating recurring scan cost, then add Gemini, Perplexity, Grok, or SerpAPI when you want broader coverage.
 
 ## 8 — Configure the `SELF` service binding
 

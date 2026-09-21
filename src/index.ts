@@ -47,6 +47,7 @@ export interface Env {
   ANTHROPIC_API_KEY?: string;
   PERPLEXITY_API_KEY?: string;
   GEMINI_API_KEY?: string;
+  XAI_API_KEY?: string;
   SERPAPI_API_KEY?: string;
   // Shared secret gating /admin/* routes.
   SEED_SECRET: string;
@@ -97,6 +98,7 @@ function workerEnginesEnv(env: Env, db: Db): WorkerEnginesEnv {
     ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY,
     GEMINI_API_KEY: env.GEMINI_API_KEY,
     PERPLEXITY_API_KEY: env.PERPLEXITY_API_KEY,
+    XAI_API_KEY: env.XAI_API_KEY,
     SERPAPI_API_KEY: env.SERPAPI_API_KEY,
     SEED_SECRET: env.SEED_SECRET,
     SELF: env.SELF,
@@ -224,7 +226,7 @@ async function handleAdminRunLive(
     return jsonResponse(
       {
         error:
-          'no engines available — set at least one of OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, PERPLEXITY_API_KEY, SERPAPI_API_KEY',
+          'no engines available — set at least one of OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, PERPLEXITY_API_KEY, XAI_API_KEY, SERPAPI_API_KEY',
       },
       400,
     );
@@ -501,6 +503,7 @@ async function handleAdminRunEngine(
       ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY,
       GEMINI_API_KEY: env.GEMINI_API_KEY,
       PERPLEXITY_API_KEY: env.PERPLEXITY_API_KEY,
+      XAI_API_KEY: env.XAI_API_KEY,
       SERPAPI_API_KEY: env.SERPAPI_API_KEY,
     },
     brand,

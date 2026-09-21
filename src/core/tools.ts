@@ -43,6 +43,7 @@ const ENGINE_NAMES = [
   'claude',
   'perplexity',
   'gemini',
+  'grok',
   'ai_overviews',
 ] as const;
 
@@ -283,15 +284,15 @@ export function registerTools(
     options.namespaced ? HOSTED_TOOL_NAMES[legacyName] : legacyName;
   const refreshIsAsync = deps.refreshExecution === 'async';
   const refreshDescription = refreshIsAsync
-    ? "Manually trigger a fresh AI visibility scan for a tracked brand. Runs every engine that has its API key configured (ChatGPT, Claude, Perplexity, Gemini, Google AI Overviews) against the brand's current prompt set. Use when the user asks 'refresh my data', 'rerun the scan', or 'I want fresh data right now'. Returns immediately with run IDs; results populate in 30-60 seconds."
-    : "Manually trigger a fresh AI visibility scan for a tracked brand. Runs every selected configured engine (ChatGPT, Claude, Perplexity, Gemini, Google AI Overviews) against the brand's current prompt set sequentially. Use when the user asks 'refresh my data', 'rerun the scan', or 'I want fresh data right now'. Returns only after all selected engine scans finish.";
+    ? "Manually trigger a fresh AI visibility scan for a tracked brand. Runs every engine that has its API key configured (ChatGPT, Claude, Perplexity, Gemini, Grok, Google AI Overviews) against the brand's current prompt set. Use when the user asks 'refresh my data', 'rerun the scan', or 'I want fresh data right now'. Returns immediately with run IDs; results populate in 30-60 seconds."
+    : "Manually trigger a fresh AI visibility scan for a tracked brand. Runs every selected configured engine (ChatGPT, Claude, Perplexity, Gemini, Grok, Google AI Overviews) against the brand's current prompt set sequentially. Use when the user asks 'refresh my data', 'rerun the scan', or 'I want fresh data right now'. Returns only after all selected engine scans finish.";
 
   server.registerTool(
     toolName('check_visibility'),
     {
       title: 'Check AI visibility',
       description:
-        "Get the latest AI visibility data for a tracked brand: which AI assistants (ChatGPT, Claude, Perplexity, Gemini, Google AI Overviews) cite this brand, for which prompts, and how it compares to competitors. Use when the user asks 'how visible am I on AI?', 'who's citing my brand?', or 'show me my AI visibility score'. Returns stored data — for fresh data, call refresh_brand.",
+        "Get the latest AI visibility data for a tracked brand: which AI assistants (ChatGPT, Claude, Perplexity, Gemini, Grok, Google AI Overviews) cite this brand, for which prompts, and how it compares to competitors. Use when the user asks 'how visible am I on AI?', 'who's citing my brand?', or 'show me my AI visibility score'. Returns stored data — for fresh data, call refresh_brand.",
       inputSchema: {
         brand_id: z
           .string()
@@ -828,7 +829,7 @@ export function registerTools(
           );
         }
         throw new Error(
-          'No engines available. Set at least one of OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, PERPLEXITY_API_KEY, SERPAPI_API_KEY.',
+          'No engines available. Set at least one of OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, PERPLEXITY_API_KEY, XAI_API_KEY, SERPAPI_API_KEY.',
         );
       }
       const { run_ids, engines: kicked } = await deps.runEnginesInline(
