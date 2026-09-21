@@ -7,7 +7,7 @@ import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 const CLI_PATH = resolve('dist', 'cli.js');
-const EXPECTED_TOOLS = ['check_visibility','compare_competitors','generate_prompts','get_citations','get_content_gaps','get_visibility_history','list_brands','list_prompts','refresh_brand','track_brand'];
+const EXPECTED_TOOLS = ['check_visibility','compare_competitors','generate_prompts','get_citations','get_content_gaps','get_visibility_history','list_brands','list_prompts','refresh_brand','set_prompts','track_brand'];
 
 test('MCP v2 client auto-negotiates with the current stdio server', async () => {
   const tmp = mkdtempSync(join(tmpdir(), 'digestseo-mcp-v2-client-'));

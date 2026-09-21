@@ -4,7 +4,7 @@
 // JSON-RPC handshake over stdin/stdout, and asserts:
 //   1. initialize succeeds,
 //   2. initialize advertises cross-tool workflow instructions,
-//   3. tools/list returns all ten tools (six shared + four local
+//   3. tools/list returns all eleven tools (six shared + five local
 //      management tools),
 //   4. nothing non-JSON ever appears on stdout (stdout is the JSON-RPC
 //      channel; all logging must go to stderr).
@@ -36,6 +36,7 @@ const EXPECTED_TOOLS = [
   'track_brand',
   'list_brands',
   'list_prompts',
+  'set_prompts',
   'generate_prompts',
 ];
 
@@ -43,7 +44,7 @@ function rpc(child, body) {
   child.stdin.write(JSON.stringify(body) + '\n');
 }
 
-test('stdio CLI: initialize + tools/list returns all ten tools, track_brand→list_brands works offline, stdout stays pure JSON', async () => {
+test('stdio CLI: initialize + tools/list returns all eleven tools, local prompt management works offline, stdout stays pure JSON', async () => {
   assert.ok(
     existsSync(CLI_PATH),
     `CLI artifact not found at ${CLI_PATH} — run \`npm run build\` first`,
@@ -223,6 +224,65 @@ test('stdio CLI: initialize + tools/list returns all ten tools, track_brand→li
     assert.equal(promptsPayload.count, 3);
     assert.equal(promptsPayload.prompts.length, 3);
     assert.ok(promptsPayload.prompts.every((prompt) => typeof prompt.text === 'string' && prompt.text.length > 0));
+
+    rpc(child, {
+      jsonrpc: '2.0',
+      id: 6,
+      method: 'tools/call',
+      params: {
+        name: 'set_prompts',
+        arguments: {
+          brand_id: 'smoke-brand',
+          prompts: ['Which smoke testing tool is best?', 'Compare smoke testing platforms'],
+        },
+      },
+    });
+    const setPrompts = await waitFor(6);
+    assert.ok(
+      !setPrompts.error && !setPrompts.result?.isError,
+      `set_prompts failed: ${JSON.stringify(setPrompts.error ?? setPrompts.result)}`,
+    );
+    const setPayload = JSON.parse(setPrompts.result.content[0].text);
+    assert.equal(setPayload.changed, true);
+    assert.equal(setPayload.prompts_inserted, 2);
+
+    rpc(child, {
+      jsonrpc: '2.0',
+      id: 7,
+      method: 'tools/call',
+      params: { name: 'list_prompts', arguments: { brand_id: 'smoke-brand' } },
+    });
+    const relistedPrompts = await waitFor(7);
+    assert.ok(
+      !relistedPrompts.error && !relistedPrompts.result?.isError,
+      `list_prompts after set failed: ${JSON.stringify(relistedPrompts.error ?? relistedPrompts.result)}`,
+    );
+    const relistedPayload = JSON.parse(relistedPrompts.result.content[0].text);
+    assert.deepEqual(
+      relistedPayload.prompts.map((prompt) => prompt.text),
+      ['Which smoke testing tool is best?', 'Compare smoke testing platforms'],
+    );
+
+    rpc(child, {
+      jsonrpc: '2.0',
+      id: 8,
+      method: 'tools/call',
+      params: {
+        name: 'set_prompts',
+        arguments: {
+          brand_id: 'smoke-brand',
+          prompts: ['Which smoke testing tool is best?', 'Compare smoke testing platforms'],
+        },
+      },
+    });
+    const setPromptsAgain = await waitFor(8);
+    assert.ok(
+      !setPromptsAgain.error && !setPromptsAgain.result?.isError,
+      `idempotent set_prompts failed: ${JSON.stringify(setPromptsAgain.error ?? setPromptsAgain.result)}`,
+    );
+    const setAgainPayload = JSON.parse(setPromptsAgain.result.content[0].text);
+    assert.equal(setAgainPayload.changed, false);
+    assert.equal(setAgainPayload.prompts_inserted, 0);
 
     // stdout purity: every line the process ever wrote must be JSON.
     for (const line of stdoutLines) {
