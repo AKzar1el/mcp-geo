@@ -13,10 +13,9 @@ import type {
   Prompt,
 } from '../db/types.js';
 
-// gemini-2.5-flash-lite has the most generous free-tier daily quota
-// across the 2.5 family. If you need more headroom, switch to
-// gemini-2.5-flash (paid tier).
-export const MODEL = 'gemini-2.5-flash-lite';
+// Google restricts Gemini 2.5 access for some new projects. Keep the
+// default on the current cost-efficient Flash-Lite generation instead.
+export const MODEL = 'gemini-3.1-flash-lite';
 export const ENGINE = 'gemini';
 
 const LIVE_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60;
