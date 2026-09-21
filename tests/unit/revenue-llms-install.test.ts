@@ -67,6 +67,14 @@ test('AI-agent guide documents goose local stdio setup', () => {
   assert.match(guide, /do not write raw provider API keys into `config\.yaml`/);
   assert.match(guide, /block\.github\.io\/goose\/docs\/guides\/config-files/);
 });
+test('AI-agent guide documents Qoder CLI local stdio setup', () => {
+  assert.match(
+    guide,
+    /### Qoder CLI[\s\S]*qoder mcp add digestseo -- npx -y @digestseo\/mcp-geo[\s\S]*qoder mcp list[\s\S]*\/mcp reload/,
+  );
+  assert.match(guide, /docs\.qoder\.com\/cli\/mcp-servers/);
+  assert.match(guide, /docs\.qoder\.com\/cli\/mcp-reference/);
+});
 test('AI-agent guide documents Factory Droid local stdio setup', () => {
   assert.match(guide, /### Factory Droid[\s\S]*droid mcp add digestseo "npx -y @digestseo\/mcp-geo"[\s\S]*droid mcp list/);
   assert.match(guide, /~\/\.factory\/mcp\.json/);

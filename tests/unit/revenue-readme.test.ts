@@ -161,6 +161,14 @@ test('README documents goose local stdio setup without committed provider secret
   assert.match(readme, /instead of putting raw API keys in the YAML file/);
   assert.match(readme, /block\.github\.io\/goose\/docs\/getting-started\/using-extensions/);
 });
+test('README documents Qoder CLI local stdio setup', () => {
+  assert.match(
+    readme,
+    /\*\*Qoder CLI:\*\*[\s\S]*qoder mcp add digestseo -- npx -y @digestseo\/mcp-geo[\s\S]*qoder mcp list[\s\S]*\/mcp reload/,
+  );
+  assert.match(readme, /docs\.qoder\.com\/cli\/mcp-servers/);
+  assert.match(readme, /docs\.qoder\.com\/cli\/mcp-reference/);
+});
 test('README documents Factory Droid local stdio setup', () => {
   assert.match(readme, /\*\*Factory Droid:\*\*[\s\S]*droid mcp add digestseo "npx -y @digestseo\/mcp-geo"[\s\S]*droid mcp list/);
   assert.match(readme, /Keep provider secrets out of project-level `\.factory\/mcp\.json` files/);

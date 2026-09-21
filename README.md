@@ -77,6 +77,15 @@ copilot mcp add digestseo -- npx -y @digestseo/mcp-geo
 
 The base install starts with zero provider keys so tool discovery works. Add only the engine keys you want with Copilot CLI's `--env NAME=VALUE` option before running scans.
 
+**Qoder CLI:**
+
+```bash
+qoder mcp add digestseo -- npx -y @digestseo/mcp-geo
+qoder mcp list
+```
+
+Qoder launches this as a local STDIO MCP server. The zero-key command is enough for tool discovery; make only the provider keys you want available to the Qoder process before engine-backed scans. If Qoder is already running, use `/mcp reload` to rediscover the server and tools. See Qoder's current [MCP server guide](https://docs.qoder.com/cli/mcp-servers) and [MCP reference](https://docs.qoder.com/cli/mcp-reference).
+
 **Docker Agent:** Docker Agent can launch local STDIO MCP servers directly from agent YAML. Add this toolset to the agent that should use mcp-geo:
 
 ```yaml
