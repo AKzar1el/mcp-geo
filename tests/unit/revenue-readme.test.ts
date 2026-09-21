@@ -145,6 +145,13 @@ test('README documents JetBrains Air workspace MCP reuse', () => {
   );
   assert.match(readme, /www\.jetbrains\.com\/help\/air\/mcp-servers\.html/);
 });
+test('README documents Visual Studio local stdio setup with its native schema', () => {
+  assert.match(
+    readme,
+    /\*\*Visual Studio 2022 17\.14\+ \/ Visual Studio 2026:\*\*[\s\S]*%USERPROFILE%\\\.mcp\.json[\s\S]*"servers"[\s\S]*"type": "stdio"[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo[\s\S]*Agent[\s\S]*Tools/,
+  );
+  assert.match(readme, /learn\.microsoft\.com\/azure\/developer\/azure-mcp-server\/get-started\/tools\/visual-studio/);
+});
 test('README documents Docker Agent local stdio setup', () => {
   assert.match(
     readme,
