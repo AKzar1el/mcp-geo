@@ -27,7 +27,7 @@ All five keys are **optional individually**. With zero keys, the server still st
 |---|---|---|---|
 | `OPENAI_API_KEY` | OpenAI — ChatGPT engine (`gpt-5-search-api`, web search) | https://platform.openai.com/api-keys | Grounded search; OpenAI bills web-search calls plus model tokens — check current API pricing |
 | `ANTHROPIC_API_KEY` | Anthropic — Claude engine (`claude-haiku-4-5`) | https://console.anthropic.com/ | Recommended starter; also powers prompt generation and `get_content_gaps` analysis |
-| `GEMINI_API_KEY` | Google AI Studio — Gemini engine (`gemini-2.5-flash-lite`) | https://aistudio.google.com/app/apikey | Rate limits vary by model, project, and usage tier; check the project's active limits in Google AI Studio |
+| `GEMINI_API_KEY` | Google AI Studio — Gemini engine (`gemini-3.1-flash-lite`) | https://aistudio.google.com/app/apikey | Rate limits vary by model, project, and usage tier; check the project's active limits in Google AI Studio |
 | `PERPLEXITY_API_KEY` | Perplexity — Sonar engine | https://www.perplexity.ai/settings/api | Paid only |
 | `SERPAPI_API_KEY` | SerpAPI — Google AI Overviews engine | https://serpapi.com/dashboard | Free tier 250 searches/month |
 
