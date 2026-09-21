@@ -44,6 +44,12 @@ test('AI-agent guide documents JetBrains AI Assistant local stdio setup', () => 
     /### JetBrains AI Assistant \(IDE\)[\s\S]*Add > STDIO[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/,
   );
 });
+test('AI-agent guide documents Amp CLI local stdio setup', () => {
+  assert.match(
+    guide,
+    /### Amp CLI[\s\S]*amp mcp add digestseo -- npx -y @digestseo\/mcp-geo[\s\S]*ampcode\.com\/docs\/customize\/mcp/,
+  );
+});
 test('AI-agent guide documents Mistral Vibe Code local stdio setup', () => {
   assert.match(
     guide,

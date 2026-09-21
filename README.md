@@ -61,6 +61,14 @@ codex mcp add digestseo -- npx -y @digestseo/mcp-geo
 
 The zero-key command is enough for tool discovery. Add only the provider keys you want with repeated `--env NAME=VALUE` options before the `--` when engine-backed scans are needed.
 
+**Amp CLI:**
+
+```bash
+amp mcp add digestseo -- npx -y @digestseo/mcp-geo
+```
+
+Amp runs this as a local STDIO MCP server. The zero-key command is enough for tool discovery; before engine-backed scans, make only the provider keys you want available to the Amp process or configure them in Amp's local MCP `env` settings instead of committing secrets. See Amp's current [MCP guide](https://ampcode.com/docs/customize/mcp).
+
 **OpenCode v2:**
 
 ```bash
