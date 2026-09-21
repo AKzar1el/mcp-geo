@@ -44,6 +44,13 @@ test('AI-agent guide documents JetBrains AI Assistant local stdio setup', () => 
     /### JetBrains AI Assistant \(IDE\)[\s\S]*Add > STDIO[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/,
   );
 });
+test('AI-agent guide documents JetBrains Air workspace MCP reuse', () => {
+  assert.match(
+    guide,
+    /### JetBrains Air[\s\S]*standard root `\.mcp\.json`[\s\S]*Launch workspace MCP servers[\s\S]*npx -y @digestseo\/mcp-geo/,
+  );
+  assert.match(guide, /www\.jetbrains\.com\/help\/air\/mcp-servers\.html/);
+});
 test('AI-agent guide documents Factory Droid local stdio setup', () => {
   assert.match(guide, /### Factory Droid[\s\S]*droid mcp add digestseo "npx -y @digestseo\/mcp-geo"[\s\S]*droid mcp list/);
   assert.match(guide, /~\/\.factory\/mcp\.json/);
