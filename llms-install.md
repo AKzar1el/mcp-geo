@@ -482,6 +482,17 @@ The payload also accepts optional `"aliases": [...]` and `"exclude_terms": [...]
 
 Expected response: `{"seeded": true, "brand_id": "acme", "prompts_inserted": 20, "prompt_source": "generated"}`. If `prompt_source` is `"fallback"`, the Claude Haiku prompt generator failed — usually because `ANTHROPIC_API_KEY` is not set (transient API/network failures also trigger it). Template prompts still work; to upgrade them, set the key and re-generate via `POST /admin/generate-prompts` (same `X-Seed-Secret` header, body `{"brand_id":"acme"}`).
 
+If the user already has an approved audit/research measurement set, replace the active prompts exactly before scanning:
+
+```bash
+curl -X POST https://<worker-host>/admin/set-prompts \
+  -H "X-Seed-Secret: <SEED_SECRET value>" \
+  -H "Content-Type: application/json" \
+  -d '{"brand_id":"acme","prompts":["Which project management tools are best for agencies?","Acme vs Asana for client delivery?"]}'
+```
+
+The route accepts 1-50 unique prompts, preserves historical runs, and returns `"changed": false` without rewriting the set when the submitted prompts already match.
+
 ### Step 9 — Trigger the first scan
 
 ```bash

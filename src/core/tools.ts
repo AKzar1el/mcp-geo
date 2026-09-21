@@ -28,6 +28,7 @@ import {
 } from './content-gap-analysis.js';
 import { computeOverallScore } from './scoring.js';
 import { generatePrompts } from './prompt-generation.js';
+import { applyExactPromptSet } from './prompt-set.js';
 import { seedBrand } from './seed.js';
 import {
   normalizeCompetitorDomains,
@@ -1093,33 +1094,11 @@ export function registerLocalManagementTools(
       if (!brand) {
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
       }
-
-      const normalized = prompts.map((prompt) => prompt.trim().replace(/\s+/g, ' '));
-      if (normalized.some((prompt) => prompt.length === 0)) {
-        throw new Error('Prompts must contain non-whitespace text.');
-      }
-      const normalizedKeys = normalized.map((prompt) => prompt.toLowerCase());
-      if (new Set(normalizedKeys).size !== normalizedKeys.length) {
-        throw new Error('Prompts must be unique after trimming whitespace and ignoring case.');
-      }
-
-      const current = await deps.db.getActivePrompts(brand_id);
-      const unchanged =
-        current.length === normalized.length &&
-        current.every((prompt, index) => prompt.text === normalized[index]);
-
-      if (!unchanged) {
-        await deps.db.replacePrompts(
-          brand_id,
-          normalized.map((text) => ({ text, intent_stage: null, shape: null })),
-        );
-      }
+      const result = await applyExactPromptSet(deps.db, brand_id, prompts);
 
       const payload = {
         brand_id,
-        prompts_inserted: unchanged ? 0 : normalized.length,
-        prompts: normalized,
-        changed: !unchanged,
+        ...result,
         next_steps: `Call refresh_brand with brand_id '${brand_id}' to scan this prompt set.`,
       };
       return toolResult(payload);
