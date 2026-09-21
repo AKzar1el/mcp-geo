@@ -131,6 +131,17 @@ copilot mcp add digestseo -- npx -y @digestseo/mcp-geo
 
 This zero-key base command is enough for tool discovery. Add provider keys with repeated `--env NAME=VALUE` options supported by Copilot CLI before the `digestseo -- ...` portion when engine-backed scans are needed.
 
+### Qoder CLI
+
+```bash
+qoder mcp add digestseo -- npx -y @digestseo/mcp-geo
+qoder mcp list
+```
+
+Qoder CLI treats the command after `--` as a local STDIO MCP server. The zero-key form is sufficient for tool discovery. Before engine-backed scans, make only the selected provider environment variables available to the Qoder process instead of putting secret values into project configuration. If the CLI session is already open, run `/mcp reload` to rediscover the server and its tools.
+
+References: [Qoder MCP Servers](https://docs.qoder.com/cli/mcp-servers) and [Qoder MCP reference](https://docs.qoder.com/cli/mcp-reference).
+
 ### Docker Agent
 
 Docker Agent supports local STDIO MCP toolsets launched from `npx`. Add this block to the agent's YAML configuration:
