@@ -1,7 +1,7 @@
 {
   "name": "digestseo-geo",
   "version": "0.3.18",
-  "description": "Track brand citations and AI visibility across ChatGPT, Claude, Perplexity, Gemini, Grok, and Google AI Overviews with the mcp-geo MCP server.",
+  "description": "Track brand citations and AI visibility across ChatGPT, Claude, Perplexity, Gemini, Grok, Google AI Overviews, and Google AI Mode with the mcp-geo MCP server.",
   "settings": [
     {
       "name": "OpenAI API key",
@@ -38,12 +38,21 @@
       "description": "Optional. Enables Google AI Overviews scans.",
       "envVar": "SERPAPI_API_KEY",
       "sensitive": true
+    },
+    {
+      "name": "Enable Google AI Mode",
+      "description": "Optional. Set true to add Google AI Mode; it adds a separate SerpAPI request per prompt.",
+      "envVar": "SERPAPI_AI_MODE_ENABLED",
+      "sensitive": false
     }
   ],
   "mcpServers": {
     "digestseo-geo": {
       "command": "npx",
-      "args": ["-y", "@digestseo/mcp-geo"]
+      "args": [
+        "-y",
+        "@digestseo/mcp-geo"
+      ]
     }
   }
 }

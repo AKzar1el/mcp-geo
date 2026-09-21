@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.AKzar1el/mcp-geo",
   "title": "GEO Tracker by DigestSEO",
-  "description": "Track brand citations across six AI search engines. Free OSS; optional EUR 99 client-ready audit.",
+  "description": "Track brand citations across seven AI search surfaces. Free OSS; optional EUR 99 client-ready audit.",
   "version": "0.3.18",
   "repository": {
     "url": "https://github.com/AKzar1el/mcp-geo",
@@ -13,7 +13,9 @@
     {
       "src": "https://digestseo.com/products/mcp-geo-mark.svg",
       "mimeType": "image/svg+xml",
-      "sizes": ["any"]
+      "sizes": [
+        "any"
+      ]
     }
   ],
   "packages": [
@@ -66,6 +68,13 @@
           "isRequired": false,
           "format": "string",
           "isSecret": true
+        },
+        {
+          "name": "SERPAPI_AI_MODE_ENABLED",
+          "description": "Optional non-secret flag. Set true to add Google AI Mode; this adds a separate SerpAPI request per prompt.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
         }
       ]
     }
@@ -73,7 +82,7 @@
   "tools": [
     {
       "name": "check_visibility",
-      "description": "Get the latest AI visibility data for a tracked brand: which AI assistants (ChatGPT, Claude, Perplexity, Gemini, Grok, Google AI Overviews) cite this brand, for which prompts, and how it compares to competitors. Use when the user asks 'how visible am I on AI?', 'who's citing my brand?', or 'show me my AI visibility score'. Returns stored data — for fresh data, call refresh_brand.",
+      "description": "Get the latest AI visibility data for a tracked brand: which AI assistants (ChatGPT, Claude, Perplexity, Gemini, Grok, Google AI Overviews, Google AI Mode) cite this brand, for which prompts, and how it compares to competitors. Use when the user asks 'how visible am I on AI?', 'who's citing my brand?', or 'show me my AI visibility score'. Returns stored data — for fresh data, call refresh_brand.",
       "inputSchema": {
         "def": {
           "type": "object",
@@ -102,7 +111,8 @@
                           "perplexity": "perplexity",
                           "gemini": "gemini",
                           "grok": "grok",
-                          "ai_overviews": "ai_overviews"
+                          "ai_overviews": "ai_overviews",
+                          "ai_mode": "ai_mode"
                         }
                       },
                       "type": "enum",
@@ -112,7 +122,8 @@
                         "perplexity": "perplexity",
                         "gemini": "gemini",
                         "grok": "grok",
-                        "ai_overviews": "ai_overviews"
+                        "ai_overviews": "ai_overviews",
+                        "ai_mode": "ai_mode"
                       },
                       "options": [
                         "chatgpt",
@@ -120,7 +131,8 @@
                         "perplexity",
                         "gemini",
                         "grok",
-                        "ai_overviews"
+                        "ai_overviews",
+                        "ai_mode"
                       ]
                     }
                   },
@@ -134,7 +146,8 @@
                         "perplexity": "perplexity",
                         "gemini": "gemini",
                         "grok": "grok",
-                        "ai_overviews": "ai_overviews"
+                        "ai_overviews": "ai_overviews",
+                        "ai_mode": "ai_mode"
                       }
                     },
                     "type": "enum",
@@ -144,7 +157,8 @@
                       "perplexity": "perplexity",
                       "gemini": "gemini",
                       "grok": "grok",
-                      "ai_overviews": "ai_overviews"
+                      "ai_overviews": "ai_overviews",
+                      "ai_mode": "ai_mode"
                     },
                     "options": [
                       "chatgpt",
@@ -152,7 +166,8 @@
                       "perplexity",
                       "gemini",
                       "grok",
-                      "ai_overviews"
+                      "ai_overviews",
+                      "ai_mode"
                     ]
                   }
                 }
@@ -355,7 +370,8 @@
                       "perplexity": "perplexity",
                       "gemini": "gemini",
                       "grok": "grok",
-                      "ai_overviews": "ai_overviews"
+                      "ai_overviews": "ai_overviews",
+                      "ai_mode": "ai_mode"
                     }
                   },
                   "type": "enum",
@@ -365,7 +381,8 @@
                     "perplexity": "perplexity",
                     "gemini": "gemini",
                     "grok": "grok",
-                    "ai_overviews": "ai_overviews"
+                    "ai_overviews": "ai_overviews",
+                    "ai_mode": "ai_mode"
                   },
                   "options": [
                     "chatgpt",
@@ -373,7 +390,8 @@
                     "perplexity",
                     "gemini",
                     "grok",
-                    "ai_overviews"
+                    "ai_overviews",
+                    "ai_mode"
                   ]
                 }
               },
@@ -458,7 +476,8 @@
                           "perplexity": "perplexity",
                           "gemini": "gemini",
                           "grok": "grok",
-                          "ai_overviews": "ai_overviews"
+                          "ai_overviews": "ai_overviews",
+                          "ai_mode": "ai_mode"
                         }
                       },
                       "type": "enum",
@@ -468,7 +487,8 @@
                         "perplexity": "perplexity",
                         "gemini": "gemini",
                         "grok": "grok",
-                        "ai_overviews": "ai_overviews"
+                        "ai_overviews": "ai_overviews",
+                        "ai_mode": "ai_mode"
                       },
                       "options": [
                         "chatgpt",
@@ -476,7 +496,8 @@
                         "perplexity",
                         "gemini",
                         "grok",
-                        "ai_overviews"
+                        "ai_overviews",
+                        "ai_mode"
                       ]
                     }
                   },
@@ -490,7 +511,8 @@
                         "perplexity": "perplexity",
                         "gemini": "gemini",
                         "grok": "grok",
-                        "ai_overviews": "ai_overviews"
+                        "ai_overviews": "ai_overviews",
+                        "ai_mode": "ai_mode"
                       }
                     },
                     "type": "enum",
@@ -500,7 +522,8 @@
                       "perplexity": "perplexity",
                       "gemini": "gemini",
                       "grok": "grok",
-                      "ai_overviews": "ai_overviews"
+                      "ai_overviews": "ai_overviews",
+                      "ai_mode": "ai_mode"
                     },
                     "options": [
                       "chatgpt",
@@ -508,7 +531,8 @@
                       "perplexity",
                       "gemini",
                       "grok",
-                      "ai_overviews"
+                      "ai_overviews",
+                      "ai_mode"
                     ]
                   }
                 }

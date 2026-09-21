@@ -249,7 +249,7 @@ AI agents installing this server: follow [llms-install.md](https://github.com/AK
 
 ---
 
-**mcp-geo** is an open-source **AI visibility tracker** that measures how often your brand is cited by ChatGPT, Claude, Perplexity, Gemini, Grok, and Google AI Overviews. It's the **GEO** (Generative Engine Optimization) and **AEO** (Answer Engine Optimization) equivalent of Google Search Console — built as an MCP server so you can query your AI visibility data directly inside ChatGPT through a configured remote MCP app, Claude.ai, Claude Desktop, Claude Code, GitHub Copilot CLI, Cursor, Codex CLI, or any MCP-compatible client.
+**mcp-geo** is an open-source **AI visibility tracker** that measures how often your brand is cited by ChatGPT, Claude, Perplexity, Gemini, Grok, Google AI Overviews, and Google AI Mode. It's the **GEO** (Generative Engine Optimization) and **AEO** (Answer Engine Optimization) equivalent of Google Search Console — built as an MCP server so you can query your AI visibility data directly inside ChatGPT through a configured remote MCP app, Claude.ai, Claude Desktop, Claude Code, GitHub Copilot CLI, Cursor, Codex CLI, or any MCP-compatible client.
 
 Canonical product page: [DigestSEO mcp-geo — AI Visibility MCP Server](https://digestseo.com/geo-mcp/)
 
@@ -462,9 +462,9 @@ Engines are opt-in. Pick the ones you want; the rest skip silently.
 - **Google AI Studio (Gemini)** — Gemini engine (`gemini-3.1-flash-lite`). Google currently offers free-tier token usage for this model, while paid usage is token-priced. Rate limits vary by model, project, and usage tier, and Google says actual capacity can vary; check your project's active limits in AI Studio rather than relying on a fixed RPM/RPD assumption. See [Gemini pricing](https://ai.google.dev/gemini-api/docs/pricing) and [rate limits](https://ai.google.dev/gemini-api/docs/rate-limits).
 - **Perplexity** — Perplexity Sonar engine. ~€0.005-0.008 per prompt. Paid only. [perplexity.ai/settings/api](https://www.perplexity.ai/settings/api)
 - **xAI** — Grok engine (`grok-4.6`) with required Web Search grounding. xAI currently prices Web Search at $5 per 1,000 calls plus model tokens. [console.x.ai](https://console.x.ai/) · [pricing](https://docs.x.ai/developers/pricing)
-- **SerpAPI** — Google AI Overviews engine. ~€0.005 (free tier) / ~€0.0015 (volume) per prompt. Free tier covers 250 searches/month — enough for development. [serpapi.com/dashboard](https://serpapi.com/dashboard)
+- **SerpAPI** — Google AI Overviews plus optional Google AI Mode. One SerpAPI key powers both, but AI Mode is deliberately off by default because it adds a separate paid search per prompt; set `SERPAPI_AI_MODE_ENABLED=true` when you want that seventh surface. [Google AI Mode API](https://serpapi.com/google-ai-mode-api) · [serpapi.com/dashboard](https://serpapi.com/dashboard)
 
-**Recommended starting pair: OpenAI + Anthropic (Claude).** OpenAI provides grounded ChatGPT visibility through web search and bills search calls plus model tokens; Anthropic also powers prompt generation and content-gap analysis. Review current provider pricing before estimating recurring scan cost. Add Gemini, Perplexity, Grok, or SerpAPI deliberately once you want more coverage; Gemini capacity varies by model, project, and usage tier, and Google AI Overviews often returns no result (scored as a zero), so leading with the cheapest path can skew your first run.
+**Recommended starting pair: OpenAI + Anthropic (Claude).** OpenAI provides grounded ChatGPT visibility through web search and bills search calls plus model tokens; Anthropic also powers prompt generation and content-gap analysis. Review current provider pricing before estimating recurring scan cost. Add Gemini, Perplexity, Grok, or SerpAPI deliberately once you want more coverage; Gemini capacity varies by model, project, and usage tier, and Google AI Overviews often returns no result (scored as a zero). Google AI Mode is a separate SerpAPI call and stays disabled until `SERPAPI_AI_MODE_ENABLED=true`, preventing an existing SerpAPI setup from silently doubling Google search calls.
 
 ### Step 2 — Deploy to your Cloudflare account
 
@@ -634,13 +634,14 @@ args = [
 | `GEMINI_API_KEY` | opt-in | unset | Enables the Gemini engine. Rate limits vary by model, project, and usage tier; check the project's active limits in Google AI Studio (see Troubleshooting). |
 | `PERPLEXITY_API_KEY` | opt-in | unset | Enables the Perplexity Sonar engine. Paid only. |
 | `XAI_API_KEY` | opt-in | unset | Enables the Grok engine (`grok-4.6`) with required Web Search grounding. |
-| `SERPAPI_API_KEY` | opt-in | unset | Enables the Google AI Overviews engine (via SerpAPI). |
+| `SERPAPI_API_KEY` | opt-in | unset | Enables Google AI Overviews via SerpAPI. Also provides the credential for Google AI Mode when the explicit flag below is enabled. |
+| `SERPAPI_AI_MODE_ENABLED` | no | `false` | Set to `true` to add Google AI Mode as a separate visibility engine. It stays off by default to avoid unexpected extra SerpAPI calls/cost. |
 | `SEED_SECRET` | **yes** | unset | Shared secret that gates every `/admin/*` route. Pick a high-entropy string. |
 | `CONNECT_SECRET` | recommended | unset | When set, the OAuth connect flow asks for this secret in the browser before issuing a token. Without it, anyone who knows your worker URL can connect an MCP client. See [SECURITY.md](https://github.com/AKzar1el/mcp-geo/blob/main/SECURITY.md). |
 | `TURNSTILE_SITE_KEY` | no | unset | Reserved for forks that add a public `/check` form. Unused by the OSS build. |
 | `TURNSTILE_SECRET_KEY` | no | unset | Same — reserved for forks. |
 
-All values are set via `wrangler secret put VAR` in production or `.dev.vars` locally. None are stored in `wrangler.jsonc`.
+Provider credentials are set via `wrangler secret put VAR` in production or `.dev.vars` locally. `SERPAPI_AI_MODE_ENABLED` is a non-secret runtime flag and may be stored under Wrangler `vars` or set in the local process environment.
 
 ---
 

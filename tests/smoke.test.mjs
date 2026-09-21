@@ -321,6 +321,7 @@ test(
       'gemini',
       'grok',
       'ai_overviews',
+      'ai_mode',
     ]);
     for (const pe of payload.per_engine) {
       assert.ok(

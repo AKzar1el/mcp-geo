@@ -28,6 +28,10 @@ import {
   runLive as runLiveGrok,
   type XAiEnv,
 } from './xai.js';
+import {
+  runLive as runLiveAiMode,
+  type AiModeEnv,
+} from './ai-mode.js';
 import type { Brand, Prompt } from '../db/types.js';
 
 export const ALL_ENGINES = [
@@ -37,6 +41,7 @@ export const ALL_ENGINES = [
   'gemini',
   'grok',
   'ai_overviews',
+  'ai_mode',
 ] as const;
 export type EngineName = (typeof ALL_ENGINES)[number];
 
@@ -62,6 +67,7 @@ export interface EngineKeys {
   PERPLEXITY_API_KEY?: string;
   XAI_API_KEY?: string;
   SERPAPI_API_KEY?: string;
+  SERPAPI_AI_MODE_ENABLED?: string;
 }
 
 export function getAvailableEngines(env: EngineKeys): EngineName[] {
@@ -72,6 +78,12 @@ export function getAvailableEngines(env: EngineKeys): EngineName[] {
   if (env.PERPLEXITY_API_KEY) engines.push('perplexity');
   if (env.XAI_API_KEY) engines.push('grok');
   if (env.SERPAPI_API_KEY) engines.push('ai_overviews');
+  if (
+    env.SERPAPI_API_KEY &&
+    /^(1|true|yes|on)$/i.test(env.SERPAPI_AI_MODE_ENABLED?.trim() ?? '')
+  ) {
+    engines.push('ai_mode');
+  }
   return engines;
 }
 
@@ -83,7 +95,8 @@ export interface CoreEnginesEnv
     PerplexityEnv,
     GeminiEnv,
     XAiEnv,
-    AiOverviewsEnv {}
+    AiOverviewsEnv,
+    AiModeEnv {}
 
 export interface EngineRun {
   engine: EngineName;
@@ -112,6 +125,8 @@ export async function runEngineInProcess(
       return runLiveGrok(env, brand, prompts, engineRun.run_id);
     case 'ai_overviews':
       return runLiveAiOverviews(env, brand, prompts, engineRun.run_id);
+    case 'ai_mode':
+      return runLiveAiMode(env, brand, prompts, engineRun.run_id);
   }
 }
 

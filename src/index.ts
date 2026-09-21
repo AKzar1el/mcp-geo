@@ -49,6 +49,7 @@ export interface Env {
   GEMINI_API_KEY?: string;
   XAI_API_KEY?: string;
   SERPAPI_API_KEY?: string;
+  SERPAPI_AI_MODE_ENABLED?: string;
   // Shared secret gating /admin/* routes.
   SEED_SECRET: string;
   // Optional shared secret gating the OAuth /authorize auto-complete.
@@ -100,6 +101,7 @@ function workerEnginesEnv(env: Env, db: Db): WorkerEnginesEnv {
     PERPLEXITY_API_KEY: env.PERPLEXITY_API_KEY,
     XAI_API_KEY: env.XAI_API_KEY,
     SERPAPI_API_KEY: env.SERPAPI_API_KEY,
+    SERPAPI_AI_MODE_ENABLED: env.SERPAPI_AI_MODE_ENABLED,
     SEED_SECRET: env.SEED_SECRET,
     SELF: env.SELF,
     SELF_URL: env.SELF_URL,
@@ -505,6 +507,7 @@ async function handleAdminRunEngine(
       PERPLEXITY_API_KEY: env.PERPLEXITY_API_KEY,
       XAI_API_KEY: env.XAI_API_KEY,
       SERPAPI_API_KEY: env.SERPAPI_API_KEY,
+      SERPAPI_AI_MODE_ENABLED: env.SERPAPI_AI_MODE_ENABLED,
     },
     brand,
     prompts,

@@ -2,7 +2,7 @@
   "name": "digestseo-geo",
   "displayName": "GEO Tracker by DigestSEO",
   "version": "0.3.18",
-  "description": "Track brand citations and AI visibility across ChatGPT, Claude, Perplexity, Gemini, Grok, and Google AI Overviews. Free OSS with an optional EUR 99 one-time AI Visibility Audit.",
+  "description": "Track brand citations and AI visibility across ChatGPT, Claude, Perplexity, Gemini, Grok, Google AI Overviews, and Google AI Mode. Free OSS with an optional EUR 99 one-time AI Visibility Audit.",
   "author": {
     "name": "DigestSEO"
   },
@@ -57,20 +57,29 @@
         "type": "string",
         "title": "SerpAPI key",
         "description": "Optional. Enables Google AI Overviews scans."
+      },
+      "SERPAPI_AI_MODE_ENABLED": {
+        "type": "string",
+        "title": "Enable Google AI Mode",
+        "description": "Optional. Set true to add Google AI Mode; it adds a separate SerpAPI request per prompt."
       }
     }
   },
   "mcpServers": {
     "digestseo-geo": {
       "command": "npx",
-      "args": ["-y", "@digestseo/mcp-geo"],
+      "args": [
+        "-y",
+        "@digestseo/mcp-geo"
+      ],
       "env": {
         "OPENAI_API_KEY": "${OPENAI_API_KEY}",
         "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}",
         "GEMINI_API_KEY": "${GEMINI_API_KEY}",
         "PERPLEXITY_API_KEY": "${PERPLEXITY_API_KEY}",
         "XAI_API_KEY": "${XAI_API_KEY}",
-        "SERPAPI_API_KEY": "${SERPAPI_API_KEY}"
+        "SERPAPI_API_KEY": "${SERPAPI_API_KEY}",
+        "SERPAPI_AI_MODE_ENABLED": "${SERPAPI_AI_MODE_ENABLED}"
       }
     }
   }

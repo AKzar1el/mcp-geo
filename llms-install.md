@@ -1,6 +1,6 @@
 # llms-install.md — AI agent installation guide for the DigestSEO GEO Tracker
 
-This file is written for AI agents (Cline, Claude Code, Cursor agents, etc.) installing **@digestseo/mcp-geo** (the `digestseo-mcp` executable), an MCP server that tracks how ChatGPT, Claude, Perplexity, Gemini, Grok, and Google AI Overviews cite a brand. Every command below is copy-pasteable as-is. Choose exactly one path:
+This file is written for AI agents (Cline, Claude Code, Cursor agents, etc.) installing **@digestseo/mcp-geo** (the `digestseo-mcp` executable), an MCP server that tracks how ChatGPT, Claude, Perplexity, Gemini, Grok, Google AI Overviews, and Google AI Mode cite a brand. Every command below is copy-pasteable as-is. Choose exactly one path:
 
 - **Path A (recommended): run locally via npx** — no hosting, data stays in a local SQLite file, user brings their own AI provider API keys.
 - **Path B: self-host on Cloudflare Workers** — remote MCP server with D1 storage, cron auto-refresh, and admin HTTP routes. The connect URL at the end is `https://<worker-host>/mcp`.
@@ -32,9 +32,10 @@ All six keys are **optional individually**. With zero keys, the server still sta
 | `GEMINI_API_KEY` | Google AI Studio — Gemini engine (`gemini-3.1-flash-lite`) | https://aistudio.google.com/app/apikey | Rate limits vary by model, project, and usage tier; check the project's active limits in Google AI Studio |
 | `PERPLEXITY_API_KEY` | Perplexity — Sonar engine | https://www.perplexity.ai/settings/api | Paid only |
 | `XAI_API_KEY` | xAI — Grok engine (`grok-4.6`, web search) | https://console.x.ai/ | Paid; Web Search is billed separately from model tokens, so check current xAI pricing |
-| `SERPAPI_API_KEY` | SerpAPI — Google AI Overviews engine | https://serpapi.com/dashboard | Free tier 250 searches/month |
+| `SERPAPI_API_KEY` | SerpAPI — Google AI Overviews + optional Google AI Mode | https://serpapi.com/dashboard | AI Mode is a separate SerpAPI call per prompt and requires the explicit flag below |
+| `SERPAPI_AI_MODE_ENABLED` | Non-secret feature flag for Google AI Mode | n/a | Set to `true` only when you want AI Mode added to automatic refreshes; default/unset preserves existing SerpAPI cost |
 
-Recommend **OpenAI + Anthropic** as the starting pair. OpenAI provides grounded ChatGPT visibility through web search and bills search calls plus model tokens; Anthropic also powers prompt generation and content-gap analysis. Check current provider pricing before estimating scan cost.
+Recommend **OpenAI + Anthropic** as the starting pair. Google AI Mode is intentionally opt-in even when `SERPAPI_API_KEY` is present so an upgrade cannot silently add SerpAPI spend. OpenAI provides grounded ChatGPT visibility through web search and bills search calls plus model tokens; Anthropic also powers prompt generation and content-gap analysis. Check current provider pricing before estimating scan cost.
 
 Data location: SQLite database at `~/.digestseo/digestseo.sqlite`, created automatically on first start. Override with the optional `DIGESTSEO_DB_PATH` environment variable.
 

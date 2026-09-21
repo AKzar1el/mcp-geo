@@ -59,6 +59,7 @@ async function main(): Promise<void> {
     PERPLEXITY_API_KEY: process.env.PERPLEXITY_API_KEY,
     XAI_API_KEY: process.env.XAI_API_KEY,
     SERPAPI_API_KEY: process.env.SERPAPI_API_KEY,
+    SERPAPI_AI_MODE_ENABLED: process.env.SERPAPI_AI_MODE_ENABLED,
   };
   // Empty strings count as unset so blank lines in client configs skip
   // the engine instead of sending an empty Authorization header.
@@ -74,7 +75,8 @@ async function main(): Promise<void> {
       'no engine API keys configured; MCP discovery is available, but ' +
         'engine-backed scans require at least one of OPENAI_API_KEY, ' +
         'ANTHROPIC_API_KEY, GEMINI_API_KEY, PERPLEXITY_API_KEY, XAI_API_KEY, or ' +
-        'SERPAPI_API_KEY. Engines without a key are skipped gracefully.',
+        'SERPAPI_API_KEY. Engines without a key are skipped gracefully. ' +
+        'Google AI Mode also requires SERPAPI_AI_MODE_ENABLED=true to avoid unexpected SerpAPI spend.',
     );
   }
 

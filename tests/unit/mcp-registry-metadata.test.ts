@@ -21,9 +21,9 @@ test('MCP Registry description fits the registry limit and preserves the audit o
   assert.match(server.description, /EUR 99/i);
 });
 
-test('MCP Registry package advertises optional secret provider-key configuration', () => {
+test('MCP Registry package advertises provider keys plus the non-secret AI Mode opt-in', () => {
   const environmentVariables = server.packages[0]?.environmentVariables ?? [];
-  const expectedNames = [
+  const providerNames = [
     'OPENAI_API_KEY',
     'ANTHROPIC_API_KEY',
     'GEMINI_API_KEY',
@@ -31,15 +31,22 @@ test('MCP Registry package advertises optional secret provider-key configuration
     'XAI_API_KEY',
     'SERPAPI_API_KEY',
   ];
+  const byName = new Map(environmentVariables.map((entry) => [entry.name, entry]));
 
-  assert.deepEqual(
-    environmentVariables.map((entry) => entry.name),
-    expectedNames,
-  );
-  for (const entry of environmentVariables) {
-    assert.equal(entry.isRequired, false, `${entry.name} must remain opt-in`);
-    assert.equal(entry.isSecret, true, `${entry.name} must be marked secret`);
+  for (const name of providerNames) {
+    const entry = byName.get(name);
+    assert.ok(entry, `${name} must be published`);
+    assert.equal(entry.isRequired, false, `${name} must remain opt-in`);
+    assert.equal(entry.isSecret, true, `${name} must be marked secret`);
     assert.equal(entry.format, 'string');
     assert.ok(entry.description.trim());
   }
+
+  const aiModeFlag = byName.get('SERPAPI_AI_MODE_ENABLED');
+  assert.ok(aiModeFlag, 'SERPAPI_AI_MODE_ENABLED must be published');
+  assert.equal(aiModeFlag.isRequired, false);
+  assert.equal(aiModeFlag.isSecret, false, 'AI Mode feature flag is not a credential');
+  assert.equal(aiModeFlag.format, 'string');
+  assert.match(aiModeFlag.description, /separate SerpAPI request per prompt/i);
+  assert.equal(environmentVariables.length, providerNames.length + 1);
 });
