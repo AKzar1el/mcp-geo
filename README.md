@@ -36,7 +36,7 @@ Runs locally over stdio with your own API keys — all data stays on your machin
 }
 ```
 
-**ChatGPT (remote MCP):** ChatGPT does not connect directly to local STDIO MCP servers. For ChatGPT, use the [self-hosted remote MCP setup](#chatgpt-remote-mcp) below, or OpenAI Secure MCP Tunnel for a server running on a local/private machine. The public `geo-mcp.digestseo.com/mcp` endpoint is not a turnkey no-key fresh-scan service.
+**ChatGPT (remote MCP):** ChatGPT does not connect directly to local STDIO MCP servers. For ChatGPT, use the [self-hosted remote MCP setup](#chatgpt-remote-mcp) below, or the [OpenAI Secure MCP Tunnel setup](#chatgpt-localprivate-via-openai-secure-mcp-tunnel) for a server running on a local/private machine. The public `geo-mcp.digestseo.com/mcp` endpoint is not a turnkey no-key fresh-scan service.
 
 **Claude Code:**
 
@@ -432,6 +432,28 @@ support does not require special `search` or `fetch` tool names.
 ```
 https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev/mcp
 ```
+
+#### ChatGPT (local/private via OpenAI Secure MCP Tunnel)
+
+OpenAI Secure MCP Tunnel is the supported bridge when you want ChatGPT to use
+the local stdio package without exposing it as a public HTTPS server. Create a
+tunnel in OpenAI Platform first, then keep `tunnel-client` running on the same
+machine that launches mcp-geo. You need a tunnel ID, a tunnel runtime API key,
+and ChatGPT developer-mode/tunnel permissions for the target workspace.
+
+Make whichever provider keys you want to use available to the mcp-geo process,
+then initialize a tunnel profile with the local package command:
+
+```text
+tunnel-client init --sample sample_mcp_stdio_local --profile digestseo --tunnel-id tunnel_0123456789abcdef0123456789abcdef --mcp-command "npx -y @digestseo/mcp-geo"
+tunnel-client doctor --profile digestseo --explain
+tunnel-client run --profile digestseo
+```
+
+While `tunnel-client run` is healthy, create a developer-mode app in ChatGPT,
+choose **Tunnel** as the connection type, and select that tunnel. This path is
+for private/local use; it does not publish mcp-geo as a public ChatGPT app.
+Follow OpenAI's current [Secure MCP Tunnel guide](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels) for tunnel creation, permissions, downloads, and troubleshooting.
 
 #### Claude Code
 

@@ -58,6 +58,11 @@ test('README exposes audit details and an attributable direct request path', () 
   assert.doesNotMatch(readme, /ChatGPT desktop app:[\s\S]*npx -y @digestseo\/mcp-geo/);
   assert.match(
     readme,
+    /#### ChatGPT \(local\/private via OpenAI Secure MCP Tunnel\)[\s\S]*tunnel-client init[\s\S]*--mcp-command "npx -y @digestseo\/mcp-geo"[\s\S]*tunnel-client doctor[\s\S]*tunnel-client run/,
+  );
+  assert.match(readme, /developers\.openai\.com\/api\/docs\/guides\/secure-mcp-tunnels/);
+  assert.match(
+    readme,
     /\*\*Windsurf:\*\*[\s\S]*"command": "npx"[\s\S]*"@digestseo\/mcp-geo"/,
   );
   assert.match(

@@ -76,7 +76,17 @@ Alternative for Claude Desktop: download the `.mcpb` desktop extension from the 
 
 ### ChatGPT
 
-ChatGPT does **not** connect directly to local STDIO MCP servers, so do not register Path A there. Use **Path B** and add the configured Worker `/mcp` URL as a custom MCP app in ChatGPT Developer Mode. If the MCP server must stay local/private, use OpenAI Secure MCP Tunnel instead of exposing or pretending to register the local `npx` command directly.
+ChatGPT does **not** connect directly to local STDIO MCP servers, so do not register Path A there. Use **Path B** and add the configured Worker `/mcp` URL as a custom MCP app in ChatGPT Developer Mode.
+
+If the MCP server must stay local/private, use OpenAI Secure MCP Tunnel instead of exposing or pretending to register the local `npx` command directly. Create a tunnel in OpenAI Platform, make the desired mcp-geo provider keys available to the child process, then run:
+
+```text
+tunnel-client init --sample sample_mcp_stdio_local --profile digestseo --tunnel-id tunnel_0123456789abcdef0123456789abcdef --mcp-command "npx -y @digestseo/mcp-geo"
+tunnel-client doctor --profile digestseo --explain
+tunnel-client run --profile digestseo
+```
+
+Keep the client running while ChatGPT uses the server. In ChatGPT developer mode, create the app with **Tunnel** as the connection type and select the same tunnel. This private-tunnel path is not a public app submission flow. See OpenAI's current [Secure MCP Tunnel guide](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels) for tunnel creation, permissions, runtime-key setup, and troubleshooting.
 
 ### Claude Code (CLI)
 

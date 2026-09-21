@@ -25,6 +25,11 @@ test('AI-agent install guide exposes the frozen managed audit alternative withou
   assert.doesNotMatch(guide, /### ChatGPT desktop app[\s\S]*npx -y @digestseo\/mcp-geo/);
   assert.match(
     guide,
+    /### ChatGPT[\s\S]*tunnel-client init[\s\S]*--mcp-command "npx -y @digestseo\/mcp-geo"[\s\S]*tunnel-client doctor[\s\S]*tunnel-client run/,
+  );
+  assert.match(guide, /developers\.openai\.com\/api\/docs\/guides\/secure-mcp-tunnels/);
+  assert.match(
+    guide,
     /### Codex CLI[\s\S]*codex mcp add digestseo -- npx -y @digestseo\/mcp-geo[\s\S]*codex mcp list/,
   );
   assert.match(
