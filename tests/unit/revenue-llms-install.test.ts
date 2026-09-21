@@ -58,6 +58,15 @@ test('AI-agent guide documents Docker Agent local stdio setup', () => {
   );
   assert.match(guide, /docs\.docker\.com\/ai\/docker-agent\/tools\/mcp/);
 });
+test('AI-agent guide documents goose local stdio setup', () => {
+  assert.match(
+    guide,
+    /### goose[\s\S]*extensions:[\s\S]*type: stdio[\s\S]*cmd: npx[\s\S]*@digestseo\/mcp-geo/,
+  );
+  assert.match(guide, /goose configure[\s\S]*Command-Line Extension/);
+  assert.match(guide, /do not write raw provider API keys into `config\.yaml`/);
+  assert.match(guide, /block\.github\.io\/goose\/docs\/guides\/config-files/);
+});
 test('AI-agent guide documents Factory Droid local stdio setup', () => {
   assert.match(guide, /### Factory Droid[\s\S]*droid mcp add digestseo "npx -y @digestseo\/mcp-geo"[\s\S]*droid mcp list/);
   assert.match(guide, /~\/\.factory\/mcp\.json/);

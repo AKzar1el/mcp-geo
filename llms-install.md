@@ -144,6 +144,25 @@ That starts mcp-geo locally and is sufficient for zero-key MCP discovery. Before
 
 Reference: [Docker Agent MCP tools](https://docs.docker.com/ai/docker-agent/tools/mcp/).
 
+### goose
+
+goose treats local MCP servers as STDIO extensions. Add mcp-geo to goose's `config.yaml` (`~/.config/goose/config.yaml` on macOS/Linux or `%APPDATA%\Block\goose\config\config.yaml` on Windows):
+
+```yaml
+extensions:
+  digestseo-geo:
+    type: stdio
+    name: digestseo-geo
+    enabled: true
+    cmd: npx
+    args: ["-y", "@digestseo/mcp-geo"]
+    timeout: 300
+```
+
+That zero-key entry is sufficient for MCP tool discovery. For engine-backed scans, add only the provider environment variables the user chose through goose's extension configuration / secret storage; do not write raw provider API keys into `config.yaml`. The equivalent interactive flow is `goose configure` -> **Add Extension** -> **Command-Line Extension**, with command `npx -y @digestseo/mcp-geo`.
+
+References: [goose extension setup](https://block.github.io/goose/docs/getting-started/using-extensions/) and [goose configuration files](https://block.github.io/goose/docs/guides/config-files/).
+
 ### GitLab Duo CLI
 
 Current GitLab Duo CLI releases read Claude-compatible `.claude-plugin/marketplace.json` catalogs, so the same owner-controlled marketplace added for Claude Code works without another package or registry submission:

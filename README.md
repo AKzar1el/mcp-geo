@@ -88,6 +88,21 @@ toolsets:
 
 The zero-key form is enough for tool discovery. For engine-backed scans, add only the provider keys you need under the toolset's `env:` map (Docker Agent supports `${env.NAME}` expansion) instead of committing secret values. See Docker's current [local MCP tool documentation](https://docs.docker.com/ai/docker-agent/tools/mcp/).
 
+**goose:** add mcp-geo as a local STDIO extension in `~/.config/goose/config.yaml` (macOS/Linux) or `%APPDATA%\Block\goose\config\config.yaml` (Windows):
+
+```yaml
+extensions:
+  digestseo-geo:
+    type: stdio
+    name: digestseo-geo
+    enabled: true
+    cmd: npx
+    args: ["-y", "@digestseo/mcp-geo"]
+    timeout: 300
+```
+
+The zero-key extension is enough for tool discovery. Before engine-backed scans, configure only the provider environment variables you want for this extension through goose's extension settings / secret storage instead of putting raw API keys in the YAML file. The same server can also be added interactively with `goose configure` -> **Add Extension** -> **Command-Line Extension**. See goose's current [extension setup](https://block.github.io/goose/docs/getting-started/using-extensions/) and [configuration reference](https://block.github.io/goose/docs/guides/config-files/).
+
 **GitLab Duo CLI:** current GitLab Duo CLI releases can consume Claude-compatible plugin marketplaces directly. Register this repository and install the existing `digestseo-geo` plugin:
 
 ```bash
