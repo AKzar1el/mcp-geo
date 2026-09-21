@@ -212,6 +212,17 @@ Expected response:
 
 If `prompt_source` is `"fallback"`, the prompt generator (Claude Haiku) failed — usually because `ANTHROPIC_API_KEY` isn't set. Set the key and re-run via `/admin/generate-prompts`.
 
+If you already have an agreed audit/research question set, replace the active prompts exactly before scanning instead of regenerating them with AI:
+
+```bash
+curl -X POST https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev/admin/set-prompts \
+  -H "X-Seed-Secret: YOUR_SEED_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"brand_id":"acme","prompts":["Which project management tools are best for agencies?","Acme vs Asana for client delivery?"]}'
+```
+
+The route accepts 1-50 unique prompts, preserves historical runs, and is idempotent when the submitted set already matches the active prompts.
+
 ## 13 — Trigger a live scan
 
 ```bash
