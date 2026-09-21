@@ -177,6 +177,18 @@ Open **Settings > Tools > AI Assistant > Model Context Protocol (MCP)**, choose 
 
 JetBrains AI Assistant supports local STDIO MCP servers and NPX launch commands. The zero-key configuration is sufficient for MCP discovery. Before an engine-backed scan, ensure only the chosen provider API keys are present in the environment inherited by the IDE process; alternatively, JetBrains can import an existing Claude MCP configuration.
 
+### JetBrains Air
+
+The repository already includes a standard root `.mcp.json` that starts `npx -y @digestseo/mcp-geo`, so JetBrains Air does not need a second project-specific MCP file.
+
+1. Open **Settings > AI > MCP Servers**.
+2. Turn on **Enable MCP support**.
+3. Turn on **Launch workspace MCP servers** and use the **Workspace** scope.
+
+Air then reuses the checked-in `.mcp.json` and discovers the local mcp-geo tools. That file intentionally contains no provider credentials: zero keys are enough for tool discovery, while engine-backed scans still require the selected provider keys in the local server process environment. Keep those secrets out of the committed `.mcp.json`.
+
+Reference: [JetBrains Air MCP servers](https://www.jetbrains.com/help/air/mcp-servers.html).
+
 ### Cursor
 
 Edit `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` in the project root, same shape as Claude Desktop:

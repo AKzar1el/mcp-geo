@@ -112,6 +112,8 @@ Droid runs this as a local STDIO MCP server. The zero-key install is enough for 
 
 JetBrains AI Assistant supports local STDIO and NPX MCP servers. The zero-key form is enough for tool discovery; before engine-backed scans, make only the provider keys you want available to the IDE process, or import an already-configured Claude MCP server.
 
+**JetBrains Air:** this repository already ships the standard root `.mcp.json` that launches `npx -y @digestseo/mcp-geo`. In Air, open **Settings > AI > MCP Servers**, enable **MCP support** and **Launch workspace MCP servers**, then use the **Workspace** scope so Air reuses that checked-in file. The repository config contains no provider secrets and is sufficient for zero-key tool discovery. Engine-backed scans still require the selected provider keys in the local server process environment; keep them out of committed `.mcp.json`. See the [JetBrains Air MCP server guide](https://www.jetbrains.com/help/air/mcp-servers.html).
+
 **Cursor:**
 
 [![Add to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=digestseo&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBkaWdlc3RzZW8vbWNwLWdlbyJdLCJlbnYiOnsiT1BFTkFJX0FQSV9LRVkiOiIiLCJBTlRIUk9QSUNfQVBJX0tFWSI6IiIsIkdFTUlOSV9BUElfS0VZIjoiIiwiUEVSUExFWElUWV9BUElfS0VZIjoiIiwiU0VSUEFQSV9BUElfS0VZIjoiIn19)

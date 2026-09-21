@@ -138,6 +138,13 @@ test('README documents JetBrains AI Assistant local stdio setup', () => {
     /\*\*JetBrains AI Assistant \(IDE\):\*\*[\s\S]*Model Context Protocol \(MCP\)[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/,
   );
 });
+test('README documents JetBrains Air workspace MCP reuse', () => {
+  assert.match(
+    readme,
+    /\*\*JetBrains Air:\*\*[\s\S]*standard root `\.mcp\.json`[\s\S]*Launch workspace MCP servers[\s\S]*npx -y @digestseo\/mcp-geo/,
+  );
+  assert.match(readme, /www\.jetbrains\.com\/help\/air\/mcp-servers\.html/);
+});
 test('README documents Factory Droid local stdio setup', () => {
   assert.match(readme, /\*\*Factory Droid:\*\*[\s\S]*droid mcp add digestseo "npx -y @digestseo\/mcp-geo"[\s\S]*droid mcp list/);
   assert.match(readme, /Keep provider secrets out of project-level `\.factory\/mcp\.json` files/);
