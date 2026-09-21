@@ -13,6 +13,7 @@ const expectedTools = [
   'track_brand',
   'list_brands',
   'list_prompts',
+  'set_prompts',
   'generate_prompts',
   'refresh_brand',
   'check_visibility',

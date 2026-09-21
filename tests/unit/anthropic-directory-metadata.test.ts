@@ -86,7 +86,7 @@ test('hosted tools expose Claude Directory titles and safety annotations', () =>
 test('local management tools expose precise Claude Desktop safety metadata', () => {
   const tools = captureLocalManagementToolConfigs();
 
-  assert.equal(tools.size, 4, 'expected the four local management tools');
+  assert.equal(tools.size, 5, 'expected the five local management tools');
 
   assert.deepEqual(tools.get('track_brand'), {
     ...tools.get('track_brand'),
@@ -116,6 +116,17 @@ test('local management tools expose precise Claude Desktop safety metadata', () 
     annotations: {
       readOnlyHint: true,
       destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  });
+
+  assert.deepEqual(tools.get('set_prompts'), {
+    ...tools.get('set_prompts'),
+    title: 'Set active prompts',
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
       idempotentHint: true,
       openWorldHint: false,
     },

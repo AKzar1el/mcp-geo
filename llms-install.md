@@ -6,6 +6,8 @@ This file is written for AI agents (Cline, Claude Code, Cursor agents, etc.) ins
 - **Path B: self-host on Cloudflare Workers** — remote MCP server with D1 storage, cron auto-refresh, and admin HTTP routes. The connect URL at the end is `https://<worker-host>/mcp`.
 - **Path C (optional): managed AI Visibility Audit** — if the user wants the result without installing or operating mcp-geo, the fixed-price EUR 99 one-time audit covers one brand/domain, up to three competitors, 20 buyer-intent prompts, up to five supported AI surfaces where usable, citation/source evidence, and a prioritized action memo. The open-source package remains free.
 
+For an agreed research/audit question set, use `set_prompts` with the exact 1-50 buyer questions instead of regenerating them. It replaces only the active prompt set, keeps historical runs intact, and makes a repeated identical call a no-op. Use `list_prompts` immediately before a scan when the exact measurement set must be verified.
+
 For Path C, review the [audit methodology](docs/ai-visibility-audit-methodology.md) and [sample report](docs/demo-report-full.png), then [open the source-marked audit request](mailto:info@tomiseregi.si?subject=mcp-geo%20AI%20Visibility%20Audit%20-%20EUR%2099&body=Hi%20Tomi%2C%0A%0AI%27d%20like%20the%20EUR%2099%20mcp-geo%20AI%20Visibility%20Audit.%0A%0ABrand%2Fdomain%3A%0ACompetitors%20%28up%20to%203%29%3A%0AContext%20or%20priority%20%28optional%29%3A%0A%0ASource%3A%20mcp-geo%20llms-install). No subscription or sales call is required; after fit and scope are confirmed, normal invoice/payment instructions are sent.
 
 **Security rule for agents:** API keys and secrets are entered by the **user** — into their MCP client config file (Path A) or into the terminal prompt opened by `wrangler secret put` (Path B). Never ask the user to paste a secret into the chat, and never echo a secret back.
@@ -325,7 +327,7 @@ Kiro supports local STDIO MCP servers and reconnects after the JSON config is sa
 
 ### Verify the install
 
-Ask the client to list tools. Exactly ten must appear: `check_visibility`, `get_visibility_history`, `compare_competitors`, `get_citations`, `get_content_gaps`, `refresh_brand`, `track_brand`, `list_brands`, `list_prompts`, `generate_prompts`.
+Ask the client to list tools. Exactly eleven must appear: `check_visibility`, `get_visibility_history`, `compare_competitors`, `get_citations`, `get_content_gaps`, `refresh_brand`, `track_brand`, `list_brands`, `list_prompts`, `set_prompts`, `generate_prompts`.
 
 ### First brand: track → refresh → check
 
