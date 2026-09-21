@@ -14,6 +14,7 @@ const server = JSON.parse(readFileSync('server.json', 'utf8')) as {
     }>;
   }>;
 };
+const publishWorkflow = readFileSync('.github/workflows/publish-mcp.yml', 'utf8');
 
 test('MCP Registry description fits the registry limit and preserves the audit offer', () => {
   assert.ok(server.description.length <= 100);
@@ -49,4 +50,16 @@ test('MCP Registry package advertises provider keys plus the non-secret AI Mode 
   assert.equal(aiModeFlag.format, 'string');
   assert.match(aiModeFlag.description, /separate SerpAPI request per prompt/i);
   assert.equal(environmentVariables.length, providerNames.length + 1);
+});
+
+test('main-branch metadata validation does not republish immutable Registry versions', () => {
+  const registryJob = publishWorkflow.split('  publish-mcp-registry:')[1] ?? '';
+
+  assert.ok(registryJob, 'publish-mcp-registry job must exist');
+  assert.match(
+    registryJob,
+    /github\.event_name == 'release' \|\| github\.event_name == 'workflow_dispatch'/,
+  );
+  assert.doesNotMatch(registryJob, /github\.event_name == 'push'/);
+  assert.doesNotMatch(publishWorkflow, /  check-npm-version:/);
 });
