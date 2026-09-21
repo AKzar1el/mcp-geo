@@ -1,6 +1,6 @@
 {
   "name": "digestseo-geo",
-  "version": "0.3.15",
+  "version": "0.3.16",
   "description": "Track brand citations and AI visibility across ChatGPT, Claude, Perplexity, Gemini, and Google AI Overviews with the mcp-geo MCP server.",
   "settings": [
     {
