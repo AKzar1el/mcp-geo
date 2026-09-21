@@ -77,6 +77,17 @@ copilot mcp add digestseo -- npx -y @digestseo/mcp-geo
 
 The base install starts with zero provider keys so tool discovery works. Add only the engine keys you want with Copilot CLI's `--env NAME=VALUE` option before running scans.
 
+**Docker Agent:** Docker Agent can launch local STDIO MCP servers directly from agent YAML. Add this toolset to the agent that should use mcp-geo:
+
+```yaml
+toolsets:
+  - type: mcp
+    command: npx
+    args: ["-y", "@digestseo/mcp-geo"]
+```
+
+The zero-key form is enough for tool discovery. For engine-backed scans, add only the provider keys you need under the toolset's `env:` map (Docker Agent supports `${env.NAME}` expansion) instead of committing secret values. See Docker's current [local MCP tool documentation](https://docs.docker.com/ai/docker-agent/tools/mcp/).
+
 **GitLab Duo CLI:** current GitLab Duo CLI releases can consume Claude-compatible plugin marketplaces directly. Register this repository and install the existing `digestseo-geo` plugin:
 
 ```bash

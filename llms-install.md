@@ -129,6 +129,21 @@ copilot mcp add digestseo -- npx -y @digestseo/mcp-geo
 
 This zero-key base command is enough for tool discovery. Add provider keys with repeated `--env NAME=VALUE` options supported by Copilot CLI before the `digestseo -- ...` portion when engine-backed scans are needed.
 
+### Docker Agent
+
+Docker Agent supports local STDIO MCP toolsets launched from `npx`. Add this block to the agent's YAML configuration:
+
+```yaml
+toolsets:
+  - type: mcp
+    command: npx
+    args: ["-y", "@digestseo/mcp-geo"]
+```
+
+That starts mcp-geo locally and is sufficient for zero-key MCP discovery. Before engine-backed scans, add only the selected provider keys to the MCP toolset's `env:` map; Docker Agent supports `${env.NAME}` expansion, so keep the actual secret values in the process environment rather than in the YAML file.
+
+Reference: [Docker Agent MCP tools](https://docs.docker.com/ai/docker-agent/tools/mcp/).
+
 ### GitLab Duo CLI
 
 Current GitLab Duo CLI releases read Claude-compatible `.claude-plugin/marketplace.json` catalogs, so the same owner-controlled marketplace added for Claude Code works without another package or registry submission:
