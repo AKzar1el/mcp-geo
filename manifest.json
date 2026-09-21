@@ -3,7 +3,7 @@
   "name": "digestseo-mcp",
   "display_name": "GEO Tracker by DigestSEO",
   "version": "0.3.18",
-  "description": "DigestSEO mcp-geo: track brand citations across six AI search engines. Free OSS with an optional EUR 99 one-time AI Visibility Audit.",
+  "description": "DigestSEO mcp-geo: track brand citations across seven AI search surfaces. Free OSS with an optional EUR 99 one-time AI Visibility Audit.",
   "long_description": "Self-hosted AI visibility tracking over MCP. Runs buyer-intent prompts against the AI engines you hold API keys for, records which ones cite your brand versus competitors, and exposes eleven tools: track_brand, list_brands, list_prompts, set_prompts, generate_prompts, refresh_brand, check_visibility, get_visibility_history, compare_competitors, get_citations, get_content_gaps. All data stays in a local SQLite database under ~/.digestseo.",
   "author": {
     "name": "AKzar1el",
@@ -39,7 +39,8 @@
         "GEMINI_API_KEY": "${user_config.gemini_api_key}",
         "PERPLEXITY_API_KEY": "${user_config.perplexity_api_key}",
         "XAI_API_KEY": "${user_config.xai_api_key}",
-        "SERPAPI_API_KEY": "${user_config.serpapi_api_key}"
+        "SERPAPI_API_KEY": "${user_config.serpapi_api_key}",
+        "SERPAPI_AI_MODE_ENABLED": "${user_config.serpapi_ai_mode_enabled}"
       }
     }
   },
@@ -47,7 +48,7 @@
     "openai_api_key": {
       "type": "string",
       "title": "OpenAI API Key (ChatGPT engine)",
-      "description": "Optional — every engine key is opt-in, but at least one of the six is required to run visibility scans. Engines without a key are skipped gracefully.",
+      "description": "Optional — every engine key is opt-in, but at least one of the six provider keys is required to run visibility scans. Engines without a key are skipped gracefully.",
       "sensitive": true,
       "required": false,
       "default": ""
@@ -55,7 +56,7 @@
     "anthropic_api_key": {
       "type": "string",
       "title": "Anthropic API Key (Claude engine)",
-      "description": "Optional — also powers prompt generation and content-gap analysis via Claude Haiku. At least one of the six engine keys is required for visibility scans.",
+      "description": "Optional — also powers prompt generation and content-gap analysis via Claude Haiku. At least one of the six provider keys is required for visibility scans.",
       "sensitive": true,
       "required": false,
       "default": ""
@@ -63,7 +64,7 @@
     "gemini_api_key": {
       "type": "string",
       "title": "Google AI Studio API Key (Gemini engine)",
-      "description": "Optional — free tier available at aistudio.google.com. At least one of the six engine keys is required for visibility scans.",
+      "description": "Optional — free tier available at aistudio.google.com. At least one of the six provider keys is required for visibility scans.",
       "sensitive": true,
       "required": false,
       "default": ""
@@ -71,7 +72,7 @@
     "perplexity_api_key": {
       "type": "string",
       "title": "Perplexity API Key (Perplexity engine)",
-      "description": "Optional — paid plans only. At least one of the six engine keys is required for visibility scans.",
+      "description": "Optional — paid plans only. At least one of the six provider keys is required for visibility scans.",
       "sensitive": true,
       "required": false,
       "default": ""
@@ -79,18 +80,26 @@
     "xai_api_key": {
       "type": "string",
       "title": "xAI API Key (Grok engine)",
-      "description": "Optional — enables grounded Grok visibility scans through xAI Web Search. At least one of the six engine keys is required for visibility scans.",
+      "description": "Optional — enables grounded Grok visibility scans through xAI Web Search. At least one of the six provider keys is required for visibility scans.",
       "sensitive": true,
       "required": false,
       "default": ""
     },
     "serpapi_api_key": {
       "type": "string",
-      "title": "SerpAPI Key (Google AI Overviews engine)",
-      "description": "Optional — free tier covers 250 searches/month. At least one of the six engine keys is required for visibility scans.",
+      "title": "SerpAPI Key (Google AI Overviews + AI Mode)",
+      "description": "Optional. Enables Google AI Overviews and supplies the credential for opt-in Google AI Mode.",
       "sensitive": true,
       "required": false,
       "default": ""
+    },
+    "serpapi_ai_mode_enabled": {
+      "type": "string",
+      "title": "Enable Google AI Mode",
+      "description": "Optional. Set true to add Google AI Mode. This adds a separate SerpAPI request per prompt; false preserves existing scan cost.",
+      "sensitive": false,
+      "required": false,
+      "default": "false"
     }
   },
   "tools": [
@@ -116,7 +125,7 @@
     },
     {
       "name": "check_visibility",
-      "description": "Get the latest AI visibility data for a tracked brand: which AI assistants (ChatGPT, Claude, Perplexity, Gemini, Grok, Google AI Overviews) cite this brand, for which prompts, and how it compares to competitors. Use when the user asks 'how visible am I on AI?', 'who's citing my brand?', or 'show me my AI visibility score'. Returns stored data — for fresh data, call refresh_brand."
+      "description": "Get the latest AI visibility data for a tracked brand: which AI assistants (ChatGPT, Claude, Perplexity, Gemini, Grok, Google AI Overviews, Google AI Mode) cite this brand, for which prompts, and how it compares to competitors. Use when the user asks 'how visible am I on AI?', 'who's citing my brand?', or 'show me my AI visibility score'. Returns stored data — for fresh data, call refresh_brand."
     },
     {
       "name": "get_visibility_history",
@@ -136,7 +145,7 @@
     },
     {
       "name": "refresh_brand",
-      "description": "Manually trigger a fresh AI visibility scan for a tracked brand. Runs every selected configured engine (ChatGPT, Claude, Perplexity, Gemini, Grok, Google AI Overviews) against the brand's current prompt set sequentially. Use when the user asks 'refresh my data', 'rerun the scan', or 'I want fresh data right now'. Returns only after all selected engine scans finish."
+      "description": "Manually trigger a fresh AI visibility scan for a tracked brand. Runs every selected configured engine (ChatGPT, Claude, Perplexity, Gemini, Grok, Google AI Overviews, Google AI Mode) against the brand's current prompt set sequentially. Use when the user asks 'refresh my data', 'rerun the scan', or 'I want fresh data right now'. Returns only after all selected engine scans finish."
     }
   ],
   "keywords": [

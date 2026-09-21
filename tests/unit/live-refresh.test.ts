@@ -9,6 +9,7 @@ import { runLive as runPerplexityLive } from '../../src/core/perplexity.ts';
 import { runLive as runGeminiLive } from '../../src/core/gemini.ts';
 import { runLive as runXAiLive } from '../../src/core/xai.ts';
 import { runLive as runAiOverviewsLive } from '../../src/core/ai-overviews.ts';
+import { runLive as runAiModeLive } from '../../src/core/ai-mode.ts';
 import type {
   Brand,
   Db,
@@ -228,6 +229,24 @@ test('live scans bypass shared cached responses for every provider', async (t) =
         },
       },
       (call) => assert.equal(call.url.searchParams.get('no_cache'), 'true'),
+    ));
+  await t.test('Google AI Mode', () =>
+    assertLiveRunBypassesSharedCache(
+      runAiModeLive as LiveRunner,
+      { SERPAPI_API_KEY: 'test-key', SERPAPI_AI_MODE_ENABLED: 'true' },
+      {
+        reconstructed_markdown: 'Fresh Acme provider response.',
+        references: [{ link: 'https://acme.com/fresh' }],
+      },
+      (call) => {
+        assert.equal(call.url.searchParams.get('engine'), 'google_ai_mode');
+        assert.equal(call.url.searchParams.get('no_cache'), 'true');
+      },
+      (result) => {
+        assert.deepEqual(result.engine_citations, ['https://acme.com/fresh']);
+        assert.deepEqual(result.cited_urls, ['acme.com']);
+        assert.equal(result.brand_cited_with_link, 1);
+      },
     ));
 });
 

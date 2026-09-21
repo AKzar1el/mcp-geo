@@ -12,7 +12,7 @@ test('uniqueEngineNames preserves first-request order while removing duplicates'
   );
 });
 
-test('getAvailableEngines includes Grok only when XAI_API_KEY is configured', () => {
+test('getAvailableEngines requires an explicit opt-in before SerpAPI AI Mode adds spend', () => {
   assert.deepEqual(
     getAvailableEngines({
       OPENAI_API_KEY: 'openai',
@@ -20,6 +20,20 @@ test('getAvailableEngines includes Grok only when XAI_API_KEY is configured', ()
       SERPAPI_API_KEY: 'serpapi',
     }),
     ['chatgpt', 'grok', 'ai_overviews'],
+  );
+  assert.deepEqual(
+    getAvailableEngines({
+      SERPAPI_API_KEY: 'serpapi',
+      SERPAPI_AI_MODE_ENABLED: 'true',
+    }),
+    ['ai_overviews', 'ai_mode'],
+  );
+  assert.deepEqual(
+    getAvailableEngines({
+      SERPAPI_API_KEY: 'serpapi',
+      SERPAPI_AI_MODE_ENABLED: '0',
+    }),
+    ['ai_overviews'],
   );
   assert.deepEqual(getAvailableEngines({ XAI_API_KEY: '' }), []);
 });
