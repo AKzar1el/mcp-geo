@@ -96,6 +96,15 @@ claude mcp add --transport stdio digestseo -s user --env OPENAI_API_KEY=sk-REPLA
 
 Add one `--env NAME=VALUE` flag per key the user has (before the `--`). The base form without env flags is `claude mcp add --transport stdio digestseo -s user -- npx -y @digestseo/mcp-geo`; it starts for discovery, but engine-backed scans need at least one provider key.
 
+Alternative: install the repository's owner-controlled Claude Code plugin marketplace entry:
+
+```text
+/plugin marketplace add AKzar1el/mcp-geo
+/plugin install digestseo-geo@digestseo-mcp
+```
+
+That plugin reads the repository's `.mcp.json` and launches `npx -y @digestseo/mcp-geo`. With this path, provider keys needed for scans should already be available to the Claude Code process; zero keys still allow tool discovery. Use the direct `claude mcp add` form above when per-server `--env` configuration is preferable.
+
 ### Codex CLI
 
 ```bash

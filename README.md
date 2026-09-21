@@ -44,6 +44,15 @@ Runs locally over stdio with your own API keys — all data stays on your machin
 claude mcp add --transport stdio digestseo -s user --env GEMINI_API_KEY=your_key_here -- npx -y @digestseo/mcp-geo
 ```
 
+Or install the same local MCP integration through this repository's owner-controlled Claude Code marketplace:
+
+```text
+/plugin marketplace add AKzar1el/mcp-geo
+/plugin install digestseo-geo@digestseo-mcp
+```
+
+The marketplace plugin uses the repository's `.mcp.json` to launch `npx -y @digestseo/mcp-geo`. Zero provider keys are enough for tool discovery; for engine-backed scans, make only the provider keys you want available to the Claude Code process. The direct `claude mcp add` command above remains the simplest option when you want to attach provider keys explicitly to the server configuration.
+
 **Codex CLI:**
 
 ```bash

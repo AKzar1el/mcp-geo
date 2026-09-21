@@ -1,0 +1,20 @@
+{
+  "name": "digestseo-mcp",
+  "owner": {
+    "name": "DigestSEO",
+    "url": "https://digestseo.com/geo-mcp/"
+  },
+  "description": "DigestSEO Claude Code plugins for AI visibility and GEO workflows.",
+  "metadata": {
+    "description": "DigestSEO Claude Code plugins for AI visibility and GEO workflows."
+  },
+  "plugins": [
+    {
+      "name": "digestseo-geo",
+      "source": "./",
+      "description": "Track brand citations and AI visibility across ChatGPT, Claude, Perplexity, Gemini, and Google AI Overviews.",
+      "category": "productivity",
+      "tags": ["mcp", "seo", "geo", "ai-visibility"]
+    }
+  ]
+}
