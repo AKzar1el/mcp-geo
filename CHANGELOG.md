@@ -6,9 +6,14 @@ All notable changes to this project are documented here. The format is loosely b
 
 ### Fixed
 
-- Gemini now defaults to `gemini-3.1-flash-lite`, avoiding the Gemini 2.5 access restriction Google applies to some new projects while preserving the same GenerateContent API integration.
 - Cursor plugin MCP metadata now launches the published local stdio package instead of routing users to the public Worker endpoint, which is not configured as a turnkey fresh-scan service.
 - Windsurf guidance now recommends local stdio or a configured self-hosted Worker, and Cursor/Claude plugin manifests are synchronized to `0.3.7`.
+
+## [0.3.16] - September 21, 2026
+
+### Fixed
+
+- Gemini now defaults to `gemini-3.1-flash-lite`, avoiding the Gemini 2.5 access restriction Google applies to some new projects while preserving the same GenerateContent API integration.
 
 ## [0.3.7] - September 19, 2026
 
