@@ -44,3 +44,29 @@ export async function handleAdminSetPrompts(
     return jsonResponse({ error: (err as Error).message }, 400);
   }
 }
+
+export async function handleAdminListPrompts(
+  request: Request,
+  db: Db,
+): Promise<Response> {
+  const brandId = new URL(request.url).searchParams.get('brand_id');
+  if (!brandId) {
+    return jsonResponse({ error: 'brand_id required' }, 400);
+  }
+
+  const brand = await db.getBrand(brandId);
+  if (!brand) return jsonResponse({ error: 'brand not found' }, 404);
+
+  const prompts = await db.getActivePrompts(brandId);
+  return jsonResponse({
+    brand_id: brandId,
+    prompts: prompts.map((prompt) => ({
+      id: prompt.id,
+      text: prompt.text,
+      intent_stage: prompt.intent_stage,
+      shape: prompt.shape,
+      created_at: new Date(prompt.created_at).toISOString(),
+    })),
+    count: prompts.length,
+  });
+}
