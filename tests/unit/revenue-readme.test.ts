@@ -145,6 +145,13 @@ test('README documents JetBrains Air workspace MCP reuse', () => {
   );
   assert.match(readme, /www\.jetbrains\.com\/help\/air\/mcp-servers\.html/);
 });
+test('README documents Docker Agent local stdio setup', () => {
+  assert.match(
+    readme,
+    /\*\*Docker Agent:\*\*[\s\S]*type: mcp[\s\S]*command: npx[\s\S]*@digestseo\/mcp-geo/,
+  );
+  assert.match(readme, /docs\.docker\.com\/ai\/docker-agent\/tools\/mcp/);
+});
 test('README documents Factory Droid local stdio setup', () => {
   assert.match(readme, /\*\*Factory Droid:\*\*[\s\S]*droid mcp add digestseo "npx -y @digestseo\/mcp-geo"[\s\S]*droid mcp list/);
   assert.match(readme, /Keep provider secrets out of project-level `\.factory\/mcp\.json` files/);
