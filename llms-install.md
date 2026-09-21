@@ -160,6 +160,24 @@ copilot mcp add digestseo -- npx -y @digestseo/mcp-geo
 
 This zero-key base command is enough for tool discovery. Add provider keys with repeated `--env NAME=VALUE` options supported by Copilot CLI before the `digestseo -- ...` portion when engine-backed scans are needed.
 
+### Portable Agent Plugin 1.0
+
+The repository also ships the standard root `plugin.json` + `mcp.json` package for clients that implement Agent Plugins 1.0. The portable MCP entry launches the same local npm server and intentionally contains no provider secrets.
+
+GitHub Copilot CLI can install the repository directly:
+
+```bash
+copilot plugin install AKzar1el/mcp-geo
+```
+
+VS Code: run **Chat: Install Plugin from Source** and enter `https://github.com/AKzar1el/mcp-geo`.
+
+Kiro: open **Powers -> Add Custom Power -> Import power from GitHub** and enter `https://github.com/AKzar1el/mcp-geo`.
+
+Zero provider keys are sufficient for plugin/MCP discovery. Before engine-backed scans, make only the selected provider keys available to the host client process; do not put secret values into the portable `mcp.json`.
+
+References: [Agent Plugins 1.0 compatible clients](https://agent-plugins.org/compatible-clients), [GitHub Copilot plugins](https://docs.github.com/en/copilot/concepts/agents/about-plugins), and [Kiro powers installation](https://kiro.dev/docs/powers/installation/).
+
 ### Qoder CLI
 
 ```bash
