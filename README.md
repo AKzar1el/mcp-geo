@@ -69,6 +69,18 @@ opencode mcp add digestseo --global -- npx -y @digestseo/mcp-geo
 
 OpenCode v2 runs this as a local STDIO server. Omit `--global` for project-only configuration; add only the provider keys you want with `--env NAME=VALUE` before the `--`. Zero keys still allow MCP tool discovery.
 
+**Mistral Vibe Code:** add mcp-geo to the user-level `~/.vibe/config.toml` or project-level `./.vibe/config.toml`:
+
+```toml
+[[mcp_servers]]
+name = "digestseo"
+transport = "stdio"
+command = "npx"
+args = ["-y", "@digestseo/mcp-geo"]
+```
+
+The zero-key entry is enough for tool discovery. For engine-backed scans, pass only the provider keys you want through Vibe's STDIO environment configuration or the environment inherited by Vibe instead of committing secrets. Use `/mcp digestseo` (or `/mcp`) in Vibe to verify the server and tools. See Mistral's current [MCP server guide](https://docs.mistral.ai/vibe/code/cli/mcp-servers) and [Vibe configuration reference](https://docs.mistral.ai/vibe/code/cli/configuration).
+
 **GitHub Copilot CLI:**
 
 ```bash

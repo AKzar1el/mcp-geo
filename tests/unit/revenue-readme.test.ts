@@ -138,6 +138,14 @@ test('README documents JetBrains AI Assistant local stdio setup', () => {
     /\*\*JetBrains AI Assistant \(IDE\):\*\*[\s\S]*Model Context Protocol \(MCP\)[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/,
   );
 });
+test('README documents Mistral Vibe Code local stdio setup', () => {
+  assert.match(
+    readme,
+    /\*\*Mistral Vibe Code:\*\*[\s\S]*~\/\.vibe\/config\.toml[\s\S]*\.\/\.vibe\/config\.toml[\s\S]*\[\[mcp_servers\]\][\s\S]*transport = "stdio"[\s\S]*command = "npx"[\s\S]*@digestseo\/mcp-geo[\s\S]*\/mcp digestseo/,
+  );
+  assert.match(readme, /docs\.mistral\.ai\/vibe\/code\/cli\/mcp-servers/);
+  assert.match(readme, /docs\.mistral\.ai\/vibe\/code\/cli\/configuration/);
+});
 test('README documents JetBrains Air workspace MCP reuse', () => {
   assert.match(
     readme,
