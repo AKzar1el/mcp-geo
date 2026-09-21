@@ -44,3 +44,13 @@ test('Claude marketplace install commands stay documented', () => {
     assert.match(doc, /\/plugin install digestseo-geo@digestseo-mcp/);
   }
 });
+
+test('GitLab Duo CLI reuses the owner-controlled marketplace without a second package', () => {
+  for (const doc of [readme, llmsInstall]) {
+    assert.match(
+      doc,
+      /glab duo plugin marketplace add https:\/\/github\.com\/AKzar1el\/mcp-geo\.git/,
+    );
+    assert.match(doc, /glab duo plugin install digestseo-geo@digestseo-mcp/);
+  }
+});
