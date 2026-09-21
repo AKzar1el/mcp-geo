@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  handleAdminListBrands,
   handleAdminListPrompts,
   handleAdminSetPrompts,
 } from '../../src/core/admin-prompt-set.ts';
@@ -100,6 +101,38 @@ test('admin set-prompts replaces and normalizes an exact measurement set', async
   ]);
 });
 
+test('admin list-brands returns tracked brand metadata and prompt counts', async () => {
+  const db = {
+    listBrands: async () => [{ ...brand, active_prompts: 2 }],
+  } as unknown as Db;
+
+  const response = await handleAdminListBrands(db);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    brands: [
+      {
+        brand_id: 'acme',
+        name: 'Acme',
+        domain: 'acme.com',
+        category: 'Project management',
+        competitors: [],
+        refresh_frequency: 'weekly',
+        active_prompts: 2,
+        created_at: new Date(1).toISOString(),
+      },
+    ],
+  });
+});
+
+test('admin list-brands explains how to start when no brands exist', async () => {
+  const db = { listBrands: async () => [] } as unknown as Db;
+  const response = await handleAdminListBrands(db);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    brands: [],
+    hint: 'No brands tracked yet - POST /admin/seed to add one.',
+  });
+});
 test('admin list-prompts requires a brand_id', async () => {
   const db = {} as Db;
   const response = await handleAdminListPrompts(

@@ -212,6 +212,15 @@ Expected response:
 
 If `prompt_source` is `"fallback"`, the prompt generator (Claude Haiku) failed — usually because `ANTHROPIC_API_KEY` isn't set. Set the key and re-run via `/admin/generate-prompts`.
 
+When you manage more than one brand, inspect the current hosted brand IDs and configuration before changing prompts or starting a scan:
+
+```bash
+curl "https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev/admin/list-brands" \
+  -H "X-Seed-Secret: YOUR_SEED_SECRET"
+```
+
+The read-only response includes each brand's ID, domain, category, competitors, refresh frequency, active prompt count, and creation time.
+
 If you already have an agreed audit/research question set, replace the active prompts exactly before scanning instead of regenerating them with AI:
 
 ```bash

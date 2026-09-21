@@ -45,6 +45,26 @@ export async function handleAdminSetPrompts(
   }
 }
 
+export async function handleAdminListBrands(db: Db): Promise<Response> {
+  const brands = await db.listBrands();
+  return jsonResponse({
+    brands: brands.map((brand) => ({
+      brand_id: brand.id,
+      name: brand.name,
+      domain: brand.domain,
+      category: brand.category,
+      competitors: brand.competitors,
+      refresh_frequency: brand.refresh_frequency,
+      active_prompts: brand.active_prompts,
+      created_at: new Date(brand.created_at).toISOString(),
+    })),
+    hint:
+      brands.length === 0
+        ? 'No brands tracked yet - POST /admin/seed to add one.'
+        : undefined,
+  });
+}
+
 export async function handleAdminListPrompts(
   request: Request,
   db: Db,
