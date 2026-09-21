@@ -49,7 +49,7 @@ test('README exposes audit details and an attributable direct request path', () 
   );
   assert.match(
     readme,
-    /opencode mcp add digestseo --global -- npx -y @digestseo\/mcp-geo/,
+    /\*\*OpenCode v2:\*\*[\s\S]*opencode mcp add digestseo --global -- npx -y @digestseo\/mcp-geo[\s\S]*mcp\.servers\.digestseo\.environment[\s\S]*\{env:OPENAI_API_KEY\}[\s\S]*opencode mcp list[\s\S]*opencode\.ai\/v2\/docs\/mcp-servers/,
   );
   assert.match(
     readme,

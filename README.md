@@ -75,7 +75,7 @@ Amp runs this as a local STDIO MCP server. The zero-key command is enough for to
 opencode mcp add digestseo --global -- npx -y @digestseo/mcp-geo
 ```
 
-OpenCode v2 runs this as a local STDIO server. Omit `--global` for project-only configuration; add only the provider keys you want with `--env NAME=VALUE` before the `--`. Zero keys still allow MCP tool discovery.
+OpenCode v2 runs this as a local STDIO server. Omit `--global` for project-only configuration. Zero keys are enough for MCP tool discovery. For engine-backed scans, edit the generated OpenCode v2 config and add only the provider variables you want under `mcp.servers.digestseo.environment`, mapping each to an environment reference such as `"OPENAI_API_KEY": "{env:OPENAI_API_KEY}"`; keep the actual secret value in the process environment rather than in the config file. Verify the connection with `opencode mcp list`. See the current [OpenCode v2 MCP guide](https://opencode.ai/v2/docs/mcp-servers).
 
 **Mistral Vibe Code:** add mcp-geo to the user-level `~/.vibe/config.toml` or project-level `./.vibe/config.toml`:
 
