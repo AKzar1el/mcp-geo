@@ -44,6 +44,14 @@ test('AI-agent guide documents JetBrains AI Assistant local stdio setup', () => 
     /### JetBrains AI Assistant \(IDE\)[\s\S]*Add > STDIO[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/,
   );
 });
+test('AI-agent guide documents Mistral Vibe Code local stdio setup', () => {
+  assert.match(
+    guide,
+    /### Mistral Vibe Code[\s\S]*~\/\.vibe\/config\.toml[\s\S]*\.\/\.vibe\/config\.toml[\s\S]*\[\[mcp_servers\]\][\s\S]*transport = "stdio"[\s\S]*command = "npx"[\s\S]*@digestseo\/mcp-geo[\s\S]*\/mcp digestseo/,
+  );
+  assert.match(guide, /docs\.mistral\.ai\/vibe\/code\/cli\/mcp-servers/);
+  assert.match(guide, /docs\.mistral\.ai\/vibe\/code\/cli\/configuration/);
+});
 test('AI-agent guide documents JetBrains Air workspace MCP reuse', () => {
   assert.match(
     guide,
