@@ -149,6 +149,22 @@ JetBrains AI Assistant supports local STDIO and NPX MCP servers. The zero-key fo
 
 **JetBrains Air:** this repository already ships the standard root `.mcp.json` that launches `npx -y @digestseo/mcp-geo`. In Air, open **Settings > AI > MCP Servers**, enable **MCP support** and **Launch workspace MCP servers**, then use the **Workspace** scope so Air reuses that checked-in file. The repository config contains no provider secrets and is sufficient for zero-key tool discovery. Engine-backed scans still require the selected provider keys in the local server process environment; keep them out of committed `.mcp.json`. See the [JetBrains Air MCP server guide](https://www.jetbrains.com/help/air/mcp-servers.html).
 
+**Visual Studio 2022 17.14+ / Visual Studio 2026:** Visual Studio uses its own `servers`-shaped MCP configuration. Create `%USERPROFILE%\.mcp.json` for a user-wide install or `<SOLUTIONDIR>\.mcp.json` for one solution:
+
+```json
+{
+  "servers": {
+    "digestseo": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@digestseo/mcp-geo"]
+    }
+  }
+}
+```
+
+Open GitHub Copilot Chat in **Agent** mode and use the **Tools** menu to verify `digestseo` is available. Zero provider keys are enough for tool discovery; before engine-backed scans, make only the provider keys you want available to the Visual Studio process rather than committing secrets into the solution file. See Microsoft's current [Visual Studio MCP setup](https://learn.microsoft.com/azure/developer/azure-mcp-server/get-started/tools/visual-studio).
+
 **Cursor:**
 
 [![Add to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=digestseo&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBkaWdlc3RzZW8vbWNwLWdlbyJdLCJlbnYiOnsiT1BFTkFJX0FQSV9LRVkiOiIiLCJBTlRIUk9QSUNfQVBJX0tFWSI6IiIsIkdFTUlOSV9BUElfS0VZIjoiIiwiUEVSUExFWElUWV9BUElfS0VZIjoiIiwiU0VSUEFQSV9BUElfS0VZIjoiIn19)

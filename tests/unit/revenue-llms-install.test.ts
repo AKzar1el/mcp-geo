@@ -51,6 +51,13 @@ test('AI-agent guide documents JetBrains Air workspace MCP reuse', () => {
   );
   assert.match(guide, /www\.jetbrains\.com\/help\/air\/mcp-servers\.html/);
 });
+test('AI-agent guide documents Visual Studio local stdio setup with its native schema', () => {
+  assert.match(
+    guide,
+    /### Visual Studio 2022 17\.14\+ \/ Visual Studio 2026[\s\S]*%USERPROFILE%\\\.mcp\.json[\s\S]*"servers"[\s\S]*"type": "stdio"[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo[\s\S]*Agent[\s\S]*Tools/,
+  );
+  assert.match(guide, /learn\.microsoft\.com\/azure\/developer\/azure-mcp-server\/get-started\/tools\/visual-studio/);
+});
 test('AI-agent guide documents Docker Agent local stdio setup', () => {
   assert.match(
     guide,

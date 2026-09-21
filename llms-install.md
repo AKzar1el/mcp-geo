@@ -236,6 +236,26 @@ Air then reuses the checked-in `.mcp.json` and discovers the local mcp-geo tools
 
 Reference: [JetBrains Air MCP servers](https://www.jetbrains.com/help/air/mcp-servers.html).
 
+### Visual Studio 2022 17.14+ / Visual Studio 2026
+
+Visual Studio reads MCP configuration from `%USERPROFILE%\.mcp.json` for a user-wide install or `<SOLUTIONDIR>\.mcp.json` for a solution. Its schema uses `servers` rather than this repository's portable `mcpServers` root key, so create a Visual Studio-specific file with:
+
+```json
+{
+  "servers": {
+    "digestseo": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@digestseo/mcp-geo"]
+    }
+  }
+}
+```
+
+Open GitHub Copilot Chat in **Agent** mode and check the **Tools** menu for `digestseo`. Zero keys are sufficient for tool discovery. For engine-backed scans, expose only the selected provider keys to the Visual Studio process instead of committing them into the solution-level `.mcp.json`.
+
+Reference: [Microsoft's Visual Studio MCP setup](https://learn.microsoft.com/azure/developer/azure-mcp-server/get-started/tools/visual-studio).
+
 ### Cursor
 
 Edit `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` in the project root, same shape as Claude Desktop:
