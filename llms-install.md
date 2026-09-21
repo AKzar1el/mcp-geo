@@ -115,6 +115,16 @@ codex mcp add digestseo -- npx -y @digestseo/mcp-geo
 
 The base command starts the local STDIO server with zero provider keys for tool discovery. Add one `--env NAME=VALUE` option per provider key before the `--` when engine-backed scans are needed, then use `codex mcp list` to verify the server is configured.
 
+### Amp CLI
+
+```bash
+amp mcp add digestseo -- npx -y @digestseo/mcp-geo
+```
+
+Amp launches the command as a local STDIO MCP server. The zero-key form is sufficient for tool discovery. Before engine-backed scans, make only the selected provider environment variables available to the Amp process or add them through Amp's local MCP `env` configuration; do not commit provider secrets to workspace settings.
+
+Reference: [Amp MCP](https://ampcode.com/docs/customize/mcp).
+
 ### OpenCode v2
 
 ```bash

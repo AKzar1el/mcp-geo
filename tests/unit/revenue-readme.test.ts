@@ -138,6 +138,12 @@ test('README documents JetBrains AI Assistant local stdio setup', () => {
     /\*\*JetBrains AI Assistant \(IDE\):\*\*[\s\S]*Model Context Protocol \(MCP\)[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/,
   );
 });
+test('README documents Amp CLI local stdio setup', () => {
+  assert.match(
+    readme,
+    /\*\*Amp CLI:\*\*[\s\S]*amp mcp add digestseo -- npx -y @digestseo\/mcp-geo[\s\S]*ampcode\.com\/docs\/customize\/mcp/,
+  );
+});
 test('README documents Mistral Vibe Code local stdio setup', () => {
   assert.match(
     readme,
