@@ -77,6 +77,15 @@ copilot mcp add digestseo -- npx -y @digestseo/mcp-geo
 
 The base install starts with zero provider keys so tool discovery works. Add only the engine keys you want with Copilot CLI's `--env NAME=VALUE` option before running scans.
 
+**GitLab Duo CLI:** current GitLab Duo CLI releases can consume Claude-compatible plugin marketplaces directly. Register this repository and install the existing `digestseo-geo` plugin:
+
+```bash
+glab duo plugin marketplace add https://github.com/AKzar1el/mcp-geo.git
+glab duo plugin install digestseo-geo@digestseo-mcp
+```
+
+The installed plugin loads the same local `npx -y @digestseo/mcp-geo` MCP server from `.mcp.json`. Zero provider keys allow discovery; make only the provider keys you want available to the GitLab Duo CLI process before engine-backed scans.
+
 **Factory Droid:**
 
 ```bash
