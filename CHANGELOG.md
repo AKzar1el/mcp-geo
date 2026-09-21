@@ -9,6 +9,12 @@ All notable changes to this project are documented here. The format is loosely b
 - Cursor plugin MCP metadata now launches the published local stdio package instead of routing users to the public Worker endpoint, which is not configured as a turnkey fresh-scan service.
 - Windsurf guidance now recommends local stdio or a configured self-hosted Worker, and Cursor/Claude plugin manifests are synchronized to `0.3.7`.
 
+## [0.3.18] - September 21, 2026
+
+### Added
+
+- Added opt-in xAI Grok visibility scans using grok-4.6 with required Web Search grounding, citation capture, local and self-hosted Worker key plumbing, and synchronized MCP/client metadata.
+
 ## [0.3.17] - September 21, 2026
 
 ### Added
