@@ -1,6 +1,6 @@
 # llms-install.md — AI agent installation guide for the DigestSEO GEO Tracker
 
-This file is written for AI agents (Cline, Claude Code, Cursor agents, etc.) installing **@digestseo/mcp-geo** (the `digestseo-mcp` executable), an MCP server that tracks how ChatGPT, Claude, Perplexity, Gemini, and Google AI Overviews cite a brand. Every command below is copy-pasteable as-is. Choose exactly one path:
+This file is written for AI agents (Cline, Claude Code, Cursor agents, etc.) installing **@digestseo/mcp-geo** (the `digestseo-mcp` executable), an MCP server that tracks how ChatGPT, Claude, Perplexity, Gemini, Grok, and Google AI Overviews cite a brand. Every command below is copy-pasteable as-is. Choose exactly one path:
 
 - **Path A (recommended): run locally via npx** — no hosting, data stays in a local SQLite file, user brings their own AI provider API keys.
 - **Path B: self-host on Cloudflare Workers** — remote MCP server with D1 storage, cron auto-refresh, and admin HTTP routes. The connect URL at the end is `https://<worker-host>/mcp`.
@@ -23,7 +23,7 @@ For Path C, review the [audit methodology](docs/ai-visibility-audit-methodology.
 
 ### API keys
 
-All five keys are **optional individually**. With zero keys, the server still starts so MCP clients can discover its tools, while engine-backed scans report that no engines are available. Engines whose key is absent are skipped gracefully. Add only the provider keys the user chooses to use.
+All six keys are **optional individually**. With zero keys, the server still starts so MCP clients can discover its tools, while engine-backed scans report that no engines are available. Engines whose key is absent are skipped gracefully. Add only the provider keys the user chooses to use.
 
 | Environment variable | Provider / engine | Where to get the key | Notes |
 |---|---|---|---|
@@ -31,6 +31,7 @@ All five keys are **optional individually**. With zero keys, the server still st
 | `ANTHROPIC_API_KEY` | Anthropic — Claude engine (`claude-haiku-4-5`) | https://console.anthropic.com/ | Recommended starter; also powers prompt generation and `get_content_gaps` analysis |
 | `GEMINI_API_KEY` | Google AI Studio — Gemini engine (`gemini-3.1-flash-lite`) | https://aistudio.google.com/app/apikey | Rate limits vary by model, project, and usage tier; check the project's active limits in Google AI Studio |
 | `PERPLEXITY_API_KEY` | Perplexity — Sonar engine | https://www.perplexity.ai/settings/api | Paid only |
+| `XAI_API_KEY` | xAI — Grok engine (`grok-4.6`, web search) | https://console.x.ai/ | Paid; Web Search is billed separately from model tokens, so check current xAI pricing |
 | `SERPAPI_API_KEY` | SerpAPI — Google AI Overviews engine | https://serpapi.com/dashboard | Free tier 250 searches/month |
 
 Recommend **OpenAI + Anthropic** as the starting pair. OpenAI provides grounded ChatGPT visibility through web search and bills search calls plus model tokens; Anthropic also powers prompt generation and content-gap analysis. Check current provider pricing before estimating scan cost.
@@ -65,6 +66,7 @@ Merge this into the `mcpServers` object (include only the keys the user has; del
         "ANTHROPIC_API_KEY": "sk-ant-REPLACE_ME",
         "GEMINI_API_KEY": "REPLACE_ME",
         "PERPLEXITY_API_KEY": "pplx-REPLACE_ME",
+        "XAI_API_KEY": "REPLACE_ME",
         "SERPAPI_API_KEY": "REPLACE_ME"
       }
     }
@@ -484,13 +486,14 @@ Strongly recommended (without it, anyone who discovers the worker URL can connec
 npx wrangler secret put CONNECT_SECRET
 ```
 
-Then set the engine keys the user has (each is opt-in; at least one required — same five as Path A):
+Then set the engine keys the user has (each is opt-in; at least one required — same six as Path A):
 
 ```bash
 npx wrangler secret put OPENAI_API_KEY      # ChatGPT engine — recommended starter
 npx wrangler secret put ANTHROPIC_API_KEY   # Claude engine + prompt generation — recommended starter
 npx wrangler secret put GEMINI_API_KEY      # optional add-on
 npx wrangler secret put PERPLEXITY_API_KEY  # optional, paid
+npx wrangler secret put XAI_API_KEY         # optional, paid
 npx wrangler secret put SERPAPI_API_KEY     # optional
 ```
 

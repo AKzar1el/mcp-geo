@@ -15,7 +15,7 @@ test('MCP v2 client auto-negotiates with the current stdio server', async () => 
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [CLI_PATH],
-    env: { ...process.env, OPENAI_API_KEY:'', ANTHROPIC_API_KEY:'', GEMINI_API_KEY:'', PERPLEXITY_API_KEY:'', SERPAPI_API_KEY:'', DIGESTSEO_DB_PATH:join(tmp, 'compat.sqlite') },
+    env: { ...process.env, OPENAI_API_KEY:'', ANTHROPIC_API_KEY:'', GEMINI_API_KEY:'', PERPLEXITY_API_KEY:'', XAI_API_KEY:'', SERPAPI_API_KEY:'', DIGESTSEO_DB_PATH:join(tmp, 'compat.sqlite') },
     stderr: 'pipe',
   });
 

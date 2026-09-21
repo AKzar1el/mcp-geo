@@ -24,6 +24,10 @@ import {
   runLive as runLiveAiOverviews,
   type AiOverviewsEnv,
 } from './ai-overviews.js';
+import {
+  runLive as runLiveGrok,
+  type XAiEnv,
+} from './xai.js';
 import type { Brand, Prompt } from '../db/types.js';
 
 export const ALL_ENGINES = [
@@ -31,6 +35,7 @@ export const ALL_ENGINES = [
   'claude',
   'perplexity',
   'gemini',
+  'grok',
   'ai_overviews',
 ] as const;
 export type EngineName = (typeof ALL_ENGINES)[number];
@@ -55,6 +60,7 @@ export interface EngineKeys {
   ANTHROPIC_API_KEY?: string;
   GEMINI_API_KEY?: string;
   PERPLEXITY_API_KEY?: string;
+  XAI_API_KEY?: string;
   SERPAPI_API_KEY?: string;
 }
 
@@ -64,6 +70,7 @@ export function getAvailableEngines(env: EngineKeys): EngineName[] {
   if (env.ANTHROPIC_API_KEY) engines.push('claude');
   if (env.GEMINI_API_KEY) engines.push('gemini');
   if (env.PERPLEXITY_API_KEY) engines.push('perplexity');
+  if (env.XAI_API_KEY) engines.push('grok');
   if (env.SERPAPI_API_KEY) engines.push('ai_overviews');
   return engines;
 }
@@ -75,6 +82,7 @@ export interface CoreEnginesEnv
     AnthropicEnv,
     PerplexityEnv,
     GeminiEnv,
+    XAiEnv,
     AiOverviewsEnv {}
 
 export interface EngineRun {
@@ -100,6 +108,8 @@ export async function runEngineInProcess(
       return runLivePerplexity(env, brand, prompts, engineRun.run_id);
     case 'gemini':
       return runLiveGemini(env, brand, prompts, engineRun.run_id);
+    case 'grok':
+      return runLiveGrok(env, brand, prompts, engineRun.run_id);
     case 'ai_overviews':
       return runLiveAiOverviews(env, brand, prompts, engineRun.run_id);
   }

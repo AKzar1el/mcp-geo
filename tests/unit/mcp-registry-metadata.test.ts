@@ -28,6 +28,7 @@ test('MCP Registry package advertises optional secret provider-key configuration
     'ANTHROPIC_API_KEY',
     'GEMINI_API_KEY',
     'PERPLEXITY_API_KEY',
+    'XAI_API_KEY',
     'SERPAPI_API_KEY',
   ];
 

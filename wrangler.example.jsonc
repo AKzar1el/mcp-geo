@@ -95,9 +95,10 @@
 	// Expected secrets (all opt-in — set only the engines you want):
 	//   - OPENAI_API_KEY      (ChatGPT engine)
 	//   - ANTHROPIC_API_KEY   (Claude engine + prompt generation + content gaps)
-	//   - GEMINI_API_KEY      (Gemini engine — free tier available)
-	//   - PERPLEXITY_API_KEY  (Perplexity engine — paid)
-	//   - SERPAPI_API_KEY     (Google AI Overviews engine — paid)
+	//   - GEMINI_API_KEY      (Gemini engine - free tier available)
+	//   - PERPLEXITY_API_KEY  (Perplexity engine - paid)
+	//   - XAI_API_KEY         (Grok engine with web search - paid)
+	//   - SERPAPI_API_KEY     (Google AI Overviews engine - paid)
 	//   - SEED_SECRET         (required — gates /admin/* routes)
 	//   - CONNECT_SECRET      (recommended — gates the OAuth connect flow;
 	//                          without it anyone with the URL can connect)

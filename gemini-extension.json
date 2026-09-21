@@ -1,7 +1,7 @@
 {
   "name": "digestseo-geo",
   "version": "0.3.17",
-  "description": "Track brand citations and AI visibility across ChatGPT, Claude, Perplexity, Gemini, and Google AI Overviews with the mcp-geo MCP server.",
+  "description": "Track brand citations and AI visibility across ChatGPT, Claude, Perplexity, Gemini, Grok, and Google AI Overviews with the mcp-geo MCP server.",
   "settings": [
     {
       "name": "OpenAI API key",
@@ -25,6 +25,12 @@
       "name": "Perplexity API key",
       "description": "Optional. Enables Perplexity visibility scans.",
       "envVar": "PERPLEXITY_API_KEY",
+      "sensitive": true
+    },
+    {
+      "name": "xAI API key",
+      "description": "Optional. Enables Grok visibility scans with web search.",
+      "envVar": "XAI_API_KEY",
       "sensitive": true
     },
     {
