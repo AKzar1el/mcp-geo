@@ -21,7 +21,10 @@ import { HOSTED_SERVER_INSTRUCTIONS } from './core/server-instructions.js';
 import { getScheduledRefreshTargets } from './core/scheduling.js';
 import { collectBatch, submitBatch } from './core/openai.js';
 import { generatePrompts } from './core/prompt-generation.js';
-import { handleAdminSetPrompts } from './core/admin-prompt-set.js';
+import {
+  handleAdminListPrompts,
+  handleAdminSetPrompts,
+} from './core/admin-prompt-set.js';
 import {
   PromptSnapshotIntegrityError,
   resolveRunPromptSnapshot,
@@ -625,6 +628,12 @@ const defaultHandler = {
       const denied = requireSeedSecret(request, env);
       if (denied) return denied;
       return handleAdminSetPrompts(request, db);
+    }
+
+    if (url.pathname === '/admin/list-prompts' && request.method === 'GET') {
+      const denied = requireSeedSecret(request, env);
+      if (denied) return denied;
+      return handleAdminListPrompts(request, db);
     }
 
     if (

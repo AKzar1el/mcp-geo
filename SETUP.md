@@ -223,6 +223,15 @@ curl -X POST https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev/admin/set-promp
 
 The route accepts 1-50 unique prompts, preserves historical runs, and is idempotent when the submitted set already matches the active prompts.
 
+Verify the exact active measurement set immediately before a scan:
+
+```bash
+curl "https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev/admin/list-prompts?brand_id=acme" \
+  -H "X-Seed-Secret: YOUR_SEED_SECRET"
+```
+
+The response returns the active prompt IDs, text, metadata, and count without changing the measurement set.
+
 ## 13 — Trigger a live scan
 
 ```bash

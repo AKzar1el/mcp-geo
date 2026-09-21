@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { handleAdminSetPrompts } from '../../src/core/admin-prompt-set.ts';
+import {
+  handleAdminListPrompts,
+  handleAdminSetPrompts,
+} from '../../src/core/admin-prompt-set.ts';
 import type { Brand, Db, NewPromptInput, Prompt } from '../../src/db/types.ts';
 
 const brand: Brand = {
@@ -95,4 +98,50 @@ test('admin set-prompts replaces and normalizes an exact measurement set', async
     { text: 'Which tool is best?', intent_stage: null, shape: null },
     { text: 'Acme vs Asana?', intent_stage: null, shape: null },
   ]);
+});
+
+test('admin list-prompts requires a brand_id', async () => {
+  const db = {} as Db;
+  const response = await handleAdminListPrompts(
+    new Request('https://example.test/admin/list-prompts'),
+    db,
+  );
+  assert.equal(response.status, 400);
+});
+
+test('admin list-prompts returns 404 for an unknown brand', async () => {
+  const db = { getBrand: async () => null } as unknown as Db;
+  const response = await handleAdminListPrompts(
+    new Request('https://example.test/admin/list-prompts?brand_id=missing'),
+    db,
+  );
+  assert.equal(response.status, 404);
+});
+
+test('admin list-prompts returns the exact active measurement set', async () => {
+  const prompts = [
+    activePrompt('Which tool is best?', 1),
+    activePrompt('Acme vs Asana?', 2),
+  ];
+  const db = {
+    getBrand: async () => brand,
+    getActivePrompts: async () => prompts,
+  } as unknown as Db;
+
+  const response = await handleAdminListPrompts(
+    new Request('https://example.test/admin/list-prompts?brand_id=acme'),
+    db,
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    brand_id: 'acme',
+    prompts: prompts.map((prompt) => ({
+      id: prompt.id,
+      text: prompt.text,
+      intent_stage: prompt.intent_stage,
+      shape: prompt.shape,
+      created_at: new Date(prompt.created_at).toISOString(),
+    })),
+    count: 2,
+  });
 });

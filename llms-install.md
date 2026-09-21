@@ -493,6 +493,15 @@ curl -X POST https://<worker-host>/admin/set-prompts \
 
 The route accepts 1-50 unique prompts, preserves historical runs, and returns `"changed": false` without rewriting the set when the submitted prompts already match.
 
+Verify the active measurement set immediately before scanning:
+
+```bash
+curl "https://<worker-host>/admin/list-prompts?brand_id=acme" \
+  -H "X-Seed-Secret: <SEED_SECRET value>"
+```
+
+This read-only admin route returns the active prompt IDs, text, metadata, and count without modifying the set.
+
 ### Step 9 — Trigger the first scan
 
 ```bash
