@@ -513,6 +513,15 @@ The payload also accepts optional `"aliases": [...]` and `"exclude_terms": [...]
 
 Expected response: `{"seeded": true, "brand_id": "acme", "prompts_inserted": 20, "prompt_source": "generated"}`. If `prompt_source` is `"fallback"`, the Claude Haiku prompt generator failed — usually because `ANTHROPIC_API_KEY` is not set (transient API/network failures also trigger it). Template prompts still work; to upgrade them, set the key and re-generate via `POST /admin/generate-prompts` (same `X-Seed-Secret` header, body `{"brand_id":"acme"}`).
 
+Before mutating prompts or triggering a scan, a self-hosted agent can inspect the tracked brand IDs and current configuration without changing state:
+
+```bash
+curl "https://<worker-host>/admin/list-brands" \
+  -H "X-Seed-Secret: <SEED_SECRET value>"
+```
+
+The response returns each brand's ID, domain, category, competitors, refresh frequency, active prompt count, and creation time.
+
 If the user already has an approved audit/research measurement set, replace the active prompts exactly before scanning:
 
 ```bash

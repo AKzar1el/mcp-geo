@@ -22,6 +22,7 @@ import { getScheduledRefreshTargets } from './core/scheduling.js';
 import { collectBatch, submitBatch } from './core/openai.js';
 import { generatePrompts } from './core/prompt-generation.js';
 import {
+  handleAdminListBrands,
   handleAdminListPrompts,
   handleAdminSetPrompts,
 } from './core/admin-prompt-set.js';
@@ -624,6 +625,11 @@ const defaultHandler = {
       return handleAdminGeneratePrompts(request, env, db);
     }
 
+    if (url.pathname === '/admin/list-brands' && request.method === 'GET') {
+      const denied = requireSeedSecret(request, env);
+      if (denied) return denied;
+      return handleAdminListBrands(db);
+    }
     if (url.pathname === '/admin/set-prompts' && request.method === 'POST') {
       const denied = requireSeedSecret(request, env);
       if (denied) return denied;
