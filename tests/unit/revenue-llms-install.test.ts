@@ -49,6 +49,15 @@ test('AI-agent guide documents JetBrains AI Assistant local stdio setup', () => 
     /### JetBrains AI Assistant \(IDE\)[\s\S]*Add > STDIO[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/,
   );
 });
+
+test('AI-agent guide distinguishes scheduled and manual Worker refresh cadences', () => {
+  assert.match(
+    guide,
+    /Brands set to `daily` or `weekly` auto-refresh[\s\S]*brands set to `manual` are skipped by cron[\s\S]*\/admin\/run-live/,
+  );
+  assert.doesNotMatch(guide, /no further manual scans needed/i);
+});
+
 test('AI-agent guide documents Amp CLI local stdio setup', () => {
   assert.match(
     guide,
