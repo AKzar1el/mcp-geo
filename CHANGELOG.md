@@ -9,6 +9,17 @@ All notable changes to this project are documented here. The format is loosely b
 - Cursor plugin MCP metadata now launches the published local stdio package instead of routing users to the public Worker endpoint, which is not configured as a turnkey fresh-scan service.
 - Windsurf guidance now recommends local stdio or a configured self-hosted Worker, and Cursor/Claude plugin manifests are synchronized to `0.3.7`.
 
+## [0.3.19] - September 22, 2026
+
+### Added
+
+- Added opt-in Google AI Mode visibility scans through SerpAPI, with separate per-prompt requests and citation/source capture when returned.
+- Added `update_brand` so local MCP users can correct tracked-brand identity, competitors, aliases, exclusions, and refresh cadence without replacing active prompts or historical runs.
+
+### Changed
+
+- `track_brand` and `update_brand` now accept `refresh_frequency: manual`; self-hosted scheduled refresh skips manual brands while explicit `refresh_brand` remains available.
+
 ## [0.3.18] - September 21, 2026
 
 ### Added
