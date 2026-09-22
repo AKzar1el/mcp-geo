@@ -428,7 +428,8 @@ export function openSqliteDb(path?: string): SqliteDb {
                     b.aliases_json, b.exclude_terms_json,
                     b.refresh_frequency, b.created_at, b.updated_at
                FROM brands b
-              WHERE EXISTS (
+              WHERE b.refresh_frequency <> 'manual'
+                AND EXISTS (
                 SELECT 1
                   FROM target_engines te
                   LEFT JOIN latest_usable lu
@@ -456,9 +457,12 @@ export function openSqliteDb(path?: string): SqliteDb {
                  WHERE pr.run_id = r.id AND pr.status = 'ok'
               )
             GROUP BY b.id
-           HAVING last_usable_run IS NULL
-              OR (b.refresh_frequency = 'weekly' AND last_usable_run < ?)
-              OR (b.refresh_frequency = 'daily'  AND last_usable_run < ?)`,
+           HAVING b.refresh_frequency <> 'manual'
+              AND (
+                last_usable_run IS NULL
+                OR (b.refresh_frequency = 'weekly' AND last_usable_run < ?)
+                OR (b.refresh_frequency = 'daily'  AND last_usable_run < ?)
+              )`,
         )
         .all(weeklyCutoff, dailyCutoff) as unknown as Array<
         BrandRow & { last_usable_run: number | null }

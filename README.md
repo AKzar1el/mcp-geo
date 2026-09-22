@@ -480,8 +480,8 @@ The local stdio CLI (npx, desktop extension, Docker) additionally provides brand
 
 | Tool (local CLI only) | What it does | What you provide |
 |---|---|---|
-| `track_brand` | Start tracking a brand: creates it locally and generates its buyer-intent prompt set (Claude Haiku when `ANTHROPIC_API_KEY` is set, three starter prompts otherwise). | `brand_id`, `name`, `domain`, optional `category`, `competitors[]`, `aliases[]`, `exclude_terms[]`, `prompt_count`, `refresh_frequency` (`daily`/`weekly`, default `weekly`) |
-| `update_brand` | Correct an existing brand's domain, name, category, competitors, aliases, exclusions, or refresh cadence without replacing active prompts or historical runs. | `brand_id` plus any fields to change |
+| `track_brand` | Start tracking a brand: creates it locally and generates its buyer-intent prompt set (Claude Haiku when `ANTHROPIC_API_KEY` is set, three starter prompts otherwise). | `brand_id`, `name`, `domain`, optional `category`, `competitors[]`, `aliases[]`, `exclude_terms[]`, `prompt_count`, `refresh_frequency` (`daily`/`weekly`/`manual`, default `weekly`) |
+| `update_brand` | Correct an existing brand's domain, name, category, competitors, aliases, exclusions, or refresh cadence without replacing active prompts or historical runs. Set cadence to `manual` to pause scheduled Worker scans while keeping manual refresh available. | `brand_id` plus any fields to change |
 | `list_brands` | List tracked brands with domains, competitors, aliases, exclusions, and active prompt counts. | — |
 | `list_prompts` | Inspect the exact active buyer-intent prompts for a tracked brand without changing them. | `brand_id` |
 | `set_prompts` | Replace the active prompt set with exact user-supplied buyer questions while preserving historical runs. | `brand_id`, `prompts[]` (1-50 unique questions) |

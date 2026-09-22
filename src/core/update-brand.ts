@@ -13,7 +13,7 @@ export interface UpdateTrackedBrandInput {
   competitors?: string[];
   aliases?: string[];
   exclude_terms?: string[];
-  refresh_frequency?: 'daily' | 'weekly';
+  refresh_frequency?: 'daily' | 'weekly' | 'manual';
 }
 
 export interface UpdateTrackedBrandResult {
@@ -70,8 +70,12 @@ export async function updateTrackedBrand(
   const aliases = normalizeTerms(input.aliases ?? existing.aliases);
   const excludeTerms = normalizeTerms(input.exclude_terms ?? existing.exclude_terms);
   const refreshFrequency = input.refresh_frequency ?? existing.refresh_frequency;
-  if (refreshFrequency !== 'daily' && refreshFrequency !== 'weekly') {
-    throw new DomainInputError('refresh_frequency must be either daily or weekly');
+  if (
+    refreshFrequency !== 'daily' &&
+    refreshFrequency !== 'weekly' &&
+    refreshFrequency !== 'manual'
+  ) {
+    throw new DomainInputError('refresh_frequency must be daily, weekly, or manual');
   }
 
   const fields: UpdateBrandFields = {

@@ -715,12 +715,29 @@ test('getBrandsDueForRefresh uses the latest run with usable responses', async (
     await persistRun(oldUsableThenFailed, 'failed', recent);
 
     await createCadenceBrand('no-runs');
+    await db.createBrand({
+      id: 'manual-only',
+      user_id: 'test-user',
+      domain: 'manual-only.com',
+      name: 'Manual Only',
+      category: null,
+      competitors: [],
+      aliases: [],
+      exclude_terms: [],
+      refresh_frequency: 'manual',
+    });
 
     const due = new Set((await db.getBrandsDueForRefresh()).map((brand) => brand.id));
     assert.equal(due.has('recent-failed'), true);
     assert.equal(due.has('recent-usable'), false);
     assert.equal(due.has('old-usable-then-failed'), true);
     assert.equal(due.has('no-runs'), true);
+    assert.equal(due.has('manual-only'), false);
+
+    const engineDue = new Set(
+      (await db.getBrandsDueForRefresh(['chatgpt'])).map((brand) => brand.id),
+    );
+    assert.equal(engineDue.has('manual-only'), false);
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });
@@ -962,7 +979,7 @@ test('seedBrand (core): fallback prompts without ANTHROPIC_API_KEY, $CATEGORY su
         domain: 'acme.com',
         category: 'Project management software',
         competitors: ['asana.com'],
-        refresh_frequency: 'daily',
+        refresh_frequency: 'manual',
       },
     );
     assert.equal(result.seeded, true);
@@ -973,7 +990,7 @@ test('seedBrand (core): fallback prompts without ANTHROPIC_API_KEY, $CATEGORY su
     const brand = await db.getBrand('acme');
     assert.ok(brand);
     assert.deepEqual(brand.competitors, ['asana.com']);
-    assert.equal(brand.refresh_frequency, 'daily');
+    assert.equal(brand.refresh_frequency, 'manual');
 
     const prompts = await db.getActivePrompts('acme');
     assert.equal(prompts.length, 3);
@@ -1061,7 +1078,7 @@ test('seedBrand rejects invalid refresh_frequency before writing any rows', asyn
           refresh_frequency: 'hourly' as 'daily',
         },
       ),
-      /refresh_frequency must be either daily or weekly/,
+      /refresh_frequency must be daily, weekly, or manual/,
     );
     assert.equal(await db.getBrand('invalid-cadence'), null);
   } finally {
