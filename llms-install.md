@@ -617,6 +617,14 @@ Then the user runs `/mcp` inside Claude Code to complete the OAuth handshake in 
 
 Settings → Connectors → Add custom connector → paste `https://<worker-host>/mcp`.
 
+#### Perplexity Computer
+
+On a Perplexity plan that supports custom MCP connectors, open **Account settings → Connectors → + Custom connector**, choose **Remote**, name the connector `digestseo`, and enter `https://<worker-host>/mcp`.
+
+Choose **OAuth** for the Worker connection. Complete the browser handshake; if `CONNECT_SECRET` was configured in Step 5, enter it in the one-field gate before the OAuth flow completes. Use the user's own Worker URL rather than the public `geo-mcp.digestseo.com/mcp` endpoint, which is not a turnkey no-key fresh-scan service.
+
+Reference: [Perplexity Computer custom MCP connectors](https://www.perplexity.ai/changelog/what-we-shipped---march-13-2026).
+
 #### Claude Desktop
 
 Merge into `claude_desktop_config.json` (macOS: `~/Library/Application Support/Claude/`, Windows: `%APPDATA%\Claude\`), then restart Claude Desktop:

@@ -22,6 +22,11 @@ test('AI-agent install guide exposes the frozen managed audit alternative withou
     guide,
     /### ChatGPT[\s\S]*does \*\*not\*\* connect directly to local STDIO MCP servers[\s\S]*Use \*\*Path B\*\*/,
   );
+  assert.match(
+    guide,
+    /#### Perplexity Computer[\s\S]*Account settings → Connectors → \+ Custom connector[\s\S]*choose \*\*Remote\*\*[\s\S]*https:\/\/<worker-host>\/mcp[\s\S]*\*\*OAuth\*\*[\s\S]*CONNECT_SECRET/,
+  );
+  assert.match(guide, /perplexity\.ai\/changelog\/what-we-shipped---march-13-2026/);
   assert.doesNotMatch(guide, /### ChatGPT desktop app[\s\S]*npx -y @digestseo\/mcp-geo/);
   assert.match(
     guide,
