@@ -21,6 +21,7 @@ import type {
   EnginePromptResult,
   Prompt,
 } from '../db/types.js';
+import { fetchWithTimeout } from './fetch.js';
 
 export const MODEL = 'serpapi-google-ai-overview';
 export const ENGINE = 'ai_overviews';
@@ -115,7 +116,7 @@ function hasOverviewContent(completion: AiOverviewCompletion): boolean {
 async function fetchSerpApi(
   params: URLSearchParams,
 ): Promise<SerpApiResponse> {
-  const resp = await fetch(`${SERPAPI_URL}?${params.toString()}`, {
+  const resp = await fetchWithTimeout(`${SERPAPI_URL}?${params.toString()}`, {
     method: 'GET',
   });
   if (!resp.ok) {

@@ -5,6 +5,7 @@
 
 import { extractCitations, hostMatchesDomain } from './openai.js';
 import type { Brand, Db, EnginePromptResult, Prompt } from '../db/types.js';
+import { fetchWithTimeout } from './fetch.js';
 
 export const MODEL = 'serpapi-google-ai-mode';
 export const ENGINE = 'ai_mode';
@@ -84,7 +85,7 @@ export async function chatCompletion(
     hl: 'en',
     no_cache: 'true',
   });
-  const resp = await fetch(`${SERPAPI_URL}?${params.toString()}`, { method: 'GET' });
+  const resp = await fetchWithTimeout(`${SERPAPI_URL}?${params.toString()}`, { method: 'GET' });
   if (!resp.ok) {
     const body = await resp.text();
     throw new Error(`SerpAPI AI Mode search failed: ${resp.status} ${body}`);

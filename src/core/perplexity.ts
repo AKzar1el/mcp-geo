@@ -15,6 +15,7 @@ import type {
   EnginePromptResult,
   Prompt,
 } from '../db/types.js';
+import { fetchWithTimeout } from './fetch.js';
 
 export const MODEL = 'perplexity/sonar';
 export const ENGINE = 'perplexity';
@@ -103,7 +104,7 @@ export async function chatCompletion(
   userText: string,
   systemPrompt: string,
 ): Promise<PerplexityCompletion> {
-  const resp = await fetch(PERPLEXITY_URL, {
+  const resp = await fetchWithTimeout(PERPLEXITY_URL, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey}`,
