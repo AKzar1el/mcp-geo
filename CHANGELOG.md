@@ -9,6 +9,18 @@ All notable changes to this project are documented here. The format is loosely b
 - Cursor plugin MCP metadata now launches the published local stdio package instead of routing users to the public Worker endpoint, which is not configured as a turnkey fresh-scan service.
 - Windsurf guidance now recommends local stdio or a configured self-hosted Worker, and Cursor/Claude plugin manifests are synchronized to `0.3.7`.
 
+## [0.3.22] - September 23, 2026
+
+### Fixed
+
+- Perplexity visibility scans now use the Agent API `fast` preset instead of the retiring fixed Sonar model selector, preserving grounded web search before Sonar tiers retire on September 27, 2026.
+- Portable Agent Plugin and Claude marketplace metadata now advertise Google AI Mode consistently with the seven-surface product.
+
+### Changed
+
+- Added Amazon Q Developer CLI onboarding for the published local stdio package, including zero-key tool discovery and secret-safe provider configuration.
+- Self-hosting guidance now matches the stateless SDK-v2 hosted MCP route and current manual-refresh behavior.
+
 ## [0.3.21] - September 22, 2026
 
 ### Changed
