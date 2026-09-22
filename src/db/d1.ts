@@ -17,6 +17,7 @@ import type {
   PromptResponse,
   ResponseStatus,
   Run,
+  UpdateBrandFields,
   UpdateRunFields,
   VisibilityHistoryRow,
 } from './types';
@@ -168,6 +169,29 @@ export function createD1Db(d1: D1Database): Db {
           input.refresh_frequency,
           now,
           now,
+        )
+        .run();
+    },
+
+    async updateBrand(brandId: string, fields: UpdateBrandFields): Promise<void> {
+      await d1
+        .prepare(
+          `UPDATE brands
+              SET domain = ?, name = ?, category = ?, competitors_json = ?,
+                  aliases_json = ?, exclude_terms_json = ?, refresh_frequency = ?,
+                  updated_at = ?
+            WHERE id = ?`,
+        )
+        .bind(
+          fields.domain,
+          fields.name,
+          fields.category,
+          JSON.stringify(fields.competitors),
+          JSON.stringify(fields.aliases),
+          JSON.stringify(fields.exclude_terms),
+          fields.refresh_frequency,
+          Date.now(),
+          brandId,
         )
         .run();
     },

@@ -1,4 +1,4 @@
-// The six shared MCP tools (registerTools) plus the three CLI-only
+// The six shared MCP tools (registerTools) plus the six CLI-only
 // management tools (registerLocalManagementTools), registered against
 // any McpServer. The shared six are wired verbatim
 // between the Cloudflare Worker (src/index.ts) and the local stdio CLI
@@ -30,6 +30,7 @@ import { computeOverallScore } from './scoring.js';
 import { generatePrompts } from './prompt-generation.js';
 import { applyExactPromptSet } from './prompt-set.js';
 import { seedBrand } from './seed.js';
+import { updateTrackedBrand } from './update-brand.js';
 import {
   normalizeCompetitorDomains,
   normalizeRequiredDomain,
@@ -184,6 +185,22 @@ const trackBrandOutputSchema = z.object({
   next_steps: z.string(),
 });
 
+const updateBrandOutputSchema = z.object({
+  updated: z.boolean(),
+  brand_id: z.string(),
+  changed_fields: z.array(z.string()),
+  brand: z.object({
+    name: z.string(),
+    domain: z.string(),
+    category: z.string().nullable(),
+    competitors: z.array(z.string()),
+    aliases: z.array(z.string()),
+    exclude_terms: z.array(z.string()),
+    refresh_frequency: z.enum(['daily', 'weekly']),
+  }),
+  next_steps: z.string(),
+});
+
 const listBrandsOutputSchema = z.object({
   brands: z.array(
     z.object({
@@ -192,6 +209,8 @@ const listBrandsOutputSchema = z.object({
       domain: z.string(),
       category: z.string().nullable(),
       competitors: z.array(z.string()),
+      aliases: z.array(z.string()),
+      exclude_terms: z.array(z.string()),
       refresh_frequency: z.string(),
       active_prompts: z.number(),
       created_at: z.string(),
@@ -973,7 +992,7 @@ export function registerLocalManagementTools(
             ? `Tracked with ${result.prompts_inserted} generic starter prompts (no ANTHROPIC_API_KEY configured for prompt generation). Call refresh_brand with brand_id '${result.brand_id}' to run the first scan; add ANTHROPIC_API_KEY and call generate_prompts later for category-specific prompts.`
             : `Call refresh_brand with brand_id '${result.brand_id}' to run the first scan, then check_visibility for the results.`;
       } else if (result.reason === 'already exists') {
-        next_steps = `Brand '${result.brand_id}' is already tracked — nothing was changed. Use list_brands to inspect it, generate_prompts to refresh its prompt set, or pick a different brand_id.`;
+        next_steps = `Brand '${result.brand_id}' is already tracked — nothing was changed. Use list_brands to inspect it, update_brand to correct its metadata, or generate_prompts to refresh its prompt set.`;
       } else {
         next_steps =
           'Nothing was created — brand_id, name, and domain are all required.';
@@ -991,11 +1010,76 @@ export function registerLocalManagementTools(
   );
 
   server.registerTool(
+    'update_brand',
+    {
+      title: 'Update tracked brand',
+      description:
+        "Update an existing brand's identity and comparison metadata without replacing its active prompts or historical runs. Use when the domain, display name, category, competitors, aliases, exclusion terms, or refresh cadence changes after track_brand. Future scans use the updated metadata.",
+      inputSchema: {
+        brand_id: z
+          .string()
+          .describe('Stable identifier of the tracked brand to update.'),
+        name: z.string().min(1).max(200).optional(),
+        domain: z.string().min(3).max(253).optional(),
+        category: z.string().min(1).max(200).nullable().optional(),
+        competitors: z.array(z.string().min(3).max(253)).max(20).optional(),
+        aliases: z.array(z.string().min(1).max(100)).max(20).optional(),
+        exclude_terms: z.array(z.string().min(1).max(100)).max(20).optional(),
+        refresh_frequency: z.enum(['daily', 'weekly']).optional(),
+      },
+      outputSchema: updateBrandOutputSchema,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async ({
+      brand_id,
+      name,
+      domain,
+      category,
+      competitors,
+      aliases,
+      exclude_terms,
+      refresh_frequency,
+    }) => {
+      const result = await updateTrackedBrand(deps.db, {
+        brand_id,
+        name,
+        domain,
+        category,
+        competitors,
+        aliases,
+        exclude_terms,
+        refresh_frequency,
+      });
+      const payload = {
+        updated: result.updated,
+        brand_id: result.brand_id,
+        changed_fields: result.changed_fields,
+        brand: {
+          name: result.brand.name,
+          domain: result.brand.domain,
+          category: result.brand.category,
+          competitors: result.brand.competitors,
+          aliases: result.brand.aliases,
+          exclude_terms: result.brand.exclude_terms,
+          refresh_frequency: result.brand.refresh_frequency,
+        },
+        next_steps: `Call refresh_brand with brand_id '${brand_id}' to scan using the updated metadata. Active prompts and historical runs were preserved.`,
+      };
+      return toolResult(payload);
+    },
+  );
+
+  server.registerTool(
     'list_brands',
     {
       title: 'List tracked brands',
       description:
-        "List every brand tracked in the local database, with domain, category, competitors, refresh frequency, and how many prompts are active. Use when the user asks 'which brands am I tracking?' or to look up the brand_id the other tools need.",
+        "List every brand tracked in the local database, with domain, category, competitors, aliases, exclusion terms, refresh frequency, and how many prompts are active. Use when the user asks 'which brands am I tracking?' or to look up the brand_id the other tools need.",
       inputSchema: {},
       outputSchema: listBrandsOutputSchema,
       annotations: {
@@ -1014,6 +1098,8 @@ export function registerLocalManagementTools(
           domain: b.domain,
           category: b.category,
           competitors: b.competitors,
+          aliases: b.aliases,
+          exclude_terms: b.exclude_terms,
           refresh_frequency: b.refresh_frequency,
           active_prompts: b.active_prompts,
           created_at: new Date(b.created_at).toISOString(),

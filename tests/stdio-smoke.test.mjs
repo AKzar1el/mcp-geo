@@ -4,7 +4,7 @@
 // JSON-RPC handshake over stdin/stdout, and asserts:
 //   1. initialize succeeds,
 //   2. initialize advertises cross-tool workflow instructions,
-//   3. tools/list returns all eleven tools (six shared + five local
+//   3. tools/list returns all twelve tools (six shared + six local
 //      management tools),
 //   4. nothing non-JSON ever appears on stdout (stdout is the JSON-RPC
 //      channel; all logging must go to stderr).
@@ -34,6 +34,7 @@ const EXPECTED_TOOLS = [
   'refresh_brand',
   // Local management tools — CLI only, not present on the Worker.
   'track_brand',
+  'update_brand',
   'list_brands',
   'list_prompts',
   'set_prompts',
@@ -44,7 +45,7 @@ function rpc(child, body) {
   child.stdin.write(JSON.stringify(body) + '\n');
 }
 
-test('stdio CLI: initialize + tools/list returns all eleven tools, local prompt management works offline, stdout stays pure JSON', async () => {
+test('stdio CLI: initialize + tools/list returns all twelve tools, local brand/prompt management works offline, stdout stays pure JSON', async () => {
   assert.ok(
     existsSync(CLI_PATH),
     `CLI artifact not found at ${CLI_PATH} — run \`npm run build\` first`,
@@ -284,6 +285,52 @@ test('stdio CLI: initialize + tools/list returns all eleven tools, local prompt 
     const setAgainPayload = JSON.parse(setPromptsAgain.result.content[0].text);
     assert.equal(setAgainPayload.changed, false);
     assert.equal(setAgainPayload.prompts_inserted, 0);
+
+    rpc(child, {
+      jsonrpc: '2.0',
+      id: 9,
+      method: 'tools/call',
+      params: {
+        name: 'update_brand',
+        arguments: {
+          brand_id: 'smoke-brand',
+          domain: 'https://www.New-Smoke.example/pricing',
+          competitors: ['rival.example', 'new-smoke.example'],
+          aliases: ['Smoke Suite', ' smoke suite '],
+          refresh_frequency: 'daily',
+        },
+      },
+    });
+    const updated = await waitFor(9);
+    assert.ok(
+      !updated.error && !updated.result?.isError,
+      `update_brand failed: ${JSON.stringify(updated.error ?? updated.result)}`,
+    );
+    const updatePayload = JSON.parse(updated.result.content[0].text);
+    assert.equal(updatePayload.updated, true);
+    assert.equal(updatePayload.brand.domain, 'new-smoke.example');
+    assert.deepEqual(updatePayload.brand.competitors, ['rival.example']);
+    assert.deepEqual(updatePayload.brand.aliases, ['Smoke Suite']);
+    assert.equal(updatePayload.brand.refresh_frequency, 'daily');
+
+    rpc(child, {
+      jsonrpc: '2.0',
+      id: 10,
+      method: 'tools/call',
+      params: { name: 'list_prompts', arguments: { brand_id: 'smoke-brand' } },
+    });
+    const promptsAfterBrandUpdate = await waitFor(10);
+    assert.ok(
+      !promptsAfterBrandUpdate.error && !promptsAfterBrandUpdate.result?.isError,
+      `list_prompts after update_brand failed: ${JSON.stringify(promptsAfterBrandUpdate.error ?? promptsAfterBrandUpdate.result)}`,
+    );
+    const promptsAfterBrandUpdatePayload = JSON.parse(
+      promptsAfterBrandUpdate.result.content[0].text,
+    );
+    assert.deepEqual(
+      promptsAfterBrandUpdatePayload.prompts.map((prompt) => prompt.text),
+      ['Which smoke testing tool is best?', 'Compare smoke testing platforms'],
+    );
 
     // stdout purity: every line the process ever wrote must be JSON.
     for (const line of stdoutLines) {

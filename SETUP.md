@@ -220,7 +220,18 @@ curl "https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev/admin/list-brands" \
   -H "X-Seed-Secret: YOUR_SEED_SECRET"
 ```
 
-The read-only response includes each brand's ID, domain, category, competitors, refresh frequency, active prompt count, and creation time.
+The read-only response includes each brand's ID, domain, category, competitors, aliases, exclusion terms, refresh frequency, active prompt count, and creation time.
+
+Correct tracked brand metadata without replacing prompts or historical runs:
+
+```bash
+curl -X POST https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev/admin/update-brand \
+  -H "X-Seed-Secret: YOUR_SEED_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"brand_id":"acme","competitors":["asana.com","linear.app"],"refresh_frequency":"daily"}'
+```
+
+Pass only fields that need changing (`name`, `domain`, `category`, `competitors`, `aliases`, `exclude_terms`, `refresh_frequency`). Use `null` to clear `category`. Future scans use the updated metadata; the current prompt set and historical runs stay intact.
 
 If you already have an agreed audit/research question set, replace the active prompts exactly before scanning instead of regenerating them with AI:
 
