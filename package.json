@@ -69,6 +69,7 @@
     "@cloudflare/workers-oauth-provider": "^0.10.3",
     "@cloudflare/workers-types": "^5.20260920.1",
     "@modelcontextprotocol/client": "^2.0.0",
+    "@modelcontextprotocol/server": "2.0.0",
     "@types/node": "^25.9.3",
     "agents": "^0.24.0",
     "tsx": "^4.22.4",

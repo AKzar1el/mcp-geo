@@ -15,4 +15,18 @@ test('remote Worker enables MCP 2026-07-28 CIMD with the required SSRF guard', (
     pkg.devDependencies?.['@cloudflare/workers-oauth-provider'],
     '^0.10.3',
   );
+  assert.equal(pkg.devDependencies?.['@modelcontextprotocol/server'], '2.0.0');
+  assert.match(workerSource, /createMcpHandler/);
+  assert.match(workerSource, /McpServer as StatelessMcpServer/);
+  assert.match(workerSource, /legacy:\s*'stateless'/);
+  assert.match(workerSource, /allowedHostnames:\s*\[hostname\]/);
+  assert.match(workerSource, /allowedOriginHostnames:\s*\[hostname\]/);
+  assert.match(
+    workerSource,
+    /'\/mcp':\s*\{\s*fetch:\s*handleHostedMcpRequest,?\s*\}/,
+  );
+  assert.doesNotMatch(
+    workerSource,
+    /'\/mcp':\s*GeoMcpAgent\.serve\('\/mcp'\)/,
+  );
 });
