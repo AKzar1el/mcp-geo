@@ -37,9 +37,9 @@ export interface WorkerEnginesEnv extends EngineKeys {
   SELF_URL?: string;
 }
 
-// Structural type so both Worker fetch ExecutionContext and Durable
-// Object DurableObjectState satisfy it (refresh_brand fires from
-// inside the MCP Durable Object).
+// Structural type shared by Worker fetch ExecutionContext and the retained
+// legacy Durable Object context. Current hosted /mcp refreshes use the Worker
+// ExecutionContext; the legacy class still satisfies this during migration.
 export interface WaitUntilCtx {
   waitUntil(promise: Promise<unknown>): void;
 }

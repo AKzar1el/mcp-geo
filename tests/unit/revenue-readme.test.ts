@@ -95,6 +95,18 @@ test('README exposes independently observed MCP reliability', () => {
   );
 });
 
+test('README architecture reflects the stateless hosted MCP route', () => {
+  assert.match(readme, /Stateless MCP handler<br\/>\(SDK v2, 6 hosted tools\)/);
+  assert.match(
+    readme,
+    /current `\/mcp` traffic is served by the stateless SDK v2 handler/,
+  );
+  assert.doesNotMatch(
+    readme,
+    /W --> DO\["GeoMcpAgent<br\/>\(Durable Object, 6 MCP tools\)"\]/,
+  );
+});
+
 test('published README uses durable URLs for files excluded from the npm tarball', () => {
   for (const relativeTarget of [
     './llms-install.md',

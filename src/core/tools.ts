@@ -304,25 +304,23 @@ export function registerTools(
     options.namespaced ? HOSTED_TOOL_NAMES[legacyName] : legacyName;
   const refreshIsAsync = deps.refreshExecution === 'async';
   const refreshDescription = refreshIsAsync
-    ? "Manually trigger a fresh AI visibility scan for a tracked brand. Runs every engine that has its API key configured (ChatGPT, Claude, Perplexity, Gemini, Grok, Google AI Overviews, Google AI Mode) against the brand's current prompt set. Use when the user asks 'refresh my data', 'rerun the scan', or 'I want fresh data right now'. Returns immediately with run IDs; results populate in 30-60 seconds."
-    : "Manually trigger a fresh AI visibility scan for a tracked brand. Runs every selected configured engine (ChatGPT, Claude, Perplexity, Gemini, Grok, Google AI Overviews, Google AI Mode) against the brand's current prompt set sequentially. Use when the user asks 'refresh my data', 'rerun the scan', or 'I want fresh data right now'. Returns only after all selected engine scans finish.";
+    ? "Start a fresh scan on selected configured engines using the brand's active prompts. Returns run IDs immediately; results usually populate in 30-60 seconds. Example: brand_id='acme', engines=['chatgpt','gemini']."
+    : "Run a fresh scan on selected configured engines using the brand's active prompts and return after completion. Example: brand_id='acme', engines=['chatgpt','gemini'].";
 
   server.registerTool(
     toolName('check_visibility'),
     {
       title: 'Check AI visibility',
       description:
-        "Get the latest AI visibility data for a tracked brand: which AI assistants (ChatGPT, Claude, Perplexity, Gemini, Grok, Google AI Overviews, Google AI Mode) cite this brand, for which prompts, and how it compares to competitors. Use when the user asks 'how visible am I on AI?', 'who's citing my brand?', or 'show me my AI visibility score'. Returns stored data — for fresh data, call refresh_brand.",
+        "Read the latest stored visibility snapshot, including scores and winning/losing prompts; call refresh_brand first for fresh data. Example: brand_id='acme', engines=['chatgpt','perplexity'].",
       inputSchema: {
         brand_id: z
           .string()
-          .describe('Stable identifier of the tracked brand to inspect.'),
+          .describe('Tracked brand ID to inspect.'),
         engines: z
           .array(engineSchema)
           .optional()
-          .describe(
-            'Optional engine filter. If omitted or empty, return results for every engine with stored data.',
-          ),
+          .describe('Engines to include; omit or pass [] for all stored engines.'),
       },
       outputSchema: visibilityOutputSchema,
       annotations: {
@@ -391,21 +389,21 @@ export function registerTools(
     {
       title: 'Get AI visibility history',
       description:
-        "Get the time-series history of a brand's AI visibility score, broken down per engine. Use when the user asks 'how has my AI visibility changed over time?', 'is my visibility growing or shrinking?', or 'show me the trend for the last month'.",
+        "Return daily or weekly visibility history with per-engine evidence. Example: brand_id='acme', days=30, granularity='weekly'.",
       inputSchema: {
         brand_id: z
           .string()
-          .describe('Stable identifier of the tracked brand to inspect.'),
+          .describe('Tracked brand ID to inspect.'),
         days: z
           .number()
           .min(1)
           .max(365)
           .default(30)
-          .describe('Number of previous calendar days to include.'),
+          .describe('Previous calendar days to include.'),
         granularity: z
           .enum(['daily', 'weekly'])
           .default('weekly')
-          .describe('Time bucket for the returned visibility series.'),
+          .describe('Time bucket for the series.'),
       },
       outputSchema: historyOutputSchema,
       annotations: {
@@ -485,23 +483,21 @@ export function registerTools(
     {
       title: 'Compare competitor AI visibility',
       description:
-        "Compare a brand's AI visibility against competitors for the same category. Returns share-of-voice percentages, prompts the user wins, and prompts where competitors win. Use when the user asks 'who beats me in AI search?', 'compare me to my competitors', or 'why does [competitor] get cited more?'.",
+        "Compare stored brand and competitor mentions, share of voice, and prompt wins over a time window. Example: brand_id='acme', competitor_domains=['rival.com'], days=7.",
       inputSchema: {
         brand_id: z
           .string()
-          .describe('Stable identifier of the tracked brand to compare.'),
+          .describe('Tracked brand ID to compare.'),
         competitor_domains: z
           .array(z.string())
           .optional()
-          .describe(
-            'Optional competitor domains to compare; otherwise use the brand\'s configured competitors.',
-          ),
+          .describe("Competitor domains; omit to use the brand's configured list."),
         days: z
           .number()
           .min(1)
           .max(90)
           .default(7)
-          .describe('Number of previous days to include in the comparison.'),
+          .describe('Previous days to compare.'),
       },
       outputSchema: compareOutputSchema,
       annotations: {
@@ -626,20 +622,20 @@ export function registerTools(
     {
       title: 'Get AI citation evidence',
       description:
-        "Get citation events where AI assistants mention the brand. Each event includes the prompt that triggered it, the LLM's response excerpt, whether the brand was mentioned with or without a link, and the matched brand URL from engine-native citation data when available. Use when the user asks 'show me where I'm cited', 'what are ChatGPT/Claude/Perplexity actually saying about my brand?', or 'give me proof of AI citations'.",
+        "Return stored brand citation evidence: prompt, response excerpt, link status, and matched URL when available. Example: brand_id='acme', days=14, engine='perplexity'.",
       inputSchema: {
         brand_id: z
           .string()
-          .describe('Stable identifier of the tracked brand to inspect.'),
+          .describe('Tracked brand ID to inspect.'),
         days: z
           .number()
           .min(1)
           .max(90)
           .default(14)
-          .describe('Number of previous days from which to return citations.'),
+          .describe('Previous days to search.'),
         engine: engineSchema
           .optional()
-          .describe('Optional engine filter for the citation events.'),
+          .describe('Engine to filter by; omit for all engines.'),
       },
       outputSchema: citationsOutputSchema,
       annotations: {
@@ -687,17 +683,17 @@ export function registerTools(
     {
       title: 'Find AI visibility content gaps',
       description:
-        "Get actionable content recommendations based on AI visibility gaps. Returns prioritized topics and content formats that would close the gap between this brand and competitors winning the same prompts. Use when the user asks 'what should I write to improve AI visibility?', 'what content gaps do I have?', or 'how do I get cited more by AI?'.",
+        "Prioritize content topics and formats from prompts where competitors beat the brand; falls back deterministically if AI analysis is unavailable. Example: brand_id='acme', max_recommendations=5.",
       inputSchema: {
         brand_id: z
           .string()
-          .describe('Stable identifier of the tracked brand to analyze.'),
+          .describe('Tracked brand ID to analyze.'),
         max_recommendations: z
           .number()
           .min(1)
           .max(10)
           .default(5)
-          .describe('Maximum number of content recommendations to return.'),
+          .describe('Maximum recommendations to return.'),
       },
       outputSchema: contentGapsOutputSchema,
       annotations: {
@@ -806,13 +802,11 @@ export function registerTools(
       inputSchema: {
         brand_id: z
           .string()
-          .describe('Stable identifier of the tracked brand to refresh.'),
+          .describe('Tracked brand ID to refresh.'),
         engines: z
           .array(engineSchema)
           .optional()
-          .describe(
-            'Optional engine filter. If omitted, refresh every configured engine.',
-          ),
+          .describe('Engines to run; omit for every configured engine.'),
       },
       outputSchema: refreshOutputSchema,
       annotations: {
@@ -887,11 +881,11 @@ export function registerLocalManagementTools(
     {
       title: 'Track a brand',
       description:
-        "Start tracking a brand's AI visibility. Creates the brand in the local database and generates buyer-intent prompts for it — via Claude Haiku when ANTHROPIC_API_KEY is configured, otherwise three generic starter prompts (upgrade later with generate_prompts). Use when the user says 'track my brand', 'add my site', 'start monitoring acme.com', or when another tool reported the brand doesn't exist. After tracking, call refresh_brand to run the first scan.",
+        "Create a local tracked brand and starter buyer-intent prompts; uses Claude Haiku when configured, otherwise three generic prompts. Example: brand_id='acme', name='Acme', domain='acme.com'. Call refresh_brand next.",
       inputSchema: {
         brand_id: z
           .string()
-          .describe('Stable identifier to assign to the new tracked brand.')
+          .describe("New stable brand ID, e.g. 'acme'.")
           .regex(
             /^[a-z0-9][a-z0-9_-]{0,63}$/i,
             'brand_id must be 1-64 characters: letters, digits, hyphens, underscores (e.g. "acme")',
@@ -900,49 +894,45 @@ export function registerLocalManagementTools(
           .string()
           .min(1)
           .max(200)
-          .describe('Display name of the brand to track.'),
+          .describe('Brand display name.'),
         domain: z
           .string()
           .min(3)
           .max(253)
-          .describe('Primary domain of the brand, such as acme.com.'),
+          .describe("Primary domain, e.g. 'acme.com'."),
         category: z
           .string()
           .min(1)
           .max(200)
           .optional()
-          .describe('Optional product or market category for prompt generation.'),
+          .describe('Market/category for prompt generation.'),
         competitors: z
           .array(z.string().min(3).max(253))
           .max(20)
           .optional()
-          .describe('Optional competitor domains to include in visibility analysis.'),
+          .describe('Competitor domains to compare.'),
         aliases: z
           .array(z.string().min(1).max(100))
           .max(20)
           .optional()
-          .describe(
-            'Extra terms that always count as a brand mention (product names, abbreviations).',
-          ),
+          .describe('Additional names that count as brand mentions.'),
         exclude_terms: z
           .array(z.string().min(1).max(100))
           .max(20)
           .optional()
-          .describe(
-            'Terms suppressed from bare-word matching — for brand names that are everyday words ("Monday", "Notion"). The full domain still matches.',
-          ),
+          .describe('Bare terms to ignore in mention matching; the full domain still matches.'),
         prompt_count: z
           .number()
           .int()
           .min(1)
           .max(50)
           .default(20)
-          .describe('Number of buyer-intent prompts to generate for the brand.'),
+          .describe('Buyer-intent prompts to create.'),
         refresh_frequency: z
           .enum(['daily', 'weekly', 'manual'])
           .default('weekly')
           .describe(
-            "Refresh cadence used by self-hosted Worker cron scheduling. Choose 'manual' to disable cron scans while keeping the brand, prompts, and history. Local stdio stores this setting but does not run a background scheduler.",
+            "Worker cron cadence; 'manual' disables cron scans. Local stdio stores this setting only.",
           ),
       },
       outputSchema: trackBrandOutputSchema,
@@ -1014,18 +1004,39 @@ export function registerLocalManagementTools(
     {
       title: 'Update tracked brand',
       description:
-        "Update an existing brand's identity and comparison metadata without replacing its active prompts or historical runs. Use when the domain, display name, category, competitors, aliases, exclusion terms, or refresh cadence changes after track_brand. Set refresh_frequency to 'manual' to pause scheduled Worker scans while keeping manual refreshes available. Future scans use the updated metadata.",
+        "Change tracked-brand metadata without replacing prompts or history. Example: brand_id='acme', competitors=['rival.com'], refresh_frequency='manual' pauses cron scans but keeps manual refresh.",
       inputSchema: {
         brand_id: z
           .string()
-          .describe('Stable identifier of the tracked brand to update.'),
-        name: z.string().min(1).max(200).optional(),
-        domain: z.string().min(3).max(253).optional(),
-        category: z.string().min(1).max(200).nullable().optional(),
-        competitors: z.array(z.string().min(3).max(253)).max(20).optional(),
-        aliases: z.array(z.string().min(1).max(100)).max(20).optional(),
-        exclude_terms: z.array(z.string().min(1).max(100)).max(20).optional(),
-        refresh_frequency: z.enum(['daily', 'weekly', 'manual']).optional(),
+          .describe('Tracked brand ID to update.'),
+        name: z.string().min(1).max(200).optional().describe('New display name.'),
+        domain: z.string().min(3).max(253).optional().describe('New primary domain.'),
+        category: z
+          .string()
+          .min(1)
+          .max(200)
+          .nullable()
+          .optional()
+          .describe('New category, or null to clear it.'),
+        competitors: z
+          .array(z.string().min(3).max(253))
+          .max(20)
+          .optional()
+          .describe('Replacement competitor domains.'),
+        aliases: z
+          .array(z.string().min(1).max(100))
+          .max(20)
+          .optional()
+          .describe('Replacement mention aliases.'),
+        exclude_terms: z
+          .array(z.string().min(1).max(100))
+          .max(20)
+          .optional()
+          .describe('Replacement bare terms to ignore in mention matching.'),
+        refresh_frequency: z
+          .enum(['daily', 'weekly', 'manual'])
+          .optional()
+          .describe("New cadence; 'manual' pauses cron scans."),
       },
       outputSchema: updateBrandOutputSchema,
       annotations: {
@@ -1079,7 +1090,7 @@ export function registerLocalManagementTools(
     {
       title: 'List tracked brands',
       description:
-        "List every brand tracked in the local database, with domain, category, competitors, aliases, exclusion terms, refresh frequency, and how many prompts are active. Use when the user asks 'which brands am I tracking?' or to look up the brand_id the other tools need.",
+        'List tracked brands with metadata and active-prompt counts. Example: call before other tools when you need a brand_id.',
       inputSchema: {},
       outputSchema: listBrandsOutputSchema,
       annotations: {
@@ -1118,11 +1129,11 @@ export function registerLocalManagementTools(
     {
       title: 'List active prompts',
       description:
-        "List the exact active buyer-intent prompts for one tracked brand without changing them. Use before a scan or audit when the user wants to inspect the measurement set, verify prompt coverage, or review what generate_prompts produced.",
+        "List a brand's active buyer-intent prompts without changing them. Example: brand_id='acme' before an audit or refresh.",
       inputSchema: {
         brand_id: z
           .string()
-          .describe('Stable identifier of the tracked brand whose active prompts to inspect.'),
+          .describe('Brand ID whose active prompts to list.'),
       },
       outputSchema: listPromptsOutputSchema,
       annotations: {
@@ -1158,16 +1169,16 @@ export function registerLocalManagementTools(
     {
       title: 'Set active prompts',
       description:
-        "Replace a tracked brand's active measurement prompts with an exact user-supplied set while preserving historical run data. Use when the user already has approved buyer questions, wants to import a research prompt set, or needs the same agreed prompts used for an audit instead of AI-generated prompts.",
+        "Replace a brand's active prompts with an exact supplied set; history is preserved. Example: brand_id='acme', prompts=['What is the best X for Y?'].",
       inputSchema: {
         brand_id: z
           .string()
-          .describe('Stable identifier of the tracked brand to update.'),
+          .describe('Tracked brand ID to update.'),
         prompts: z
           .array(z.string().min(1).max(500))
           .min(1)
           .max(50)
-          .describe('Exact active prompt set to use for future scans (1-50 questions).'),
+          .describe('Exact 1-50 prompt set for future scans.'),
       },
       outputSchema: setPromptsOutputSchema,
       annotations: {
@@ -1198,18 +1209,18 @@ export function registerLocalManagementTools(
     {
       title: 'Generate brand prompts',
       description:
-        "Regenerate the buyer-intent prompt set for a tracked brand using Claude Haiku (requires ANTHROPIC_API_KEY). Replaces the brand's active prompts; historical run data is preserved. Use when the user wants better or more prompts, or to upgrade from the generic starter prompts after adding an Anthropic key.",
+        "Replace active prompts with Claude-Haiku-generated buyer-intent prompts; requires ANTHROPIC_API_KEY and preserves history. Example: brand_id='acme', count=20.",
       inputSchema: {
         brand_id: z
           .string()
-          .describe('Stable identifier of the tracked brand to update.'),
+          .describe('Tracked brand ID to update.'),
         count: z
           .number()
           .int()
           .min(1)
           .max(50)
           .default(20)
-          .describe('Number of buyer-intent prompts to generate.'),
+          .describe('Buyer-intent prompts to generate.'),
       },
       outputSchema: generatePromptsOutputSchema,
       annotations: {

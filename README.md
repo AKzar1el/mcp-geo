@@ -717,7 +717,7 @@ Provider credentials are set via `wrangler secret put VAR` in production or `.de
 flowchart LR
     C["MCP client<br/>(Claude.ai / Claude Code / Cursor / ...)"] -- "MCP over HTTP + OAuth" --> W["Cloudflare Worker<br/>digestseo-mcp"]
     CRON["Cron Trigger<br/>every 6h"] --> W
-    W --> DO["GeoMcpAgent<br/>(Durable Object, 6 MCP tools)"]
+    W --> MCP["Stateless MCP handler<br/>(SDK v2, 6 hosted tools)"]
     W -- "one self-fetch per engine<br/>via SELF service binding" --> RE["/admin/run-engine<br/>(own invocation per engine)"]
     RE --> E1["OpenAI"]
     RE --> E2["Anthropic"]
@@ -726,8 +726,10 @@ flowchart LR
     RE --> E5["xAI<br/>(Grok)"]
     RE --> E6["SerpAPI<br/>(AI Overviews)"]
     RE --> DB[("D1<br/>brands / prompts / runs /<br/>responses / cache")]
-    DO --> DB
+    MCP --> DB
 ```
+
+The legacy `GeoMcpAgent` / `MCP_OBJECT` Durable Object binding is retained temporarily for migration compatibility, but current `/mcp` traffic is served by the stateless SDK v2 handler shown above.
 
 Each engine runs in its own Worker invocation with its own free-plan 50-subrequest budget; results are flushed in a single `D1.batch()` per engine. The whole system fits the Cloudflare free tier for a single brand on a daily cadence.
 
