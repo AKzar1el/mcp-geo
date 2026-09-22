@@ -165,6 +165,14 @@ test('README documents LibreChat local stdio setup without committed provider se
   assert.match(readme, /librechat\.ai\/docs\/configuration\/librechat_yaml\/object_structure\/mcp_servers/);
   assert.match(readme, /rather than committing secret values into the YAML file/);
 });
+test('README documents Raycast local stdio setup without committed provider secrets', () => {
+  assert.match(
+    readme,
+    /\*\*Raycast AI:\*\*[\s\S]*Install MCP Server[\s\S]*Standard Input\/Output[\s\S]*`npx`[\s\S]*`-y`[\s\S]*`@digestseo\/mcp-geo`/,
+  );
+  assert.match(readme, /Raycast's MCP \*\*Environment\*\* fields/);
+  assert.match(readme, /manual\.raycast\.com\/ai\/model-context-protocol/);
+});
 test('README documents JetBrains Air workspace MCP reuse', () => {
   assert.match(
     readme,

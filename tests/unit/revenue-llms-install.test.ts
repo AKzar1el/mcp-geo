@@ -71,6 +71,14 @@ test('AI-agent guide documents LibreChat local stdio setup without committed pro
   assert.match(guide, /librechat\.ai\/docs\/configuration\/librechat_yaml\/object_structure\/mcp_servers/);
   assert.match(guide, /instead of committing raw secret values into the YAML file/);
 });
+test('AI-agent guide documents Raycast local stdio setup without committed provider secrets', () => {
+  assert.match(
+    guide,
+    /### Raycast AI[\s\S]*Install MCP Server[\s\S]*Standard Input\/Output[\s\S]*Command: `npx`[\s\S]*Arguments: `-y` and `@digestseo\/mcp-geo`/,
+  );
+  assert.match(guide, /MCP \*\*Environment\*\* key\/value fields/);
+  assert.match(guide, /manual\.raycast\.com\/ai\/model-context-protocol/);
+});
 test('AI-agent guide documents JetBrains Air workspace MCP reuse', () => {
   assert.match(
     guide,

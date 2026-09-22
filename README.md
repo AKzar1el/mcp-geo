@@ -105,6 +105,8 @@ mcpServers:
 
 Restart LibreChat after changing `librechat.yaml`. The zero-key entry is enough for MCP tool discovery. Before engine-backed scans, expose only the provider API keys you intend to use to the LibreChat process rather than committing secret values into the YAML file. See LibreChat's current [MCP configuration guide](https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/mcp_servers) and [MCP feature guide](https://www.librechat.ai/docs/features/mcp).
 
+**Raycast AI:** open **Install MCP Server** (or **Manage MCP Servers -> Install New Server**), choose **Standard Input/Output**, set Command to `npx`, and set Arguments to `-y` and `@digestseo/mcp-geo`. The zero-key install is enough for tool discovery. Before engine-backed scans, add only the provider keys you want in Raycast's MCP **Environment** fields rather than hard-coding them into shared project files. Restart Raycast if `npx` was added to `PATH` after Raycast started. See Raycast's current [MCP manual](https://manual.raycast.com/ai/model-context-protocol).
+
 **GitHub Copilot CLI:**
 
 ```bash
