@@ -197,6 +197,14 @@ That zero-key configuration is sufficient for MCP discovery. For engine-backed s
 
 References: [Msty Studio Toolbox tools](https://docs.msty.ai/studio/toolbox/tools) and [Msty Studio environments](https://docs.msty.ai/studio/workspaces/environment).
 
+### Zed
+
+In Zed, open **Settings -> AI -> MCP Servers**, choose **Add Server -> Add Local Server**, and configure `digestseo` with command `npx` and arguments `-y`, `@digestseo/mcp-geo`. That zero-key local server is enough for MCP discovery. For engine-backed scans, add only the provider keys you intend to use in Zed's local MCP `env` map rather than committing secrets into shared project settings.
+
+If the user chose **Path B** and runs their own Worker, choose **Add Remote Server** instead and use `https://<worker-host>/mcp`. With no explicit `Authorization` header, Zed follows the standard MCP OAuth flow. This remote path is for the user's own configured Worker; do not present the public DigestSEO endpoint as a turnkey provider-key service.
+
+Reference: [Zed MCP guide](https://zed.dev/docs/ai/mcp).
+
 ### GitHub Copilot CLI
 
 ```bash

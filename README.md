@@ -118,6 +118,8 @@ Restart LibreChat after changing `librechat.yaml`. The zero-key entry is enough 
 
 The zero-key tool is enough for MCP discovery. For engine-backed scans, define only the provider keys you want in Msty Studio **Environments** and attach them to the tool rather than storing raw secrets in shared files. Msty Studio Desktop can run the tool locally; Studio Web needs its documented Desktop/Sidecar connection for local MCP tools. See Msty Studio's current [Toolbox MCP guide](https://docs.msty.ai/studio/toolbox/tools) and [environment guide](https://docs.msty.ai/studio/workspaces/environment).
 
+**Zed:** open **Settings -> AI -> MCP Servers**, choose **Add Server -> Add Local Server**, and configure `digestseo` with command `npx` and arguments `-y`, `@digestseo/mcp-geo`. The zero-key local server is enough for tool discovery; for engine-backed scans, add only the provider keys you intend to use in Zed's local MCP `env` map rather than committing secrets into shared project settings. If you run **Path B** on your own Worker instead, choose **Add Remote Server** and use `https://<worker-host>/mcp`; when no `Authorization` header is configured, Zed uses the standard MCP OAuth flow. Do not treat the public DigestSEO endpoint as a turnkey provider-key service. See Zed's current [MCP guide](https://zed.dev/docs/ai/mcp).
+
 **GitHub Copilot CLI:**
 
 ```bash
