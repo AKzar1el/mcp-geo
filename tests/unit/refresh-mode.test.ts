@@ -81,7 +81,7 @@ function registerRefreshTool(
 
 test('async refresh metadata and result report dispatched scans', async () => {
   const refresh = registerRefreshTool('async', true);
-  assert.match(refresh.description, /returns immediately with run IDs/i);
+  assert.match(refresh.description, /returns run IDs immediately/i);
 
   const result = await refresh.handler({ brand_id: brand.id });
   assert.equal(result.structuredContent.message, 'Refresh started for 2 engines');
@@ -90,10 +90,7 @@ test('async refresh metadata and result report dispatched scans', async () => {
 
 test('sync refresh metadata and result report completed scans', async () => {
   const refresh = registerRefreshTool('sync');
-  assert.match(
-    refresh.description,
-    /returns only after all selected engine scans finish/i,
-  );
+  assert.match(refresh.description, /return after completion/i);
   assert.doesNotMatch(refresh.description, /returns immediately/i);
 
   const result = await refresh.handler({ brand_id: brand.id });
