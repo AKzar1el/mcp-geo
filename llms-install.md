@@ -655,7 +655,7 @@ curl -X POST https://<worker-host>/admin/run-live \
   -d '{"brand_id":"acme"}'
 ```
 
-Wait 30–60 seconds for the engines to finish. After this, the built-in Cron Trigger (`0 */6 * * *`) auto-refreshes on each brand's `refresh_frequency` cadence — no further manual scans needed.
+Wait 30–60 seconds for the engines to finish. After this, the built-in Cron Trigger (`0 */6 * * *`) checks scheduled brands every six hours. Brands set to `daily` or `weekly` auto-refresh when their cadence is due; brands set to `manual` are skipped by cron and require an explicit `/admin/run-live` scan until their cadence is changed back.
 
 ### Step 10 — Connect the MCP client
 
