@@ -20,6 +20,10 @@ test('AI-agent install guide exposes the frozen managed audit alternative withou
   );
   assert.match(
     guide,
+    /### Amazon Q Developer CLI[\s\S]*q mcp add --name digestseo --command npx --args '[^']*@digestseo\/mcp-geo[^']*'[\s\S]*q mcp list[\s\S]*~\/\.aws\/amazonq\/cli-agents[\s\S]*command-line-mcp-config-CLI\.html/,
+  );
+  assert.match(
+    guide,
     /### ChatGPT[\s\S]*does \*\*not\*\* connect directly to local STDIO MCP servers[\s\S]*Use \*\*Path B\*\*/,
   );
   assert.match(
