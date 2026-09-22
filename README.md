@@ -91,6 +91,20 @@ args = ["-y", "@digestseo/mcp-geo"]
 
 The zero-key entry is enough for tool discovery. For engine-backed scans, pass only the provider keys you want through Vibe's STDIO environment configuration or the environment inherited by Vibe instead of committing secrets. Use `/mcp digestseo` (or `/mcp`) in Vibe to verify the server and tools. See Mistral's current [MCP server guide](https://docs.mistral.ai/vibe/code/cli/mcp-servers) and [Vibe configuration reference](https://docs.mistral.ai/vibe/code/cli/configuration).
 
+**LibreChat:** add mcp-geo to `librechat.yaml` as a local STDIO server:
+
+```yaml
+mcpServers:
+  digestseo:
+    type: stdio
+    command: npx
+    args:
+      - -y
+      - '@digestseo/mcp-geo'
+```
+
+Restart LibreChat after changing `librechat.yaml`. The zero-key entry is enough for MCP tool discovery. Before engine-backed scans, expose only the provider API keys you intend to use to the LibreChat process rather than committing secret values into the YAML file. See LibreChat's current [MCP configuration guide](https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/mcp_servers) and [MCP feature guide](https://www.librechat.ai/docs/features/mcp).
+
 **GitHub Copilot CLI:**
 
 ```bash

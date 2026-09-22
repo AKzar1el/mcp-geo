@@ -152,6 +152,24 @@ That zero-key entry is enough for MCP discovery. Before engine-backed scans, pas
 
 References: [Mistral Vibe MCP servers](https://docs.mistral.ai/vibe/code/cli/mcp-servers) and [Vibe configuration](https://docs.mistral.ai/vibe/code/cli/configuration).
 
+### LibreChat
+
+Add mcp-geo to LibreChat's `librechat.yaml` as a local STDIO MCP server:
+
+```yaml
+mcpServers:
+  digestseo:
+    type: stdio
+    command: npx
+    args:
+      - -y
+      - '@digestseo/mcp-geo'
+```
+
+Restart LibreChat after changing `librechat.yaml`. The zero-key entry is sufficient for MCP tool discovery. Before engine-backed scans, expose only the selected provider API keys to the LibreChat process instead of committing raw secret values into the YAML file.
+
+References: [LibreChat MCP server configuration](https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/mcp_servers) and [LibreChat MCP](https://www.librechat.ai/docs/features/mcp).
+
 ### GitHub Copilot CLI
 
 ```bash
