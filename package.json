@@ -1,6 +1,6 @@
 {
   "name": "@digestseo/mcp-geo",
-  "version": "0.3.19",
+  "version": "0.3.20",
   "description": "Self-hostable MCP server for AI visibility tracking across ChatGPT, Claude, Perplexity, Gemini, Grok, Google AI Overviews, and Google AI Mode. Free OSS with an optional EUR 99 one-time AI Visibility Audit for teams that want a client-ready baseline.",
   "private": false,
   "license": "MIT",
