@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "digestseo-geo",
-  "description": "Track brand citations and AI visibility across ChatGPT, Claude, Perplexity, Gemini, Grok, and Google AI Overviews through the local mcp-geo server.",
+  "description": "Track brand citations and AI visibility across ChatGPT, Claude, Perplexity, Gemini, Grok, Google AI Overviews, and Google AI Mode through the local mcp-geo server.",
   "author": {
     "name": "DigestSEO",
     "url": "https://digestseo.com/geo-mcp/"
