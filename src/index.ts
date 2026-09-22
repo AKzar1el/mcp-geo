@@ -1,11 +1,13 @@
-// Cloudflare Worker entry: McpAgent wiring, D1 deps construction,
+// Cloudflare Worker entry: stateless MCP/OAuth wiring, D1 deps construction,
 // /admin/* routes, the cron trigger, and the per-engine fan-out. All
 // tool logic lives in src/core/tools.ts and is shared with the local
 // stdio CLI (src/cli.ts).
 
 import { OAuthProvider } from '@cloudflare/workers-oauth-provider';
 import { McpAgent } from 'agents/mcp';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { createMcpHandler } from 'agents/mcp/server';
+import { McpServer as LegacyMcpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { McpServer as StatelessMcpServer } from '@modelcontextprotocol/server';
 import { createD1Db } from './db/d1.js';
 import type { Db, Prompt } from './db/types.js';
 import {
@@ -31,6 +33,7 @@ import {
   PromptSnapshotIntegrityError,
   resolveRunPromptSnapshot,
   runEngines,
+  type WaitUntilCtx,
   type WorkerEnginesEnv,
 } from './engines.js';
 import { seedBrand, type SeedBrandInput } from './core/seed.js';
@@ -112,8 +115,12 @@ function workerEnginesEnv(env: Env, db: Db): WorkerEnginesEnv {
 // Keep in sync with package.json "version".
 const SERVER_VERSION = '0.3.20';
 
+// Keep the legacy Durable Object class exported for the existing Wrangler
+// binding/migration while hosted /mcp traffic moves to the stateless SDK v2
+// handler below. Removing the binding is a separate migration after the new
+// route has production soak time; this class is no longer the OAuth API route.
 export class GeoMcpAgent extends McpAgent<Env, unknown, AgentProps> {
-  server = new McpServer(
+  server = new LegacyMcpServer(
     {
       name: 'digestseo-mcp',
       version: SERVER_VERSION,
@@ -122,28 +129,81 @@ export class GeoMcpAgent extends McpAgent<Env, unknown, AgentProps> {
   );
 
   async init() {
-    const db = createD1Db(this.env.DIGESTSEO_DB);
-    registerTools(
-      this.server,
-      {
-        db,
-        env: this.env,
-        refreshExecution: 'async',
-        // Worker implementation of refresh_brand's engine dispatch:
-        // per-engine fan-out via the SELF service binding so each engine
-        // gets its own invocation (and its own 50-subrequest budget).
-        runEnginesInline: (brand, prompts, engines) =>
-          runEngines(
-            workerEnginesEnv(this.env, db),
-            this.ctx,
-            brand,
-            prompts,
-            engines,
-          ),
-      },
-      { namespaced: true },
-    );
+    registerHostedTools(this.server, this.env, this.ctx);
   }
+}
+
+function registerHostedTools(
+  server: LegacyMcpServer,
+  env: Env,
+  ctx: WaitUntilCtx,
+): void {
+  const db = createD1Db(env.DIGESTSEO_DB);
+  registerTools(
+    server,
+    {
+      db,
+      env,
+      refreshExecution: 'async',
+      runEnginesInline: (brand, prompts, engines) =>
+        runEngines(workerEnginesEnv(env, db), ctx, brand, prompts, engines),
+    },
+    { namespaced: true },
+  );
+}
+
+function createStatelessHostedServer(
+  env: Env,
+  ctx: WaitUntilCtx,
+): StatelessMcpServer {
+  const server = new StatelessMcpServer(
+    {
+      name: 'digestseo-mcp',
+      version: SERVER_VERSION,
+    },
+    { instructions: HOSTED_SERVER_INSTRUCTIONS },
+  );
+
+  // The shared registry currently targets the SDK v1 McpServer type, but it
+  // uses only registerTool(), whose runtime contract is retained by SDK v2.
+  // Keep the compatibility cast at this single boundary while both the local
+  // stdio server and the hosted server intentionally share one tool registry.
+  registerHostedTools(
+    server as unknown as LegacyMcpServer,
+    env,
+    ctx,
+  );
+  return server;
+}
+
+function configuredMcpHostname(request: Request, env: Env): string {
+  if (env.SELF_URL) {
+    try {
+      return new URL(env.SELF_URL).hostname;
+    } catch {
+      // Fall through to the actual routed request so a malformed optional
+      // SELF_URL cannot make the MCP endpoint unavailable.
+    }
+  }
+  return new URL(request.url).hostname;
+}
+
+export function handleHostedMcpRequest(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext,
+): Promise<Response> {
+  const hostname = configuredMcpHostname(request, env);
+  const handler = createMcpHandler(
+    () => createStatelessHostedServer(env, ctx),
+    {
+      route: '/mcp',
+      legacy: 'stateless',
+      allowedHostnames: [hostname],
+      allowedOriginHostnames: [hostname],
+    },
+  );
+  return handler(request, env, ctx);
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -819,7 +879,9 @@ async function handleAuthorize(request: Request, env: Env): Promise<Response> {
 
 const oauthProvider = new OAuthProvider({
   apiHandlers: {
-    '/mcp': GeoMcpAgent.serve('/mcp'),
+    '/mcp': {
+      fetch: handleHostedMcpRequest,
+    },
   },
   defaultHandler: defaultHandler as any,
   authorizeEndpoint: '/authorize',
