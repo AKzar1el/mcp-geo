@@ -5,6 +5,7 @@ import test from 'node:test';
 const plugin = JSON.parse(readFileSync('plugin.json', 'utf8')) as {
   $schema?: string;
   name?: string;
+  description?: string;
   repository?: string;
 };
 
@@ -24,6 +25,7 @@ const mcp = JSON.parse(readFileSync('mcp.json', 'utf8')) as {
 test('Agent Plugins 1.0 metadata exposes the zero-key local stdio package', () => {
   assert.equal(plugin.$schema, 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json');
   assert.equal(plugin.name, 'digestseo-geo');
+  assert.match(plugin.description ?? '', /Google AI Mode/);
   assert.equal(plugin.repository, 'https://github.com/AKzar1el/mcp-geo');
 
   assert.equal(mcp.$schema, 'https://agent-plugins.org/schemas/1.0.0/mcp.schema.json');

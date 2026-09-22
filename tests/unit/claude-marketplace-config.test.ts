@@ -15,6 +15,7 @@ const marketplace = JSON.parse(
 };
 const plugin = JSON.parse(readFileSync('.claude-plugin/plugin.json', 'utf8')) as {
   name?: string;
+  description?: string;
 };
 const portableMcp = JSON.parse(readFileSync('.mcp.json', 'utf8')) as {
   mcpServers?: Record<string, { command?: string; args?: string[] }>;
@@ -32,6 +33,8 @@ test('owner-controlled Claude marketplace installs the existing local MCP plugin
   assert.equal(entry?.name, plugin.name);
   assert.equal(entry?.source, './');
   assert.match(entry?.description ?? '', /AI visibility/i);
+  assert.match(entry?.description ?? '', /Google AI Mode/);
+  assert.match(plugin.description ?? '', /Google AI Mode/);
 
   const server = portableMcp.mcpServers?.['digestseo-geo'];
   assert.equal(server?.command, 'npx');
