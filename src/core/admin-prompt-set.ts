@@ -112,10 +112,11 @@ export async function handleAdminUpdateBrand(
   if (
     body.refresh_frequency !== undefined &&
     body.refresh_frequency !== 'daily' &&
-    body.refresh_frequency !== 'weekly'
+    body.refresh_frequency !== 'weekly' &&
+    body.refresh_frequency !== 'manual'
   ) {
     return jsonResponse(
-      { error: 'refresh_frequency must be either daily or weekly' },
+      { error: 'refresh_frequency must be daily, weekly, or manual' },
       400,
     );
   }
@@ -128,7 +129,11 @@ export async function handleAdminUpdateBrand(
     competitors: body.competitors as string[] | undefined,
     aliases: body.aliases as string[] | undefined,
     exclude_terms: body.exclude_terms as string[] | undefined,
-    refresh_frequency: body.refresh_frequency as 'daily' | 'weekly' | undefined,
+    refresh_frequency: body.refresh_frequency as
+      | 'daily'
+      | 'weekly'
+      | 'manual'
+      | undefined,
   };
 
   try {

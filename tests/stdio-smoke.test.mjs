@@ -297,7 +297,7 @@ test('stdio CLI: initialize + tools/list returns all twelve tools, local brand/p
           domain: 'https://www.New-Smoke.example/pricing',
           competitors: ['rival.example', 'new-smoke.example'],
           aliases: ['Smoke Suite', ' smoke suite '],
-          refresh_frequency: 'daily',
+          refresh_frequency: 'manual',
         },
       },
     });
@@ -311,7 +311,7 @@ test('stdio CLI: initialize + tools/list returns all twelve tools, local brand/p
     assert.equal(updatePayload.brand.domain, 'new-smoke.example');
     assert.deepEqual(updatePayload.brand.competitors, ['rival.example']);
     assert.deepEqual(updatePayload.brand.aliases, ['Smoke Suite']);
-    assert.equal(updatePayload.brand.refresh_frequency, 'daily');
+    assert.equal(updatePayload.brand.refresh_frequency, 'manual');
 
     rpc(child, {
       jsonrpc: '2.0',

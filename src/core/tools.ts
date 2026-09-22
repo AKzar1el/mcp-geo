@@ -181,7 +181,7 @@ const trackBrandOutputSchema = z.object({
   prompt_source: z.enum(['generated', 'fallback']).optional(),
   domain: z.string().optional(),
   competitors: z.array(z.string()).optional(),
-  refresh_frequency: z.enum(['daily', 'weekly']).optional(),
+  refresh_frequency: z.enum(['daily', 'weekly', 'manual']).optional(),
   next_steps: z.string(),
 });
 
@@ -196,7 +196,7 @@ const updateBrandOutputSchema = z.object({
     competitors: z.array(z.string()),
     aliases: z.array(z.string()),
     exclude_terms: z.array(z.string()),
-    refresh_frequency: z.enum(['daily', 'weekly']),
+    refresh_frequency: z.enum(['daily', 'weekly', 'manual']),
   }),
   next_steps: z.string(),
 });
@@ -939,10 +939,10 @@ export function registerLocalManagementTools(
           .default(20)
           .describe('Number of buyer-intent prompts to generate for the brand.'),
         refresh_frequency: z
-          .enum(['daily', 'weekly'])
+          .enum(['daily', 'weekly', 'manual'])
           .default('weekly')
           .describe(
-            'Refresh cadence used by self-hosted Worker cron scheduling. Local stdio stores this setting but does not run a background scheduler.',
+            "Refresh cadence used by self-hosted Worker cron scheduling. Choose 'manual' to disable cron scans while keeping the brand, prompts, and history. Local stdio stores this setting but does not run a background scheduler.",
           ),
       },
       outputSchema: trackBrandOutputSchema,
@@ -1014,7 +1014,7 @@ export function registerLocalManagementTools(
     {
       title: 'Update tracked brand',
       description:
-        "Update an existing brand's identity and comparison metadata without replacing its active prompts or historical runs. Use when the domain, display name, category, competitors, aliases, exclusion terms, or refresh cadence changes after track_brand. Future scans use the updated metadata.",
+        "Update an existing brand's identity and comparison metadata without replacing its active prompts or historical runs. Use when the domain, display name, category, competitors, aliases, exclusion terms, or refresh cadence changes after track_brand. Set refresh_frequency to 'manual' to pause scheduled Worker scans while keeping manual refreshes available. Future scans use the updated metadata.",
       inputSchema: {
         brand_id: z
           .string()
@@ -1025,7 +1025,7 @@ export function registerLocalManagementTools(
         competitors: z.array(z.string().min(3).max(253)).max(20).optional(),
         aliases: z.array(z.string().min(1).max(100)).max(20).optional(),
         exclude_terms: z.array(z.string().min(1).max(100)).max(20).optional(),
-        refresh_frequency: z.enum(['daily', 'weekly']).optional(),
+        refresh_frequency: z.enum(['daily', 'weekly', 'manual']).optional(),
       },
       outputSchema: updateBrandOutputSchema,
       annotations: {

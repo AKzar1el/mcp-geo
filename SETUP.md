@@ -231,7 +231,7 @@ curl -X POST https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev/admin/update-br
   -d '{"brand_id":"acme","competitors":["asana.com","linear.app"],"refresh_frequency":"daily"}'
 ```
 
-Pass only fields that need changing (`name`, `domain`, `category`, `competitors`, `aliases`, `exclude_terms`, `refresh_frequency`). Use `null` to clear `category`. Future scans use the updated metadata; the current prompt set and historical runs stay intact.
+Pass only fields that need changing (`name`, `domain`, `category`, `competitors`, `aliases`, `exclude_terms`, `refresh_frequency`). Use `null` to clear `category`. Set `refresh_frequency` to `manual` to pause scheduled cron scans without deleting the brand, prompts, or history; manual `/admin/run-live` scans still work. Set it back to `daily` or `weekly` to resume cron scheduling. Future scans use the updated metadata; the current prompt set and historical runs stay intact.
 
 If you already have an agreed audit/research question set, replace the active prompts exactly before scanning instead of regenerating them with AI:
 

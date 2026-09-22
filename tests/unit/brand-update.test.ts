@@ -68,6 +68,18 @@ test('updateTrackedBrand updates mutable metadata and preserves active prompts',
       beforePrompts.map((prompt) => [prompt.id, prompt.text]),
     );
 
+    const paused = await updateTrackedBrand(db, {
+      brand_id: 'acme',
+      refresh_frequency: 'manual',
+    });
+    assert.equal(paused.updated, true);
+    assert.deepEqual(paused.changed_fields, ['refresh_frequency']);
+    assert.equal(paused.brand.refresh_frequency, 'manual');
+    assert.deepEqual(
+      (await db.getActivePrompts('acme')).map((prompt) => [prompt.id, prompt.text]),
+      beforePrompts.map((prompt) => [prompt.id, prompt.text]),
+    );
+
     const noOp = await updateTrackedBrand(db, {
       brand_id: 'acme',
       name: 'Acme Suite',
@@ -76,7 +88,7 @@ test('updateTrackedBrand updates mutable metadata and preserves active prompts',
       competitors: ['asana.com'],
       aliases: ['Acme Suite', 'AS'],
       exclude_terms: ['acme'],
-      refresh_frequency: 'daily',
+      refresh_frequency: 'manual',
     });
     assert.equal(noOp.updated, false);
     assert.deepEqual(noOp.changed_fields, []);
@@ -117,6 +129,7 @@ test('admin update-brand exposes the same safe partial update contract', async (
           brand_id: 'acme',
           competitors: ['linear.app'],
           aliases: ['Acme PM', 'Acme Cloud'],
+          refresh_frequency: 'manual',
         }),
       }),
       db,
@@ -125,13 +138,22 @@ test('admin update-brand exposes the same safe partial update contract', async (
     const body = (await response.json()) as {
       updated: boolean;
       changed_fields: string[];
-      brand: { competitors: string[]; aliases: string[] };
+      brand: {
+        competitors: string[];
+        aliases: string[];
+        refresh_frequency: string;
+      };
       next_steps: string;
     };
     assert.equal(body.updated, true);
-    assert.deepEqual(body.changed_fields, ['competitors', 'aliases']);
+    assert.deepEqual(body.changed_fields, [
+      'competitors',
+      'aliases',
+      'refresh_frequency',
+    ]);
     assert.deepEqual(body.brand.competitors, ['linear.app']);
     assert.deepEqual(body.brand.aliases, ['Acme PM', 'Acme Cloud']);
+    assert.equal(body.brand.refresh_frequency, 'manual');
     assert.match(body.next_steps, /historical runs were preserved/);
   } finally {
     db.close();

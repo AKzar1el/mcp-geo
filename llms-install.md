@@ -624,7 +624,7 @@ curl -X POST https://<worker-host>/admin/update-brand \
   -d '{"brand_id":"acme","competitors":["asana.com","linear.app"],"refresh_frequency":"daily"}'
 ```
 
-Pass only the fields that need changing: `name`, `domain`, `category` (use `null` to clear it), `competitors`, `aliases`, `exclude_terms`, or `refresh_frequency`. The route is idempotent and future scans use the updated metadata.
+Pass only the fields that need changing: `name`, `domain`, `category` (use `null` to clear it), `competitors`, `aliases`, `exclude_terms`, or `refresh_frequency`. Use `refresh_frequency: "manual"` to pause scheduled Worker cron scans while preserving the brand, prompts, and history; explicit `/admin/run-live` scans remain available, and setting `daily` or `weekly` resumes cron scheduling. The route is idempotent and future scans use the updated metadata.
 
 If the user already has an approved audit/research measurement set, replace the active prompts exactly before scanning:
 

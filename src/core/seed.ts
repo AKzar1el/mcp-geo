@@ -55,7 +55,7 @@ export interface SeedBrandInput {
   domain: string;
   category?: string;
   competitors?: string[];
-  refresh_frequency?: 'daily' | 'weekly';
+  refresh_frequency?: 'daily' | 'weekly' | 'manual';
   // Extra terms that always count as a brand mention.
   aliases?: string[];
   // Terms suppressed from the bare-word match on the brand name and
@@ -101,10 +101,11 @@ export async function seedBrand(
   if (
     input.refresh_frequency !== undefined &&
     input.refresh_frequency !== 'daily' &&
-    input.refresh_frequency !== 'weekly'
+    input.refresh_frequency !== 'weekly' &&
+    input.refresh_frequency !== 'manual'
   ) {
     throw new DomainInputError(
-      'refresh_frequency must be either daily or weekly',
+      'refresh_frequency must be daily, weekly, or manual',
     );
   }
 
