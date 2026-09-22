@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { chatCompletion, MODEL } from '../../src/core/perplexity.js';
+import { chatCompletion, MODEL, PRESET } from '../../src/core/perplexity.js';
 
-test('Perplexity uses Agent API with grounded Sonar and parses search-result URLs', async () => {
+test('Perplexity uses the Agent API fast preset and parses search-result URLs', async () => {
   const originalFetch = globalThis.fetch;
   let seenUrl = '';
   let seenInit: RequestInit | undefined;
@@ -39,11 +39,12 @@ test('Perplexity uses Agent API with grounded Sonar and parses search-result URL
   try {
     const result = await chatCompletion('test-key', 'Where is Acme visible?', 'Be concise.');
 
-    assert.equal(MODEL, 'perplexity/sonar');
+    assert.equal(PRESET, 'fast');
+    assert.equal(MODEL, 'preset:fast');
     assert.equal(seenUrl, 'https://api.perplexity.ai/v1/agent');
     assert.equal(seenInit?.method, 'POST');
     assert.deepEqual(JSON.parse(String(seenInit?.body)), {
-      model: 'perplexity/sonar',
+      preset: 'fast',
       input: [
         { role: 'system', content: 'Be concise.' },
         { role: 'user', content: 'Where is Acme visible?' },
