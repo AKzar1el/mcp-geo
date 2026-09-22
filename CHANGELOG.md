@@ -9,6 +9,13 @@ All notable changes to this project are documented here. The format is loosely b
 - Cursor plugin MCP metadata now launches the published local stdio package instead of routing users to the public Worker endpoint, which is not configured as a turnkey fresh-scan service.
 - Windsurf guidance now recommends local stdio or a configured self-hosted Worker, and Cursor/Claude plugin manifests are synchronized to `0.3.7`.
 
+## [0.3.21] - September 22, 2026
+
+### Changed
+
+- OAuth-protected hosted MCP traffic now uses the stateless SDK-v2 `createMcpHandler` path with legacy stateless compatibility and explicit Host/Origin validation; the old Durable Object binding is retained only as a migration hold.
+- All twelve MCP tool schemas now use lean example-led descriptions and complete input-parameter descriptions, with regression coverage to prevent context bloat and missing guidance from returning.
+
 ## [0.3.20] - September 22, 2026
 
 ### Fixed
