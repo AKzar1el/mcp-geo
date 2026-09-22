@@ -157,6 +157,14 @@ test('README documents Mistral Vibe Code local stdio setup', () => {
   assert.match(readme, /docs\.mistral\.ai\/vibe\/code\/cli\/mcp-servers/);
   assert.match(readme, /docs\.mistral\.ai\/vibe\/code\/cli\/configuration/);
 });
+test('README documents LibreChat local stdio setup without committed provider secrets', () => {
+  assert.match(
+    readme,
+    /\*\*LibreChat:\*\*[\s\S]*librechat\.yaml[\s\S]*mcpServers:[\s\S]*digestseo:[\s\S]*type: stdio[\s\S]*command: npx[\s\S]*@digestseo\/mcp-geo[\s\S]*Restart LibreChat/,
+  );
+  assert.match(readme, /librechat\.ai\/docs\/configuration\/librechat_yaml\/object_structure\/mcp_servers/);
+  assert.match(readme, /rather than committing secret values into the YAML file/);
+});
 test('README documents JetBrains Air workspace MCP reuse', () => {
   assert.match(
     readme,

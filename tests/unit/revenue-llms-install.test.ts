@@ -63,6 +63,14 @@ test('AI-agent guide documents Mistral Vibe Code local stdio setup', () => {
   assert.match(guide, /docs\.mistral\.ai\/vibe\/code\/cli\/mcp-servers/);
   assert.match(guide, /docs\.mistral\.ai\/vibe\/code\/cli\/configuration/);
 });
+test('AI-agent guide documents LibreChat local stdio setup without committed provider secrets', () => {
+  assert.match(
+    guide,
+    /### LibreChat[\s\S]*librechat\.yaml[\s\S]*mcpServers:[\s\S]*digestseo:[\s\S]*type: stdio[\s\S]*command: npx[\s\S]*@digestseo\/mcp-geo[\s\S]*Restart LibreChat/,
+  );
+  assert.match(guide, /librechat\.ai\/docs\/configuration\/librechat_yaml\/object_structure\/mcp_servers/);
+  assert.match(guide, /instead of committing raw secret values into the YAML file/);
+});
 test('AI-agent guide documents JetBrains Air workspace MCP reuse', () => {
   assert.match(
     guide,
