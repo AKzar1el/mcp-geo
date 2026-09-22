@@ -11,6 +11,7 @@ import type {
   EnginePromptResult,
   Prompt,
 } from '../db/types.js';
+import { fetchWithTimeout } from './fetch.js';
 
 export const MODEL = 'claude-haiku-4-5';
 export const ENGINE = 'claude';
@@ -41,7 +42,7 @@ export async function chatCompletion(
   systemPrompt: string,
   maxTokens: number = 600,
 ): Promise<string> {
-  const resp = await fetch(ANTHROPIC_URL, {
+  const resp = await fetchWithTimeout(ANTHROPIC_URL, {
     method: 'POST',
     headers: {
       'x-api-key': apiKey,

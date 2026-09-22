@@ -9,6 +9,7 @@ import type {
   Prompt,
   Run,
 } from '../db/types.js';
+import { fetchWithTimeout } from './fetch.js';
 
 export const MODEL = 'gpt-5-search-api';
 const BATCH_MODEL = 'gpt-4o-mini';
@@ -81,7 +82,7 @@ export async function chatCompletion(
   apiKey: string,
   userText: string,
 ): Promise<OpenAiCompletion> {
-  const resp = await fetch(`${OPENAI_BASE}/chat/completions`, {
+  const resp = await fetchWithTimeout(`${OPENAI_BASE}/chat/completions`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -464,7 +465,7 @@ export async function submitBatch(
     `geo-mcp-run-${runId}.jsonl`,
   );
 
-  const uploadResp = await fetch(`${OPENAI_BASE}/files`, {
+  const uploadResp = await fetchWithTimeout(`${OPENAI_BASE}/files`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${requireOpenAiKey(env)}` },
     body: form,
@@ -475,7 +476,7 @@ export async function submitBatch(
   }
   const file = (await uploadResp.json()) as OpenAiFile;
 
-  const createResp = await fetch(`${OPENAI_BASE}/batches`, {
+  const createResp = await fetchWithTimeout(`${OPENAI_BASE}/batches`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${requireOpenAiKey(env)}`,
@@ -553,7 +554,7 @@ async function downloadBatchFile(
   fileId: string,
   source: 'output' | 'error',
 ): Promise<string> {
-  const response = await fetch(`${OPENAI_BASE}/files/${fileId}/content`, {
+  const response = await fetchWithTimeout(`${OPENAI_BASE}/files/${fileId}/content`, {
     headers: { Authorization: `Bearer ${requireOpenAiKey(env)}` },
   });
   if (!response.ok) {
@@ -614,7 +615,7 @@ export async function collectBatch(
   if (!run.batch_id) {
     throw new Error(`run ${run.id} has no batch_id`);
   }
-  const statusResp = await fetch(`${OPENAI_BASE}/batches/${run.batch_id}`, {
+  const statusResp = await fetchWithTimeout(`${OPENAI_BASE}/batches/${run.batch_id}`, {
     headers: { Authorization: `Bearer ${requireOpenAiKey(env)}` },
   });
   if (!statusResp.ok) {

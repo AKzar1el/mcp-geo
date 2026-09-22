@@ -12,6 +12,7 @@ import type {
   EnginePromptResult,
   Prompt,
 } from '../db/types.js';
+import { fetchWithTimeout } from './fetch.js';
 
 export const MODEL = 'grok-4.6';
 export const ENGINE = 'grok';
@@ -102,7 +103,7 @@ export async function chatCompletion(
   userText: string,
   systemPrompt = buildSystemPrompt(),
 ): Promise<XAiCompletion> {
-  const resp = await fetch(XAI_RESPONSES_URL, {
+  const resp = await fetchWithTimeout(XAI_RESPONSES_URL, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey}`,

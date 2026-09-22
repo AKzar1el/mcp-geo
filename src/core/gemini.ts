@@ -12,6 +12,7 @@ import type {
   EnginePromptResult,
   Prompt,
 } from '../db/types.js';
+import { fetchWithTimeout } from './fetch.js';
 
 // Google restricts Gemini 2.5 access for some new projects. Keep the
 // default on the current cost-efficient Flash-Lite generation instead.
@@ -48,7 +49,7 @@ export async function chatCompletion(
   systemPrompt: string,
 ): Promise<string> {
   const url = `${GEMINI_BASE}/${MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`;
-  const resp = await fetch(url, {
+  const resp = await fetchWithTimeout(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
