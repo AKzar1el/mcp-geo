@@ -118,6 +118,7 @@ export async function runEngines(
   prompts: Prompt[],
   engineNames?: EngineName[],
   request?: Request,
+  waitForCompletion = false,
 ): Promise<RunEnginesResult> {
   const promptIds = prompts.map((prompt) => prompt.id);
   const available = getAvailableEngines(env);
@@ -146,9 +147,8 @@ export async function runEngines(
     engineRuns.push({ engine, run_id: run.id });
   }
 
-  ctx.waitUntil(
-    Promise.allSettled(
-      engineRuns.map(async (er) => {
+  const completion = Promise.allSettled(
+    engineRuns.map(async (er) => {
         const url = `${selfUrl}/admin/run-engine`;
         const body = {
           run_id: er.run_id,
@@ -183,24 +183,33 @@ export async function runEngines(
         });
         return response;
       }),
-    ).then((results) => {
-      results.forEach((r, i) => {
-        if (r.status === 'rejected') {
-          console.error('runEngines: self-fetch threw past its own try/catch', {
-            engine: engineRuns[i].engine,
-            run_id: engineRuns[i].run_id,
-            reason: String(r.reason),
-          });
-        } else if (!r.value.ok) {
-          console.error('runEngines: /admin/run-engine returned non-2xx', {
-            engine: engineRuns[i].engine,
-            run_id: engineRuns[i].run_id,
-            status: r.value.status,
-          });
-        }
-      });
-    }),
-  );
+  ).then((results) => {
+    results.forEach((r, i) => {
+      if (r.status === 'rejected') {
+        console.error('runEngines: self-fetch threw past its own try/catch', {
+          engine: engineRuns[i].engine,
+          run_id: engineRuns[i].run_id,
+          reason: String(r.reason),
+        });
+      } else if (!r.value.ok) {
+        console.error('runEngines: /admin/run-engine returned non-2xx', {
+          engine: engineRuns[i].engine,
+          run_id: engineRuns[i].run_id,
+          status: r.value.status,
+        });
+      }
+    });
+  });
+
+  // Top-level HTTP waitUntil() work is canceled 30 seconds after the
+  // response is sent. Authenticated operator flows can opt into awaiting
+  // the service-binding calls so their per-engine Worker invocations stay
+  // attached to the live HTTP request instead of being orphaned mid-scan.
+  if (waitForCompletion) {
+    await completion;
+  } else {
+    ctx.waitUntil(completion);
+  }
 
   const run_ids: Record<string, string> = {};
   for (const er of engineRuns) run_ids[er.engine] = er.run_id;

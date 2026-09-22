@@ -259,10 +259,16 @@ The response returns the active prompt IDs, text, metadata, and count without ch
 curl -X POST https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev/admin/run-live \
   -H "X-Seed-Secret: YOUR_SEED_SECRET" \
   -H "Content-Type: application/json" \
-  -d '{"brand_id":"acme"}'
+  -d '{"brand_id":"acme","wait_for_completion":true}'
 ```
 
-Wait 30-60s for the engines to finish.
+`wait_for_completion: true` is recommended for manual/operator scans. It keeps
+the authenticated HTTP request open until the per-engine Worker invocations
+return instead of relying on Cloudflare's short post-response `waitUntil()`
+window. A successful HTTP response means the selected engine invocations have
+finished running; provider-level failures remain recorded in the run data and
+Worker logs. Omit the flag only when you intentionally want the legacy
+asynchronous dispatch behavior, in which case wait before reading fresh data.
 
 ## 14 — Connect to Claude.ai
 

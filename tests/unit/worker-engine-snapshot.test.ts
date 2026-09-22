@@ -115,3 +115,70 @@ test('runEngines dispatches the prompt IDs present when the run is created', asy
   );
   assert.equal(activePromptLookupUsed, false);
 });
+
+test('runEngines can keep HTTP admin dispatch attached until service-binding work completes', async () => {
+  let releaseFetch!: () => void;
+  const fetchGate = new Promise<void>((resolve) => {
+    releaseFetch = resolve;
+  });
+  let waitUntilCalls = 0;
+  const run: Run = {
+    id: 'run-sync',
+    brand_id: brand.id,
+    engine: 'chatgpt',
+    mode: 'live',
+    status: 'in_progress',
+    batch_id: null,
+    prompts_total: oldPrompts.length,
+    prompts_completed: 0,
+    cost_eur_estimate: null,
+    error: null,
+    started_at: 0,
+    completed_at: null,
+  };
+  const db = {
+    createRun: async () => run,
+  } as Db;
+  const env = {
+    db,
+    SEED_SECRET: 'test-secret',
+    SELF_URL: 'https://worker.example.test',
+    OPENAI_API_KEY: 'test-key',
+    SELF: {
+      fetch: async () => {
+        await fetchGate;
+        return new Response(null, { status: 204 });
+      },
+    },
+  };
+  const ctx = {
+    waitUntil: (_promise: Promise<unknown>) => {
+      waitUntilCalls += 1;
+    },
+  };
+
+  let settled = false;
+  const pending = runEngines(
+    env,
+    ctx,
+    brand,
+    oldPrompts,
+    ['chatgpt'],
+    undefined,
+    true,
+  ).then((result) => {
+    settled = true;
+    return result;
+  });
+
+  await Promise.resolve();
+  assert.equal(settled, false, 'wait mode must not return before SELF.fetch settles');
+  assert.equal(waitUntilCalls, 0, 'wait mode must not delegate work to waitUntil');
+
+  releaseFetch();
+  assert.deepEqual(await pending, {
+    run_ids: { chatgpt: run.id },
+    engines: ['chatgpt'],
+  });
+  assert.equal(settled, true);
+});

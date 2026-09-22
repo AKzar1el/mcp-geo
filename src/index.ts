@@ -219,6 +219,7 @@ async function handleAdminRunLive(
   const body = await readJsonBody<{
     brand_id?: string;
     engines?: string[];
+    wait_for_completion?: boolean;
   }>(request);
   const brandId = body?.brand_id;
   if (!brandId) {
@@ -267,6 +268,7 @@ async function handleAdminRunLive(
     prompts,
     engineNames,
     request,
+    body?.wait_for_completion === true,
   );
   return jsonResponse({
     run_ids,

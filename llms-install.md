@@ -681,10 +681,10 @@ This read-only admin route returns the active prompt IDs, text, metadata, and co
 curl -X POST https://<worker-host>/admin/run-live \
   -H "X-Seed-Secret: <SEED_SECRET value>" \
   -H "Content-Type: application/json" \
-  -d '{"brand_id":"acme"}'
+  -d '{"brand_id":"acme","wait_for_completion":true}'
 ```
 
-Wait 30–60 seconds for the engines to finish. After this, the built-in Cron Trigger (`0 */6 * * *`) checks scheduled brands every six hours. Brands set to `daily` or `weekly` auto-refresh when their cadence is due; brands set to `manual` are skipped by cron and require an explicit `/admin/run-live` scan until their cadence is changed back.
+For manual/operator scans, keep `wait_for_completion: true`. The request then stays open until the per-engine Worker invocations return, avoiding Cloudflare's 30-second post-response `waitUntil()` ceiling for long background work. A successful HTTP response means those engine invocations finished running; provider-level failures remain recorded in the run data and Worker logs. Omit the flag only when legacy asynchronous dispatch is explicitly desired, in which case wait before reading fresh data. After this, the built-in Cron Trigger (`0 */6 * * *`) checks scheduled brands every six hours. Brands set to `daily` or `weekly` auto-refresh when their cadence is due; brands set to `manual` are skipped by cron and require an explicit `/admin/run-live` scan until their cadence is changed back.
 
 ### Step 10 — Connect the MCP client
 
