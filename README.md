@@ -206,6 +206,15 @@ Droid runs this as a local STDIO MCP server. The zero-key install is enough for 
 
 **Amazon Q Developer (IDE):** open the Q Developer chat panel ? **Tools** ? **+**, choose **STDIO**, name the server `digestseo`, set Command to `npx`, and add Arguments `-y` and `@digestseo/mcp-geo`. Add only the provider environment variables you want before running scans; zero keys still allow MCP tool discovery.
 
+**Amazon Q Developer CLI:** add the same local STDIO server through Q's native MCP manager:
+
+```bash
+q mcp add --name digestseo --command npx --args '["-y", "@digestseo/mcp-geo"]'
+q mcp list
+```
+
+The zero-key server is enough for MCP tool discovery. Before engine-backed scans, add only the provider variables you intend to use to the Q CLI MCP configuration instead of committing secrets to the repository. Amazon Q Developer CLI supports local process-backed MCP servers and manages them through `q mcp`; use `/tools` inside a Q session to inspect the tools that loaded. See AWS's current [Amazon Q Developer MCP guide](https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/qdev-mcp.html) and [CLI MCP configuration reference](https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-mcp-config-CLI.html).
+
 **JetBrains AI Assistant (IDE):** open **Settings > Tools > AI Assistant > Model Context Protocol (MCP) > Add**, choose **STDIO**, and use:
 
 ```json

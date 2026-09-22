@@ -75,6 +75,10 @@ test('README exposes audit details and an attributable direct request path', () 
     readme,
     /\*\*Amazon Q Developer \(IDE\):\*\*[\s\S]*choose \*\*STDIO\*\*[\s\S]*`npx`[\s\S]*`@digestseo\/mcp-geo`/,
   );
+  assert.match(
+    readme,
+    /\*\*Amazon Q Developer CLI:\*\*[\s\S]*q mcp add --name digestseo --command npx --args '[^']*@digestseo\/mcp-geo[^']*'[\s\S]*q mcp list[\s\S]*\/tools[\s\S]*command-line-mcp-config-CLI\.html/,
+  );
   assert.match(readme, /### \[0\.3\.7\] - September 19, 2026/);
 
   const auditCta = readme.indexOf('> **Need a client-ready baseline without running the stack yourself?**');

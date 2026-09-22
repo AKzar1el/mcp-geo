@@ -328,6 +328,17 @@ Open the Amazon Q Developer chat panel, select **Tools**, choose **+**, and add 
 
 Amazon Q Developer supports local STDIO MCP servers and environment variables in this configuration UI. The zero-key command is enough for tool discovery; engine-backed scans still need at least one provider key.
 
+### Amazon Q Developer CLI
+
+Amazon Q Developer CLI has a native MCP configuration manager. Add the local mcp-geo process with:
+
+```bash
+q mcp add --name digestseo --command npx --args '["-y", "@digestseo/mcp-geo"]'
+q mcp list
+```
+
+The zero-key server is enough for MCP tool discovery. Before engine-backed scans, add only the provider environment variables the user chose to the Q CLI MCP configuration instead of writing secrets into project files. Amazon Q Developer CLI supports local process-backed MCP servers; use `/tools` in a Q session to inspect the tools that loaded. AWS documents globally defined Q CLI MCP configuration under `~/.aws/amazonq/cli-agents` and the current `q mcp` management commands in its [MCP guide](https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/qdev-mcp.html) and [CLI MCP configuration reference](https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-mcp-config-CLI.html).
+
 ### JetBrains AI Assistant (IDE)
 
 Open **Settings > Tools > AI Assistant > Model Context Protocol (MCP)**, choose **Add > STDIO**, and paste:
