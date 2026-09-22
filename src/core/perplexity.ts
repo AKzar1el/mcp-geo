@@ -17,7 +17,12 @@ import type {
 } from '../db/types.js';
 import { fetchWithTimeout } from './fetch.js';
 
-export const MODEL = 'perplexity/sonar';
+// Perplexity is retiring fixed Sonar tiers on 2026-09-27. The Agent API
+// maps legacy Sonar to the `fast` preset, which Perplexity may retune over
+// time. Persist the preset identity instead of pretending it is one fixed
+// underlying model.
+export const PRESET = 'fast';
+export const MODEL = 'preset:fast';
 export const ENGINE = 'perplexity';
 
 const LIVE_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60;
@@ -111,7 +116,7 @@ export async function chatCompletion(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: MODEL,
+      preset: PRESET,
       input: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userText },
