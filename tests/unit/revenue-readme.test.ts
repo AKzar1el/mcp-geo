@@ -137,6 +137,15 @@ test('README documents Roo Code local stdio setup and Windows fallback', () => {
   assert.match(readme, /\*\*Roo Code:\*\*[\s\S]*\.roo\/mcp\.json[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/);
   assert.match(readme, /"command": "cmd"[\s\S]*Windows fallback/);
 });
+test('README documents Zed local stdio and self-hosted remote OAuth setup', () => {
+  assert.match(
+    readme,
+    /\*\*Zed:\*\*[\s\S]*Settings -> AI -> MCP Servers[\s\S]*Add Local Server[\s\S]*`npx`[\s\S]*@digestseo\/mcp-geo[\s\S]*Add Remote Server[\s\S]*https:\/\/<worker-host>\/mcp[\s\S]*standard MCP OAuth flow/,
+  );
+  assert.match(readme, /zed\.dev\/docs\/ai\/mcp/);
+  assert.match(readme, /Do not treat the public DigestSEO endpoint as a turnkey provider-key service/);
+});
+
 test('README documents JetBrains AI Assistant local stdio setup', () => {
   assert.match(
     readme,

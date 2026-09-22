@@ -43,6 +43,15 @@ test('AI-agent install guide exposes the frozen managed audit alternative withou
   );
 });
 
+test('AI-agent guide documents Zed local stdio and self-hosted remote OAuth setup', () => {
+  assert.match(
+    guide,
+    /### Zed[\s\S]*Settings -> AI -> MCP Servers[\s\S]*Add Local Server[\s\S]*`npx`[\s\S]*@digestseo\/mcp-geo[\s\S]*Add Remote Server[\s\S]*https:\/\/<worker-host>\/mcp[\s\S]*standard MCP OAuth flow/,
+  );
+  assert.match(guide, /zed\.dev\/docs\/ai\/mcp/);
+  assert.match(guide, /do not present the public DigestSEO endpoint as a turnkey provider-key service/i);
+});
+
 test('AI-agent guide documents JetBrains AI Assistant local stdio setup', () => {
   assert.match(
     guide,
