@@ -51,6 +51,14 @@ test('AI-agent guide documents Zed local stdio and self-hosted remote OAuth setu
   assert.match(guide, /zed\.dev\/docs\/ai\/mcp/);
   assert.match(guide, /do not present the public DigestSEO endpoint as a turnkey provider-key service/i);
 });
+test('AI-agent guide documents TraeCode IDE and CLI local stdio setup', () => {
+  assert.match(
+    guide,
+    /### TraeCode[\s\S]*Settings -> MCP -> Add -> Manually add[\s\S]*\.trae\/mcp\.json[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo[\s\S]*traecli config edit[\s\S]*\/mcp/,
+  );
+  assert.match(guide, /docs\.trae\.cn\/ide_add-mcp-servers/);
+  assert.match(guide, /docs\.trae\.cn\/cli_model-context-protocol/);
+});
 
 test('AI-agent guide documents JetBrains AI Assistant local stdio setup', () => {
   assert.match(
