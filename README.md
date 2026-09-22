@@ -729,7 +729,7 @@ flowchart LR
     RE --> E3["Gemini"]
     RE --> E4["Perplexity"]
     RE --> E5["xAI<br/>(Grok)"]
-    RE --> E6["SerpAPI<br/>(AI Overviews)"]
+    RE --> E6["SerpAPI<br/>(AI Overviews / AI Mode)"]
     RE --> DB[("D1<br/>brands / prompts / runs /<br/>responses / cache")]
     MCP --> DB
 ```

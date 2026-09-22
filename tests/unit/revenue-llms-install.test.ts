@@ -75,6 +75,14 @@ test('AI-agent guide distinguishes scheduled and manual Worker refresh cadences'
   assert.doesNotMatch(guide, /no further manual scans needed/i);
 });
 
+test('AI-agent guide describes the legacy Durable Object as a migration hold, not the active MCP route', () => {
+  assert.match(
+    guide,
+    /keep the legacy `MCP_OBJECT` binding[\s\S]*0\.3\.21 migration hold[\s\S]*Current `\/mcp` traffic is stateless[\s\S]*separate post-soak migration/,
+  );
+  assert.doesNotMatch(guide, /the code depends on these exact names/);
+});
+
 test('AI-agent guide documents Amp CLI local stdio setup', () => {
   assert.match(
     guide,
