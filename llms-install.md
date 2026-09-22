@@ -450,7 +450,7 @@ Kiro supports local STDIO MCP servers and reconnects after the JSON config is sa
 
 ### Verify the install
 
-Ask the client to list tools. Exactly eleven must appear: `check_visibility`, `get_visibility_history`, `compare_competitors`, `get_citations`, `get_content_gaps`, `refresh_brand`, `track_brand`, `list_brands`, `list_prompts`, `set_prompts`, `generate_prompts`.
+Ask the client to list tools. Exactly twelve must appear: `check_visibility`, `get_visibility_history`, `compare_competitors`, `get_citations`, `get_content_gaps`, `refresh_brand`, `track_brand`, `update_brand`, `list_brands`, `list_prompts`, `set_prompts`, `generate_prompts`.
 
 ### First brand: track → refresh → check
 
@@ -613,7 +613,18 @@ curl "https://<worker-host>/admin/list-brands" \
   -H "X-Seed-Secret: <SEED_SECRET value>"
 ```
 
-The response returns each brand's ID, domain, category, competitors, refresh frequency, active prompt count, and creation time.
+The response returns each brand's ID, domain, category, competitors, aliases, exclusion terms, refresh frequency, active prompt count, and creation time.
+
+To correct tracked brand metadata without losing the active prompt set or historical runs:
+
+```bash
+curl -X POST https://<worker-host>/admin/update-brand \
+  -H "X-Seed-Secret: <SEED_SECRET value>" \
+  -H "Content-Type: application/json" \
+  -d '{"brand_id":"acme","competitors":["asana.com","linear.app"],"refresh_frequency":"daily"}'
+```
+
+Pass only the fields that need changing: `name`, `domain`, `category` (use `null` to clear it), `competitors`, `aliases`, `exclude_terms`, or `refresh_frequency`. The route is idempotent and future scans use the updated metadata.
 
 If the user already has an approved audit/research measurement set, replace the active prompts exactly before scanning:
 

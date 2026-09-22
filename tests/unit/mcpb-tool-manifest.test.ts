@@ -11,6 +11,7 @@ const manifest = JSON.parse(
 
 const expectedTools = [
   'track_brand',
+  'update_brand',
   'list_brands',
   'list_prompts',
   'set_prompts',

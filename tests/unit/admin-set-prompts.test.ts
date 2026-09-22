@@ -116,6 +116,8 @@ test('admin list-brands returns tracked brand metadata and prompt counts', async
         domain: 'acme.com',
         category: 'Project management',
         competitors: [],
+        aliases: [],
+        exclude_terms: [],
         refresh_frequency: 'weekly',
         active_prompts: 2,
         created_at: new Date(1).toISOString(),

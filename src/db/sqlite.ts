@@ -31,6 +31,7 @@ import type {
   PromptResponse,
   ResponseStatus,
   Run,
+  UpdateBrandFields,
   UpdateRunFields,
   VisibilityHistoryRow,
 } from './types.js';
@@ -251,6 +252,28 @@ export function openSqliteDb(path?: string): SqliteDb {
           input.refresh_frequency,
           now,
           now,
+        );
+    },
+
+    async updateBrand(brandId: string, fields: UpdateBrandFields): Promise<void> {
+      sqlite
+        .prepare(
+          `UPDATE brands
+              SET domain = ?, name = ?, category = ?, competitors_json = ?,
+                  aliases_json = ?, exclude_terms_json = ?, refresh_frequency = ?,
+                  updated_at = ?
+            WHERE id = ?`,
+        )
+        .run(
+          fields.domain,
+          fields.name,
+          fields.category,
+          JSON.stringify(fields.competitors),
+          JSON.stringify(fields.aliases),
+          JSON.stringify(fields.exclude_terms),
+          fields.refresh_frequency,
+          Date.now(),
+          brandId,
         );
     },
 

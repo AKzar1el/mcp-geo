@@ -131,6 +131,19 @@ export interface CreateBrandInput {
   refresh_frequency: string;
 }
 
+// Mutable brand metadata. Brand ids, ownership and historical runs/prompts
+// are intentionally immutable; updating these fields changes only how future
+// scans identify and compare the tracked brand.
+export interface UpdateBrandFields {
+  domain: string;
+  name: string;
+  category: string | null;
+  competitors: string[];
+  aliases: string[];
+  exclude_terms: string[];
+  refresh_frequency: string;
+}
+
 // Row shape behind the list_brands tool: every brand plus how many
 // prompts are currently active for it.
 export interface BrandSummary extends Brand {
@@ -192,6 +205,7 @@ export interface Db {
   // pre-existing user/brand row is left untouched, never clobbered.
   upsertUser(id: string, email: string): Promise<void>;
   createBrand(input: CreateBrandInput): Promise<void>;
+  updateBrand(brandId: string, fields: UpdateBrandFields): Promise<void>;
   listBrands(): Promise<BrandSummary[]>;
   createRun(
     brand: Brand,

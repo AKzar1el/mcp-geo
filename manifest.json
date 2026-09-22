@@ -4,7 +4,7 @@
   "display_name": "GEO Tracker by DigestSEO",
   "version": "0.3.18",
   "description": "DigestSEO mcp-geo: track brand citations across seven AI search surfaces. Free OSS with an optional EUR 99 one-time AI Visibility Audit.",
-  "long_description": "Self-hosted AI visibility tracking over MCP. Runs buyer-intent prompts against the AI engines you hold API keys for, records which ones cite your brand versus competitors, and exposes eleven tools: track_brand, list_brands, list_prompts, set_prompts, generate_prompts, refresh_brand, check_visibility, get_visibility_history, compare_competitors, get_citations, get_content_gaps. All data stays in a local SQLite database under ~/.digestseo.",
+  "long_description": "Self-hosted AI visibility tracking over MCP. Runs buyer-intent prompts against the AI engines you hold API keys for, records which ones cite your brand versus competitors, and exposes twelve tools: track_brand, update_brand, list_brands, list_prompts, set_prompts, generate_prompts, refresh_brand, check_visibility, get_visibility_history, compare_competitors, get_citations, get_content_gaps. All data stays in a local SQLite database under ~/.digestseo.",
   "author": {
     "name": "AKzar1el",
     "url": "https://github.com/AKzar1el"
@@ -108,8 +108,12 @@
       "description": "Start tracking a brand locally, including its domain, competitors, prompt set, and refresh cadence. Use before the first visibility refresh."
     },
     {
+      "name": "update_brand",
+      "description": "Update a tracked brand's domain, name, category, competitors, aliases, exclusions, or refresh cadence while preserving prompts and historical runs."
+    },
+    {
       "name": "list_brands",
-      "description": "List locally tracked brands with their domains, categories, competitors, refresh cadence, and active prompt counts."
+      "description": "List locally tracked brands with their domains, categories, competitors, aliases, exclusions, refresh cadence, and active prompt counts."
     },
     {
       "name": "list_prompts",

@@ -25,6 +25,7 @@ import {
   handleAdminListBrands,
   handleAdminListPrompts,
   handleAdminSetPrompts,
+  handleAdminUpdateBrand,
 } from './core/admin-prompt-set.js';
 import {
   PromptSnapshotIntegrityError,
@@ -636,6 +637,12 @@ const defaultHandler = {
       if (denied) return denied;
       return handleAdminListBrands(db);
     }
+    if (url.pathname === '/admin/update-brand' && request.method === 'POST') {
+      const denied = requireSeedSecret(request, env);
+      if (denied) return denied;
+      return handleAdminUpdateBrand(request, db);
+    }
+
     if (url.pathname === '/admin/set-prompts' && request.method === 'POST') {
       const denied = requireSeedSecret(request, env);
       if (denied) return denied;
