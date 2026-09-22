@@ -572,7 +572,7 @@ Verify nothing was missed — this must print **nothing**:
 grep -E "(YOUR_OAUTH_KV_ID|YOUR_D1_DATABASE_ID)" wrangler.jsonc
 ```
 
-Change **only** those two ids. Keep the `OAUTH_KV`, `DIGESTSEO_DB`, and `SELF` binding names unchanged because current runtime code references them directly. Also keep the legacy `MCP_OBJECT` binding, `GeoMcpAgent` class, and `migrations` block (tag `v1`, `new_sqlite_classes: ["GeoMcpAgent"]`) intact during the 0.3.21 migration hold. Current `/mcp` traffic is stateless and no longer routes through that Durable Object; removing the legacy binding/migration is a separate post-soak migration rather than an install-time rename.
+Change **only** those two ids. Keep the `OAUTH_KV`, `DIGESTSEO_DB`, and `SELF` binding names unchanged because current runtime code references them directly. Also keep the legacy `MCP_OBJECT` binding, `GeoMcpAgent` class, and `migrations` block (tag `v1`, `new_sqlite_classes: ["GeoMcpAgent"]`) intact during the current migration hold. Current `/mcp` traffic is stateless and no longer routes through that Durable Object; removing the legacy binding/migration is a separate post-soak migration rather than an install-time rename.
 
 **Note on the `SELF` service binding:** `"services": [{ "binding": "SELF", "service": "digestseo-mcp" }]` must keep `service` identical to the top-level `name` field. If the user renames the worker, update both. This binding is how `/admin/run-live` fans out one worker invocation per engine (a public-URL self-fetch would trip Cloudflare error 1042).
 
