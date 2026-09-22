@@ -121,7 +121,7 @@ Recommended starting pair is **OpenAI + Anthropic (Claude)**. OpenAI provides gr
 
 ## 8 — Configure the `SELF` service binding
 
-When `/admin/run-live` fires, it splits its work into one self-fetch per engine to `/admin/run-engine`. Each self-fetch runs in its own worker invocation, so each engine gets its own free-plan 50-subrequest budget. Without that split, one invocation tries to do 5 engines × 20 prompts in a single budget and bursts past the cap mid-run.
+When `/admin/run-live` fires, it splits its work into one self-fetch per engine to `/admin/run-engine`. Each self-fetch runs in its own worker invocation, so each engine gets its own free-plan 50-subrequest budget. Without that split, one invocation can try every selected visibility engine across the full active prompt set and burst past the cap mid-run.
 
 Cloudflare blocks a worker from calling its own public URL — `fetch("https://my-worker.workers.dev/...")` from inside that same worker trips error code 1042 and the request never lands. The fix is a **service binding** that points the worker at itself through Cloudflare's internal fabric.
 

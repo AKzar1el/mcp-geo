@@ -4,6 +4,7 @@ import test from 'node:test';
 
 const readme = readFileSync('README.md', 'utf8');
 const methodology = readFileSync('docs/ai-visibility-audit-methodology.md', 'utf8');
+const setup = readFileSync('SETUP.md', 'utf8');
 
 test('README exposes audit details and an attributable direct request path', () => {
   assert.match(
@@ -97,6 +98,7 @@ test('README exposes independently observed MCP reliability', () => {
 
 test('README architecture reflects the stateless hosted MCP route', () => {
   assert.match(readme, /Stateless MCP handler<br\/>\(SDK v2, 6 hosted tools\)/);
+  assert.match(readme, /SerpAPI<br\/>\(AI Overviews \/ AI Mode\)/);
   assert.match(
     readme,
     /current `\/mcp` traffic is served by the stateless SDK v2 handler/,
@@ -105,6 +107,11 @@ test('README architecture reflects the stateless hosted MCP route', () => {
     readme,
     /W --> DO\["GeoMcpAgent<br\/>\(Durable Object, 6 MCP tools\)"\]/,
   );
+});
+
+test('self-hosted setup does not freeze fan-out guidance to an obsolete engine count', () => {
+  assert.match(setup, /every selected visibility engine across the full active prompt set/);
+  assert.doesNotMatch(setup, /5 engines × 20 prompts/);
 });
 
 test('published README uses durable URLs for files excluded from the npm tarball', () => {
