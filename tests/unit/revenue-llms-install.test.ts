@@ -79,6 +79,15 @@ test('AI-agent guide documents Raycast local stdio setup without committed provi
   assert.match(guide, /MCP \*\*Environment\*\* key\/value fields/);
   assert.match(guide, /manual\.raycast\.com\/ai\/model-context-protocol/);
 });
+test('AI-agent guide documents Msty Studio local stdio setup without committed provider secrets', () => {
+  assert.match(
+    guide,
+    /### Msty Studio[\s\S]*Toolbox -> Add New Tool[\s\S]*STDIO \/ JSON[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/,
+  );
+  assert.match(guide, /Msty Studio \*\*Environments\*\*/);
+  assert.match(guide, /docs\.msty\.ai\/studio\/toolbox\/tools/);
+  assert.match(guide, /docs\.msty\.ai\/studio\/workspaces\/environment/);
+});
 test('AI-agent guide documents JetBrains Air workspace MCP reuse', () => {
   assert.match(
     guide,

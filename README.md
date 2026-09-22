@@ -107,6 +107,17 @@ Restart LibreChat after changing `librechat.yaml`. The zero-key entry is enough 
 
 **Raycast AI:** open **Install MCP Server** (or **Manage MCP Servers -> Install New Server**), choose **Standard Input/Output**, set Command to `npx`, and set Arguments to `-y` and `@digestseo/mcp-geo`. The zero-key install is enough for tool discovery. Before engine-backed scans, add only the provider keys you want in Raycast's MCP **Environment** fields rather than hard-coding them into shared project files. Restart Raycast if `npx` was added to `PATH` after Raycast started. See Raycast's current [MCP manual](https://manual.raycast.com/ai/model-context-protocol).
 
+**Msty Studio:** open **Toolbox -> Add New Tool**, choose **STDIO / JSON**, and use:
+
+```json
+{
+  "command": "npx",
+  "args": ["-y", "@digestseo/mcp-geo"]
+}
+```
+
+The zero-key tool is enough for MCP discovery. For engine-backed scans, define only the provider keys you want in Msty Studio **Environments** and attach them to the tool rather than storing raw secrets in shared files. Msty Studio Desktop can run the tool locally; Studio Web needs its documented Desktop/Sidecar connection for local MCP tools. See Msty Studio's current [Toolbox MCP guide](https://docs.msty.ai/studio/toolbox/tools) and [environment guide](https://docs.msty.ai/studio/workspaces/environment).
+
 **GitHub Copilot CLI:**
 
 ```bash
