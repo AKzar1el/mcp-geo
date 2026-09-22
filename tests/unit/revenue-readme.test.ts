@@ -173,6 +173,15 @@ test('README documents Raycast local stdio setup without committed provider secr
   assert.match(readme, /Raycast's MCP \*\*Environment\*\* fields/);
   assert.match(readme, /manual\.raycast\.com\/ai\/model-context-protocol/);
 });
+test('README documents Msty Studio local stdio setup without committed provider secrets', () => {
+  assert.match(
+    readme,
+    /\*\*Msty Studio:\*\*[\s\S]*Toolbox -> Add New Tool[\s\S]*STDIO \/ JSON[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/,
+  );
+  assert.match(readme, /Msty Studio \*\*Environments\*\*/);
+  assert.match(readme, /docs\.msty\.ai\/studio\/toolbox\/tools/);
+  assert.match(readme, /docs\.msty\.ai\/studio\/workspaces\/environment/);
+});
 test('README documents JetBrains Air workspace MCP reuse', () => {
   assert.match(
     readme,

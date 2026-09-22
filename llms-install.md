@@ -182,6 +182,21 @@ The zero-key setup is sufficient for MCP tool discovery. Before engine-backed sc
 
 Reference: [Raycast Model Context Protocol](https://manual.raycast.com/ai/model-context-protocol).
 
+### Msty Studio
+
+In Msty Studio, open **Toolbox -> Add New Tool**, select **STDIO / JSON**, and enter this tool configuration:
+
+```json
+{
+  "command": "npx",
+  "args": ["-y", "@digestseo/mcp-geo"]
+}
+```
+
+That zero-key configuration is sufficient for MCP discovery. For engine-backed scans, create only the selected provider variables in Msty Studio **Environments** and make them available to the tool instead of writing raw secrets into shared configuration. Msty Studio Desktop runs local tools directly. If using Studio Web, connect it to Studio Desktop or Sidecar first so the web app can access local MCP dependencies.
+
+References: [Msty Studio Toolbox tools](https://docs.msty.ai/studio/toolbox/tools) and [Msty Studio environments](https://docs.msty.ai/studio/workspaces/environment).
+
 ### GitHub Copilot CLI
 
 ```bash
