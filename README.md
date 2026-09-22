@@ -120,6 +120,21 @@ The zero-key tool is enough for MCP discovery. For engine-backed scans, define o
 
 **Zed:** open **Settings -> AI -> MCP Servers**, choose **Add Server -> Add Local Server**, and configure `digestseo` with command `npx` and arguments `-y`, `@digestseo/mcp-geo`. The zero-key local server is enough for tool discovery; for engine-backed scans, add only the provider keys you intend to use in Zed's local MCP `env` map rather than committing secrets into shared project settings. If you run **Path B** on your own Worker instead, choose **Add Remote Server** and use `https://<worker-host>/mcp`; when no `Authorization` header is configured, Zed uses the standard MCP OAuth flow. Do not treat the public DigestSEO endpoint as a turnkey provider-key service. See Zed's current [MCP guide](https://zed.dev/docs/ai/mcp).
 
+**TraeCode:** open **Settings -> MCP -> Add -> Manually add** and paste this local STDIO configuration, or save the same `mcpServers` object as `.trae/mcp.json` in a trusted project:
+
+```json
+{
+  "mcpServers": {
+    "digestseo": {
+      "command": "npx",
+      "args": ["-y", "@digestseo/mcp-geo"]
+    }
+  }
+}
+```
+
+TraeCode recommends NPX/UVX for local MCP servers and supports `env` values when engine-backed scans need provider keys. The zero-key form is enough for discovery; keep raw provider secrets out of project-level `.trae/mcp.json`. TraeCode CLI can also load that project-level MCP file, or you can add an equivalent `stdio` entry through `traecli config edit` and inspect it with `/mcp`. See TraeCode's current [IDE MCP setup](https://docs.trae.cn/ide_add-mcp-servers) and [CLI MCP guide](https://docs.trae.cn/cli_model-context-protocol).
+
 **GitHub Copilot CLI:**
 
 ```bash

@@ -205,6 +205,27 @@ If the user chose **Path B** and runs their own Worker, choose **Add Remote Serv
 
 Reference: [Zed MCP guide](https://zed.dev/docs/ai/mcp).
 
+### TraeCode
+
+In TraeCode, open **Settings -> MCP -> Add -> Manually add** and paste this local STDIO configuration. For a trusted project, the same `mcpServers` object can live in `.trae/mcp.json` after project-level MCP is enabled:
+
+```json
+{
+  "mcpServers": {
+    "digestseo": {
+      "command": "npx",
+      "args": ["-y", "@digestseo/mcp-geo"]
+    }
+  }
+}
+```
+
+That zero-key entry is sufficient for MCP discovery. Before engine-backed scans, add only the selected provider variables through TraeCode's supported `env` map and keep raw API keys out of project-level `.trae/mcp.json`.
+
+TraeCode CLI can also load the project's `.trae/mcp.json`. For a global CLI-only setup, run `traecli config edit`, add `digestseo` as a `stdio` server with command `npx` and args `-y`, `@digestseo/mcp-geo`, then use `/mcp` to inspect the connection and tools.
+
+References: [TraeCode IDE MCP setup](https://docs.trae.cn/ide_add-mcp-servers) and [TraeCode CLI MCP](https://docs.trae.cn/cli_model-context-protocol).
+
 ### GitHub Copilot CLI
 
 ```bash
