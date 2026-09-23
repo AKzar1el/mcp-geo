@@ -216,6 +216,25 @@ That zero-key configuration is sufficient for MCP discovery. For engine-backed s
 
 References: [Msty Studio Toolbox tools](https://docs.msty.ai/studio/toolbox/tools) and [Msty Studio environments](https://docs.msty.ai/studio/workspaces/environment).
 
+### Jan Desktop / Jan Agent
+
+In Jan Desktop, open **Settings -> MCP Servers -> + Add MCP Server**, choose **STDIO**, and configure:
+
+- Command: `npx`
+- Args: `-y` and `@digestseo/mcp-geo`
+- Env: only the provider keys the user chose to use
+
+That zero-key server is sufficient for MCP discovery. Jan Agent reads the same `mcp_config.json`, so the server is available in the terminal too. A headless equivalent is:
+
+```bash
+jan cli mcp add digestseo --command npx --arg -y --arg @digestseo/mcp-geo
+jan cli mcp enable digestseo
+```
+
+For **Path B**, Jan also supports remote Streamable HTTP MCP servers. Add `https://<worker-host>/mcp` as an **HTTP** server and use Jan's **Sign in** action when the self-hosted Worker requests OAuth. Jan discovers the authorization metadata, uses dynamic client registration when advertised, and completes authorization code + PKCE. Keep `CONNECT_SECRET` in the Worker environment if that optional gate is enabled, and do not present the public DigestSEO endpoint as a turnkey provider-key service.
+
+References: [Jan Desktop MCP servers](https://www.jan.ai/docs/desktop/integrations/mcp-servers), [Jan Agent MCP](https://www.jan.ai/docs/agent/mcp), and [Jan Agent CLI reference](https://www.jan.ai/docs/agent/cli).
+
 ### Zed
 
 In Zed, open **Settings -> AI -> MCP Servers**, choose **Add Server -> Add Local Server**, and configure `digestseo` with command `npx` and arguments `-y`, `@digestseo/mcp-geo`. That zero-key local server is enough for MCP discovery. For engine-backed scans, add only the provider keys you intend to use in Zed's local MCP `env` map rather than committing secrets into shared project settings.

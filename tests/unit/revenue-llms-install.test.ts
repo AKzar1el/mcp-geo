@@ -140,6 +140,16 @@ test('AI-agent guide documents Msty Studio local stdio setup without committed p
   assert.match(guide, /docs\.msty\.ai\/studio\/toolbox\/tools/);
   assert.match(guide, /docs\.msty\.ai\/studio\/workspaces\/environment/);
 });
+test('AI-agent guide documents Jan local stdio and self-hosted remote OAuth setup', () => {
+  assert.match(
+    guide,
+    /### Jan Desktop \/ Jan Agent[\s\S]*Settings -> MCP Servers -> \+ Add MCP Server[\s\S]*Command: `npx`[\s\S]*@digestseo\/mcp-geo[\s\S]*jan cli mcp add digestseo --command npx --arg -y --arg @digestseo\/mcp-geo[\s\S]*jan cli mcp enable digestseo[\s\S]*Streamable HTTP[\s\S]*https:\/\/<worker-host>\/mcp[\s\S]*dynamic client registration[\s\S]*PKCE/,
+  );
+  assert.match(guide, /jan\.ai\/docs\/desktop\/integrations\/mcp-servers/);
+  assert.match(guide, /jan\.ai\/docs\/agent\/mcp/);
+  assert.match(guide, /jan\.ai\/docs\/agent\/cli/);
+  assert.match(guide, /do not present the public DigestSEO endpoint as a turnkey provider-key service/i);
+});
 test('AI-agent guide documents JetBrains Air workspace MCP reuse', () => {
   assert.match(
     guide,

@@ -236,6 +236,15 @@ test('README documents Msty Studio local stdio setup without committed provider 
   assert.match(readme, /docs\.msty\.ai\/studio\/toolbox\/tools/);
   assert.match(readme, /docs\.msty\.ai\/studio\/workspaces\/environment/);
 });
+test('README documents Jan local stdio and self-hosted remote OAuth setup', () => {
+  assert.match(
+    readme,
+    /\*\*Jan Desktop \/ Jan Agent:\*\*[\s\S]*Settings -> MCP Servers -> \+ Add MCP Server[\s\S]*\*\*STDIO\*\*[\s\S]*`npx`[\s\S]*@digestseo\/mcp-geo[\s\S]*jan cli mcp add digestseo --command npx --arg -y --arg @digestseo\/mcp-geo[\s\S]*\*\*HTTP\*\*[\s\S]*https:\/\/<worker-host>\/mcp[\s\S]*dynamic client registration[\s\S]*PKCE/,
+  );
+  assert.match(readme, /jan\.ai\/docs\/desktop\/integrations\/mcp-servers/);
+  assert.match(readme, /jan\.ai\/docs\/agent\/mcp/);
+  assert.match(readme, /Do not present the public DigestSEO endpoint as a turnkey provider-key service/);
+});
 test('README documents JetBrains Air workspace MCP reuse', () => {
   assert.match(
     readme,
