@@ -201,6 +201,25 @@ That zero-key server is sufficient for MCP tool discovery. Before engine-backed 
 
 Reference: [Langflow MCP client](https://docs.langflow.org/mcp-client).
 
+### LM Studio
+
+LM Studio can launch local MCP servers from its Cursor-compatible `mcp.json`. Open the **Program** tab, choose **Install -> Edit mcp.json**, and add:
+
+```json
+{
+  "mcpServers": {
+    "digestseo": {
+      "command": "npx",
+      "args": ["-y", "@digestseo/mcp-geo"]
+    }
+  }
+}
+```
+
+LM Studio starts command-backed MCP servers as child processes. That zero-key entry is sufficient for MCP tool discovery. Before engine-backed scans, make only the selected provider keys available to the LM Studio process and keep raw secrets out of shared configuration. `npx` must be installed and available on LM Studio's `PATH`.
+
+Reference: [LM Studio MCP servers](https://lmstudio.ai/docs/app/mcp).
+
 ### Raycast AI
 
 Raycast can launch local STDIO MCP servers directly. Open **Install MCP Server** (or **Manage MCP Servers -> Install New Server**), choose **Standard Input/Output**, and configure:
