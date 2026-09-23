@@ -9,6 +9,17 @@ All notable changes to this project are documented here. The format is loosely b
 - Cursor plugin MCP metadata now launches the published local stdio package instead of routing users to the public Worker endpoint, which is not configured as a turnkey fresh-scan service.
 - Windsurf guidance now recommends local stdio or a configured self-hosted Worker, and Cursor/Claude plugin manifests are synchronized to `0.3.7`.
 
+## [0.3.23] - September 23, 2026
+
+### Added
+
+- Added native AnythingLLM local stdio onboarding through MCP Management / `anythingllm_mcp_servers.json`, including zero-key discovery and secret-safe optional provider configuration.
+
+### Changed
+
+- Grounded Grok visibility scans now use xAI's current `grok-4.7` model through the existing Responses API + required Web Search contract.
+- Perplexity setup guidance now describes the already-shipped Agent API `fast` preset and live usage-based pricing instead of stale Sonar/fixed per-prompt wording.
+
 ## [0.3.22] - September 23, 2026
 
 ### Fixed
