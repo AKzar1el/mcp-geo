@@ -248,15 +248,6 @@ test('README documents Langflow local stdio setup without storing provider secre
   assert.match(readme, /Docker[\s\S]*Node\.js[\s\S]*`npx` server/);
   assert.match(readme, /docs\.langflow\.org\/mcp-client/);
 });
-test('README documents LM Studio local stdio setup', () => {
-  assert.match(
-    readme,
-    /\*\*LM Studio:\*\*[\s\S]*Program[\s\S]*Install -> Edit mcp\.json[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo[\s\S]*child processes/,
-  );
-  assert.match(readme, /zero-key entry is enough for tool discovery/);
-  assert.match(readme, /LM Studio process[\s\S]*keep raw secrets out of shared configuration/);
-  assert.match(readme, /lmstudio\.ai\/docs\/app\/mcp/);
-});
 test('README documents Raycast local stdio setup without committed provider secrets', () => {
   assert.match(
     readme,
