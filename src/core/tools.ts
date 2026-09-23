@@ -146,6 +146,16 @@ const citationsOutputSchema = z.object({
   brand_id: z.string(),
   days: z.number(),
   engine: z.string().nullable(),
+  top_sources: z.array(
+    z.object({
+      domain: z.string(),
+      citation_count: z.number(),
+      prompt_count: z.number(),
+      engines: z.array(z.string()),
+      sample_url: z.string(),
+      is_brand_domain: z.boolean(),
+    }),
+  ),
   citations: z.array(
     z.object({
       id: z.string(),
@@ -622,7 +632,7 @@ export function registerTools(
     {
       title: 'Get AI citation evidence',
       description:
-        "Return stored brand citation evidence: prompt, response excerpt, link status, and matched URL when available. Example: brand_id='acme', days=14, engine='perplexity'.",
+        "Return stored brand citation evidence plus the top engine-native source domains across the same tracked-prompt window. Example: brand_id='acme', days=14, engine='perplexity'.",
       inputSchema: {
         brand_id: z
           .string()
@@ -650,6 +660,9 @@ export function registerTools(
       }
       const since = Date.now() - days * 86_400_000;
       const results = await deps.db.getCitationRows(brand_id, since, engine);
+      const sourceResponses = (await deps.db.getResponsesSince(brand_id, since)).filter(
+        (response) => !engine || response.engine === engine,
+      );
 
       const citations = results.map((row) => {
         const citedHosts = parseStringArray(row.cited_urls_json);
@@ -672,6 +685,7 @@ export function registerTools(
         brand_id,
         days,
         engine: engine ?? null,
+        top_sources: buildTopSources(sourceResponses, brand),
         citations,
       };
       return toolResult(payload);
@@ -1283,6 +1297,68 @@ function parseStringArray(raw: string | null): string[] {
 
 function citationId(runId: string, promptId: string): string {
   return `cit_${runId.slice(0, 8)}_${promptId.slice(0, 8)}`;
+}
+
+function buildTopSources(responses: PromptResponse[], brand: Brand) {
+  const sources = new Map<
+    string,
+    {
+      citation_count: number;
+      prompts: Set<string>;
+      engines: Set<string>;
+      sample_url: string;
+    }
+  >();
+
+  for (const response of responses) {
+    const domainsForResponse = new Map<string, string>();
+    for (const rawUrl of response.engine_citations) {
+      try {
+        const parsed = new URL(rawUrl);
+        if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') continue;
+        let domain = parsed.hostname.toLowerCase();
+        if (domain.startsWith('www.')) domain = domain.slice(4);
+        if (!domain) continue;
+        if (!domainsForResponse.has(domain)) domainsForResponse.set(domain, rawUrl);
+      } catch {
+        // Provider-native citation payloads are external data. Ignore malformed
+        // entries rather than letting one bad source hide the usable evidence.
+      }
+    }
+
+    for (const [domain, sampleUrl] of domainsForResponse) {
+      const existing = sources.get(domain);
+      if (existing) {
+        existing.citation_count += 1;
+        existing.prompts.add(response.prompt_id);
+        existing.engines.add(response.engine);
+      } else {
+        sources.set(domain, {
+          citation_count: 1,
+          prompts: new Set([response.prompt_id]),
+          engines: new Set([response.engine]),
+          sample_url: sampleUrl,
+        });
+      }
+    }
+  }
+
+  return [...sources.entries()]
+    .map(([domain, source]) => ({
+      domain,
+      citation_count: source.citation_count,
+      prompt_count: source.prompts.size,
+      engines: [...source.engines].sort(),
+      sample_url: source.sample_url,
+      is_brand_domain: hostMatchesDomain(domain, brand.domain),
+    }))
+    .sort(
+      (a, b) =>
+        b.citation_count - a.citation_count ||
+        b.prompt_count - a.prompt_count ||
+        a.domain.localeCompare(b.domain),
+    )
+    .slice(0, 10);
 }
 
 export function buildResponseExcerpt(text: string, brand: Brand): string {
