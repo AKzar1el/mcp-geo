@@ -170,6 +170,25 @@ Restart LibreChat after changing `librechat.yaml`. The zero-key entry is suffici
 
 References: [LibreChat MCP server configuration](https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/mcp_servers) and [LibreChat MCP](https://www.librechat.ai/docs/features/mcp).
 
+### AnythingLLM
+
+AnythingLLM can run local command-backed MCP servers for its AI Agents. Open **Settings -> Agent Configuration -> MCP** and add the server through the MCP Management UI, or merge this entry into `anythingllm_mcp_servers.json` in AnythingLLM's storage `plugins` directory:
+
+```json
+{
+  "mcpServers": {
+    "digestseo": {
+      "command": "npx",
+      "args": ["-y", "@digestseo/mcp-geo"]
+    }
+  }
+}
+```
+
+STDIO is AnythingLLM's default transport for command-backed MCP servers. That zero-key configuration is sufficient for MCP tool discovery. Before engine-backed scans, add only the selected provider environment variables through AnythingLLM's MCP configuration or the process environment; do not put raw API keys into shared configuration files.
+
+Reference: [AnythingLLM MCP compatibility](https://docs.anythingllm.com/mcp-compatibility/overview).
+
 ### Raycast AI
 
 Raycast can launch local STDIO MCP servers directly. Open **Install MCP Server** (or **Manage MCP Servers -> Install New Server**), choose **Standard Input/Output**, and configure:
