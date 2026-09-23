@@ -22,7 +22,7 @@ Scope and evidence rules:
 Use these mcp-geo capabilities (or their hosted visibility.* aliases):
 1. check_visibility for the current per-engine and overall visibility snapshot.
 2. compare_competitors for observed competitor share of voice and winning/losing prompts.
-3. get_citations for source/citation evidence where returned.
+3. get_citations for source/citation evidence where returned. Use its `top_sources` summary to identify recurring cited domains across the tracked prompt window, then use the individual citation rows for concrete examples.
 4. get_content_gaps for recommendations grounded in losing prompts.
 5. get_visibility_history only when a time comparison is explicitly relevant and comparable usable history exists.
 6. refresh_brand only when a fresh provider-backed run is authorized.
@@ -56,6 +56,11 @@ Brand/competitor | Observed mentions | Share of voice
 Use `your_mentions` for the tracked brand and each competitor's `mentions` value from `compare_competitors`; do not infer counts from rounded percentages. Then identify the 3 most important winning or losing prompt patterns. Do not imply exclusivity when a response mentions multiple brands.
 
 ## 5. Citation/source evidence
+Start with the recurring source landscape from `top_sources` when it is available:
+Domain | Citations | Prompts | Engines | Brand domain?
+
+Use the reported `citation_count`, `prompt_count`, `engines`, and `is_brand_domain` values as returned. Do not infer a citation share or source category that mcp-geo did not report.
+
 List the strongest concrete citation examples returned by the engines:
 Prompt | Engine | Source/domain | What the evidence shows
 
@@ -83,6 +88,7 @@ Include:
 - The prompt count used.
 - Per-engine usable response counts.
 - Any engines or observations excluded because they failed or were unavailable.
+- The most decision-relevant recurring source domains from `top_sources`, when available.
 - The most decision-relevant citation/source examples.
 - A short note explaining that the report is a bounded snapshot.
 
