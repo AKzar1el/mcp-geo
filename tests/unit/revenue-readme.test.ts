@@ -61,6 +61,12 @@ test('README exposes audit details and an attributable direct request path', () 
     /\*\*Perplexity Computer \(remote MCP\):\*\*[\s\S]*Account settings > Connectors > \+ Custom connector[\s\S]*choose \*\*Remote\*\*[\s\S]*https:\/\/<worker-host>\/mcp[\s\S]*OAuth[\s\S]*CONNECT_SECRET/,
   );
   assert.match(readme, /perplexity\.ai\/changelog\/what-we-shipped---march-13-2026/);
+  assert.match(
+    readme,
+    /\*\*Replit Agent \(remote MCP\):\*\*[\s\S]*Integrations -> MCP Servers for Replit Agent -> Add MCP server[\s\S]*https:\/\/<worker-host>\/mcp[\s\S]*OAuth dynamic client registration \(DCR\)[\s\S]*Test & Save[\s\S]*CONNECT_SECRET/,
+  );
+  assert.match(readme, /docs\.replit\.com\/features\/mcp\/overview/);
+  assert.match(readme, /Replit supports remote HTTPS MCP servers rather than this package's local stdio process/);
   assert.doesNotMatch(readme, /ChatGPT desktop app:[\s\S]*npx -y @digestseo\/mcp-geo/);
   assert.match(
     readme,
