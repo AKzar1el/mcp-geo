@@ -208,7 +208,7 @@ test('live scans bypass shared cached responses for every provider', async (t) =
       (call) => {
         assert.equal(call.url.pathname, '/v1/responses');
         const body = JSON.parse(String(call.init?.body)) as Record<string, unknown>;
-        assert.equal(body.model, 'grok-4.6');
+        assert.equal(body.model, 'grok-4.7');
         assert.deepEqual(body.tools, [{ type: 'web_search' }]);
         assert.equal(body.tool_choice, 'required');
       },

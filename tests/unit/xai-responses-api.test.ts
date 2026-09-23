@@ -46,7 +46,7 @@ test('xAI uses Responses API with required web search and captures citations', a
       'Be concise.',
     );
 
-    assert.equal(MODEL, 'grok-4.6');
+    assert.equal(MODEL, 'grok-4.7');
     assert.equal(seenUrl, 'https://api.x.ai/v1/responses');
     assert.equal(seenInit?.method, 'POST');
     assert.equal(
@@ -54,7 +54,7 @@ test('xAI uses Responses API with required web search and captures citations', a
       'Bearer test-key',
     );
     assert.deepEqual(JSON.parse(String(seenInit?.body)), {
-      model: 'grok-4.6',
+      model: 'grok-4.7',
       input: [
         { role: 'system', content: 'Be concise.' },
         { role: 'user', content: 'Where is Acme visible?' },
