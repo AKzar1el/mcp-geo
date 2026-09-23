@@ -189,6 +189,18 @@ STDIO is AnythingLLM's default transport for command-backed MCP servers. That ze
 
 Reference: [AnythingLLM MCP compatibility](https://docs.anythingllm.com/mcp-compatibility/overview).
 
+### Langflow
+
+Langflow can launch external MCP servers for its agents. Open **Settings -> MCP Servers** (or the MCP sidebar -> **Add MCP Server**), choose **STDIO**, and configure:
+
+- Name: `digestseo`
+- Command: `npx`
+- Arguments: `-y` and `@digestseo/mcp-geo`
+
+That zero-key server is sufficient for MCP tool discovery. Before engine-backed scans, add only the selected provider keys in Langflow's MCP **Environment Variables** fields rather than storing raw secrets in a flow. Then select the saved server from an **MCP Tools** component and connect its tools to a Langflow Agent. If Langflow itself runs in Docker, install Node.js in the image before using an `npx` MCP server.
+
+Reference: [Langflow MCP client](https://docs.langflow.org/mcp-client).
+
 ### Raycast AI
 
 Raycast can launch local STDIO MCP servers directly. Open **Install MCP Server** (or **Manage MCP Servers -> Install New Server**), choose **Standard Input/Output**, and configure:
