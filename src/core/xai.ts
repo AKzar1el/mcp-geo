@@ -14,7 +14,7 @@ import type {
 } from '../db/types.js';
 import { fetchWithTimeout } from './fetch.js';
 
-export const MODEL = 'grok-4.6';
+export const MODEL = 'grok-4.7';
 export const ENGINE = 'grok';
 
 const LIVE_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60;

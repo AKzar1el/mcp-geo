@@ -31,7 +31,7 @@ All six keys are **optional individually**. With zero keys, the server still sta
 | `ANTHROPIC_API_KEY` | Anthropic — Claude engine (`claude-haiku-4-5`) | https://console.anthropic.com/ | Recommended starter; also powers prompt generation and `get_content_gaps` analysis |
 | `GEMINI_API_KEY` | Google AI Studio — Gemini engine (`gemini-3.1-flash-lite`) | https://aistudio.google.com/app/apikey | Rate limits vary by model, project, and usage tier; check the project's active limits in Google AI Studio |
 | `PERPLEXITY_API_KEY` | Perplexity — Sonar engine | https://www.perplexity.ai/settings/api | Paid only |
-| `XAI_API_KEY` | xAI — Grok engine (`grok-4.6`, web search) | https://console.x.ai/ | Paid; Web Search is billed separately from model tokens, so check current xAI pricing |
+| `XAI_API_KEY` | xAI — Grok engine (`grok-4.7`, web search) | https://console.x.ai/ | Paid; Web Search is billed separately from model tokens, so check current xAI pricing |
 | `SERPAPI_API_KEY` | SerpAPI — Google AI Overviews + optional Google AI Mode | https://serpapi.com/dashboard | AI Mode is a separate SerpAPI call per prompt and requires the explicit flag below |
 | `SERPAPI_AI_MODE_ENABLED` | Non-secret feature flag for Google AI Mode | n/a | Set to `true` only when you want AI Mode added to automatic refreshes; default/unset preserves existing SerpAPI cost |
 
