@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format is loosely b
 
 ## Unreleased
 
+### Added
+
+- Added Replit Agent onboarding for a user's self-hosted remote Worker, using Replit's custom MCP flow and OAuth dynamic client registration without misrepresenting the public DigestSEO endpoint as a turnkey scan service.
+
 ### Fixed
 
 - Cursor plugin MCP metadata now launches the published local stdio package instead of routing users to the public Worker endpoint, which is not configured as a turnkey fresh-scan service.

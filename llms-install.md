@@ -740,6 +740,14 @@ Choose **OAuth** for the Worker connection. Complete the browser handshake; if `
 
 Reference: [Perplexity Computer custom MCP connectors](https://www.perplexity.ai/changelog/what-we-shipped---march-13-2026).
 
+#### Replit Agent
+
+Open **Integrations → MCP Servers for Replit Agent → Add MCP server**, name the server `digestseo`, and enter `https://<worker-host>/mcp`. Select **Test & Save** and use the OAuth flow when Replit detects it. Replit supports OAuth dynamic client registration (DCR); the self-hosted Worker exposes the required authorization-server discovery and `/register` endpoint, so no static provider token needs to be copied into Replit.
+
+Complete the browser authorization step. If `CONNECT_SECRET` was configured in Step 5, enter it in the one-field gate before the connection completes. Replit Agent connects to remote HTTPS MCP servers, not this package's local stdio process, so use the user's own configured Worker and never present the public `geo-mcp.digestseo.com/mcp` endpoint as a turnkey provider-key service.
+
+Reference: [Replit MCP](https://docs.replit.com/features/mcp/overview).
+
 #### Claude Desktop
 
 Merge into `claude_desktop_config.json` (macOS: `~/Library/Application Support/Claude/`, Windows: `%APPDATA%\Claude\`), then restart Claude Desktop:

@@ -40,6 +40,8 @@ Runs locally over stdio with your own API keys — all data stays on your machin
 
 **Perplexity Computer (remote MCP):** Perplexity Computer supports custom remote MCP connectors on eligible plans. After self-hosting mcp-geo, open **Account settings > Connectors > + Custom connector**, choose **Remote**, name it `digestseo`, and enter your own deployment's `https://<worker-host>/mcp` URL. Use the connector's OAuth option for the Worker flow; if you configured `CONNECT_SECRET`, complete that browser gate during connection. Do not use the public `geo-mcp.digestseo.com/mcp` endpoint as a turnkey no-key scan service. See Perplexity's current [Computer connector guidance](https://www.perplexity.ai/changelog/what-we-shipped---march-13-2026).
 
+**Replit Agent (remote MCP):** after self-hosting mcp-geo, open **Integrations -> MCP Servers for Replit Agent -> Add MCP server**, name it `digestseo`, and enter your own deployment's `https://<worker-host>/mcp` URL. Choose the OAuth flow when prompted: Replit supports OAuth dynamic client registration (DCR), which the self-hosted Worker exposes through its standard discovery and registration endpoints. Select **Test & Save**, then complete the browser authorization step; if you configured `CONNECT_SECRET`, enter it in that gate. Replit supports remote HTTPS MCP servers rather than this package's local stdio process, so use your configured Worker URL and do not treat the public `geo-mcp.digestseo.com/mcp` endpoint as a turnkey provider-key service. See Replit's current [MCP guide](https://docs.replit.com/features/mcp/overview).
+
 **Claude Code:**
 
 ```bash

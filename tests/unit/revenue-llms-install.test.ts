@@ -31,6 +31,12 @@ test('AI-agent install guide exposes the frozen managed audit alternative withou
     /#### Perplexity Computer[\s\S]*Account settings → Connectors → \+ Custom connector[\s\S]*choose \*\*Remote\*\*[\s\S]*https:\/\/<worker-host>\/mcp[\s\S]*\*\*OAuth\*\*[\s\S]*CONNECT_SECRET/,
   );
   assert.match(guide, /perplexity\.ai\/changelog\/what-we-shipped---march-13-2026/);
+  assert.match(
+    guide,
+    /#### Replit Agent[\s\S]*Integrations → MCP Servers for Replit Agent → Add MCP server[\s\S]*https:\/\/<worker-host>\/mcp[\s\S]*Test & Save[\s\S]*OAuth dynamic client registration \(DCR\)[\s\S]*CONNECT_SECRET/,
+  );
+  assert.match(guide, /docs\.replit\.com\/features\/mcp\/overview/);
+  assert.match(guide, /Replit Agent connects to remote HTTPS MCP servers, not this package's local stdio process/);
   assert.doesNotMatch(guide, /### ChatGPT desktop app[\s\S]*npx -y @digestseo\/mcp-geo/);
   assert.match(
     guide,
