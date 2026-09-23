@@ -4,6 +4,7 @@ import test from 'node:test';
 
 const readme = readFileSync('README.md', 'utf8');
 const methodology = readFileSync('docs/ai-visibility-audit-methodology.md', 'utf8');
+const reportPrompt = readFileSync('docs/ai-visibility-audit-report-prompt.md', 'utf8');
 const setup = readFileSync('SETUP.md', 'utf8');
 
 test('README exposes audit details and an attributable direct request path', () => {
@@ -159,6 +160,25 @@ test('audit methodology exposes the score formulas buyers need to verify', () =>
   assert.match(
     methodology,
     /\[Use the reusable evidence-first report prompt\]\(\.\/ai-visibility-audit-report-prompt\.md\)/,
+  );
+});
+test('audit report prompt uses the shipped citation source summary without inventing derived metrics', () => {
+  assert.match(
+    reportPrompt,
+    /get_citations[\s\S]*`top_sources` summary[\s\S]*recurring cited domains/,
+  );
+  assert.match(
+    reportPrompt,
+    /Domain \| Citations \| Prompts \| Engines \| Brand domain\?/,
+  );
+  assert.match(
+    reportPrompt,
+    /`citation_count`[\s\S]*`prompt_count`[\s\S]*`engines`[\s\S]*`is_brand_domain`/,
+  );
+  assert.match(reportPrompt, /Do not infer a citation share or source category/);
+  assert.match(
+    reportPrompt,
+    /recurring source domains from `top_sources`, when available/,
   );
 });
 
