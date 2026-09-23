@@ -159,7 +159,11 @@ function createStatelessHostedServer(
   const server = new StatelessMcpServer(
     {
       name: 'digestseo-mcp',
+      title: 'GEO Tracker by DigestSEO',
+      description:
+        'Track brand citations across seven AI search surfaces. Free OSS; optional EUR 99 client-ready audit.',
       version: SERVER_VERSION,
+      websiteUrl: 'https://digestseo.com/geo-mcp/',
     },
     { instructions: HOSTED_SERVER_INSTRUCTIONS },
   );
