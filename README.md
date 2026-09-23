@@ -124,6 +124,21 @@ AnythingLLM treats command-backed servers as local STDIO MCP servers and can sta
 
 **Langflow:** open **Settings -> MCP Servers** (or the MCP sidebar -> **Add MCP Server**), choose **STDIO**, name the server `digestseo`, set Command to `npx`, and add Arguments `-y` and `@digestseo/mcp-geo`. The zero-key server is enough for MCP tool discovery; before engine-backed scans, add only the provider keys you intend to use in Langflow's MCP **Environment Variables** fields rather than storing raw secrets in a flow. Then select the saved server from an **MCP Tools** component and connect its tools to a Langflow Agent. If Langflow itself runs in Docker, its image must include Node.js before it can launch an `npx` server. See Langflow's current [MCP client guide](https://docs.langflow.org/mcp-client).
 
+**LM Studio:** open the **Program** tab, choose **Install -> Edit mcp.json**, and add mcp-geo using LM Studio's Cursor-compatible MCP configuration:
+
+```json
+{
+  "mcpServers": {
+    "digestseo": {
+      "command": "npx",
+      "args": ["-y", "@digestseo/mcp-geo"]
+    }
+  }
+}
+```
+
+LM Studio launches local command-backed MCP servers as child processes. The zero-key entry is enough for tool discovery; before engine-backed scans, make only the provider keys you intend to use available to the LM Studio process and keep raw secrets out of shared configuration. `npx` must be installed and available on LM Studio's `PATH`. See LM Studio's current [MCP server guide](https://lmstudio.ai/docs/app/mcp).
+
 **Raycast AI:** open **Install MCP Server** (or **Manage MCP Servers -> Install New Server**), choose **Standard Input/Output**, set Command to `npx`, and set Arguments to `-y` and `@digestseo/mcp-geo`. The zero-key install is enough for tool discovery. Before engine-backed scans, add only the provider keys you want in Raycast's MCP **Environment** fields rather than hard-coding them into shared project files. Restart Raycast if `npx` was added to `PATH` after Raycast started. See Raycast's current [MCP manual](https://manual.raycast.com/ai/model-context-protocol).
 
 **Msty Studio:** open **Toolbox -> Add New Tool**, choose **STDIO / JSON**, and use:
