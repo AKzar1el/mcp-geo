@@ -105,6 +105,21 @@ mcpServers:
 
 Restart LibreChat after changing `librechat.yaml`. The zero-key entry is enough for MCP tool discovery. Before engine-backed scans, expose only the provider API keys you intend to use to the LibreChat process rather than committing secret values into the YAML file. See LibreChat's current [MCP configuration guide](https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/mcp_servers) and [MCP feature guide](https://www.librechat.ai/docs/features/mcp).
 
+**AnythingLLM:** add mcp-geo from **Settings -> Agent Configuration -> MCP**, or merge this entry into `anythingllm_mcp_servers.json` in AnythingLLM's storage `plugins` directory:
+
+```json
+{
+  "mcpServers": {
+    "digestseo": {
+      "command": "npx",
+      "args": ["-y", "@digestseo/mcp-geo"]
+    }
+  }
+}
+```
+
+AnythingLLM treats command-backed servers as local STDIO MCP servers and can start them when an agent needs their tools. The zero-key entry is enough for MCP discovery; before engine-backed scans, add only the provider environment variables you intend to use through AnythingLLM's MCP configuration or the process environment instead of committing raw secrets. See AnythingLLM's current [MCP compatibility guide](https://docs.anythingllm.com/mcp-compatibility/overview).
+
 **Raycast AI:** open **Install MCP Server** (or **Manage MCP Servers -> Install New Server**), choose **Standard Input/Output**, set Command to `npx`, and set Arguments to `-y` and `@digestseo/mcp-geo`. The zero-key install is enough for tool discovery. Before engine-backed scans, add only the provider keys you want in Raycast's MCP **Environment** fields rather than hard-coding them into shared project files. Restart Raycast if `npx` was added to `PATH` after Raycast started. See Raycast's current [MCP manual](https://manual.raycast.com/ai/model-context-protocol).
 
 **Msty Studio:** open **Toolbox -> Add New Tool**, choose **STDIO / JSON**, and use:

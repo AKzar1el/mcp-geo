@@ -109,6 +109,14 @@ test('AI-agent guide documents LibreChat local stdio setup without committed pro
   assert.match(guide, /librechat\.ai\/docs\/configuration\/librechat_yaml\/object_structure\/mcp_servers/);
   assert.match(guide, /instead of committing raw secret values into the YAML file/);
 });
+test('AI-agent guide documents AnythingLLM local stdio setup without committed provider secrets', () => {
+  assert.match(
+    guide,
+    /### AnythingLLM[\s\S]*Agent Configuration -> MCP[\s\S]*anythingllm_mcp_servers\.json[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo[\s\S]*STDIO is AnythingLLM's default transport/,
+  );
+  assert.match(guide, /docs\.anythingllm\.com\/mcp-compatibility\/overview/);
+  assert.match(guide, /do not put raw API keys into shared configuration files/);
+});
 test('AI-agent guide documents Raycast local stdio setup without committed provider secrets', () => {
   assert.match(
     guide,
