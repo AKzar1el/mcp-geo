@@ -288,3 +288,10 @@ test('README keeps Gemini pricing and rate-limit guidance tied to current provid
   assert.doesNotMatch(readme, /Free tier is rate-limited for brands/i);
   assert.doesNotMatch(readme, /~€0\.0001 per prompt/);
 });
+
+test('README describes the live Perplexity Agent API contract instead of retired Sonar pricing', () => {
+  assert.match(readme, /Perplexity[^\n]*Agent API `fast` preset/);
+  assert.match(readme, /docs\.perplexity\.ai\/docs\/agent-api\/quickstart/);
+  assert.doesNotMatch(readme, /Perplexity Sonar engine/);
+  assert.doesNotMatch(readme, /0\.005-0\.008 per prompt/);
+});
