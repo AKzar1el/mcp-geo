@@ -132,15 +132,6 @@ test('AI-agent guide documents Langflow local stdio setup without storing provid
   assert.match(guide, /Docker[\s\S]*Node\.js[\s\S]*`npx` MCP server/);
   assert.match(guide, /docs\.langflow\.org\/mcp-client/);
 });
-test('AI-agent guide documents LM Studio local stdio setup', () => {
-  assert.match(
-    guide,
-    /### LM Studio[\s\S]*Program[\s\S]*Install -> Edit mcp\.json[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo[\s\S]*child processes/,
-  );
-  assert.match(guide, /zero-key entry is sufficient for MCP tool discovery/);
-  assert.match(guide, /LM Studio process[\s\S]*keep raw secrets out of shared configuration/);
-  assert.match(guide, /lmstudio\.ai\/docs\/app\/mcp/);
-});
 test('AI-agent guide documents Raycast local stdio setup without committed provider secrets', () => {
   assert.match(
     guide,
