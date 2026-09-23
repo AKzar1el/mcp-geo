@@ -38,6 +38,35 @@ function legacyRequest(method: string, params: Record<string, unknown>) {
   });
 }
 
+function modernRequest(method: string, params: Record<string, unknown> = {}) {
+  return new Request('https://example.com/mcp', {
+    method: 'POST',
+    headers: {
+      host: 'example.com',
+      accept: 'application/json, text/event-stream',
+      'content-type': 'application/json',
+      'mcp-protocol-version': '2026-07-28',
+      'mcp-method': method,
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method,
+      params: {
+        ...params,
+        _meta: {
+          'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+          'io.modelcontextprotocol/clientInfo': {
+            name: 'modern-compat-test',
+            version: '1',
+          },
+          'io.modelcontextprotocol/clientCapabilities': {},
+        },
+      },
+    }),
+  });
+}
+
 test('shared hosted tools run on the SDK v2 stateless handler with legacy fallback', async () => {
   const handler = createMcpHandler(createSharedToolServer, {
     route: '/mcp',
@@ -76,4 +105,45 @@ test('shared hosted tools run on the SDK v2 stateless handler with legacy fallba
   ]) {
     assert.match(body, new RegExp(`"name":"${tool.replace('.', '\\.')}`));
   }
+});
+
+test('shared hosted tools support the MCP 2026-07-28 modern stateless flow', async () => {
+  const handler = createMcpHandler(createSharedToolServer, {
+    route: '/mcp',
+    legacy: 'stateless',
+    allowedHostnames: ['example.com'],
+    allowedOriginHostnames: ['example.com'],
+  });
+
+  const discoverResponse = await handler(
+    modernRequest('server/discover'),
+    {},
+    { waitUntil() {}, passThroughOnException() {} } as ExecutionContext,
+  );
+  assert.equal(discoverResponse.status, 200);
+  assert.equal(discoverResponse.headers.get('mcp-session-id'), null);
+  const discover = JSON.parse(await discoverResponse.text());
+  assert.ok(discover.result.supportedVersions.includes('2026-07-28'));
+  assert.equal(
+    discover.result._meta['io.modelcontextprotocol/serverInfo'].name,
+    'digestseo-mcp',
+  );
+
+  const listResponse = await handler(
+    modernRequest('tools/list'),
+    {},
+    { waitUntil() {}, passThroughOnException() {} } as ExecutionContext,
+  );
+  assert.equal(listResponse.status, 200);
+  assert.equal(listResponse.headers.get('mcp-session-id'), null);
+  const listed = JSON.parse(await listResponse.text());
+  const names = listed.result.tools.map((tool: { name: string }) => tool.name);
+  assert.deepEqual(names.sort(), [
+    'visibility.check',
+    'visibility.citations',
+    'visibility.compare',
+    'visibility.content_gaps',
+    'visibility.history',
+    'visibility.refresh',
+  ]);
 });
