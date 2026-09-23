@@ -9,7 +9,11 @@ import { registerTools } from '../../src/core/tools.js';
 function createSharedToolServer() {
   const server = new StatelessMcpServer({
     name: 'digestseo-mcp',
+    title: 'GEO Tracker by DigestSEO',
+    description:
+      'Track brand citations across seven AI search surfaces. Free OSS; optional EUR 99 client-ready audit.',
     version: 'test',
+    websiteUrl: 'https://digestseo.com/geo-mcp/',
   });
 
   registerTools(
@@ -127,6 +131,18 @@ test('shared hosted tools support the MCP 2026-07-28 modern stateless flow', asy
   assert.equal(
     discover.result._meta['io.modelcontextprotocol/serverInfo'].name,
     'digestseo-mcp',
+  );
+  assert.equal(
+    discover.result._meta['io.modelcontextprotocol/serverInfo'].title,
+    'GEO Tracker by DigestSEO',
+  );
+  assert.equal(
+    discover.result._meta['io.modelcontextprotocol/serverInfo'].description,
+    'Track brand citations across seven AI search surfaces. Free OSS; optional EUR 99 client-ready audit.',
+  );
+  assert.equal(
+    discover.result._meta['io.modelcontextprotocol/serverInfo'].websiteUrl,
+    'https://digestseo.com/geo-mcp/',
   );
 
   const listResponse = await handler(
