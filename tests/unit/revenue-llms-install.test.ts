@@ -123,6 +123,15 @@ test('AI-agent guide documents AnythingLLM local stdio setup without committed p
   assert.match(guide, /docs\.anythingllm\.com\/mcp-compatibility\/overview/);
   assert.match(guide, /do not put raw API keys into shared configuration files/);
 });
+test('AI-agent guide documents Langflow local stdio setup without storing provider secrets in flows', () => {
+  assert.match(
+    guide,
+    /### Langflow[\s\S]*Settings -> MCP Servers[\s\S]*Add MCP Server[\s\S]*\*\*STDIO\*\*[\s\S]*Command: `npx`[\s\S]*@digestseo\/mcp-geo[\s\S]*MCP Tools[\s\S]*Langflow Agent/,
+  );
+  assert.match(guide, /MCP \*\*Environment Variables\*\* fields/);
+  assert.match(guide, /Docker[\s\S]*Node\.js[\s\S]*`npx` MCP server/);
+  assert.match(guide, /docs\.langflow\.org\/mcp-client/);
+});
 test('AI-agent guide documents Raycast local stdio setup without committed provider secrets', () => {
   assert.match(
     guide,

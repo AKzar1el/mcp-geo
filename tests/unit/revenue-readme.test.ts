@@ -219,6 +219,15 @@ test('README documents AnythingLLM local stdio setup without committed provider 
   assert.match(readme, /docs\.anythingllm\.com\/mcp-compatibility\/overview/);
   assert.match(readme, /instead of committing raw secrets/);
 });
+test('README documents Langflow local stdio setup without storing provider secrets in flows', () => {
+  assert.match(
+    readme,
+    /\*\*Langflow:\*\*[\s\S]*Settings -> MCP Servers[\s\S]*Add MCP Server[\s\S]*\*\*STDIO\*\*[\s\S]*`npx`[\s\S]*@digestseo\/mcp-geo[\s\S]*MCP Tools[\s\S]*Langflow Agent/,
+  );
+  assert.match(readme, /MCP \*\*Environment Variables\*\* fields/);
+  assert.match(readme, /Docker[\s\S]*Node\.js[\s\S]*`npx` server/);
+  assert.match(readme, /docs\.langflow\.org\/mcp-client/);
+});
 test('README documents Raycast local stdio setup without committed provider secrets', () => {
   assert.match(
     readme,
