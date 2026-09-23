@@ -6,12 +6,22 @@ All notable changes to this project are documented here. The format is loosely b
 
 ### Added
 
-- Added Replit Agent onboarding for a user's self-hosted remote Worker, using Replit's custom MCP flow and OAuth dynamic client registration without misrepresenting the public DigestSEO endpoint as a turnkey scan service.
-
 ### Fixed
 
 - Cursor plugin MCP metadata now launches the published local stdio package instead of routing users to the public Worker endpoint, which is not configured as a turnkey fresh-scan service.
 - Windsurf guidance now recommends local stdio or a configured self-hosted Worker, and Cursor/Claude plugin manifests are synchronized to `0.3.7`.
+
+## [0.3.24] - September 23, 2026
+
+### Added
+
+- Added Replit Agent onboarding for a user's self-hosted remote Worker, using Replit's custom MCP flow and OAuth dynamic client registration without misrepresenting the public DigestSEO endpoint as a turnkey scan service.
+- Added Jan Desktop / Jan Agent onboarding for the published local stdio package and a user's self-hosted remote OAuth endpoint.
+- `get_citations` / `visibility.citations` now returns a bounded `top_sources` summary from engine-native citation URLs, including deterministic citation/prompt counts, contributing engines, a representative URL, and whether each source is the tracked brand domain.
+
+### Changed
+
+- Hosted SDK-v2 discovery now exposes the human-readable `GEO Tracker by DigestSEO` title, concise product description, and canonical product URL while preserving stateless modern/legacy compatibility.
 
 ## [0.3.23] - September 23, 2026
 
