@@ -1,4 +1,4 @@
-// Perplexity Sonar runner. Live mode only (no Perplexity batch API).
+// Perplexity Agent API runner. Live mode only; uses the managed `fast` preset.
 // Captures the engine-native citations array Perplexity returns alongside
 // the answer text — those URLs are explicit sources Perplexity grounded
 // its answer on, so we keep them in addition to whatever extractCitations

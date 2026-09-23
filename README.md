@@ -562,7 +562,7 @@ Engines are opt-in. Pick the ones you want; the rest skip silently.
 - **OpenAI** — ChatGPT engine (`gpt-5-search-api`) with web search. OpenAI currently bills web search at $10 per 1,000 calls plus model token charges; see [API pricing](https://developers.openai.com/api/docs/pricing) and [API keys](https://platform.openai.com/api-keys).
 - **Anthropic** — Claude engine, plus prompt generation and content-gap analysis (both call Claude Haiku). ~€0.0002 per prompt. Free trial credits are usually enough to evaluate. [console.anthropic.com](https://console.anthropic.com/)
 - **Google AI Studio (Gemini)** — Gemini engine (`gemini-3.1-flash-lite`). Google currently offers free-tier token usage for this model, while paid usage is token-priced. Rate limits vary by model, project, and usage tier, and Google says actual capacity can vary; check your project's active limits in AI Studio rather than relying on a fixed RPM/RPD assumption. See [Gemini pricing](https://ai.google.dev/gemini-api/docs/pricing) and [rate limits](https://ai.google.dev/gemini-api/docs/rate-limits).
-- **Perplexity** — Perplexity Sonar engine. ~€0.005-0.008 per prompt. Paid only. [perplexity.ai/settings/api](https://www.perplexity.ai/settings/api)
+- **Perplexity** — Agent API `fast` preset for grounded web-search visibility. Paid API usage; pricing depends on the preset workload, so check current Agent API pricing before estimating scan cost. [Perplexity Agent API](https://docs.perplexity.ai/docs/agent-api/quickstart) · [pricing](https://docs.perplexity.ai/docs/getting-started/pricing)
 - **xAI** — Grok engine (`grok-4.7`) with required Web Search grounding. xAI currently prices Web Search at $5 per 1,000 calls plus model tokens. [console.x.ai](https://console.x.ai/) · [pricing](https://docs.x.ai/developers/pricing)
 - **SerpAPI** — Google AI Overviews plus optional Google AI Mode. One SerpAPI key powers both, but AI Mode is deliberately off by default because it adds a separate paid search per prompt; set `SERPAPI_AI_MODE_ENABLED=true` when you want that seventh surface. [Google AI Mode API](https://serpapi.com/google-ai-mode-api) · [serpapi.com/dashboard](https://serpapi.com/dashboard)
 
@@ -734,7 +734,7 @@ args = [
 | `OPENAI_API_KEY` | opt-in | unset | Enables the ChatGPT engine. Without it, ChatGPT is skipped. |
 | `ANTHROPIC_API_KEY` | opt-in | unset | Enables the Claude engine *and* the Claude-Haiku-powered prompt generator + content-gap analyzer. |
 | `GEMINI_API_KEY` | opt-in | unset | Enables the Gemini engine. Rate limits vary by model, project, and usage tier; check the project's active limits in Google AI Studio (see Troubleshooting). |
-| `PERPLEXITY_API_KEY` | opt-in | unset | Enables the Perplexity Sonar engine. Paid only. |
+| `PERPLEXITY_API_KEY` | opt-in | unset | Enables the Perplexity Agent API `fast` preset. Paid API usage; check current Agent API pricing. |
 | `XAI_API_KEY` | opt-in | unset | Enables the Grok engine (`grok-4.7`) with required Web Search grounding. |
 | `SERPAPI_API_KEY` | opt-in | unset | Enables Google AI Overviews via SerpAPI. Also provides the credential for Google AI Mode when the explicit flag below is enabled. |
 | `SERPAPI_AI_MODE_ENABLED` | no | `false` | Set to `true` to add Google AI Mode as a separate visibility engine. It stays off by default to avoid unexpected extra SerpAPI calls/cost. |

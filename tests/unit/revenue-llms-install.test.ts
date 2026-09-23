@@ -194,3 +194,9 @@ test('AI-agent guide does not hard-code Gemini quota assumptions', () => {
   assert.doesNotMatch(guide, /more than ~5 prompts/i);
   assert.doesNotMatch(guide, /Free tier rate-limits brands/i);
 });
+
+test('AI-agent guide describes Perplexity through the Agent API fast preset', () => {
+  assert.match(guide, /PERPLEXITY_API_KEY[^\n]*Agent API `fast` preset/);
+  assert.match(guide, /docs\.perplexity\.ai\/docs\/agent-api\/quickstart/);
+  assert.doesNotMatch(guide, /Perplexity — Sonar engine/);
+});
