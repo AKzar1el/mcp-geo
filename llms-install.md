@@ -213,6 +213,26 @@ Refresh **Available Actions** to load the twelve mcp-geo tools. The zero-key con
 
 Reference: [Flowise Tools & MCP](https://docs.flowiseai.com/tutorials/tools-and-mcp).
 
+### Kilo Code
+
+Kilo Code can launch mcp-geo as a local STDIO server from either the VS Code extension or Kilo CLI. In the extension, open **Settings -> Agent Behaviour -> MCP Servers**, add a **Local (stdio)** server named `digestseo`, and set Command to `npx` with arguments `-y` and `@digestseo/mcp-geo`. The equivalent macOS/Linux `kilo.jsonc` configuration is:
+
+```json
+{
+  "mcp": {
+    "digestseo": {
+      "type": "local",
+      "command": ["npx", "-y", "@digestseo/mcp-geo"],
+      "enabled": true
+    }
+  }
+}
+```
+
+On Windows use Kilo's documented wrapper form: `"command": ["cmd", "/c", "npx", "-y", "@digestseo/mcp-geo"]`. The zero-key configuration is sufficient for MCP tool discovery. Before engine-backed scans, add only the selected provider keys through Kilo's MCP environment settings or the local process environment; do not commit raw provider secrets into project-level `kilo.jsonc`.
+
+References: [Using MCP in Kilo Code](https://kilo.ai/docs/automate/mcp/using-in-kilo-code) and [Using MCP in the CLI](https://kilo.ai/docs/automate/mcp/using-in-cli).
+
 ### Cherry Studio
 
 Cherry Studio can launch local STDIO MCP servers from its desktop UI. Open **Settings -> MCP -> MCP Servers -> Add**, choose **STDIO**, and configure:
