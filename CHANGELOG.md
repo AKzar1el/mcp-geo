@@ -11,6 +11,20 @@ All notable changes to this project are documented here. The format is loosely b
 - Cursor plugin MCP metadata now launches the published local stdio package instead of routing users to the public Worker endpoint, which is not configured as a turnkey fresh-scan service.
 - Windsurf guidance now recommends local stdio or a configured self-hosted Worker, and Cursor/Claude plugin manifests are synchronized to `0.3.7`.
 
+## [0.3.25] - September 24, 2026
+
+### Added
+
+- Added current local/self-hosted MCP onboarding for Langflow, Cherry Studio, Flowise, and Kilo Code while reusing the existing `@digestseo/mcp-geo` package and provider-secret boundaries.
+
+### Changed
+
+- The reusable AI Visibility Audit report prompt now consumes the shipped `top_sources` citation summary before individual citation examples, without inventing citation-share or source-category metrics.
+
+### Fixed
+
+- All six hosted visibility tools now explicitly publish `readOnlyHint`, `destructiveHint`, and `openWorldHint`, improving safety metadata compatibility for MCP clients and current public-plugin validation without changing tool behavior.
+
 ## [0.3.24] - September 23, 2026
 
 ### Added
