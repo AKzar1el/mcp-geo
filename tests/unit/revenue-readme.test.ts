@@ -402,6 +402,13 @@ test('README keeps Gemini pricing and rate-limit guidance tied to current provid
   assert.doesNotMatch(readme, /~€0\.0001 per prompt/);
 });
 
+test('README keeps Anthropic cost guidance workload-based and linked to current pricing', () => {
+  assert.match(readme, /Anthropic prices Haiku 4\.5 by input\/output tokens/);
+  assert.match(readme, /platform\.claude\.com\/docs\/en\/about-claude\/pricing/);
+  assert.doesNotMatch(readme, /0\.0002 per prompt/);
+  assert.doesNotMatch(readme, /Free trial credits are usually enough to evaluate/);
+});
+
 test('README describes the live Perplexity Agent API contract instead of retired Sonar pricing', () => {
   assert.match(readme, /Perplexity[^\n]*Agent API `fast` preset/);
   assert.match(readme, /docs\.perplexity\.ai\/docs\/agent-api\/quickstart/);
