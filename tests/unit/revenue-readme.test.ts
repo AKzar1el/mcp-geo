@@ -47,6 +47,13 @@ test('README exposes audit details and an attributable direct request path', () 
   );
   assert.match(
     readme,
+    /\*\*GitHub Copilot cloud agent \/ code review:\*\*[\s\S]*Settings -> Copilot -> MCP servers[\s\S]*"type": "local"[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo[\s\S]*"check_visibility"[\s\S]*readOnlyHint: true[\s\S]*COPILOT_MCP_OPENAI_API_KEY/,
+  );
+  assert.match(readme, /remote MCP servers that rely on OAuth/);
+  assert.match(readme, /`refresh_brand` can make billable provider calls/);
+  assert.match(readme, /docs\.github\.com\/en\/copilot\/how-tos\/copilot-on-github\/customize-copilot\/configure-mcp-servers/);
+  assert.match(
+    readme,
     /codex mcp add digestseo -- npx -y @digestseo\/mcp-geo/,
   );
   assert.match(

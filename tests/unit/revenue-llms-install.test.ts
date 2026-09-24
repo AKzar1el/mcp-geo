@@ -49,6 +49,13 @@ test('AI-agent install guide exposes the frozen managed audit alternative withou
   );
   assert.match(
     guide,
+    /### GitHub Copilot cloud agent \/ code review[\s\S]*Settings -> Copilot -> MCP servers[\s\S]*"type": "local"[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo[\s\S]*"check_visibility"[\s\S]*readOnlyHint: true[\s\S]*COPILOT_MCP_OPENAI_API_KEY/,
+  );
+  assert.match(guide, /remote MCP servers that require OAuth are not supported/);
+  assert.match(guide, /`refresh_brand` can make billable provider calls/);
+  assert.match(guide, /docs\.github\.com\/en\/copilot\/how-tos\/copilot-on-github\/customize-copilot\/configure-mcp-servers/);
+  assert.match(
+    guide,
     /### OpenCode v2[\s\S]*opencode mcp add digestseo --global -- npx -y @digestseo\/mcp-geo[\s\S]*mcp\.servers\.digestseo\.environment[\s\S]*\{env:OPENAI_API_KEY\}[\s\S]*opencode mcp list[\s\S]*opencode\.ai\/v2\/docs\/mcp-servers/,
   );
 });
