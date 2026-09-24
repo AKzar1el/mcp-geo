@@ -347,6 +347,44 @@ copilot mcp add digestseo -- npx -y @digestseo/mcp-geo
 
 This zero-key base command is enough for tool discovery. Add provider keys with repeated `--env NAME=VALUE` options supported by Copilot CLI before the `digestseo -- ...` portion when engine-backed scans are needed.
 
+### GitHub Copilot cloud agent / code review
+
+Repository administrators can configure mcp-geo at **Settings -> Copilot -> MCP servers**. Prefer the local npm server here: Copilot cloud agent and code review currently support local/STDIO MCP servers, while remote MCP servers that require OAuth are not supported for this repository-level path.
+
+Use an explicit read-only allowlist by default because these tools may run autonomously:
+
+```json
+{
+  "mcpServers": {
+    "digestseo": {
+      "type": "local",
+      "command": "npx",
+      "args": ["-y", "@digestseo/mcp-geo"],
+      "tools": [
+        "check_visibility",
+        "get_visibility_history",
+        "compare_competitors",
+        "get_citations",
+        "list_brands",
+        "list_prompts"
+      ]
+    }
+  }
+}
+```
+
+Those six tools publish `readOnlyHint: true`, which is required for Copilot code review to use them. They read the local mcp-geo store available in that task. If the task should create or refresh visibility data, deliberately extend the allowlist with only the required mutating tools; `refresh_brand` can make billable provider calls when engine keys are configured.
+
+Keep provider credentials in Copilot **Agents secrets/variables** rather than repository configuration. GitHub exposes only names prefixed `COPILOT_MCP_` to repository MCP configuration. For example, after creating the secret `COPILOT_MCP_OPENAI_API_KEY`, add:
+
+```json
+"env": {
+  "OPENAI_API_KEY": "$COPILOT_MCP_OPENAI_API_KEY"
+}
+```
+
+Reference: [Configure MCP servers for your repository](https://docs.github.com/en/copilot/how-tos/copilot-on-github/customize-copilot/configure-mcp-servers).
+
 ### Portable Agent Plugin 1.0
 
 The repository also ships the standard root `plugin.json` + `mcp.json` package for clients that implement Agent Plugins 1.0. The portable MCP entry launches the same local npm server and intentionally contains no provider secrets.

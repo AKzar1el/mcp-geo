@@ -199,6 +199,34 @@ copilot mcp add digestseo -- npx -y @digestseo/mcp-geo
 
 The base install starts with zero provider keys so tool discovery works. Add only the engine keys you want with Copilot CLI's `--env NAME=VALUE` option before running scans.
 
+**GitHub Copilot cloud agent / code review:** repository administrators can also add mcp-geo under **Settings -> Copilot -> MCP servers**. Use the local npm package rather than the hosted OAuth endpoint, because Copilot cloud agent and code review do not currently support remote MCP servers that rely on OAuth.
+
+Start with a conservative read-only profile because repository MCP tools can run autonomously:
+
+```json
+{
+  "mcpServers": {
+    "digestseo": {
+      "type": "local",
+      "command": "npx",
+      "args": ["-y", "@digestseo/mcp-geo"],
+      "tools": [
+        "check_visibility",
+        "get_visibility_history",
+        "compare_competitors",
+        "get_citations",
+        "list_brands",
+        "list_prompts"
+      ]
+    }
+  }
+}
+```
+
+Copilot code review only accepts tools whose MCP metadata marks them read-only; the tools above already publish `readOnlyHint: true`. This profile is useful when the task has access to an mcp-geo local database created during that run. For a task that should create/refresh visibility data, explicitly add only the mutating tools you intend to permit (for example `track_brand` and `refresh_brand`) and remember that `refresh_brand` can make billable provider calls.
+
+Provider credentials belong in Copilot **Agents secrets/variables**, not in repository JSON. GitHub only exposes names prefixed `COPILOT_MCP_`; map a selected secret into mcp-geo with `env`, for example `"OPENAI_API_KEY": "$COPILOT_MCP_OPENAI_API_KEY"`. See GitHub's current [repository MCP configuration guide](https://docs.github.com/en/copilot/how-tos/copilot-on-github/customize-copilot/configure-mcp-servers).
+
 **Portable Agent Plugin (GitHub Copilot / VS Code / Kiro and other Agent Plugins 1.0 clients):** this repository now ships the standard root `plugin.json` + `mcp.json` pair. GitHub Copilot CLI can install it directly from GitHub:
 
 ```bash
