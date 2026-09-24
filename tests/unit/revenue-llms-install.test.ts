@@ -140,6 +140,16 @@ test('AI-agent guide documents Flowise local Custom MCP stdio setup without impl
   assert.match(guide, /STDIO only for local instances/);
   assert.match(guide, /docs\.flowiseai\.com\/tutorials\/tools-and-mcp/);
 });
+test('AI-agent guide documents Kilo Code local stdio setup including the Windows command wrapper', () => {
+  assert.match(
+    guide,
+    /### Kilo Code[\s\S]*Settings -> Agent Behaviour -> MCP Servers[\s\S]*Local \(stdio\)[\s\S]*"type": "local"[\s\S]*"command": \["npx", "-y", "@digestseo\/mcp-geo"\]/,
+  );
+  assert.match(guide, /"command": \["cmd", "\/c", "npx", "-y", "@digestseo\/mcp-geo"\]/);
+  assert.match(guide, /do not commit raw provider secrets into project-level `kilo\.jsonc`/);
+  assert.match(guide, /kilo\.ai\/docs\/automate\/mcp\/using-in-kilo-code/);
+  assert.match(guide, /kilo\.ai\/docs\/automate\/mcp\/using-in-cli/);
+});
 test('AI-agent guide documents Cherry Studio local stdio and agent binding', () => {
   assert.match(
     guide,

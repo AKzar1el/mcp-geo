@@ -256,6 +256,16 @@ test('README documents Flowise local Custom MCP stdio setup without implying clo
   assert.match(readme, /STDIO only when it is running locally rather than in a cloud service/);
   assert.match(readme, /docs\.flowiseai\.com\/tutorials\/tools-and-mcp/);
 });
+test('README documents Kilo Code local stdio setup including the Windows command wrapper', () => {
+  assert.match(
+    readme,
+    /\*\*Kilo Code:\*\*[\s\S]*Settings -> Agent Behaviour -> MCP Servers[\s\S]*Local \(stdio\)[\s\S]*"type": "local"[\s\S]*"command": \["npx", "-y", "@digestseo\/mcp-geo"\]/,
+  );
+  assert.match(readme, /"command": \["cmd", "\/c", "npx", "-y", "@digestseo\/mcp-geo"\]/);
+  assert.match(readme, /keep raw secrets out of project-level `kilo\.jsonc`/);
+  assert.match(readme, /kilo\.ai\/docs\/automate\/mcp\/using-in-kilo-code/);
+  assert.match(readme, /kilo\.ai\/docs\/automate\/mcp\/using-in-cli/);
+});
 test('README documents Cherry Studio local stdio and agent binding', () => {
   assert.match(
     readme,
