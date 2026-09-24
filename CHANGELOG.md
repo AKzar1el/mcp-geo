@@ -11,6 +11,17 @@ All notable changes to this project are documented here. The format is loosely b
 - Cursor plugin MCP metadata now launches the published local stdio package instead of routing users to the public Worker endpoint, which is not configured as a turnkey fresh-scan service.
 - Windsurf guidance now recommends local stdio or a configured self-hosted Worker, and Cursor/Claude plugin manifests are synchronized to `0.3.7`.
 
+## [0.3.26] - September 24, 2026
+
+### Added
+
+- Added current local MCP onboarding for Google Antigravity, JetBrains Junie, GitHub Copilot cloud agent/code review, Qwen Code, and Augment Code / Auggie while reusing the existing published package and secret-safe provider boundaries.
+
+### Fixed
+
+- Upgraded `@cloudflare/workers-oauth-provider` to 1.0.0 and bound OAuth grants/access tokens to the deployment's canonical `${SELF_URL}/mcp` RFC 8707 resource, preserving self-hosting without hardcoding the DigestSEO production hostname.
+- Self-hosted Worker setup now makes the post-first-deploy `SELF_URL` update mandatory before connecting an MCP client so OAuth resource identity cannot silently point at another deployment.
+
 ## [0.3.25] - September 24, 2026
 
 ### Added
