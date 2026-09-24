@@ -209,6 +209,15 @@ test('README documents JetBrains AI Assistant local stdio setup', () => {
     /\*\*JetBrains AI Assistant \(IDE\):\*\*[\s\S]*Model Context Protocol \(MCP\)[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/,
   );
 });
+test('README documents JetBrains Junie local stdio setup without committed provider secrets', () => {
+  assert.match(
+    readme,
+    /\*\*JetBrains Junie \(CLI \/ IDE\):\*\*[\s\S]*\/mcp[\s\S]*Official MCP Registry[\s\S]*\.junie\/mcp\/mcp\.json[\s\S]*~\/\.junie\/mcp\/mcp\.json[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/,
+  );
+  assert.match(readme, /keep raw secrets out of a shared or committed project `\.junie\/mcp\/mcp\.json`/);
+  assert.match(readme, /junie\.jetbrains\.com\/docs\/junie-cli-mcp-configuration\.html/);
+  assert.match(readme, /junie\.jetbrains\.com\/docs\/junie-plugin-mcp-settings\.html/);
+});
 test('README documents Amp CLI local stdio setup', () => {
   assert.match(
     readme,

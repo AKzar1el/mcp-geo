@@ -286,6 +286,21 @@ The zero-key server is enough for MCP tool discovery. Before engine-backed scans
 
 JetBrains AI Assistant supports local STDIO and NPX MCP servers. The zero-key form is enough for tool discovery; before engine-backed scans, make only the provider keys you want available to the IDE process, or import an already-configured Claude MCP server.
 
+**JetBrains Junie (CLI / IDE):** run `/mcp` in Junie CLI to open the MCP Installation Assistant. You can search the Official MCP Registry for `mcp-geo`, or add the local server manually in `.junie/mcp/mcp.json` for one project or `~/.junie/mcp/mcp.json` for your user:
+
+```json
+{
+  "mcpServers": {
+    "digestseo": {
+      "command": "npx",
+      "args": ["-y", "@digestseo/mcp-geo"]
+    }
+  }
+}
+```
+
+Junie CLI and the Junie IDE plugin use the same MCP configuration. The zero-key server is enough for tool discovery; before engine-backed scans, make only the provider keys you intend to use available to the Junie process and keep raw secrets out of a shared or committed project `.junie/mcp/mcp.json`. Use `/mcp` to verify the active server and tools. See JetBrains' current [Junie CLI MCP guide](https://junie.jetbrains.com/docs/junie-cli-mcp-configuration.html) and [Junie IDE MCP settings](https://junie.jetbrains.com/docs/junie-plugin-mcp-settings.html).
+
 **JetBrains Air:** this repository already ships the standard root `.mcp.json` that launches `npx -y @digestseo/mcp-geo`. In Air, open **Settings > AI > MCP Servers**, enable **MCP support** and **Launch workspace MCP servers**, then use the **Workspace** scope so Air reuses that checked-in file. The repository config contains no provider secrets and is sufficient for zero-key tool discovery. Engine-backed scans still require the selected provider keys in the local server process environment; keep them out of committed `.mcp.json`. See the [JetBrains Air MCP server guide](https://www.jetbrains.com/help/air/mcp-servers.html).
 
 **Visual Studio 2022 17.14+ / Visual Studio 2026:** Visual Studio uses its own `servers`-shaped MCP configuration. Create `%USERPROFILE%\.mcp.json` for a user-wide install or `<SOLUTIONDIR>\.mcp.json` for one solution:

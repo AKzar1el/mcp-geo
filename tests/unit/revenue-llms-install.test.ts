@@ -77,6 +77,16 @@ test('AI-agent guide documents JetBrains AI Assistant local stdio setup', () => 
   );
 });
 
+test('AI-agent guide documents JetBrains Junie local stdio setup without committed provider secrets', () => {
+  assert.match(
+    guide,
+    /### JetBrains Junie \(CLI \/ IDE\)[\s\S]*\/mcp[\s\S]*Official MCP Registry[\s\S]*\.junie\/mcp\/mcp\.json[\s\S]*~\/\.junie\/mcp\/mcp\.json[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/,
+  );
+  assert.match(guide, /keep raw secrets out of a project `\.junie\/mcp\/mcp\.json`/);
+  assert.match(guide, /junie\.jetbrains\.com\/docs\/junie-cli-mcp-configuration\.html/);
+  assert.match(guide, /junie\.jetbrains\.com\/docs\/junie-plugin-mcp-settings\.html/);
+});
+
 test('AI-agent guide distinguishes scheduled and manual Worker refresh cadences', () => {
   assert.match(
     guide,
