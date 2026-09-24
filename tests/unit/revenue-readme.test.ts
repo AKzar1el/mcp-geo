@@ -240,6 +240,15 @@ test('README documents Qwen Code local stdio setup without committed provider se
   assert.match(readme, /qwenlm\.github\.io\/qwen-code-docs\/en\/users\/extension\/introduction/);
   assert.match(readme, /qwenlm\.github\.io\/qwen-code-docs\/en\/users\/features\/mcp/);
 });
+test('README documents Augment Code and Auggie local stdio setup without committed provider secrets', () => {
+  assert.match(
+    readme,
+    /\*\*Augment Code \/ Auggie:\*\*[\s\S]*Settings -> MCP servers[\s\S]*Import from JSON[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo[\s\S]*auggie mcp add digestseo -- npx -y @digestseo\/mcp-geo[\s\S]*auggie mcp list[\s\S]*~\/\.augment\/settings\.json[\s\S]*\/mcp[\s\S]*MCP Tool Search/,
+  );
+  assert.match(readme, /Auggie's `--env NAME=VALUE` option rather than committing raw secrets/);
+  assert.match(readme, /docs\.augmentcode\.com\/setup-augment\/mcp/);
+  assert.match(readme, /docs\.augmentcode\.com\/cli\/integrations/);
+});
 test('README documents Mistral Vibe Code local stdio setup', () => {
   assert.match(
     readme,
