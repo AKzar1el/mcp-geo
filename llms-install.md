@@ -201,6 +201,18 @@ That zero-key server is sufficient for MCP tool discovery. Before engine-backed 
 
 Reference: [Langflow MCP client](https://docs.langflow.org/mcp-client).
 
+### Flowise
+
+Use this path only when Flowise is running locally/self-hosted on a machine that can launch `npx`. Add a **Custom MCP** tool to an Agent and use this STDIO configuration:
+
+```json
+{"command":"npx","args":["-y","@digestseo/mcp-geo"]}
+```
+
+Refresh **Available Actions** to load the twelve mcp-geo tools. The zero-key configuration is sufficient for MCP discovery. Before an engine-backed scan, expose only the selected provider API keys to the Flowise process/service environment so its `npx` child can inherit them; do not put provider secrets into prompts or committed project files. Flowise explicitly recommends STDIO only for local instances because the MCP package runs on the Flowise host rather than in its cloud service.
+
+Reference: [Flowise Tools & MCP](https://docs.flowiseai.com/tutorials/tools-and-mcp).
+
 ### Cherry Studio
 
 Cherry Studio can launch local STDIO MCP servers from its desktop UI. Open **Settings -> MCP -> MCP Servers -> Add**, choose **STDIO**, and configure:

@@ -132,6 +132,14 @@ test('AI-agent guide documents Langflow local stdio setup without storing provid
   assert.match(guide, /Docker[\s\S]*Node\.js[\s\S]*`npx` MCP server/);
   assert.match(guide, /docs\.langflow\.org\/mcp-client/);
 });
+test('AI-agent guide documents Flowise local Custom MCP stdio setup without implying cloud npx support', () => {
+  assert.match(
+    guide,
+    /### Flowise[\s\S]*locally\/self-hosted[\s\S]*\*\*Custom MCP\*\*[\s\S]*"command":"npx"[\s\S]*@digestseo\/mcp-geo[\s\S]*Available Actions[\s\S]*twelve mcp-geo tools/,
+  );
+  assert.match(guide, /STDIO only for local instances/);
+  assert.match(guide, /docs\.flowiseai\.com\/tutorials\/tools-and-mcp/);
+});
 test('AI-agent guide documents Cherry Studio local stdio and agent binding', () => {
   assert.match(
     guide,
