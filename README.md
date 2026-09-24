@@ -191,6 +191,21 @@ The zero-key tool is enough for MCP discovery. For engine-backed scans, define o
 
 TraeCode recommends NPX/UVX for local MCP servers and supports `env` values when engine-backed scans need provider keys. The zero-key form is enough for discovery; keep raw provider secrets out of project-level `.trae/mcp.json`. TraeCode CLI can also load that project-level MCP file, or you can add an equivalent `stdio` entry through `traecli config edit` and inspect it with `/mcp`. See TraeCode's current [IDE MCP setup](https://docs.trae.cn/ide_add-mcp-servers) and [CLI MCP guide](https://docs.trae.cn/cli_model-context-protocol).
 
+**Qwen Code:** this repository already ships the portable Agent Plugins v1 metadata that Qwen Code can load directly from GitHub:
+
+```bash
+qwen extensions install AKzar1el/mcp-geo
+```
+
+Or add only the local MCP server as a user-scoped STDIO entry:
+
+```bash
+qwen mcp add --scope user digestseo npx -y @digestseo/mcp-geo
+qwen mcp list
+```
+
+Qwen Code natively supports Agent Plugins v1, including the repository's root `plugin.json` + `mcp.json`, so the extension path reuses the same `npx -y @digestseo/mcp-geo` server without another wrapper. Direct MCP configuration is stored in `~/.qwen/settings.json`; project-scoped servers can instead live in `.qwen/settings.json` under `mcpServers`. The zero-key setup is enough for tool discovery. Before engine-backed scans, expose only the provider variables you intend to use to the Qwen process, or reference existing environment variables from the MCP `env` map instead of committing raw keys to project settings. Start Qwen Code and run `/mcp` to verify the server and tools. See Qwen Code's current [extension guide](https://qwenlm.github.io/qwen-code-docs/en/users/extension/introduction/) and [MCP server guide](https://qwenlm.github.io/qwen-code-docs/en/users/features/mcp/).
+
 **GitHub Copilot CLI:**
 
 ```bash

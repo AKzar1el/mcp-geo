@@ -116,6 +116,15 @@ test('AI-agent guide documents Amp CLI local stdio setup', () => {
     /### Amp CLI[\s\S]*amp mcp add digestseo -- npx -y @digestseo\/mcp-geo[\s\S]*ampcode\.com\/docs\/customize\/mcp/,
   );
 });
+test('AI-agent guide documents Qwen Code local stdio setup without committed provider secrets', () => {
+  assert.match(
+    guide,
+    /### Qwen Code[\s\S]*qwen extensions install AKzar1el\/mcp-geo[\s\S]*qwen mcp add --scope user digestseo npx -y @digestseo\/mcp-geo[\s\S]*qwen mcp list[\s\S]*Agent Plugins v1[\s\S]*plugin\.json[\s\S]*mcp\.json[\s\S]*~\/\.qwen\/settings\.json[\s\S]*\.qwen\/settings\.json[\s\S]*mcpServers[\s\S]*\/mcp/,
+  );
+  assert.match(guide, /rather than putting raw provider keys into project settings/);
+  assert.match(guide, /qwenlm\.github\.io\/qwen-code-docs\/en\/users\/extension\/introduction/);
+  assert.match(guide, /qwenlm\.github\.io\/qwen-code-docs\/en\/users\/features\/mcp/);
+});
 test('AI-agent guide documents Mistral Vibe Code local stdio setup', () => {
   assert.match(
     guide,
