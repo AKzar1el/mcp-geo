@@ -233,6 +233,25 @@ On Windows use Kilo's documented wrapper form: `"command": ["cmd", "/c", "npx", 
 
 References: [Using MCP in Kilo Code](https://kilo.ai/docs/automate/mcp/using-in-kilo-code) and [Using MCP in the CLI](https://kilo.ai/docs/automate/mcp/using-in-cli).
 
+### Google Antigravity
+
+Antigravity 2.0, Antigravity CLI, and Antigravity IDE support custom MCP servers over local STDIO. In the IDE, open the agent panel -> **MCP Servers -> Manage MCP Servers -> View raw config**. In Antigravity CLI, `/mcp` opens the interactive MCP manager. For a direct configuration, add this server either globally in `~/.gemini/config/mcp_config.json` or per workspace in `.agents/mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "digestseo": {
+      "command": "npx",
+      "args": ["-y", "@digestseo/mcp-geo"]
+    }
+  }
+}
+```
+
+That zero-key server is sufficient for MCP discovery. Before an engine-backed scan, provide only the selected provider API keys through the local MCP server environment. Keep raw provider secrets out of a workspace `.agents/mcp_config.json` that may be shared or committed.
+
+Reference: [Google Antigravity MCP](https://www.antigravity.google/docs/mcp).
+
 ### Cherry Studio
 
 Cherry Studio can launch local STDIO MCP servers from its desktop UI. Open **Settings -> MCP -> MCP Servers -> Add**, choose **STDIO**, and configure:

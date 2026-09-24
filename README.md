@@ -142,6 +142,21 @@ AnythingLLM treats command-backed servers as local STDIO MCP servers and can sta
 
 On Windows, Kilo's current guidance uses `"command": ["cmd", "/c", "npx", "-y", "@digestseo/mcp-geo"]`. Zero provider keys are enough for discovery. Before engine-backed scans, add only the provider keys you intend to use through Kilo's MCP environment settings or the local process environment, and keep raw secrets out of project-level `kilo.jsonc`. See Kilo Code's current [MCP configuration guide](https://kilo.ai/docs/automate/mcp/using-in-kilo-code) and [CLI MCP guide](https://kilo.ai/docs/automate/mcp/using-in-cli).
 
+**Google Antigravity:** Antigravity 2.0, Antigravity CLI, and Antigravity IDE can launch custom local STDIO MCP servers. In the IDE, open the agent panel -> **MCP Servers -> Manage MCP Servers -> View raw config**; from the CLI, `/mcp` opens the interactive MCP manager. Add `digestseo` to the global `~/.gemini/config/mcp_config.json` or a workspace `.agents/mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "digestseo": {
+      "command": "npx",
+      "args": ["-y", "@digestseo/mcp-geo"]
+    }
+  }
+}
+```
+
+The zero-key configuration is enough for MCP tool discovery. Before engine-backed scans, expose only the provider keys you intend to use through the local server environment; if you use workspace `.agents/mcp_config.json`, keep raw secrets out of any shared or committed copy. See Google's current [Antigravity MCP guide](https://www.antigravity.google/docs/mcp).
+
 **Cherry Studio:** open **Settings -> MCP -> MCP Servers -> Add**, choose **STDIO**, name the server `digestseo`, set Command to `npx`, and add Arguments `-y` and `@digestseo/mcp-geo`. The zero-key server is enough for MCP tool discovery. Before engine-backed scans, add only the provider keys you intend to use in Cherry Studio's MCP environment-variable fields rather than putting secrets in prompts or screenshots. Enable the server, inspect its **Tools**, then bind it to the intended Agent under **Work -> Agent -> Edit -> MCP**. See Cherry Studio's current official [MCP configuration guide](https://github.com/CherryHQ/cherry-studio-docs/blob/main/i18n/english/advanced-basic/mcp/config.md) and [MCP workflow guide](https://github.com/CherryHQ/cherry-studio-docs/blob/main/advanced-basic/extensions/mcp/README.md).
 
 **Raycast AI:** open **Install MCP Server** (or **Manage MCP Servers -> Install New Server**), choose **Standard Input/Output**, set Command to `npx`, and set Arguments to `-y` and `@digestseo/mcp-geo`. The zero-key install is enough for tool discovery. Before engine-backed scans, add only the provider keys you want in Raycast's MCP **Environment** fields rather than hard-coding them into shared project files. Restart Raycast if `npx` was added to `PATH` after Raycast started. See Raycast's current [MCP manual](https://manual.raycast.com/ai/model-context-protocol).
