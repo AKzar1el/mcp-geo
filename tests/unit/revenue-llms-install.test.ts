@@ -132,6 +132,15 @@ test('AI-agent guide documents Langflow local stdio setup without storing provid
   assert.match(guide, /Docker[\s\S]*Node\.js[\s\S]*`npx` MCP server/);
   assert.match(guide, /docs\.langflow\.org\/mcp-client/);
 });
+test('AI-agent guide documents Cherry Studio local stdio and agent binding', () => {
+  assert.match(
+    guide,
+    /### Cherry Studio[\s\S]*Settings -> MCP -> MCP Servers -> Add[\s\S]*\*\*STDIO\*\*[\s\S]*Command: `npx`[\s\S]*@digestseo\/mcp-geo[\s\S]*twelve mcp-geo tools[\s\S]*Work -> Agent -> Edit -> MCP/,
+  );
+  assert.match(guide, /Cherry Studio's MCP environment-variable fields/);
+  assert.match(guide, /CherryHQ\/cherry-studio-docs\/blob\/main\/i18n\/english\/advanced-basic\/mcp\/config\.md/);
+  assert.match(guide, /CherryHQ\/cherry-studio-docs\/blob\/main\/advanced-basic\/extensions\/mcp\/README\.md/);
+});
 test('AI-agent guide documents Raycast local stdio setup without committed provider secrets', () => {
   assert.match(
     guide,
