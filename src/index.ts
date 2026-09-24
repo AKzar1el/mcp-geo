@@ -4,6 +4,7 @@
 // stdio CLI (src/cli.ts).
 
 import { OAuthProvider } from '@cloudflare/workers-oauth-provider';
+import { env as workerEnv } from 'cloudflare:workers';
 import { McpAgent } from 'agents/mcp';
 import { createMcpHandler } from 'agents/mcp/server';
 import { McpServer as LegacyMcpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -881,7 +882,26 @@ async function handleAuthorize(request: Request, env: Env): Promise<Response> {
   return Response.redirect(redirectTo, 302);
 }
 
-const oauthProvider = new OAuthProvider({
+function configuredOAuthResource(): string {
+  const selfUrl = Reflect.get(workerEnv, 'SELF_URL');
+  if (typeof selfUrl !== 'string' || selfUrl.trim().length === 0) {
+    throw new TypeError(
+      'SELF_URL must be set to this Worker\'s public origin so OAuth tokens can be bound to the canonical /mcp resource.',
+    );
+  }
+
+  let origin: string;
+  try {
+    origin = new URL(selfUrl).origin;
+  } catch {
+    throw new TypeError(
+      'SELF_URL must be an absolute URL for this Worker so OAuth tokens can be bound to the canonical /mcp resource.',
+    );
+  }
+  return new URL('/mcp', origin).toString();
+}
+
+const oauthProvider = new OAuthProvider<Env>({
   apiHandlers: {
     '/mcp': {
       fetch: handleHostedMcpRequest,
@@ -897,6 +917,13 @@ const oauthProvider = new OAuthProvider({
   // client_id. The matching Wrangler SSRF-protection flag is required
   // before the provider advertises CIMD support.
   clientIdMetadataDocumentEnabled: true,
+  // workers-oauth-provider 1.0 binds every grant/access token to one
+  // canonical RFC 8707 resource. SELF_URL is already the deployment's
+  // stable public origin, so deriving /mcp from it preserves self-hosting
+  // without hardcoding DigestSEO's production hostname.
+  resourceMetadata: {
+    resource: configuredOAuthResource(),
+  },
 });
 
 export default {

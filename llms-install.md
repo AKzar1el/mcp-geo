@@ -830,7 +830,7 @@ npx wrangler deploy
 
 Wrangler prints the Worker URL, e.g. `https://digestseo-mcp.<account-subdomain>.workers.dev`. **Record it** — every step below needs it.
 
-Optional but recommended: paste that URL over the `SELF_URL` placeholder in the `"vars"` block of `wrangler.jsonc` and run `npx wrangler deploy` once more (runs work with the placeholder, but the real URL keeps logs honest).
+Required before connecting an MCP client: paste that URL over the `SELF_URL` placeholder in the `"vars"` block of `wrangler.jsonc` and run `npx wrangler deploy` once more. OAuth binds grants and access tokens to `${SELF_URL}/mcp`; the first deploy can use the placeholder to discover the URL, but the second deploy must use the real public origin.
 
 ### Step 7 — Verify the deploy
 
