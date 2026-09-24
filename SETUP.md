@@ -153,7 +153,7 @@ Service bindings route by request pathname; the host part of the URL doesn't act
 }
 ```
 
-Because the service binding routes by pathname and ignores the host portion of the URL, runs actually work even while the placeholder is still in place. Setting `SELF_URL` to your real URL is still worth the 10 seconds: it keeps logs honest and protects you if a future version (or your fork) ever needs the worker's true origin.
+Because the service binding routes by pathname and ignores the host portion of the URL, the first deploy can still use the placeholder. **Before connecting an MCP client, replace `SELF_URL` with the exact public Worker origin and redeploy.** The OAuth provider binds grants and access tokens to `${SELF_URL}/mcp`, so leaving another deployment's hostname here will make the protected-resource identity wrong even though internal service-binding calls can still run.
 
 ## 9 — Apply migrations
 

@@ -36,9 +36,10 @@
 		// URL it assigned, usually:
 		//   https://digestseo-mcp.<your-subdomain>.workers.dev
 		// The SELF service binding routes by pathname and ignores the
-		// host, so runs work even with the placeholder in place — but
-		// set the real URL anyway to keep logs honest and future-proof
-		// any code that needs the worker's true origin.
+		// host, but OAuth uses this value as its canonical RFC 8707
+		// resource origin. After the first deploy, replace the placeholder
+		// with the exact public Worker origin and redeploy before connecting
+		// an MCP client.
 		"SELF_URL": "https://geo-mcp.digestseo.com",
 		// Optional Google AI Mode adds a separate SerpAPI request per prompt.
 		// Keep false unless you explicitly want the added provider spend.

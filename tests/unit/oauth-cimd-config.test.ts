@@ -13,8 +13,15 @@ test('remote Worker enables MCP 2026-07-28 CIMD with the required SSRF guard', (
   assert.match(wranglerTemplate, /"global_fetch_strictly_public"/);
   assert.equal(
     pkg.devDependencies?.['@cloudflare/workers-oauth-provider'],
-    '^0.10.3',
+    '^1.0.0',
   );
+  assert.match(workerSource, /env as workerEnv/);
+  assert.match(workerSource, /Reflect\.get\(workerEnv, 'SELF_URL'\)/);
+  assert.match(
+    workerSource,
+    /resourceMetadata:\s*\{\s*resource:\s*configuredOAuthResource\(\),?\s*\}/,
+  );
+  assert.match(workerSource, /return new URL\('\/mcp', origin\)\.toString\(\)/);
   assert.equal(pkg.devDependencies?.['@modelcontextprotocol/server'], '2.0.0');
   assert.match(workerSource, /createMcpHandler/);
   assert.match(workerSource, /McpServer as StatelessMcpServer/);
