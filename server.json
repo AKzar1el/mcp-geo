@@ -3,7 +3,7 @@
   "name": "io.github.AKzar1el/mcp-geo",
   "title": "GEO Tracker by DigestSEO",
   "description": "Track brand citations across seven AI search surfaces. Free OSS; optional EUR 99 client-ready audit.",
-  "version": "0.3.24",
+  "version": "0.3.25",
   "repository": {
     "url": "https://github.com/AKzar1el/mcp-geo",
     "source": "github"
@@ -22,7 +22,7 @@
     {
       "registryType": "npm",
       "identifier": "@digestseo/mcp-geo",
-      "version": "0.3.24",
+      "version": "0.3.25",
       "transport": {
         "type": "stdio"
       },
