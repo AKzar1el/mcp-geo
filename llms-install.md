@@ -469,6 +469,25 @@ Open **Settings > Tools > AI Assistant > Model Context Protocol (MCP)**, choose 
 
 JetBrains AI Assistant supports local STDIO MCP servers and NPX launch commands. The zero-key configuration is sufficient for MCP discovery. Before an engine-backed scan, ensure only the chosen provider API keys are present in the environment inherited by the IDE process; alternatively, JetBrains can import an existing Claude MCP configuration.
 
+### JetBrains Junie (CLI / IDE)
+
+Junie CLI and the Junie IDE plugin share the same MCP configuration. In Junie CLI, run `/mcp` to open the Installation Assistant; it can search the Official MCP Registry for a server, or you can add `digestseo` manually in `.junie/mcp/mcp.json` for the current project or `~/.junie/mcp/mcp.json` for the current user:
+
+```json
+{
+  "mcpServers": {
+    "digestseo": {
+      "command": "npx",
+      "args": ["-y", "@digestseo/mcp-geo"]
+    }
+  }
+}
+```
+
+The zero-key configuration is sufficient for MCP tool discovery. Before an engine-backed scan, expose only the selected provider API keys to the Junie process and keep raw secrets out of a project `.junie/mcp/mcp.json` that may be shared or committed. Use `/mcp` to confirm that `digestseo` is active and its tools are available.
+
+References: [Junie CLI MCP configuration](https://junie.jetbrains.com/docs/junie-cli-mcp-configuration.html) and [Junie IDE MCP settings](https://junie.jetbrains.com/docs/junie-plugin-mcp-settings.html).
+
 ### JetBrains Air
 
 The repository already includes a standard root `.mcp.json` that starts `npx -y @digestseo/mcp-geo`, so JetBrains Air does not need a second project-specific MCP file.
