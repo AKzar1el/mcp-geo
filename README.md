@@ -206,6 +206,28 @@ qwen mcp list
 
 Qwen Code natively supports Agent Plugins v1, including the repository's root `plugin.json` + `mcp.json`, so the extension path reuses the same `npx -y @digestseo/mcp-geo` server without another wrapper. Direct MCP configuration is stored in `~/.qwen/settings.json`; project-scoped servers can instead live in `.qwen/settings.json` under `mcpServers`. The zero-key setup is enough for tool discovery. Before engine-backed scans, expose only the provider variables you intend to use to the Qwen process, or reference existing environment variables from the MCP `env` map instead of committing raw keys to project settings. Start Qwen Code and run `/mcp` to verify the server and tools. See Qwen Code's current [extension guide](https://qwenlm.github.io/qwen-code-docs/en/users/extension/introduction/) and [MCP server guide](https://qwenlm.github.io/qwen-code-docs/en/users/features/mcp/).
 
+**Augment Code / Auggie:** in the Augment extension for VS Code or JetBrains, open **Settings -> MCP servers** and use **Import from JSON** with:
+
+```json
+{
+  "mcpServers": {
+    "digestseo": {
+      "command": "npx",
+      "args": ["-y", "@digestseo/mcp-geo"]
+    }
+  }
+}
+```
+
+For Auggie CLI, the equivalent user-level install is:
+
+```bash
+auggie mcp add digestseo -- npx -y @digestseo/mcp-geo
+auggie mcp list
+```
+
+Auggie persists MCP servers in `~/.augment/settings.json`; run `/mcp` in an Auggie session to inspect them. The zero-key setup is enough for tool discovery. Before engine-backed scans, add only the provider keys you intend to use through Augment's MCP environment fields or Auggie's `--env NAME=VALUE` option rather than committing raw secrets. If the twelve local tools consume too much agent context, Augment's optional **MCP Tool Search** can load tool schemas on demand. See Augment's current [MCP setup guide](https://docs.augmentcode.com/setup-augment/mcp) and [Auggie integrations/MCP guide](https://docs.augmentcode.com/cli/integrations).
+
 **GitHub Copilot CLI:**
 
 ```bash

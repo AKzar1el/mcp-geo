@@ -155,6 +155,32 @@ Qwen Code natively supports Agent Plugins v1 and will reuse this repository's ro
 
 References: [Qwen Code extensions](https://qwenlm.github.io/qwen-code-docs/en/users/extension/introduction/) and [Qwen Code MCP servers](https://qwenlm.github.io/qwen-code-docs/en/users/features/mcp/).
 
+### Augment Code / Auggie
+
+In the Augment extension for VS Code or JetBrains, open **Settings -> MCP servers**, choose **Import from JSON**, and add:
+
+```json
+{
+  "mcpServers": {
+    "digestseo": {
+      "command": "npx",
+      "args": ["-y", "@digestseo/mcp-geo"]
+    }
+  }
+}
+```
+
+For Auggie CLI, persist the same local STDIO server in the user configuration with:
+
+```bash
+auggie mcp add digestseo -- npx -y @digestseo/mcp-geo
+auggie mcp list
+```
+
+Auggie stores persistent MCP configuration in `~/.augment/settings.json`; use `/mcp` inside Auggie to inspect the active servers. Zero provider keys are sufficient for tool discovery. Before engine-backed scans, configure only the selected provider variables through Augment's MCP environment fields or repeat Auggie's `--env NAME=VALUE` option; do not commit raw provider secrets. When the twelve local tools would consume unnecessary agent context, Augment's optional **MCP Tool Search** can expose matching tools on demand instead of loading every schema up front.
+
+References: [Augment MCP setup](https://docs.augmentcode.com/setup-augment/mcp) and [Auggie integrations and MCP](https://docs.augmentcode.com/cli/integrations).
+
 ### Mistral Vibe Code
 
 Vibe Code accepts local STDIO MCP servers in either the user-level `~/.vibe/config.toml` or project-level `./.vibe/config.toml`:

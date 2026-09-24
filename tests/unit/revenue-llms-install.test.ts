@@ -125,6 +125,15 @@ test('AI-agent guide documents Qwen Code local stdio setup without committed pro
   assert.match(guide, /qwenlm\.github\.io\/qwen-code-docs\/en\/users\/extension\/introduction/);
   assert.match(guide, /qwenlm\.github\.io\/qwen-code-docs\/en\/users\/features\/mcp/);
 });
+test('AI-agent guide documents Augment Code and Auggie local stdio setup without committed provider secrets', () => {
+  assert.match(
+    guide,
+    /### Augment Code \/ Auggie[\s\S]*Settings -> MCP servers[\s\S]*Import from JSON[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo[\s\S]*auggie mcp add digestseo -- npx -y @digestseo\/mcp-geo[\s\S]*auggie mcp list[\s\S]*~\/\.augment\/settings\.json[\s\S]*\/mcp[\s\S]*MCP Tool Search/,
+  );
+  assert.match(guide, /Auggie's `--env NAME=VALUE` option; do not commit raw provider secrets/);
+  assert.match(guide, /docs\.augmentcode\.com\/setup-augment\/mcp/);
+  assert.match(guide, /docs\.augmentcode\.com\/cli\/integrations/);
+});
 test('AI-agent guide documents Mistral Vibe Code local stdio setup', () => {
   assert.match(
     guide,
