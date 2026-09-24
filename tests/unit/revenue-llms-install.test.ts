@@ -150,6 +150,14 @@ test('AI-agent guide documents Kilo Code local stdio setup including the Windows
   assert.match(guide, /kilo\.ai\/docs\/automate\/mcp\/using-in-kilo-code/);
   assert.match(guide, /kilo\.ai\/docs\/automate\/mcp\/using-in-cli/);
 });
+test('AI-agent guide documents Google Antigravity local stdio setup without committed workspace secrets', () => {
+  assert.match(
+    guide,
+    /### Google Antigravity[\s\S]*Antigravity 2\.0[\s\S]*Antigravity CLI[\s\S]*Antigravity IDE[\s\S]*View raw config[\s\S]*~\/\.gemini\/config\/mcp_config\.json[\s\S]*\.agents\/mcp_config\.json[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/,
+  );
+  assert.match(guide, /Keep raw provider secrets out of a workspace `\.agents\/mcp_config\.json`/);
+  assert.match(guide, /antigravity\.google\/docs\/mcp/);
+});
 test('AI-agent guide documents Cherry Studio local stdio and agent binding', () => {
   assert.match(
     guide,

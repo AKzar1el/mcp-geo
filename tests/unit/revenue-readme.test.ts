@@ -266,6 +266,14 @@ test('README documents Kilo Code local stdio setup including the Windows command
   assert.match(readme, /kilo\.ai\/docs\/automate\/mcp\/using-in-kilo-code/);
   assert.match(readme, /kilo\.ai\/docs\/automate\/mcp\/using-in-cli/);
 });
+test('README documents Google Antigravity local stdio setup without committed workspace secrets', () => {
+  assert.match(
+    readme,
+    /\*\*Google Antigravity:\*\*[\s\S]*Antigravity 2\.0[\s\S]*Antigravity CLI[\s\S]*Antigravity IDE[\s\S]*View raw config[\s\S]*~\/\.gemini\/config\/mcp_config\.json[\s\S]*\.agents\/mcp_config\.json[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/,
+  );
+  assert.match(readme, /keep raw secrets out of any shared or committed copy/);
+  assert.match(readme, /antigravity\.google\/docs\/mcp/);
+});
 test('README documents Cherry Studio local stdio and agent binding', () => {
   assert.match(
     readme,
