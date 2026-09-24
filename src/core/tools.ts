@@ -335,6 +335,7 @@ export function registerTools(
       outputSchema: visibilityOutputSchema,
       annotations: {
         readOnlyHint: true,
+        destructiveHint: false,
         openWorldHint: false,
       },
     },
@@ -418,6 +419,7 @@ export function registerTools(
       outputSchema: historyOutputSchema,
       annotations: {
         readOnlyHint: true,
+        destructiveHint: false,
         openWorldHint: false,
       },
     },
@@ -512,6 +514,7 @@ export function registerTools(
       outputSchema: compareOutputSchema,
       annotations: {
         readOnlyHint: true,
+        destructiveHint: false,
         openWorldHint: false,
       },
     },
@@ -650,6 +653,7 @@ export function registerTools(
       outputSchema: citationsOutputSchema,
       annotations: {
         readOnlyHint: true,
+        destructiveHint: false,
         openWorldHint: false,
       },
     },
@@ -712,6 +716,7 @@ export function registerTools(
       outputSchema: contentGapsOutputSchema,
       annotations: {
         readOnlyHint: true,
+        destructiveHint: false,
         openWorldHint: true,
       },
     },
