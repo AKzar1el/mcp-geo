@@ -248,6 +248,15 @@ test('README documents Langflow local stdio setup without storing provider secre
   assert.match(readme, /Docker[\s\S]*Node\.js[\s\S]*`npx` server/);
   assert.match(readme, /docs\.langflow\.org\/mcp-client/);
 });
+test('README documents Cherry Studio local stdio and agent binding', () => {
+  assert.match(
+    readme,
+    /\*\*Cherry Studio:\*\*[\s\S]*Settings -> MCP -> MCP Servers -> Add[\s\S]*\*\*STDIO\*\*[\s\S]*Command to `npx`[\s\S]*@digestseo\/mcp-geo[\s\S]*\*\*Tools\*\*[\s\S]*Work -> Agent -> Edit -> MCP/,
+  );
+  assert.match(readme, /Cherry Studio's MCP environment-variable fields/);
+  assert.match(readme, /CherryHQ\/cherry-studio-docs\/blob\/main\/i18n\/english\/advanced-basic\/mcp\/config\.md/);
+  assert.match(readme, /CherryHQ\/cherry-studio-docs\/blob\/main\/advanced-basic\/extensions\/mcp\/README\.md/);
+});
 test('README documents Raycast local stdio setup without committed provider secrets', () => {
   assert.match(
     readme,

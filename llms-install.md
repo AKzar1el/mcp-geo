@@ -201,6 +201,18 @@ That zero-key server is sufficient for MCP tool discovery. Before engine-backed 
 
 Reference: [Langflow MCP client](https://docs.langflow.org/mcp-client).
 
+### Cherry Studio
+
+Cherry Studio can launch local STDIO MCP servers from its desktop UI. Open **Settings -> MCP -> MCP Servers -> Add**, choose **STDIO**, and configure:
+
+- Name: `digestseo`
+- Command: `npx`
+- Arguments: `-y` and `@digestseo/mcp-geo`
+
+That zero-key server is sufficient for MCP tool discovery. Before engine-backed scans, add only the selected provider keys through Cherry Studio's MCP environment-variable fields; keep raw secrets out of prompts and screenshots. Enable the server, open its **Tools** view to verify the twelve mcp-geo tools, then bind the server only to the intended Agent under **Work -> Agent -> Edit -> MCP**.
+
+References: [Cherry Studio MCP configuration](https://github.com/CherryHQ/cherry-studio-docs/blob/main/i18n/english/advanced-basic/mcp/config.md) and [MCP workflow guide](https://github.com/CherryHQ/cherry-studio-docs/blob/main/advanced-basic/extensions/mcp/README.md).
+
 ### Raycast AI
 
 Raycast can launch local STDIO MCP servers directly. Open **Install MCP Server** (or **Manage MCP Servers -> Install New Server**), choose **Standard Input/Output**, and configure:
