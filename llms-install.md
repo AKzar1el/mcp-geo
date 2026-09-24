@@ -136,6 +136,25 @@ opencode mcp add digestseo --global -- npx -y @digestseo/mcp-geo
 
 OpenCode v2 stores local MCP servers under `mcp.servers` and launches the command over STDIO. Omit `--global` for project-only configuration. The zero-key command is enough for discovery. For engine-backed scans, edit the generated config and add only the selected provider variables under `mcp.servers.digestseo.environment`, using OpenCode's environment substitution (for example `"OPENAI_API_KEY": "{env:OPENAI_API_KEY}"`) so the secret value stays in the process environment rather than in the config file. Verify the connection with `opencode mcp list`. Reference: [OpenCode v2 MCP servers](https://opencode.ai/v2/docs/mcp-servers).
 
+### Qwen Code
+
+The repository already ships portable Agent Plugins v1 metadata, so Qwen Code can install it directly from GitHub:
+
+```bash
+qwen extensions install AKzar1el/mcp-geo
+```
+
+Or add only the local MCP server as a user-scoped STDIO entry:
+
+```bash
+qwen mcp add --scope user digestseo npx -y @digestseo/mcp-geo
+qwen mcp list
+```
+
+Qwen Code natively supports Agent Plugins v1 and will reuse this repository's root `plugin.json` + `mcp.json`, which launches `npx -y @digestseo/mcp-geo`. Direct MCP settings live in `~/.qwen/settings.json`; use project-level `.qwen/settings.json` when the server should apply only to one trusted workspace. Both scopes use an `mcpServers` object. The zero-key server is sufficient for tool discovery. Before engine-backed scans, expose only the selected provider variables to the Qwen process, or use environment-variable references in the MCP `env` map rather than putting raw provider keys into project settings. Run `/mcp` inside Qwen Code to verify the active server and tools.
+
+References: [Qwen Code extensions](https://qwenlm.github.io/qwen-code-docs/en/users/extension/introduction/) and [Qwen Code MCP servers](https://qwenlm.github.io/qwen-code-docs/en/users/features/mcp/).
+
 ### Mistral Vibe Code
 
 Vibe Code accepts local STDIO MCP servers in either the user-level `~/.vibe/config.toml` or project-level `./.vibe/config.toml`:
