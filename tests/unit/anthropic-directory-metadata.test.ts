@@ -55,23 +55,18 @@ function captureLocalManagementToolConfigs(): Map<string, ToolConfig> {
   return tools;
 }
 
-test('hosted tools expose Claude Directory titles and safety annotations', () => {
+test('hosted tools expose titles and complete safety annotations', () => {
   const tools = captureHostedToolConfigs();
 
   assert.equal(tools.size, 6, 'expected the six hosted visibility tools');
   for (const [name, config] of tools) {
     assert.ok(config.title?.trim(), `${name} is missing a non-empty title`);
     assert.ok(config.annotations, `${name} is missing annotations`);
-    assert.notEqual(
-      config.annotations.readOnlyHint,
-      undefined,
-      `${name} must explicitly declare whether it is read-only`,
-    );
-    if (config.annotations.readOnlyHint === false) {
+    for (const hint of ['readOnlyHint', 'destructiveHint', 'openWorldHint'] as const) {
       assert.notEqual(
-        config.annotations.destructiveHint,
+        config.annotations[hint],
         undefined,
-        `${name} must explicitly declare whether its writes are destructive`,
+        `${name} must explicitly declare ${hint}`,
       );
     }
   }
