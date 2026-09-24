@@ -114,7 +114,7 @@ function workerEnginesEnv(env: Env, db: Db): WorkerEnginesEnv {
 }
 
 // Keep in sync with package.json "version".
-const SERVER_VERSION = '0.3.25';
+const SERVER_VERSION = '0.3.26';
 
 // Keep the legacy Durable Object class exported for the existing Wrangler
 // binding/migration while hosted /mcp traffic moves to the stateless SDK v2
