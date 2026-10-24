@@ -621,6 +621,19 @@ Edit `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` in the project root, sa
 }
 ```
 
+### Devin (cloud, CLI, and Desktop plugin)
+
+This repository already ships the Claude-compatible `.claude-plugin/plugin.json` and `.mcp.json` layout that Devin accepts as a plugin, so no wrapper or separate publication is needed. In the Devin CLI:
+
+```bash
+devin plugins install AKzar1el/mcp-geo
+devin plugins list
+```
+
+Alternatively, open **Customize > Plugins > Add plugin > From repository** in the Devin web app, enter `AKzar1el/mcp-geo`, and select an allowed installation scope. Check `digestseo-geo` under **Customize > MCPs**; verify the STDIO tool list in a **new Devin session** (the remote **Test tools** button does not test STDIO). Devin launches `npx -y @digestseo/mcp-geo` through this repository's existing plugin MCP manifest.
+
+No provider keys are needed for tool discovery. Before making paid engine-backed requests, have the user configure only their chosen provider keys through Devin secrets/environment, not in committed repository files. This is the local STDIO plugin path, not a no-key hosted API. Reference: [Devin plugins](https://docs.devin.ai/product-guides/plugins) and [Devin MCP servers](https://docs.devin.ai/work-with-devin/mcp).
+
 ### Windsurf
 
 Open Windsurf → **Manage MCPs → View raw config** and add:

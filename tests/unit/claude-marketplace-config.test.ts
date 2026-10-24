@@ -57,3 +57,17 @@ test('GitLab Duo CLI reuses the owner-controlled marketplace without a second pa
     assert.match(doc, /glab duo plugin install digestseo-geo@digestseo-mcp/);
   }
 });
+
+test('Devin direct plugin onboarding reuses the existing Claude-compatible MCP configuration', () => {
+  const command = 'devin plugins install AKzar1el/mcp-geo';
+  for (const doc of [readme, llmsInstall]) {
+    assert.ok(doc.includes(command));
+    assert.match(doc, /Customize > Plugins > Add plugin > From repository/);
+    assert.match(doc, /\.claude-plugin\/plugin\.json/);
+    assert.match(doc, /\.mcp\.json/);
+    assert.match(doc, /digestseo-geo/);
+  }
+  assert.equal(plugin.name, 'digestseo-geo');
+  assert.equal(portableMcp.mcpServers?.['digestseo-geo']?.command, 'npx');
+  assert.deepEqual(portableMcp.mcpServers?.['digestseo-geo']?.args, ['-y', '@digestseo/mcp-geo']);
+});
