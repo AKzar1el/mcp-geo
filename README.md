@@ -388,6 +388,16 @@ Open GitHub Copilot Chat in **Agent** mode and use the **Tools** menu to verify 
 
 [![Add to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=digestseo&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBkaWdlc3RzZW8vbWNwLWdlbyJdLCJlbnYiOnsiT1BFTkFJX0FQSV9LRVkiOiIiLCJBTlRIUk9QSUNfQVBJX0tFWSI6IiIsIkdFTUlOSV9BUElfS0VZIjoiIiwiUEVSUExFWElUWV9BUElfS0VZIjoiIiwiU0VSUEFQSV9BUElfS0VZIjoiIn19)
 
+**Devin (cloud / CLI / Desktop plugin):** install this repository's existing MCP plugin directly:
+
+```bash
+devin plugins install AKzar1el/mcp-geo
+```
+
+Alternatively, open **Customize > Plugins > Add plugin > From repository** in Devin and enter `AKzar1el/mcp-geo` at a scope you can manage. Devin recognizes this repository's Claude-compatible `.claude-plugin/plugin.json` and `.mcp.json`, which launch `npx -y @digestseo/mcp-geo` (no second server or package needed). Check `digestseo-geo` under **Customize > MCPs** and use a new Devin session to inspect its tools; STDIO servers are tested in a session, not with the remote **Test tools** control. CLI users can first check `devin plugins list`.
+
+Zero provider keys allow tool discovery; engine-backed scans need only the selected provider keys supplied through Devin's supported secret/environment configuration, never committed to the plugin. The plugin uses local STDIO in Devin's session environment; it is not a turnkey connection to the public DigestSEO Worker. See [Devin's plugin instructions](https://docs.devin.ai/product-guides/plugins) and [custom MCP guidance](https://docs.devin.ai/work-with-devin/mcp).
+
 **Windsurf:** open **Manage MCPs → View raw config** and add the local stdio package:
 
 ```json
