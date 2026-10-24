@@ -11,6 +11,16 @@ All notable changes to this project are documented here. The format is loosely b
 - Cursor plugin MCP metadata now launches the published local stdio package instead of routing users to the public Worker endpoint, which is not configured as a turnkey fresh-scan service.
 - Windsurf guidance now recommends local stdio or a configured self-hosted Worker, and Cursor/Claude plugin manifests are synchronized to `0.3.7`.
 
+## [0.3.27] - October 24, 2026
+
+### Security
+
+- Patched MCP SDK HTTP tool-input denial-of-service risk (GHSA-46jr-4wx8-v453 / CVE-2026-111768) by upgrading to compatible MCP SDK 1.32.1, server/client 2.3.1, and Cloudflare Agents 0.30.1, enforcing a 1,024-element tool-input limit, and bounding modern and legacy hosted request bodies to 256 KiB. Updated vulnerable transitive runtime dependencies and retained zero known production audit vulnerabilities.
+
+### Fixed
+
+- Corrected Anthropic Haiku cost guidance to use token-based API pricing instead of universal per-prompt estimates or guaranteed free credits.
+
 ## [0.3.26] - September 24, 2026
 
 ### Added
