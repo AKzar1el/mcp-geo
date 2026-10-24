@@ -22,12 +22,15 @@ test('remote Worker enables MCP 2026-07-28 CIMD with the required SSRF guard', (
     /resourceMetadata:\s*\{\s*resource:\s*configuredOAuthResource\(\),?\s*\}/,
   );
   assert.match(workerSource, /return new URL\('\/mcp', origin\)\.toString\(\)/);
-  assert.equal(pkg.devDependencies?.['@modelcontextprotocol/server'], '2.0.0');
+  assert.equal(pkg.devDependencies?.['@modelcontextprotocol/server'], '2.3.1');
   assert.match(workerSource, /createMcpHandler/);
   assert.match(workerSource, /McpServer as StatelessMcpServer/);
   assert.match(workerSource, /legacy:\s*'stateless'/);
   assert.match(workerSource, /allowedHostnames:\s*\[hostname\]/);
   assert.match(workerSource, /allowedOriginHostnames:\s*\[hostname\]/);
+  assert.match(workerSource, /maxRequestBodySize:\s*MAX_MCP_HTTP_BODY_BYTES/);
+  assert.match(workerSource, /maxToolInputElements:\s*MAX_MCP_TOOL_INPUT_ELEMENTS/);
+  assert.match(workerSource, /boundHostedMcpRequestBody\(request\)/);
   assert.match(
     workerSource,
     /'\/mcp':\s*\{\s*fetch:\s*handleHostedMcpRequest,?\s*\}/,

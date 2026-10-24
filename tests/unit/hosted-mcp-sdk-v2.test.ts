@@ -5,16 +5,24 @@ import { McpServer as StatelessMcpServer } from '@modelcontextprotocol/server';
 import type { McpServer as LegacyMcpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Db } from '../../src/db/types.js';
 import { registerTools } from '../../src/core/tools.js';
+import {
+  boundHostedMcpRequestBody,
+  MAX_MCP_HTTP_BODY_BYTES,
+  MAX_MCP_TOOL_INPUT_ELEMENTS,
+} from '../../src/core/mcp-limits.js';
 
 function createSharedToolServer() {
-  const server = new StatelessMcpServer({
-    name: 'digestseo-mcp',
-    title: 'GEO Tracker by DigestSEO',
-    description:
-      'Track brand citations across seven AI search surfaces. Free OSS; optional EUR 99 client-ready audit.',
-    version: 'test',
-    websiteUrl: 'https://digestseo.com/geo-mcp/',
-  });
+  const server = new StatelessMcpServer(
+    {
+      name: 'digestseo-mcp',
+      title: 'GEO Tracker by DigestSEO',
+      description:
+        'Track brand citations across seven AI search surfaces. Free OSS; optional EUR 99 client-ready audit.',
+      version: 'test',
+      websiteUrl: 'https://digestseo.com/geo-mcp/',
+    },
+    { maxToolInputElements: MAX_MCP_TOOL_INPUT_ELEMENTS },
+  );
 
   registerTools(
     server as unknown as LegacyMcpServer,
@@ -51,6 +59,9 @@ function modernRequest(method: string, params: Record<string, unknown> = {}) {
       'content-type': 'application/json',
       'mcp-protocol-version': '2026-07-28',
       'mcp-method': method,
+      ...(method === 'tools/call' && typeof params.name === 'string'
+        ? { 'mcp-name': params.name }
+        : {}),
     },
     body: JSON.stringify({
       jsonrpc: '2.0',
@@ -71,12 +82,26 @@ function modernRequest(method: string, params: Record<string, unknown> = {}) {
   });
 }
 
+async function invokeBounded(
+  handler: ReturnType<typeof createMcpHandler>,
+  request: Request,
+): Promise<Response> {
+  const bounded = await boundHostedMcpRequestBody(request);
+  if (bounded.rejection) return bounded.rejection;
+  return handler(
+    bounded.request,
+    {},
+    { waitUntil() {}, passThroughOnException() {} } as ExecutionContext,
+  );
+}
+
 test('shared hosted tools run on the SDK v2 stateless handler with legacy fallback', async () => {
   const handler = createMcpHandler(createSharedToolServer, {
     route: '/mcp',
     legacy: 'stateless',
     allowedHostnames: ['example.com'],
     allowedOriginHostnames: ['example.com'],
+    maxRequestBodySize: MAX_MCP_HTTP_BODY_BYTES,
   });
 
   const initialize = legacyRequest('initialize', {
@@ -117,6 +142,7 @@ test('shared hosted tools support the MCP 2026-07-28 modern stateless flow', asy
     legacy: 'stateless',
     allowedHostnames: ['example.com'],
     allowedOriginHostnames: ['example.com'],
+    maxRequestBodySize: MAX_MCP_HTTP_BODY_BYTES,
   });
 
   const discoverResponse = await handler(
@@ -162,4 +188,44 @@ test('shared hosted tools support the MCP 2026-07-28 modern stateless flow', asy
     'visibility.history',
     'visibility.refresh',
   ]);
+});
+
+test('hosted MCP rejects oversized modern and legacy request bodies', async () => {
+  const handler = createMcpHandler(createSharedToolServer, {
+    route: '/mcp',
+    legacy: 'stateless',
+    allowedHostnames: ['example.com'],
+    allowedOriginHostnames: ['example.com'],
+    maxRequestBodySize: MAX_MCP_HTTP_BODY_BYTES,
+  });
+  const tooLarge = 'x'.repeat(MAX_MCP_HTTP_BODY_BYTES);
+  const normal = await invokeBounded(handler, modernRequest('tools/list'));
+  assert.equal(normal.status, 200);
+
+  const modern = await invokeBounded(handler, modernRequest('tools/list', { padding: tooLarge }));
+  assert.equal(modern.status, 413);
+
+  const legacy = await invokeBounded(handler, legacyRequest('tools/list', { padding: tooLarge }));
+  assert.equal(legacy.status, 413);
+});
+
+test('hosted MCP rejects tool input with excessive object members before tool execution', async () => {
+  const handler = createMcpHandler(createSharedToolServer, {
+    route: '/mcp',
+    legacy: 'stateless',
+    allowedHostnames: ['example.com'],
+    allowedOriginHostnames: ['example.com'],
+    maxRequestBodySize: MAX_MCP_HTTP_BODY_BYTES,
+  });
+  const excessiveArguments = Object.fromEntries(
+    Array.from({ length: MAX_MCP_TOOL_INPUT_ELEMENTS + 1 }, (_, i) => [`field${i}`, 'x']),
+  );
+  const response = await invokeBounded(
+    handler,
+    modernRequest('tools/call', { name: 'visibility.history', arguments: excessiveArguments }),
+  );
+  const responseText = await response.text();
+  assert.equal(response.status, 200, responseText);
+  const body = JSON.parse(responseText) as { result?: { isError?: boolean } };
+  assert.equal(body.result?.isError, true);
 });
