@@ -20,6 +20,11 @@ import {
   type EngineName,
 } from './core/engines.js';
 import { registerTools } from './core/tools.js';
+import {
+  boundHostedMcpRequestBody,
+  MAX_MCP_HTTP_BODY_BYTES,
+  MAX_MCP_TOOL_INPUT_ELEMENTS,
+} from './core/mcp-limits.js';
 import { HOSTED_SERVER_INSTRUCTIONS } from './core/server-instructions.js';
 import { getScheduledRefreshTargets } from './core/scheduling.js';
 import { collectBatch, submitBatch } from './core/openai.js';
@@ -126,7 +131,10 @@ export class GeoMcpAgent extends McpAgent<Env, unknown, AgentProps> {
       name: 'digestseo-mcp',
       version: SERVER_VERSION,
     },
-    { instructions: HOSTED_SERVER_INSTRUCTIONS },
+    {
+      instructions: HOSTED_SERVER_INSTRUCTIONS,
+      maxToolInputElements: MAX_MCP_TOOL_INPUT_ELEMENTS,
+    },
   );
 
   async init() {
@@ -166,7 +174,10 @@ function createStatelessHostedServer(
       version: SERVER_VERSION,
       websiteUrl: 'https://digestseo.com/geo-mcp/',
     },
-    { instructions: HOSTED_SERVER_INSTRUCTIONS },
+    {
+      instructions: HOSTED_SERVER_INSTRUCTIONS,
+      maxToolInputElements: MAX_MCP_TOOL_INPUT_ELEMENTS,
+    },
   );
 
   // The shared registry currently targets the SDK v1 McpServer type, but it
@@ -193,12 +204,14 @@ function configuredMcpHostname(request: Request, env: Env): string {
   return new URL(request.url).hostname;
 }
 
-export function handleHostedMcpRequest(
+export async function handleHostedMcpRequest(
   request: Request,
   env: Env,
   ctx: ExecutionContext,
 ): Promise<Response> {
-  const hostname = configuredMcpHostname(request, env);
+  const bounded = await boundHostedMcpRequestBody(request);
+  if (bounded.rejection) return bounded.rejection;
+  const hostname = configuredMcpHostname(bounded.request, env);
   const handler = createMcpHandler(
     () => createStatelessHostedServer(env, ctx),
     {
@@ -206,9 +219,10 @@ export function handleHostedMcpRequest(
       legacy: 'stateless',
       allowedHostnames: [hostname],
       allowedOriginHostnames: [hostname],
+      maxRequestBodySize: MAX_MCP_HTTP_BODY_BYTES,
     },
   );
-  return handler(request, env, ctx);
+  return handler(bounded.request, env, ctx);
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
