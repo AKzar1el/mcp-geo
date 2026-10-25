@@ -11,6 +11,17 @@ All notable changes to this project are documented here. The format is loosely b
 - Cursor plugin MCP metadata now launches the published local stdio package instead of routing users to the public Worker endpoint, which is not configured as a turnkey fresh-scan service.
 - Windsurf guidance now recommends local stdio or a configured self-hosted Worker, and Cursor/Claude plugin manifests are synchronized to `0.3.7`.
 
+## [0.3.28] - October 25, 2026
+
+### Fixed
+
+- OpenAI Batch jobs with terminal failed, expired, or cancelled statuses now close instead of looping indefinitely as in_progress. If a failed terminal job has output/error files, collect and retain its validated partial responses, explicitly report missing prompts, and preserve provider failure status.
+- Clarified that local storage differs from optional provider-side API processing in user-facing privacy documentation.
+
+### Added
+
+- Local MCP onboarding for Devin, Perplexity Portable, OpenHands CLI, and Kimi Code CLI, using the existing npm package.
+- Offline regression tests for Batch JSONL submission, upload-error behavior, terminal failures, partial results, and cancelling-versus-cancelled handling.
 ## [0.3.27] - October 24, 2026
 
 ### Security
