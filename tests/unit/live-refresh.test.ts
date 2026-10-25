@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   collectBatch,
+  submitBatch,
   runLive as runOpenAiLive,
 } from '../../src/core/openai.ts';
 import { runLive as runAnthropicLive } from '../../src/core/anthropic.ts';
@@ -407,4 +408,89 @@ test('OpenAI Batch rejects invalid error-file IDs before persistence', async () 
     ],
     /appears in both output and error files/,
   );
+});
+
+test('OpenAI Batch submit preserves JSONL prompt identities and provider contract offline', async () => {
+  const updated: Array<{ id: string; fields: Record<string, unknown> }> = [];
+  const db = {
+    updateRun: async (id: string, fields: Record<string, unknown>) => {
+      updated.push({ id, fields });
+    },
+  } as Db;
+  const prompts = [
+    prompt,
+    { ...prompt, id: 'prompt-2', text: 'Compare Acme and Beta.' },
+  ];
+  let responseNumber = 0;
+  await withMockFetch(() => {
+    responseNumber += 1;
+    return responseNumber === 1
+      ? jsonResponse({ id: 'file-123' })
+      : jsonResponse({ id: 'batch-123', status: 'validating' });
+  }, async (calls) => {
+    const result = await submitBatch(
+      { db, OPENAI_API_KEY: 'test-key' },
+      brand,
+      prompts,
+      'batch-fixture',
+    );
+    assert.deepEqual(result, {
+      batch_id: 'batch-123',
+      input_file_id: 'file-123',
+    });
+    assert.equal(calls.length, 2);
+
+    const [upload, create] = calls;
+    assert.equal(upload.url.pathname, '/v1/files');
+    assert.equal(upload.init?.method, 'POST');
+    assert.ok(upload.init?.body instanceof FormData);
+    const form = upload.init.body;
+    assert.equal(form.get('purpose'), 'batch');
+    const file = form.get('file');
+    assert.ok(file instanceof Blob);
+    assert.equal(file.type, 'application/jsonl');
+    assert.equal((file as File).name, 'geo-mcp-run-batch-fixture.jsonl');
+    const raw = await file.text();
+    assert.ok(raw.endsWith('\n'));
+    const lines = raw.trimEnd().split('\n').map((line) => JSON.parse(line));
+    assert.deepEqual(lines.map((line) => line.custom_id), ['prompt-1', 'prompt-2']);
+    for (const [index, line] of lines.entries()) {
+      assert.equal(line.method, 'POST');
+      assert.equal(line.url, '/v1/chat/completions');
+      assert.equal(line.body.model, 'gpt-4o-mini');
+      assert.equal(line.body.temperature, 0.3);
+      assert.equal(line.body.max_tokens, 600);
+      assert.equal(line.body.messages[0].role, 'system');
+      assert.deepEqual(line.body.messages[1], {
+        role: 'user',
+        content: prompts[index].text,
+      });
+    }
+
+    assert.equal(create.url.pathname, '/v1/batches');
+    assert.equal(create.init?.method, 'POST');
+    assert.deepEqual(JSON.parse(String(create.init?.body)), {
+      input_file_id: 'file-123',
+      endpoint: '/v1/chat/completions',
+      completion_window: '24h',
+    });
+  });
+  assert.deepEqual(updated, [{
+    id: 'batch-fixture',
+    fields: { batch_id: 'batch-123', status: 'in_progress' },
+  }]);
+});
+
+test('OpenAI Batch rejects upload failure without batch creation or run mutation', async () => {
+  const db = {
+    updateRun: async () => { throw new Error('unexpected run mutation'); },
+  } as unknown as Db;
+  await withMockFetch(new Response('rate limited', { status: 429 }), async (calls) => {
+    await assert.rejects(
+      submitBatch({ db, OPENAI_API_KEY: 'test-key' }, brand, [prompt], 'batch-failed'),
+      /OpenAI file upload failed: 429/,
+    );
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url.pathname, '/v1/files');
+  });
 });
