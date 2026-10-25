@@ -324,6 +324,122 @@ test('OpenAI Batch completion continues to populate its persistent cache', async
   assert.equal(replaceExisting, true);
 });
 
+test('OpenAI Batch terminal failures without files stop polling and close the run', async () => {
+  for (const status of ['failed', 'expired', 'cancelled']) {
+    const updates: Array<Partial<Run>> = [];
+    let persisted = false;
+    const db = {
+      updateRun: async (_runId: string, fields: Partial<Run>) => { updates.push(fields); },
+      persistEngineRun: async () => { persisted = true; },
+    } as unknown as Db;
+    const run: Run = {
+      id: 'terminal-batch-run',
+      brand_id: brand.id,
+      engine: 'chatgpt',
+      mode: 'batch',
+      status: 'in_progress',
+      prompts_total: 2,
+      prompts_completed: 0,
+      batch_id: 'batch-terminal',
+      batch_input_file_id: null,
+      started_at: 0,
+      completed_at: null,
+      error: null,
+    } as Run;
+    await withMockFetch(
+      () => jsonResponse({ status, output_file_id: null, error_file_id: null }),
+      async (calls) => {
+        const result = await collectBatch(
+          { db, OPENAI_API_KEY: 'test-key' }, run, brand,
+        );
+        assert.deepEqual(result, { ready: true, status, completed: 0, failed: 2 });
+        assert.equal(calls.length, 1);
+      },
+    );
+    assert.equal(updates.length, 1);
+    assert.equal(updates[0].status, 'failed');
+    assert.match(String(updates[0].error), new RegExp(status));
+    assert.equal(typeof updates[0].completed_at, 'number');
+    assert.equal(persisted, false);
+  }
+});
+
+test('OpenAI Batch expiry preserves available partial results and records failure', async () => {
+  const updates: Array<Partial<Run>> = [];
+  let persisted: EnginePromptResult[] | undefined;
+  const db = {
+    getPromptsByIds: async (ids: string[]) =>
+      ids.includes(prompt.id) ? [prompt] : [],
+    persistEngineRun: async (
+      _runId: string, _engine: string, _model: string,
+      _ttl: number, results: EnginePromptResult[],
+    ) => { persisted = results; },
+    updateRun: async (_runId: string, fields: Partial<Run>) => { updates.push(fields); },
+  } as Db;
+  const run: Run = {
+    id: 'partial-batch-run',
+    brand_id: brand.id,
+    engine: 'chatgpt',
+    mode: 'batch',
+    status: 'in_progress',
+    prompts_total: 2,
+    prompts_completed: 0,
+    batch_id: 'batch-expired',
+    batch_input_file_id: null,
+    started_at: 0,
+    completed_at: null,
+    error: null,
+  } as Run;
+  const output = JSON.stringify({
+    custom_id: prompt.id,
+    response: { body: { choices: [{ message: { content: 'Partial Acme response.' } }] } },
+  });
+  let request = 0;
+  await withMockFetch(
+    () => (++request === 1
+      ? jsonResponse({ status: 'expired', output_file_id: 'partial-output' })
+      : new Response(output + '\n')),
+    async (calls) => {
+      const result = await collectBatch(
+        { db, OPENAI_API_KEY: 'test-key' }, run, brand,
+      );
+      assert.deepEqual(result, {
+        ready: true, status: 'expired', completed: 1, failed: 1,
+      });
+      assert.equal(calls.length, 2);
+    },
+  );
+  assert.equal(persisted?.length, 1);
+  assert.equal(persisted?.[0].raw_response, 'Partial Acme response.');
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].status, 'failed');
+  assert.match(String(updates[0].error), /1\/2 prompt results available/);
+  assert.equal(typeof updates[0].completed_at, 'number');
+});
+
+test('OpenAI Batch cancellation-in-progress remains pending until terminal', async () => {
+  const updates: Array<Partial<Run>> = [];
+  const db = {
+    updateRun: async (_runId: string, fields: Partial<Run>) => { updates.push(fields); },
+  } as unknown as Db;
+  const run: Run = {
+    id: 'cancelling-batch-run', brand_id: brand.id, engine: 'chatgpt',
+    mode: 'batch', status: 'in_progress', prompts_total: 1, prompts_completed: 0,
+    batch_id: 'batch-cancelling', batch_input_file_id: null,
+    started_at: 0, completed_at: null, error: null,
+  } as Run;
+  await withMockFetch(
+    () => jsonResponse({ status: 'cancelling' }),
+    async () => {
+      const result = await collectBatch(
+        { db, OPENAI_API_KEY: 'test-key' }, run, brand,
+      );
+      assert.deepEqual(result, { ready: false, status: 'cancelling' });
+    },
+  );
+  assert.deepEqual(updates, [{ status: 'in_progress' }]);
+});
+
 test('OpenAI Batch rejects invalid error-file IDs before persistence', async () => {
   const run: Run = {
     id: 'batch-run',
