@@ -669,6 +669,25 @@ Start a **new** `openhands` conversation and enter `/mcp` to verify the enabled 
 
 Reference: [OpenHands official CLI MCP server guide](https://github.com/OpenHands/docs/blob/main/openhands/usage/cli/mcp-servers.mdx).
 
+### Kimi Code CLI (local STDIO)
+
+Kimi Code CLI supports locally launched MCP servers using a user-level `~/.kimi-code/mcp.json` or trusted project-level `.kimi-code/mcp.json`. With Node.js **22.13+** installed, add the free existing npm package:
+
+```json
+{
+  "mcpServers": {
+    "digestseo": {
+      "command": "npx",
+      "args": ["-y", "@digestseo/mcp-geo"]
+    }
+  }
+}
+```
+
+Start a **new** Kimi Code CLI session and enter `/mcp` to verify the `digestseo` server and discover its tools; `/mcp-config` can manage entries interactively. No provider keys are required for MCP discovery or offline brand/prompt management. For an engine-backed scan, supply only the selected provider API keys through the private local environment or user-level `env` settings; do not commit credentials in project-level MCP files. Provider calls can incur costs. Review Kimi's project trust prompt because STDIO entries execute local commands; keep approval for potentially mutating tools. This setup starts the local npm server, not the protected public DigestSEO-hosted Worker.
+
+Reference: [Kimi Code CLI official MCP configuration](https://moonshotai.github.io/kimi-code/en/customization/mcp.html).
+
 ### Windsurf
 
 Open Windsurf → **Manage MCPs → View raw config** and add:
