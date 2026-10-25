@@ -400,6 +400,15 @@ Alternatively, open **Customize > Plugins > Add plugin > From repository** in De
 
 Zero provider keys allow tool discovery; engine-backed scans need only the selected provider keys supplied through Devin's supported secret/environment configuration, never committed to the plugin. The plugin uses local STDIO in Devin's session environment; it is not a turnkey connection to the public DigestSEO Worker. See [Devin's plugin instructions](https://docs.devin.ai/product-guides/plugins) and [custom MCP guidance](https://docs.devin.ai/work-with-devin/mcp).
 
+**OpenHands CLI (local STDIO):** OpenHands can run the existing npm package as a local MCP server without a wrapper:
+
+```bash
+openhands mcp add digestseo --transport stdio npx -- -y @digestseo/mcp-geo
+openhands mcp list
+```
+
+Start a new `openhands` conversation and enter `/mcp` to verify the `digestseo` tools. On Windows, use `npx.cmd` if `npx` is not directly executable. Current OpenHands CLI stores server settings in `~/.openhands/mcp.json` (JSON; pre-1.0 TOML configuration needs migration). No provider keys are needed for tool discovery. For engine-backed scans, configure only the required provider keys using OpenHands' `--env` option or a private environment, never a committed file; provider usage may incur costs. This local process is not the hosted DigestSEO OAuth Worker. See the [OpenHands MCP instructions](https://github.com/OpenHands/docs/blob/main/openhands/usage/cli/mcp-servers.mdx).
+
 **Windsurf:** open **Manage MCPs → View raw config** and add the local stdio package:
 
 ```json
