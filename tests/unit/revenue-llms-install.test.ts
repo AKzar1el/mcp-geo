@@ -295,3 +295,15 @@ test('AI-agent guide describes Perplexity through the Agent API fast preset', ()
   assert.match(guide, /docs\.perplexity\.ai\/docs\/agent-api\/quickstart/);
   assert.doesNotMatch(guide, /Perplexity — Sonar engine/);
 });
+
+test('Perplexity Portable Computer uses absolute-path local STDIO rather than cloud Remote OAuth', () => {
+  assert.match(guide, /### Perplexity Portable Computer \(local STDIO\)/);
+  assert.match(guide, /Settings > MCP servers > Add server > Local \(stdio\)/);
+  assert.match(guide, /C:\\Windows\\System32\\cmd\.exe/);
+  assert.match(guide, /npx -y @digestseo\/mcp-geo/);
+  assert.match(guide, /command -v npx/);
+  assert.match(guide, /does not search your `PATH`/);
+  assert.match(guide, /Zero-key tool discovery works/);
+  assert.match(guide, /cloud \*\*Perplexity Computer\*\* Remote\/OAuth/);
+  assert.match(guide, /perplexity\.ai\/help-center\/en\/articles\/20260915-what-is-portable-computer/);
+});

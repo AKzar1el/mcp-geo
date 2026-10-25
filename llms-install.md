@@ -634,6 +634,27 @@ Alternatively, open **Customize > Plugins > Add plugin > From repository** in th
 
 No provider keys are needed for tool discovery. Before making paid engine-backed requests, have the user configure only their chosen provider keys through Devin secrets/environment, not in committed repository files. This is the local STDIO plugin path, not a no-key hosted API. Reference: [Devin plugins](https://docs.devin.ai/product-guides/plugins) and [Devin MCP servers](https://docs.devin.ai/work-with-devin/mcp).
 
+### Perplexity Portable Computer (local STDIO)
+
+Perplexity **Portable Computer** supports local MCP servers on supported Windows/Linux hardware with a **Pro/Max** plan and a configured **Local** model. This is separate from the cloud **Perplexity Computer** Remote/OAuth path in Step 10. Install Node.js **22.13+** first. The local MCP Command must be an **absolute executable path**; Portable does not search your `PATH`.
+
+1. Select a local model under **Local** in Perplexity, then open **Settings > MCP servers > Add server > Local (stdio)**.
+2. Enter **Name**: `digestseo`. On **Windows**, set **Command** to `C:\Windows\System32\cmd.exe` and enter **Arguments** on separate lines:
+
+   ```text
+   /d
+   /s
+   /c
+   npx -y @digestseo/mcp-geo
+   ```
+
+   The absolute `cmd.exe` path launches `npx` through the Windows command shell.
+3. On **Linux**, use the absolute executable path returned by `command -v npx` as **Command**; enter `-y` and `@digestseo/mcp-geo` as two separate **Arguments**.
+4. Leave **Working directory** unset unless your environment requires one. Add only the chosen optional provider credentials through the **Environment variables** control, never in committed files. Zero-key tool discovery works; provider-backed scans may cost money.
+5. Select **Test** and then **Add**, and verify the available `digestseo` tools in **Local** mode. Portable launches these local tools with your user permissions, outside its task sandbox; install only trusted code.
+
+Reference: [Perplexity Portable Computer local MCP setup](https://www.perplexity.ai/help-center/en/articles/20260915-what-is-portable-computer). Cloud Perplexity Computer uses the separate self-hosted Remote/OAuth guidance in Path B.
+
 ### Windsurf
 
 Open Windsurf → **Manage MCPs → View raw config** and add:

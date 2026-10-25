@@ -415,3 +415,12 @@ test('README describes the live Perplexity Agent API contract instead of retired
   assert.doesNotMatch(readme, /Perplexity Sonar engine/);
   assert.doesNotMatch(readme, /0\.005-0\.008 per prompt/);
 });
+
+test('README differentiates Portable Computer local STDIO from Perplexity cloud OAuth', () => {
+  assert.match(readme, /\*\*Perplexity Portable Computer \(local STDIO\):\*\*/);
+  assert.match(readme, /Settings > MCP servers > Add server > Local \(stdio\)/);
+  assert.match(readme, /C:\\Windows\\System32\\cmd\.exe/);
+  assert.match(readme, /absolute `npx` path/);
+  assert.match(readme, /local Portable setup guide/);
+  assert.match(readme, /Portable's local tools are distinct from cloud Computer's Remote\/OAuth connector/);
+});
