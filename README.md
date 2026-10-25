@@ -409,6 +409,21 @@ openhands mcp list
 
 Start a new `openhands` conversation and enter `/mcp` to verify the `digestseo` tools. On Windows, use `npx.cmd` if `npx` is not directly executable. Current OpenHands CLI stores server settings in `~/.openhands/mcp.json` (JSON; pre-1.0 TOML configuration needs migration). No provider keys are needed for tool discovery. For engine-backed scans, configure only the required provider keys using OpenHands' `--env` option or a private environment, never a committed file; provider usage may incur costs. This local process is not the hosted DigestSEO OAuth Worker. See the [OpenHands MCP instructions](https://github.com/OpenHands/docs/blob/main/openhands/usage/cli/mcp-servers.mdx).
 
+**Kimi Code CLI (local STDIO):** Add the existing npm server to `~/.kimi-code/mcp.json` (user-wide) or `.kimi-code/mcp.json` in a trusted project:
+
+```json
+{
+  "mcpServers": {
+    "digestseo": {
+      "command": "npx",
+      "args": ["-y", "@digestseo/mcp-geo"]
+    }
+  }
+}
+```
+
+Start a new Kimi Code CLI session and use `/mcp` to inspect the `digestseo` tools; `/mcp-config` manages server entries. Node.js 22.13+ is required. No provider keys are needed for tool discovery. Before engine-backed scans, provide only the optional provider credentials you intend to use through a private environment or Kimi's local `env` configuration, never a committed project file; provider usage may incur charges. Kimi Code prompts for trust when project-level MCP configuration can launch local commands, so inspect it before enabling. This is local STDIO, not a turnkey connection to the hosted DigestSEO OAuth Worker. See the [Kimi Code MCP guide](https://moonshotai.github.io/kimi-code/en/customization/mcp.html).
+
 **Windsurf:** open **Manage MCPs → View raw config** and add the local stdio package:
 
 ```json

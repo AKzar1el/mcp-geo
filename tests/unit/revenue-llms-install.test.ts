@@ -308,6 +308,16 @@ test('Perplexity Portable Computer uses absolute-path local STDIO rather than cl
   assert.match(guide, /perplexity\.ai\/help-center\/en\/articles\/20260915-what-is-portable-computer/);
 });
 
+test('AI-agent guide documents Kimi Code CLI local stdio and user/project trust boundary', () => {
+  assert.match(guide, /### Kimi Code CLI \(local STDIO\)/);
+  assert.match(guide, /~\/\.kimi-code\/mcp\.json/);
+  assert.match(guide, /\.kimi-code\/mcp\.json/);
+  assert.match(guide, /"args": \["-y", "@digestseo\/mcp-geo"\]/);
+  assert.match(guide, /\/mcp-config/);
+  assert.match(guide, /project trust prompt/);
+  assert.match(guide, /moonshotai\.github\.io\/kimi-code\/en\/customization\/mcp/);
+});
+
 test('AI-agent guide documents OpenHands CLI stdio registration and verification', () => {
   assert.match(guide, /### OpenHands CLI \(local STDIO\)/);
   assert.match(guide, /openhands mcp add digestseo --transport stdio npx -- -y @digestseo\/mcp-geo/);
