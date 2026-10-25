@@ -15,7 +15,7 @@
 
 ## Quick Install
 
-Runs locally over stdio with your own API keys — all data stays on your machine (see [Privacy Policy](#privacy-policy)). Set at least one engine key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `PERPLEXITY_API_KEY`, `XAI_API_KEY`, `SERPAPI_API_KEY`); engines without a key skip gracefully.
+Runs locally over stdio with your own API keys. Brands, scan history, and cached responses are stored on your machine; scan prompts are sent to the AI providers you configure (see [Privacy Policy](#privacy-policy)). Set at least one engine key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `PERPLEXITY_API_KEY`, `XAI_API_KEY`, `SERPAPI_API_KEY`); engines without a key skip gracefully.
 
 **Runtime:** Node.js 22.13+ (CI exercises Node 22 and 24).
 
@@ -936,7 +936,7 @@ Each engine runs in its own Worker invocation with its own free-plan 50-subreque
 
 - `/admin/*` is gated by `SEED_SECRET` (constant-time compared).
 - `/mcp` requires OAuth; set `CONNECT_SECRET` so only people with the secret can complete the connect flow — strongly recommended whenever your worker URL is shared anywhere, since connected clients can call `visibility.refresh` and spend your engine API credits.
-- All engine keys live in Cloudflare's encrypted secret store; all data stays in your own D1 database.
+- Engine keys live in Cloudflare's encrypted secret store, and brands, scan history, and cached responses are stored in your own D1 database. Scan prompts are sent to the AI providers you configure; see the [Privacy Policy](#privacy-policy).
 
 Full details and vulnerability reporting: [SECURITY.md](https://github.com/AKzar1el/mcp-geo/blob/main/SECURITY.md).
 
