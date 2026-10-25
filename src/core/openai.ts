@@ -624,17 +624,28 @@ export async function collectBatch(
   }
   const batch = (await statusResp.json()) as OpenAiBatch;
 
-  if (batch.status !== 'completed') {
+  // OpenAI can terminate a Batch without ever entering "completed".
+  // Expired/cancelled batches may still expose useful partial result files.
+  const terminalFailure = batch.status === 'failed'
+    || batch.status === 'expired'
+    || batch.status === 'cancelled';
+  if (batch.status !== 'completed' && !terminalFailure) {
     await env.db.updateRun(run.id, { status: 'in_progress' });
     return { ready: false, status: batch.status };
   }
   if (!batch.output_file_id && !batch.error_file_id) {
+    const error = batch.status === 'completed'
+      ? 'batch completed without output_file_id or error_file_id'
+      : 'OpenAI batch ' + batch.status + ' without output or error files';
     await env.db.updateRun(run.id, {
       status: 'failed',
-      error: 'batch completed without output_file_id or error_file_id',
+      error,
       completed_at: Date.now(),
     });
-    throw new Error('batch completed without output_file_id or error_file_id');
+    if (terminalFailure) {
+      return { ready: true, status: batch.status, completed: 0, failed: run.prompts_total };
+    }
+    throw new Error(error);
   }
 
   const outputLines = batch.output_file_id
@@ -730,6 +741,19 @@ export async function collectBatch(
     { replaceExisting: true },
   );
   const completed = results.filter((result) => result.status === 'ok').length;
-  const failed = results.filter((result) => result.status === 'failed').length;
+  const explicitFailures = results.filter((result) => result.status === 'failed').length;
+  // A terminally unsuccessful batch cannot produce the remaining prompt rows.
+  const failed = terminalFailure
+    ? Math.max(explicitFailures, run.prompts_total - completed)
+    : explicitFailures;
+  if (terminalFailure) {
+    // persistEngineRun stores available partial responses and closes the run.
+    // Preserve those responses but expose the provider's terminal failure.
+    await env.db.updateRun(run.id, {
+      status: 'failed',
+      error: 'OpenAI batch ' + batch.status + '; ' + results.length + '/' + run.prompts_total + ' prompt results available',
+      completed_at: Date.now(),
+    });
+  }
   return { ready: true, status: batch.status, completed, failed };
 }
