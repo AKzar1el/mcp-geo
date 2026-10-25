@@ -424,3 +424,11 @@ test('README differentiates Portable Computer local STDIO from Perplexity cloud 
   assert.match(readme, /local Portable setup guide/);
   assert.match(readme, /Portable's local tools are distinct from cloud Computer's Remote\/OAuth connector/);
 });
+
+test('README describes OpenHands native CLI local STDIO without provider-key prerequisites', () => {
+  assert.match(readme, /\*\*OpenHands CLI \(local STDIO\):\*\*/);
+  assert.match(readme, /openhands mcp add digestseo --transport stdio npx -- -y @digestseo\/mcp-geo/);
+  assert.match(readme, /openhands mcp list/);
+  assert.match(readme, /no provider keys are needed/i);
+  assert.match(readme, /OpenHands\/docs\/blob\/main\/openhands\/usage\/cli\/mcp-servers\.mdx/);
+});

@@ -655,6 +655,20 @@ Perplexity **Portable Computer** supports local MCP servers on supported Windows
 
 Reference: [Perplexity Portable Computer local MCP setup](https://www.perplexity.ai/help-center/en/articles/20260915-what-is-portable-computer). Cloud Perplexity Computer uses the separate self-hosted Remote/OAuth guidance in Path B.
 
+### OpenHands CLI (local STDIO)
+
+The current OpenHands CLI can launch the existing `@digestseo/mcp-geo` local STDIO server using Node.js **22.13+**. Register it with the native CLI:
+
+```bash
+openhands mcp add digestseo --transport stdio npx -- -y @digestseo/mcp-geo
+openhands mcp list
+openhands mcp get digestseo
+```
+
+Start a **new** `openhands` conversation and enter `/mcp` to verify the enabled tools; configuration changes are mounted when conversations start. If `npx` cannot be launched on Windows, use `npx.cmd` as the executable. OpenHands stores current MCP settings in `~/.openhands/mcp.json` (JSON since OpenHands CLI 1.0; older TOML configurations need migration). No provider keys are needed for the local tool list. When you actually choose to run provider-backed scans, pass only the required provider credentials through OpenHands' `--env KEY=value` support or a secure private environment; never commit secrets to `mcp.json`. These scans may incur provider costs. The local CLI integration does not connect to the protected DigestSEO-hosted Worker.
+
+Reference: [OpenHands official CLI MCP server guide](https://github.com/OpenHands/docs/blob/main/openhands/usage/cli/mcp-servers.mdx).
+
 ### Windsurf
 
 Open Windsurf → **Manage MCPs → View raw config** and add:
