@@ -158,7 +158,7 @@ function domainMatchIndex(text: string, domain: string): number {
   // Match the exact host or one of its subdomains, never a lookalike host
   // that merely contains the configured domain as a suffix or prefix.
   const re = new RegExp(
-    `(?:^|[^\\p{L}\\p{N}-])((?:[a-z0-9-]+\\.)*${escapeRegExp(fullDomain)})(?=$|[^\\p{L}\\p{N}.-])`,
+    `(?:^|[^\\p{L}\\p{N}-])((?:[a-z0-9-]+\\.)*${escapeRegExp(fullDomain)})(?=$|[^\\p{L}\\p{N}.-]|\\.(?![\\p{L}\\p{N}-]))`,
     'iu',
   );
   const match = re.exec(text);
@@ -222,6 +222,8 @@ function normalizeHost(rawUrl: string): string | null {
   try {
     const u = new URL(rawUrl);
     let host = u.hostname.toLowerCase();
+    // Strip a terminal DNS dot, including one written as sentence punctuation.
+    if (host.endsWith('.')) host = host.slice(0, -1);
     if (host.startsWith('www.')) host = host.slice(4);
     return host || null;
   } catch {

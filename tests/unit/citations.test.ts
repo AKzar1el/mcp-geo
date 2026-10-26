@@ -117,3 +117,25 @@ test('hostMatchesDomain: exact, subdomain, lookalike, unrelated', () => {
   // domain stored with protocol/www noise still matches
   assert.equal(hostMatchesDomain('acme.com', 'https://www.acme.com'), true);
 });
+
+
+test('sentence-final plain brand URL counts as one normalized linked citation', () => {
+  const r = extractCitations(acme, 'Useful reference: https://acme.com.');
+  assert.equal(r.brand_mentioned, 1);
+  assert.equal(r.brand_cited_with_link, 1);
+  assert.deepEqual(r.cited_urls, ['acme.com']);
+});
+
+test('sentence-final subdomain citation remains distinct from lookalikes', () => {
+  const r = extractCitations(acme, 'See https://docs.acme.com. Avoid https://acme.com.evil.io.');
+  assert.equal(r.brand_mentioned, 1);
+  assert.equal(r.brand_cited_with_link, 1);
+  assert.deepEqual(r.cited_urls, ['docs.acme.com', 'acme.com.evil.io']);
+});
+
+test('sentence-final lookalike URL is not a brand mention or citation', () => {
+  const r = extractCitations(acme, 'See https://acme.com.evil.io.');
+  assert.equal(r.brand_mentioned, 0);
+  assert.equal(r.brand_cited_with_link, 0);
+  assert.deepEqual(r.cited_urls, ['acme.com.evil.io']);
+});
