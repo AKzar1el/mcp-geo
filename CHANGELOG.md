@@ -11,6 +11,13 @@ All notable changes to this project are documented here. The format is loosely b
 - Cursor plugin MCP metadata now launches the published local stdio package instead of routing users to the public Worker endpoint, which is not configured as a turnkey fresh-scan service.
 - Windsurf guidance now recommends local stdio or a configured self-hosted Worker, and Cursor/Claude plugin manifests are synchronized to `0.3.7`.
 
+## [0.3.29] - October 26, 2026
+
+### Fixed
+
+- OpenAI Batch result collection now rejects missing requested prompt results instead of silently returning incomplete audit evidence, while retaining unknown-prompt-ID validation precedence.
+- Brand citation matching now handles URLs followed by sentence-final punctuation without treating punctuation as part of the URL.
+
 ## [0.3.28] - October 25, 2026
 
 ### Fixed
