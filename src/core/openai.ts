@@ -678,6 +678,13 @@ export async function collectBatch(
     );
   }
 
+  if (batch.status === 'completed' &&
+      outputLines.length + errorLines.length !== run.prompts_total) {
+    throw new Error(
+      `OpenAI batch integrity error: completed batch returned ${outputLines.length + errorLines.length} result row(s) for ${run.prompts_total} submitted prompts`,
+    );
+  }
+
   const results: EnginePromptResult[] = [];
   for (const parsed of outputLines) {
     const prompt = promptById.get(parsed.custom_id);

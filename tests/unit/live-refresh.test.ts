@@ -324,6 +324,38 @@ test('OpenAI Batch completion continues to populate its persistent cache', async
   assert.equal(replaceExisting, true);
 });
 
+test('OpenAI Batch completed result files must cover every submitted prompt', async () => {
+  let persisted = false;
+  const db = {
+    getPromptsByIds: async (ids: string[]) =>
+      ids.includes(prompt.id) ? [prompt] : [],
+    persistEngineRun: async () => { persisted = true; },
+    updateRun: async () => {},
+  } as unknown as Db;
+  const run: Run = {
+    id: 'cardinality-batch-run', brand_id: brand.id, engine: 'chatgpt',
+    mode: 'batch', status: 'in_progress', prompts_total: 2,
+    prompts_completed: 0, batch_id: 'batch-cardinality',
+    batch_input_file_id: null, started_at: 0, completed_at: null, error: null,
+  };
+  const resultLine = JSON.stringify({
+    custom_id: prompt.id,
+    response: { body: { choices: [{ message: { content: 'One response only.' } }] } },
+  });
+  let request = 0;
+  await withMockFetch(
+    () => (++request === 1
+      ? jsonResponse({ status: 'completed', output_file_id: 'incomplete-output' })
+      : new Response(resultLine + '\n')),
+    async () => {
+      await assert.rejects(
+        collectBatch({ db, OPENAI_API_KEY: 'test-key' }, run, brand),
+        /completed batch returned 1 result row\(s\) for 2 submitted prompts/,
+      );
+    },
+  );
+  assert.equal(persisted, false);
+});
 test('OpenAI Batch terminal failures without files stop polling and close the run', async () => {
   for (const status of ['failed', 'expired', 'cancelled']) {
     const updates: Array<Partial<Run>> = [];
