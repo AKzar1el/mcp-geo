@@ -19,6 +19,8 @@ Runs locally over stdio with your own API keys. Brands, scan history, and cached
 
 **Runtime:** Node.js 22.13+ (CI exercises Node 22 and 24).
 
+**Portable Agent Skill (optional):** Assistants supporting [Agent Skills](https://agentskills.io/) can install this repository's GEO workflow guidance using `npx skills add AKzar1el/mcp-geo --skill mcp-geo`. This installs instructions only, not the MCP server or provider credentials; configure `npx -y @digestseo/mcp-geo` separately in your MCP host.
+
 **Claude Desktop / any MCP client (npx):**
 
 ```json
