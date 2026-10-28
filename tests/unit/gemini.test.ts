@@ -50,3 +50,26 @@ test('Gemini uses the current Flash-Lite model with the existing GenerateContent
     globalThis.fetch = originalFetch;
   }
 });
+test('Gemini concatenates output text parts and excludes thinking parts', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        candidates: [{
+          content: { parts: [
+            { text: 'Internal thoughts should never appear.', thought: true },
+            { text: 'Acme ' },
+            { text: 'is visible.' },
+          ] },
+          finishReason: 'STOP',
+        }],
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    );
+  try {
+    const result = await chatCompletion('test-key', 'Who is visible?', 'Be concise.');
+    assert.equal(result, 'Acme is visible.');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

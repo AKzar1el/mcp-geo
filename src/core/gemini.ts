@@ -37,7 +37,7 @@ function requireGeminiKey(env: GeminiEnv): string {
 
 interface GeminiResponse {
   candidates?: Array<{
-    content?: { parts?: Array<{ text?: string }> };
+    content?: { parts?: Array<{ text?: string; thought?: boolean }> };
     finishReason?: string;
   }>;
   promptFeedback?: { blockReason?: string };
@@ -80,9 +80,12 @@ export async function chatCompletion(
       `Gemini finished with non-STOP reason: ${candidate.finishReason}`,
     );
   }
-  const text = candidate.content?.parts?.[0]?.text;
+  const text = candidate.content?.parts
+    ?.filter((part) => part.thought !== true && typeof part.text === 'string')
+    .map((part) => part.text)
+    .join('');
   if (typeof text !== 'string' || text.length === 0) {
-    throw new Error('Gemini response missing candidates[0].content.parts[0].text');
+    throw new Error('Gemini response missing usable non-thinking text parts');
   }
   return text;
 }
