@@ -9,3 +9,4 @@ dist/
 !.dev.vars.example
 *.tgz
 *.mcpb
+/secrets*.txt
