@@ -61,8 +61,13 @@ export async function chatCompletion(
     throw new Error(`Anthropic completion failed: ${resp.status} ${text}`);
   }
   const data = (await resp.json()) as AnthropicMessageResponse;
-  const textBlock = data.content?.find((b) => b.type === 'text');
-  const text = textBlock?.text;
+  const text = (data.content ?? [])
+    .flatMap((block) =>
+      block.type === 'text' && typeof block.text === 'string' && block.text.length > 0
+        ? [block.text]
+        : [],
+    )
+    .join('\n');
   if (typeof text !== 'string' || text.length === 0) {
     throw new Error('Anthropic response missing text content block');
   }
