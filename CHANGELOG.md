@@ -11,6 +11,21 @@ All notable changes to this project are documented here. The format is loosely b
 - Cursor plugin MCP metadata now launches the published local stdio package instead of routing users to the public Worker endpoint, which is not configured as a turnkey fresh-scan service.
 - Windsurf guidance now recommends local stdio or a configured self-hosted Worker, and Cursor/Claude plugin manifests are synchronized to `0.3.7`.
 
+## [0.3.30] - October 29, 2026
+
+### Added
+
+- Added portable Agent Skill onboarding for compatible MCP hosts, documenting the existing local package and provider-key boundaries.
+
+### Fixed
+
+- Gemini visibility parsing now combines usable non-thinking text parts from multipart responses instead of losing later response text.
+- Anthropic visibility parsing now combines all user-visible response text blocks rather than discarding later blocks.
+
+### Security
+
+- Added repository ignore coverage for root-level plaintext secret-copy files to reduce accidental source-control exposure; this does not change runtime credential handling.
+
 ## [0.3.29] - October 26, 2026
 
 ### Fixed
