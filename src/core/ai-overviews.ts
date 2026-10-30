@@ -13,7 +13,7 @@
 
 import {
   extractCitations,
-  hostMatchesDomain,
+  hasBrandInEngineCitations,
 } from './openai.js';
 import type {
   Brand,
@@ -261,7 +261,7 @@ function buildResultFromPayload(
   const merged_cited = mergeUrls(citations.cited_urls, payload.citations);
   const brandCitedWithLink =
     citations.brand_cited_with_link === 1 ||
-    merged_cited.some((h) => hostMatchesDomain(h, brand.domain))
+    hasBrandInEngineCitations(brand.domain, payload.citations)
       ? 1
       : 0;
   return {

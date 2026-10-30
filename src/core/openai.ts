@@ -231,6 +231,17 @@ function normalizeHost(rawUrl: string): string | null {
   }
 }
 
+// Keep linked-brand scoring independent of the bounded citation evidence list.
+export function hasBrandInEngineCitations(
+  brandDomain: string,
+  urls: readonly string[],
+): boolean {
+  return urls.some((url) => {
+    const host = normalizeHost(url) ?? url.toLowerCase();
+    return hostMatchesDomain(host, brandDomain);
+  });
+}
+
 function extractUrls(text: string): string[] {
   const markdownRe = /\[[^\]]+\]\((https?:\/\/[^\s)]+)\)/g;
   const plainRe = /https?:\/\/[^\s)\]\}'"`<>]+/g;
@@ -370,7 +381,7 @@ export async function runLive(
             brand_mentioned: citations.brand_mentioned,
             brand_cited_with_link:
               citations.brand_cited_with_link === 1 ||
-              citedUrls.some((host) => hostMatchesDomain(host, brand.domain))
+              hasBrandInEngineCitations(brand.domain, completion.citations)
                 ? 1
                 : 0,
             cited_urls: citedUrls,

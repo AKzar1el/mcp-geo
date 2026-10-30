@@ -6,7 +6,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractCitations, hostMatchesDomain } from '../../src/core/openai.ts';
+import { extractCitations, hasBrandInEngineCitations, hostMatchesDomain } from '../../src/core/openai.ts';
 import type { Brand } from '../../src/db/types.ts';
 
 const acme: Brand = {
@@ -161,4 +161,26 @@ test('late lookalike host does not count as brand citation', () => {
   const r = extractCitations(acme, `${otherLinks} https://acme.com.evil.io/article`);
   assert.equal(r.brand_cited_with_link, 0);
   assert.equal(r.cited_urls.length, 20);
+});
+
+test('native citation beyond the display evidence cap still counts the brand', () => {
+  const textualHosts = Array.from({ length: 20 }, (_, i) => 'text' + i + '.example');
+  const nativeLinks = [
+    ...Array.from({ length: 10 }, (_, i) => 'https://native' + i + '.example/path'),
+    'https://www.acme.com/late-brand-reference',
+  ];
+  const boundedEvidence = [...textualHosts, ...nativeLinks.map((link) => new URL(link).hostname)].slice(0, 30);
+  assert.equal(boundedEvidence.length, 30);
+  assert.equal(boundedEvidence.some((host) => hostMatchesDomain(host, acme.domain)), false);
+  assert.equal(hasBrandInEngineCitations(acme.domain, nativeLinks), true);
+});
+
+test('native citation lookalikes and redirect text do not count as brand links', () => {
+  const misleading = [
+    'https://notacme.com/page',
+    'https://acme.com.example.org/page',
+    'https://unrelated.example/?redirect=https://acme.com',
+  ];
+  assert.equal(hasBrandInEngineCitations(acme.domain, misleading), false);
+  assert.equal(hasBrandInEngineCitations(acme.domain, ['https://docs.acme.com/source']), true);
 });

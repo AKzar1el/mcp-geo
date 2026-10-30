@@ -3,7 +3,7 @@
 // request per prompt. SERPAPI_AI_MODE_ENABLED must be truthy in addition
 // to SERPAPI_API_KEY before the engine is included in automatic refreshes.
 
-import { extractCitations, hostMatchesDomain } from './openai.js';
+import { extractCitations, hasBrandInEngineCitations } from './openai.js';
 import type { Brand, Db, EnginePromptResult, Prompt } from '../db/types.js';
 import { fetchWithTimeout } from './fetch.js';
 
@@ -172,7 +172,7 @@ function buildResultFromPayload(
   const mergedCited = mergeUrls(citations.cited_urls, payload.citations);
   const brandCitedWithLink =
     citations.brand_cited_with_link === 1 ||
-    mergedCited.some((host) => hostMatchesDomain(host, brand.domain))
+    hasBrandInEngineCitations(brand.domain, payload.citations)
       ? 1
       : 0;
   return {
