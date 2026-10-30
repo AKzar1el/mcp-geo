@@ -139,3 +139,26 @@ test('sentence-final lookalike URL is not a brand mention or citation', () => {
   assert.equal(r.brand_cited_with_link, 0);
   assert.deepEqual(r.cited_urls, ['acme.com.evil.io']);
 });
+
+test('brand link beyond 20 distinct cited hosts still counts', () => {
+  const otherLinks = Array.from(
+    { length: 20 },
+    (_, i) => `https://other${i}.example/article`,
+  ).join(' ');
+  const response = `Acme Project Tool ${otherLinks} https://docs.acme.com/reference`;
+  const r = extractCitations(acme, response);
+  assert.equal(r.brand_mentioned, 1);
+  assert.equal(r.brand_cited_with_link, 1);
+  assert.equal(r.cited_urls.length, 20);
+  assert.equal(r.cited_urls.includes('docs.acme.com'), false);
+});
+
+test('late lookalike host does not count as brand citation', () => {
+  const otherLinks = Array.from(
+    { length: 20 },
+    (_, i) => `https://other${i}.example/article`,
+  ).join(' ');
+  const r = extractCitations(acme, `${otherLinks} https://acme.com.evil.io/article`);
+  assert.equal(r.brand_cited_with_link, 0);
+  assert.equal(r.cited_urls.length, 20);
+});

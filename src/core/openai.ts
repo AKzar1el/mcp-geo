@@ -261,21 +261,16 @@ export function extractCitations(
   const urls = extractUrls(responseText);
   const hosts: string[] = [];
   const seen = new Set<string>();
+  // Keep the evidence list bounded without missing later brand links.
+  let brandCitedWithLink = false;
   for (const url of urls) {
     const host = normalizeHost(url);
     if (!host) continue;
-    if (seen.has(host)) continue;
+    if (hostMatchesDomain(host, brand.domain)) brandCitedWithLink = true;
+    if (hosts.length >= 20 || seen.has(host)) continue;
     seen.add(host);
     hosts.push(host);
-    if (hosts.length >= 20) break;
   }
-
-  // Brand mentions use configured plain-text terms. A link counts as a
-  // citation only if the URL points at the brand's actual domain (or a
-  // subdomain of it).
-  const brandCitedWithLink = hosts.some((h) =>
-    hostMatchesDomain(h, brand.domain),
-  );
 
   const competitorsMentioned: string[] = [];
   for (const competitor of brand.competitors) {
