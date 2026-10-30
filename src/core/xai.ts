@@ -4,7 +4,7 @@
 import {
   buildSystemPrompt,
   extractCitations,
-  hostMatchesDomain,
+  hasBrandInEngineCitations,
 } from './openai.js';
 import type {
   Brand,
@@ -199,7 +199,7 @@ function buildOkResult(
   const mergedCited = mergeUrls(citations.cited_urls, payload.citations);
   const brandCitedWithLink =
     citations.brand_cited_with_link === 1 ||
-    mergedCited.some((host) => hostMatchesDomain(host, brand.domain))
+    hasBrandInEngineCitations(brand.domain, payload.citations)
       ? 1
       : 0;
   return {
