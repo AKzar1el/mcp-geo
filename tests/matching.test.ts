@@ -65,6 +65,20 @@ test('root term is not matched inside a larger word', () => {
   assert.equal(brand_mentioned, 0);
 });
 
+test('citation hosts ignore trailing punctuation while preserving brand links', () => {
+  const brand = makeBrand({
+    domain: 'example.com',
+    name: 'Example',
+    competitors: ['notion.so'],
+  });
+  const result = extractCitations(
+    brand,
+    'Sources: https://example.com, https://notion.so; https://foo.example.com! ',
+  );
+  assert.deepEqual(result.cited_urls, ['example.com', 'notion.so', 'foo.example.com']);
+  assert.equal(result.brand_cited_with_link, 1);
+});
+
 test('competitor is matched as a standalone word', () => {
   const brand = makeBrand({
     domain: 'monday.com',
