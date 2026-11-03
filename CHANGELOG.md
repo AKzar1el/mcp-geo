@@ -11,6 +11,13 @@ All notable changes to this project are documented here. The format is loosely b
 - Cursor plugin MCP metadata now launches the published local stdio package instead of routing users to the public Worker endpoint, which is not configured as a turnkey fresh-scan service.
 - Windsurf guidance now recommends local stdio or a configured self-hosted Worker, and Cursor/Claude plugin manifests are synchronized to `0.3.7`.
 
+## [0.3.31] - October 30, 2026
+
+### Fixed
+
+- Response-text citation matching now counts a brand link appearing after the first 20 retained evidence hosts, while preserving the evidence cap.
+- Provider-native brand citation matching now recognizes links beyond the first 30 retained evidence URLs across OpenAI, Grok, Perplexity, Google AI Mode, and Google AI Overviews; strict host matching and bounded evidence remain unchanged.
+
 ## [0.3.30] - October 29, 2026
 
 ### Added
