@@ -222,8 +222,9 @@ function normalizeHost(rawUrl: string): string | null {
   try {
     const u = new URL(rawUrl);
     let host = u.hostname.toLowerCase();
-    // Strip a terminal DNS dot, including one written as sentence punctuation.
-    if (host.endsWith('.')) host = host.slice(0, -1);
+    // Strip terminal prose punctuation from a bare URL's hostname.
+    // DNS names cannot end in commas, semicolons or exclamation marks.
+    host = host.replace(/[.,;!]+$/, '');
     if (host.startsWith('www.')) host = host.slice(4);
     return host || null;
   } catch {
