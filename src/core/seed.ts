@@ -17,9 +17,9 @@ const DEFAULT_USER_EMAIL = 'dev@local';
 
 // Used by default and when explicitly requested generation fails, so
 // the brand always has something to query against.
-// Generic shapes; the generator produces category-specific prompts when
-// it succeeds. $CATEGORY is substituted with the brand's category (or
-// its name when no category was given) before insert.
+// Lightweight category-anchored starting points, not a validated prompt
+// sample. $CATEGORY uses the supplied category (or the brand name if absent,
+// in which case clients must not treat scores as category-level visibility).
 const FALLBACK_PROMPTS: NewPromptInput[] = [
   {
     text: 'best tools for $CATEGORY',
@@ -27,12 +27,12 @@ const FALLBACK_PROMPTS: NewPromptInput[] = [
     shape: 'best X',
   },
   {
-    text: 'top alternatives to leading products in this space',
+    text: 'top alternatives in $CATEGORY',
     intent_stage: 'comparison',
     shape: 'alternatives to X',
   },
   {
-    text: 'most popular options for small teams',
+    text: 'most popular $CATEGORY options for small teams',
     intent_stage: 'awareness',
     shape: 'X for Y',
   },
@@ -69,6 +69,7 @@ export interface SeedResult {
   reason?: string;
   prompts_inserted?: number;
   prompt_source?: 'generated' | 'fallback';
+  starter_prompt_limitations?: string;
 }
 
 export interface SeedDeps {
@@ -138,7 +139,7 @@ export async function seedBrand(
     );
   }
 
-  const category = input.category ?? null;
+  const category = input.category?.trim() || null;
 
   await deps.db.upsertUser(DEFAULT_USER_ID, DEFAULT_USER_EMAIL);
   await deps.db.createBrand({
@@ -188,5 +189,8 @@ export async function seedBrand(
     brand_id: input.brand_id,
     prompts_inserted: fallback.length,
     prompt_source: 'fallback',
+    starter_prompt_limitations: brand.category
+      ? 'Three provider-free category-anchored prompts are only a small starter sample, not validated buyer-intent coverage. Inspect and customize the active prompts before interpreting visibility trends.'
+      : 'No category was provided, so the three starter prompts use the brand name as a placeholder. This can bias brand-mention results and is not a valid independent category-visibility baseline. Set the category and replace prompts before scanning.',
   };
 }

@@ -22,8 +22,8 @@
 
 **Your first local scan, after connecting the stdio MCP server:**
 
-1. **Track:** ask your MCP client to run `track_brand` with your own `brand_id`, name, and domain. By default it creates three starter questions without an AI-provider request.
-2. **Measure:** run `refresh_brand` with that `brand_id` to scan the configured engines. **Live scans use your provider API keys and may incur charges.** Engines without keys are skipped; Google AI Mode requires a separate explicit opt-in.
+1. **Track:** ask your MCP client to run `track_brand` with your own `brand_id`, name, domain, and ideally a precise `category`. By default it creates three provider-free category-anchored starter questions, not a validated measurement sample. Without a category, its brand-name placeholders can bias scores: replace those prompts before scanning.
+2. **Measure:** after reviewing and, when needed, replacing the starter questions with representative independent buyer prompts, run `refresh_brand` with that `brand_id`. **Live scans use your provider API keys and may incur charges.** Engines without keys are skipped; Google AI Mode requires a separate explicit opt-in.
 3. **Inspect:** run `check_visibility` with the same `brand_id` to view available per-engine scores and evidence. Use `get_citations` to inspect citation records where providers supply sources.
 
 **Choose your setup:** [Quick Install and client-specific instructions](#quick-install) for local MCP hosts · [Getting Started](#getting-started) for provider keys and optional Cloudflare hosting · [What the report contains](#what-it-produces) · [Privacy](#privacy-policy). Hosted remote MCP deployments manage brands through their protected admin routes rather than local `track_brand`.
@@ -496,7 +496,7 @@ Kiro supports local STDIO MCP servers across its current surfaces. The zero-key 
 
 **Claude Desktop extension (one-click):** download the `.mcpb` bundle from the [latest release](https://github.com/AKzar1el/mcp-geo/releases/latest) and double-click it — Claude Desktop prompts for the API keys.
 
-**First run:** ask your client to *"track acme.com as brand `acme`, then refresh it"* — `track_brand` creates three provider-free starter prompts, `refresh_brand` runs the first scan, and `check_visibility` shows the scores. To opt in to token-billed Claude prompt generation, specify `prompt_generation='anthropic'`.
+**First run:** ask your client to *"track acme.com as brand `acme` in the project management software category, then review its prompts"* — `track_brand` creates three provider-free starter prompts. Review `list_prompts` and customize with `set_prompts` for representative buyer queries before `refresh_brand` runs the first scan; `check_visibility` then shows scores. To opt in to token-billed Claude prompt generation, specify `prompt_generation='anthropic'`.
 
 **Reading combined scores:** `check_visibility` reports each engine's observation time and a `freshness` range for the combined score. `mixed_age_warning=true` means at least one engine was measured 24 hours or more before the newest engine; `older_engines` identifies which. The overall score still averages available engine scores, not a synchronized new scan. Use `refresh_brand` to update old measurements before comparisons; this may incur configured provider API costs.
 
@@ -773,7 +773,7 @@ The local stdio CLI (npx, desktop extension, Docker) additionally provides brand
 
 | Tool (local CLI only) | What it does | What you provide |
 |---|---|---|
-| `track_brand` | Start tracking a brand with three provider-free prompts by default. `prompt_generation='anthropic'` opts in to token-billed Claude generation (at most two attempts). | `brand_id`, `name`, `domain`, optional `category`, `competitors[]`, `aliases[]`, `exclude_terms[]`, `prompt_generation` (`fallback` default or `anthropic`), `prompt_count` (Anthropic only), `refresh_frequency` (`daily`/`weekly`/`manual`, default `weekly`) |
+| `track_brand` | Start tracking a brand with three provider-free category-anchored prompts by default. Returns `starter_prompt_limitations`: an absent category uses brand-name placeholders that may bias visibility scores; even category-specific starters need review. `prompt_generation='anthropic'` explicitly opts in to token-billed Claude generation (at most two attempts). | `brand_id`, `name`, `domain`, optional `category`, `competitors[]`, `aliases[]`, `exclude_terms[]`, `prompt_generation` (`fallback` default or `anthropic`), `prompt_count` (Anthropic only), `refresh_frequency` (`daily`/`weekly`/`manual`, default `weekly`) |
 | `update_brand` | Correct an existing brand's domain, name, category, competitors, aliases, exclusions, or refresh cadence without replacing active prompts or historical runs. Set cadence to `manual` to pause scheduled Worker scans while keeping manual refresh available. | `brand_id` plus any fields to change |
 | `list_brands` | List tracked brands with domains, competitors, aliases, exclusions, and active prompt counts. | — |
 | `list_prompts` | Inspect the exact active buyer-intent prompts for a tracked brand without changing them. | `brand_id` |

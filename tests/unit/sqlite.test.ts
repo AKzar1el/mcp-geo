@@ -1087,6 +1087,7 @@ test('seedBrand (core): fallback prompts without ANTHROPIC_API_KEY, $CATEGORY su
     assert.equal(result.brand_id, 'acme');
     assert.equal(result.prompt_source, 'fallback');
     assert.equal(result.prompts_inserted, 3);
+    assert.match(result.starter_prompt_limitations ?? '', /small starter sample/);
 
     const brand = await db.getBrand('acme');
     assert.ok(brand);
@@ -1104,6 +1105,30 @@ test('seedBrand (core): fallback prompts without ANTHROPIC_API_KEY, $CATEGORY su
       texts.every((t) => !t.includes('$CATEGORY')),
       `a literal $CATEGORY placeholder leaked into prompts: ${JSON.stringify(texts)}`,
     );
+    assert.ok(texts.every((text) => text.includes('Project management software')),
+      'every provider-free starter prompt must be anchored to the supplied category');
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('provider-free starter prompts disclose missing-category brand-name bias', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'digestseo.sqlite'));
+  try {
+    const result = await seedBrand({ db }, {
+      brand_id: 'uncategorized',
+      name: 'Sample Studio',
+      domain: 'sample.studio',
+    });
+    assert.equal(result.seeded, true);
+    assert.equal(result.prompt_source, 'fallback');
+    assert.match(result.starter_prompt_limitations ?? '', /bias brand-mention results/);
+    assert.match(result.starter_prompt_limitations ?? '', /before scanning/);
+    const prompts = await db.getActivePrompts('uncategorized');
+    assert.equal(prompts.length, 3);
+    assert.ok(prompts.every(({ text }) => text.includes('Sample Studio')));
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });
