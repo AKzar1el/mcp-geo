@@ -77,6 +77,33 @@ test('Google AI Mode falls back to text blocks when reconstructed markdown is ab
   );
 });
 
+test('AI Mode fallback retains nested titles without treating citations as answer text', async () => {
+  await withMockFetch(
+    [
+      jsonResponse({
+        text_blocks: [
+          { type: 'list', list: [
+            { title: 'Acme Platform', snippet: 'Improves audit accuracy.',
+              text_blocks: [{ type: 'paragraph', text: 'Acme reporting is useful.' }] },
+            { title: 'Acme-only nested title', list: [{ title: 'Subfeature', text: 'Details.' }] },
+          ] },
+        ],
+        references: [{ title: 'Not a textual mention', link: 'https://example.com/source' }],
+      }),
+    ],
+    async (calls) => {
+      const result = await chatCompletion('test-key', 'Acme comparison');
+      assert.equal(
+        result.text,
+        '- Acme Platform Improves audit accuracy.\n\nAcme reporting is useful.\n\n- Acme-only nested title\n\n- Subfeature Details.',
+      );
+      assert.deepEqual(result.citations, ['https://example.com/source']);
+      assert.doesNotMatch(result.text, /Not a textual mention/);
+      assert.equal(calls.length, 1);
+    },
+  );
+});
+
 test('Google AI Mode rejects provider errors and empty payloads', async () => {
   await withMockFetch(
     [jsonResponse({ error: 'quota exceeded' })],

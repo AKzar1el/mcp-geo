@@ -59,6 +59,46 @@ test('AI Overview direct content uses one normal Google request', async () => {
   );
 });
 
+test('AI Overview retains list titles, nested answer content and excludes source metadata', async () => {
+  await withMockFetch(
+    [
+      jsonResponse({
+        ai_overview: {
+          text_blocks: [
+            { type: 'heading', snippet: 'Recommendations' },
+            {
+              type: 'list',
+              list: [
+                {
+                  title: 'Acme Analytics:',
+                  snippet: 'Useful for teams.',
+                  text_blocks: [{ type: 'paragraph', text: 'Acme reporting is detailed.' }],
+                  list: [{ title: 'Acme Dashboards', snippet: 'A nested capability.' }],
+                },
+                { title: 'Title-only Acme' },
+              ],
+            },
+          ],
+          references: [{
+            title: 'Unrelated source metadata should not be answer text',
+            link: 'https://source.example/acme',
+          }],
+        },
+      }),
+    ],
+    async (calls) => {
+      const result = await chatCompletion('test-key', 'best analytics');
+      assert.equal(
+        result.text,
+        'Recommendations\n\n• Acme Analytics: Useful for teams.\n\nAcme reporting is detailed.\n\n• Acme Dashboards A nested capability.\n\n• Title-only Acme',
+      );
+      assert.deepEqual(result.citations, ['https://source.example/acme']);
+      assert.doesNotMatch(result.text, /Unrelated source metadata/);
+      assert.equal(calls.length, 1, 'parsing must not trigger extra paid searches');
+    },
+  );
+});
+
 test('AI Overview page token is immediately resolved through the SerpAPI endpoint', async () => {
   await withMockFetch(
     [

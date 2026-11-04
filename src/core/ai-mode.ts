@@ -6,6 +6,7 @@
 import { extractCitations, hasBrandInEngineCitations } from './openai.js';
 import type { Brand, Db, EnginePromptResult, Prompt } from '../db/types.js';
 import { fetchWithTimeout } from './fetch.js';
+import { flattenSerpApiAnswer, type SerpApiAnswerBlock } from './serpapi-answer.js';
 
 export const MODEL = 'serpapi-google-ai-mode';
 export const ENGINE = 'ai_mode';
@@ -24,18 +25,12 @@ export interface AiModeCompletion {
   citations: string[];
 }
 
-interface SerpApiTextBlock {
-  snippet?: string;
-  text?: string;
-  list?: Array<{ snippet?: string; text?: string }>;
-}
-
 interface SerpApiReference {
   link?: string;
 }
 
 interface SerpApiAiModeResponse {
-  text_blocks?: SerpApiTextBlock[];
+  text_blocks?: SerpApiAnswerBlock[];
   references?: SerpApiReference[];
   reconstructed_markdown?: string;
   error?: string;
@@ -44,26 +39,6 @@ interface SerpApiAiModeResponse {
 function requireSerpApiKey(env: AiModeEnv): string {
   if (!env.SERPAPI_API_KEY) throw new Error('SERPAPI_API_KEY not set');
   return env.SERPAPI_API_KEY;
-}
-
-function flattenTextBlocks(blocks: SerpApiTextBlock[] | undefined): string {
-  if (!blocks || blocks.length === 0) return '';
-  const parts: string[] = [];
-  for (const block of blocks) {
-    const text = block?.snippet ?? block?.text;
-    if (typeof text === 'string' && text.trim().length > 0) {
-      parts.push(text.trim());
-    }
-    if (Array.isArray(block?.list)) {
-      for (const item of block.list) {
-        const itemText = item?.snippet ?? item?.text;
-        if (typeof itemText === 'string' && itemText.trim().length > 0) {
-          parts.push(`- ${itemText.trim()}`);
-        }
-      }
-    }
-  }
-  return parts.join('\n\n');
 }
 
 function flattenReferences(refs: SerpApiReference[] | undefined): string[] {
@@ -96,7 +71,9 @@ export async function chatCompletion(
   }
 
   const reconstructed = data.reconstructed_markdown?.trim() ?? '';
-  const text = reconstructed.length > 0 ? reconstructed : flattenTextBlocks(data.text_blocks);
+  const text = reconstructed.length > 0
+    ? reconstructed
+    : flattenSerpApiAnswer(data.text_blocks);
   const citations = flattenReferences(data.references);
   if (text.length === 0 && citations.length === 0) {
     throw new Error('SerpAPI AI Mode returned no usable content');
