@@ -191,6 +191,12 @@ export interface CitationRow {
   prompt_id: string;
 }
 
+export interface CitationPageOptions {
+  limit?: number;
+  until?: number;
+  before?: Pick<CitationRow, 'captured_at' | 'run_id' | 'prompt_id'>;
+}
+
 // Every query helper the Worker and CLI need. Mirrors the helper
 // functions that previously lived in src/db.ts, plus the two raw
 // queries the visibility tools used to issue inline (visibility
@@ -270,5 +276,6 @@ export interface Db {
     brandId: string,
     since: number,
     engine?: string,
+    page?: CitationPageOptions,
   ): Promise<CitationRow[]>;
 }

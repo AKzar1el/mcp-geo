@@ -159,6 +159,9 @@ const citationsOutputSchema = z.object({
   brand_id: z.string(),
   days: z.number(),
   engine: z.string().nullable(),
+  limit: z.number().int(),
+  has_more: z.boolean(),
+  next_cursor: z.string().nullable(),
   top_sources: z.array(
     z.object({
       domain: z.string(),
@@ -182,6 +185,33 @@ const citationsOutputSchema = z.object({
     }),
   ),
 });
+
+const citationCursorSchema = z.object({
+  v: z.literal(1),
+  brand_id: z.string(),
+  days: z.number().int(),
+  engine: z.string().nullable(),
+  since: z.number().int(),
+  until: z.number().int(),
+  before: z.object({
+    captured_at: z.number().int(),
+    run_id: z.string(),
+    prompt_id: z.string(),
+  }),
+});
+
+function decodeCitationCursor(cursor: string, brandId: string, days: number, engine: string | null) {
+  try {
+    const parsed = citationCursorSchema.parse(JSON.parse(decodeURIComponent(cursor)));
+    if (parsed.brand_id !== brandId || parsed.days !== days || parsed.engine !== engine ||
+      parsed.since > parsed.until || parsed.before.captured_at > parsed.until) {
+      throw new Error('Mismatched cursor scope');
+    }
+    return parsed;
+  } catch {
+    throw new Error('Invalid citation cursor. Start again without cursor or use the unchanged brand, days and engine.');
+  }
+}
 
 const contentGapsOutputSchema = z.object({
   brand_id: z.string(),
@@ -690,7 +720,7 @@ export function registerTools(
     {
       title: 'Get AI citation evidence',
       description:
-        "Return brand mentions and link-only evidence with genuine URL provenance and top source domains. Provider sources need not appear in the answer. Example: brand_id='acme', days=14.",
+        "Return paginated brand mentions and link-only evidence with genuine URL provenance and top source domains. Continue with next_cursor. Example: brand_id='acme', days=14.",
       inputSchema: {
         brand_id: z
           .string()
@@ -704,6 +734,10 @@ export function registerTools(
         engine: engineSchema
           .optional()
           .describe('Engine to filter by; omit for all engines.'),
+        limit: z.number().int().min(1).max(100).default(50)
+          .describe('Citation rows per page, 1-100 (default 50).'),
+        cursor: z.string().max(1600).optional()
+          .describe('Opaque next_cursor from prior page; preserve brand, days and engine.'),
       },
       outputSchema: citationsOutputSchema,
       annotations: {
@@ -712,15 +746,25 @@ export function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ brand_id, days, engine }) => {
+    async ({ brand_id, days = 14, engine, limit = 50, cursor }) => {
       const brand = await deps.db.getBrand(brand_id);
       if (!brand) {
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
       }
-      const since = Date.now() - days * 86_400_000;
-      const results = await deps.db.getCitationRows(brand_id, since, engine);
+      const now = Date.now();
+      const previous = cursor ? decodeCitationCursor(cursor, brand_id, days, engine ?? null) : null;
+      const since = previous?.since ?? (now - days * 86_400_000);
+      const until = previous?.until ?? now;
+      // Query one extra row to tell the caller whether another page exists.
+      const rows = await deps.db.getCitationRows(brand_id, since, engine, {
+        until,
+        before: previous?.before,
+        limit: limit + 1,
+      });
+      const hasMore = rows.length > limit;
+      const results = rows.slice(0, limit);
       const sourceResponses = (await deps.db.getResponsesSince(brand_id, since)).filter(
-        (response) => !engine || response.engine === engine,
+        (response) => response.captured_at <= until && (!engine || response.engine === engine),
       );
 
       const citations = results.map((row) => {
@@ -747,6 +791,23 @@ export function registerTools(
         brand_id,
         days,
         engine: engine ?? null,
+        limit,
+        has_more: hasMore,
+        next_cursor: hasMore && results.length > 0
+          ? encodeURIComponent(JSON.stringify({
+              v: 1,
+              brand_id,
+              days,
+              engine: engine ?? null,
+              since,
+              until,
+              before: {
+                captured_at: results[results.length - 1].captured_at,
+                run_id: results[results.length - 1].run_id,
+                prompt_id: results[results.length - 1].prompt_id,
+              },
+            }))
+          : null,
         top_sources: buildTopSources(sourceResponses, brand),
         citations,
       };

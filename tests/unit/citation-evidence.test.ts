@@ -24,6 +24,9 @@ const brand: Brand = {
 };
 
 type CitationResult = {
+  has_more: boolean;
+  next_cursor: string | null;
+  limit: number;
   top_sources: Array<{
     domain: string;
     citation_count: number;
@@ -44,11 +47,13 @@ type CitationTool = {
     brand_id: string;
     days?: number;
     engine?: 'chatgpt' | 'claude' | 'perplexity' | 'gemini' | 'ai_overviews';
+    limit?: number;
+    cursor?: string;
   }) => Promise<{ structuredContent: CitationResult }>;
 };
 
 function registerCitationTool(
-  row: CitationRow,
+  row: CitationRow | CitationRow[],
   responses: PromptResponse[] = [],
 ): CitationTool {
   let citationTool: CitationTool | undefined;
@@ -63,7 +68,19 @@ function registerCitationTool(
   registerTools(server, {
     db: {
       getBrand: async () => brand,
-      getCitationRows: async () => [row],
+      getCitationRows: async (_brandId, _since, engine, page) => {
+        const rows = (Array.isArray(row) ? row : [row])
+          .filter((item) => !engine || item.engine === engine)
+          .filter((item) => item.captured_at <= (page?.until ?? Number.MAX_SAFE_INTEGER))
+          .filter((item) => !page?.before ||
+            item.captured_at < page.before.captured_at ||
+            (item.captured_at === page.before.captured_at &&
+              (item.run_id < page.before.run_id ||
+                (item.run_id === page.before.run_id && item.prompt_id < page.before.prompt_id))))
+          .sort((a, b) => b.captured_at - a.captured_at ||
+            b.run_id.localeCompare(a.run_id) || b.prompt_id.localeCompare(a.prompt_id));
+        return rows.slice(0, page?.limit ?? 50);
+      },
       getResponsesSince: async () => responses,
     } as Db,
     env: {},
@@ -271,5 +288,51 @@ test('get_citations source ranking honors the engine filter', async () => {
   assert.deepEqual(
     result.structuredContent.top_sources.map((source) => source.domain),
     ['reddit.com'],
+  );
+});
+
+test('get_citations provides stable cursor pages for tied observation timestamps', async () => {
+  const observed = Date.now() - 60_000;
+  const tool = registerCitationTool([
+    citationRow({ prompt: 'first', prompt_id: 'p1', captured_at: observed }),
+    citationRow({ prompt: 'second', prompt_id: 'p2', captured_at: observed }),
+    citationRow({ prompt: 'third', prompt_id: 'p3', captured_at: observed }),
+  ]);
+  const first = await tool.handler({ brand_id: brand.id, limit: 2 });
+  assert.equal(first.structuredContent.has_more, true);
+  assert.ok(first.structuredContent.next_cursor);
+  assert.equal(first.structuredContent.citations.length, 2);
+  const second = await tool.handler({
+    brand_id: brand.id,
+    limit: 2,
+    cursor: first.structuredContent.next_cursor!,
+  });
+  assert.equal(second.structuredContent.has_more, false);
+  assert.equal(second.structuredContent.next_cursor, null);
+  assert.equal(second.structuredContent.citations.length, 1);
+  const ids = [...first.structuredContent.citations, ...second.structuredContent.citations]
+    .map((row) => row.id);
+  assert.equal(new Set(ids).size, 3);
+});
+
+test('get_citations rejects a cursor used with a different brand or engine', async () => {
+  const observed = Date.now() - 1_000;
+  const tool = registerCitationTool([
+    citationRow({ captured_at: observed, prompt_id: 'p1' }),
+    citationRow({ captured_at: observed, prompt_id: 'p2' }),
+  ]);
+  const first = await tool.handler({ brand_id: brand.id, limit: 1 });
+  assert.ok(first.structuredContent.next_cursor);
+  await assert.rejects(
+    tool.handler({ brand_id: 'another-brand', limit: 1, cursor: first.structuredContent.next_cursor! }),
+    /Invalid citation cursor/,
+  );
+  await assert.rejects(
+    tool.handler({ brand_id: brand.id, engine: 'claude', limit: 1, cursor: first.structuredContent.next_cursor! }),
+    /Invalid citation cursor/,
+  );
+  await assert.rejects(
+    tool.handler({ brand_id: brand.id, cursor: '%7B%22broken%22%3Atrue%7D' }),
+    /Invalid citation cursor/,
   );
 });
