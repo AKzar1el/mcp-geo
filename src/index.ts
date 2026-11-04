@@ -26,7 +26,7 @@ import {
   MAX_MCP_TOOL_INPUT_ELEMENTS,
 } from './core/mcp-limits.js';
 import { HOSTED_SERVER_INSTRUCTIONS } from './core/server-instructions.js';
-import { getScheduledRefreshTargets } from './core/scheduling.js';
+import { getScheduledRefreshTargets, planScheduledDispatch } from './core/scheduling.js';
 import { collectBatch, submitBatch } from './core/openai.js';
 import { generatePrompts } from './core/prompt-generation.js';
 import {
@@ -966,14 +966,19 @@ export default {
     }
     const db = createD1Db(env.DIGESTSEO_DB);
     const refreshTargets = await getScheduledRefreshTargets(db, available);
+    const dispatch = planScheduledDispatch(refreshTargets, event.scheduledTime);
     console.log('scheduled trigger', {
       cron: event.cron,
       brands_due: refreshTargets.length,
+      brands_dispatched: dispatch.targets.length,
+      requested_invocations: dispatch.requestedInvocations,
+      scheduled_invocations: dispatch.scheduledInvocations,
+      deferred_invocations: dispatch.deferredInvocations,
       engines: available,
     });
-    if (refreshTargets.length === 0) return;
+    if (dispatch.targets.length === 0) return;
     const results = await Promise.allSettled(
-      refreshTargets.map(async ({ brand, engines }) => {
+      dispatch.targets.map(async ({ brand, engines }) => {
         const prompts = await db.getActivePrompts(brand.id);
         if (prompts.length === 0) {
           return { brand_id: brand.id, skipped: true };
