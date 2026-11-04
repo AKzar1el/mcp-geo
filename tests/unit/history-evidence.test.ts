@@ -19,7 +19,15 @@ type HistoryTool = {
     brand_id: string;
     days: number;
     granularity: 'daily' | 'weekly';
-  }) => Promise<{ structuredContent: { series: HistoryPoint[] } }>;
+  }) => Promise<{ structuredContent: {
+    series: HistoryPoint[];
+    prompt_set_comparability: {
+      changes_detected: boolean;
+      changed_engines: string[];
+      insufficient_evidence_engines: string[];
+      note: string;
+    };
+  } }>;
 };
 
 function registerHistoryTool(rows: VisibilityHistoryRow[]): HistoryTool {
@@ -137,4 +145,42 @@ test('weekly history aggregates all same-engine scans and separates ISO weeks', 
       },
     },
   ]);
+});
+
+test('history detects different complete prompt rosters, not partial scan subsets', async () => {
+  const date = Date.UTC(2026, 0, 5);
+  const history = registerHistoryTool([
+    { run_id: 'a', engine: 'chatgpt', completed_at: date, total: 2, hits: 1,
+      roster_expected: 2, roster_observed: 2, roster_ids_csv: 'old-b,old-a' },
+    { run_id: 'b', engine: 'chatgpt', completed_at: date + 1000, total: 1, hits: 0,
+      roster_expected: 2, roster_observed: 2, roster_ids_csv: 'old-a,old-b' },
+    { run_id: 'partial', engine: 'claude', completed_at: date, total: 1, hits: 0,
+      roster_expected: 2, roster_observed: 1, roster_ids_csv: 'one' },
+    { run_id: 'c', engine: 'chatgpt', completed_at: date + 2000, total: 2, hits: 2,
+      roster_expected: 2, roster_observed: 2, roster_ids_csv: 'new-a,new-b' },
+  ]);
+  const result = await history.handler({
+    brand_id: 'acme', days: 30, granularity: 'daily',
+  });
+  assert.deepEqual(result.structuredContent.prompt_set_comparability, {
+    changes_detected: true,
+    changed_engines: ['chatgpt'],
+    insufficient_evidence_engines: ['claude'],
+    note: 'Changes are detected only when complete recorded prompt-ID rosters differ for the same engine. Different prompt sets make historical scores non-comparable; partial or missing rosters cannot establish stability.',
+  });
+});
+
+test('incomplete rosters do not falsely report a prompt-set change', async () => {
+  const date = Date.UTC(2026, 0, 5);
+  const history = registerHistoryTool([
+    { run_id: 'a', engine: 'chatgpt', completed_at: date, total: 2, hits: 1,
+      roster_expected: 2, roster_observed: 2, roster_ids_csv: 'p1,p2' },
+    { run_id: 'partial', engine: 'chatgpt', completed_at: date + 1000, total: 1, hits: 1,
+      roster_expected: 2, roster_observed: 1, roster_ids_csv: 'p2' },
+  ]);
+  const result = await history.handler({
+    brand_id: 'acme', days: 30, granularity: 'daily',
+  });
+  assert.equal(result.structuredContent.prompt_set_comparability.changes_detected, false);
+  assert.deepEqual(result.structuredContent.prompt_set_comparability.insufficient_evidence_engines, ['chatgpt']);
 });

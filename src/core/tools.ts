@@ -121,6 +121,12 @@ const historyOutputSchema = z.object({
   brand_id: z.string(),
   days: z.number(),
   granularity: z.enum(['daily', 'weekly']),
+  prompt_set_comparability: z.object({
+    changes_detected: z.boolean(),
+    changed_engines: z.array(z.string()),
+    insufficient_evidence_engines: z.array(z.string()),
+    note: z.string(),
+  }),
   series: z.array(
     z.object({
       date: z.string(),
@@ -541,6 +547,42 @@ export function registerTools(
       const since = Date.now() - days * 86_400_000;
       const results = await deps.db.getVisibilityHistoryRows(brand_id, since);
 
+      // Only compare complete recorded run rosters. Comparing successful
+      // responses alone would falsely flag a change after a partial scan.
+      // Prompt IDs are stable while active and change on set_prompts.
+      const promptRosters = new Map<string, Set<string>>();
+      const incompleteRosters = new Set<string>();
+      for (const row of results) {
+        const expected = row.roster_expected;
+        const observed = row.roster_observed;
+        const ids = row.roster_ids_csv?.split(',') ?? [];
+        if (
+          typeof expected !== 'number' || expected <= 0 ||
+          observed !== expected || ids.length !== expected ||
+          ids.some((id) => !id)
+        ) {
+          incompleteRosters.add(row.engine);
+          continue;
+        }
+        const signature = [...ids].sort().join('\u001f');
+        const signatures = promptRosters.get(row.engine) ?? new Set<string>();
+        signatures.add(signature);
+        promptRosters.set(row.engine, signatures);
+      }
+      const changedEngines = [...promptRosters.entries()]
+        .filter(([, signatures]) => signatures.size > 1)
+        .map(([engine]) => engine).sort();
+      const insufficientEngines = [...new Set(results.map((row) => row.engine))]
+        .filter((engine) =>
+          incompleteRosters.has(engine) || (promptRosters.get(engine)?.size ?? 0) < 1,
+        ).sort();
+      const prompt_set_comparability = {
+        changes_detected: changedEngines.length > 0,
+        changed_engines: changedEngines,
+        insufficient_evidence_engines: insufficientEngines,
+        note: 'Changes are detected only when complete recorded prompt-ID rosters differ for the same engine. Different prompt sets make historical scores non-comparable; partial or missing rosters cannot establish stability.',
+      };
+
       const buckets = new Map<
         string,
         Map<
@@ -606,7 +648,7 @@ export function registerTools(
           };
         });
 
-      const payload = { brand_id, days, granularity, series };
+      const payload = { brand_id, days, granularity, prompt_set_comparability, series };
       return toolResult(payload);
     },
   );
