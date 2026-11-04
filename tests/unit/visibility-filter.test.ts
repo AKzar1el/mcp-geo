@@ -83,7 +83,17 @@ const responses = {
 type VisibilitySnapshot = {
   refreshed_at: string;
   overall_score: number;
-  per_engine: Array<{ engine: string; score: number; refreshed_at: string }>;
+  per_engine: Array<{
+    engine: string;
+    score: number;
+    refreshed_at: string;
+    coverage: {
+      usable_prompts: number;
+      expected_prompts: number;
+      percent: number;
+      partial: boolean;
+    };
+  }>;
   top_winning_prompts: Array<{ prompt: string; engines_cited_in: string[] }>;
   top_losing_prompts: Array<{ prompt: string; competitors_cited: string[] }>;
 };
@@ -95,8 +105,13 @@ type VisibilityTool = {
   }) => Promise<{ structuredContent: VisibilitySnapshot }>;
 };
 
-function registerVisibilityTool(): VisibilityTool {
+function registerVisibilityTool(overrides?: {
+  runs?: Partial<Record<EngineName, Run>>;
+  responses?: Record<string, PromptResponse[]>;
+}): VisibilityTool {
   let visibility: VisibilityTool | undefined;
+  const runMap: Partial<Record<EngineName, Run>> = { ...runs, ...overrides?.runs };
+  const responseMap: Record<string, PromptResponse[]> = { ...responses, ...overrides?.responses };
   const server = {
     registerTool(name: string, _config: unknown, handler: unknown) {
       if (name === 'check_visibility') {
@@ -109,8 +124,8 @@ function registerVisibilityTool(): VisibilityTool {
     db: {
       getBrand: async () => brand,
       getLatestCompletedRun: async (_brandId, engine) =>
-        runs[engine as keyof typeof runs] ?? null,
-      getResponsesForRun: async (runId) => responses[runId as keyof typeof responses] ?? [],
+        runMap[engine as EngineName] ?? null,
+      getResponsesForRun: async (runId) => responseMap[runId] ?? [],
     } as Db,
     env: {},
     refreshExecution: 'sync',
@@ -137,6 +152,7 @@ test('check_visibility scopes every snapshot field to the requested engine', asy
       prompts_appeared_in: 1,
       total_prompts: 2,
       refreshed_at: new Date(claudeTimestamp).toISOString(),
+      coverage: { usable_prompts: 2, expected_prompts: 2, percent: 100, partial: false },
     },
   ]);
   assert.deepEqual(result.structuredContent.top_winning_prompts, [
@@ -167,6 +183,7 @@ test('check_visibility deduplicates repeated engine filters before scoring', asy
       prompts_appeared_in: 1,
       total_prompts: 2,
       refreshed_at: new Date(claudeTimestamp).toISOString(),
+      coverage: { usable_prompts: 2, expected_prompts: 2, percent: 100, partial: false },
     },
   ]);
 });
@@ -212,4 +229,26 @@ test('check_visibility does not fall back to other engines when the selection ha
     visibility.handler({ brand_id: brand.id, engines: ['gemini'] }),
     /No visibility data yet for the selected engines/,
   );
+});
+
+test('check_visibility labels a score based on partial successful prompt coverage', async () => {
+  const partialRun: Run = {
+    ...runs.claude,
+    status: 'in_progress',
+    prompts_total: 5,
+    prompts_completed: 1,
+    completed_at: null,
+  };
+  const tool = registerVisibilityTool({
+    runs: { claude: partialRun },
+    responses: { [partialRun.id]: [response('claude', 'only-ok', 'Observed mention', 1)] },
+  });
+  const result = await tool.handler({ brand_id: brand.id, engines: ['claude'] });
+  assert.equal(result.structuredContent.overall_score, 100);
+  assert.deepEqual(result.structuredContent.per_engine[0].coverage, {
+    usable_prompts: 1,
+    expected_prompts: 5,
+    percent: 20,
+    partial: true,
+  });
 });

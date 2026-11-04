@@ -92,6 +92,12 @@ const visibilityOutputSchema = z.object({
       prompts_appeared_in: z.number(),
       total_prompts: z.number(),
       refreshed_at: z.string(),
+      coverage: z.object({
+        usable_prompts: z.number(),
+        expected_prompts: z.number(),
+        percent: z.number(),
+        partial: z.boolean(),
+      }),
     }),
   ),
   top_winning_prompts: z.array(winningPromptOutputSchema),
@@ -355,6 +361,7 @@ export function registerTools(
         !engines || engines.length === 0 ? ALL_ENGINES : uniqueEngineNames(engines);
       const selectedResponses: PromptResponse[] = [];
       const refreshedAtByEngine = new Map<string, string>();
+      const expectedPromptsByEngine = new Map<string, number>();
       let mostRecentTimestamp = 0;
       for (const engine of selectedEngines) {
         const run = await deps.db.getLatestCompletedRun(brand_id, engine);
@@ -362,6 +369,7 @@ export function registerTools(
         const responses = await deps.db.getResponsesForRun(run.id);
         if (responses.length === 0) continue;
         selectedResponses.push(...responses);
+        expectedPromptsByEngine.set(engine, run.prompts_total);
         const ts = run.completed_at ?? run.started_at;
         refreshedAtByEngine.set(engine, new Date(ts).toISOString());
         if (ts > mostRecentTimestamp) mostRecentTimestamp = ts;
@@ -374,10 +382,24 @@ export function registerTools(
         );
       }
       const scored = computeOverallScore(brand, selectedResponses);
-      const perEngine = scored.per_engine.map((engine) => ({
-        ...engine,
-        refreshed_at: refreshedAtByEngine.get(engine.engine)!,
-      }));
+      const perEngine = scored.per_engine.map((engine) => {
+        // The score is conditional on usable responses. Report its sample
+        // coverage explicitly rather than presenting a partial scan as full.
+        const expected = Math.max(
+          engine.total_prompts,
+          expectedPromptsByEngine.get(engine.engine) ?? 0,
+        );
+        return {
+          ...engine,
+          refreshed_at: refreshedAtByEngine.get(engine.engine)!,
+          coverage: {
+            usable_prompts: engine.total_prompts,
+            expected_prompts: expected,
+            percent: expected === 0 ? 100 : Math.round(100 * engine.total_prompts / expected),
+            partial: engine.total_prompts < expected,
+          },
+        };
+      });
 
       const payload = {
         brand: {
