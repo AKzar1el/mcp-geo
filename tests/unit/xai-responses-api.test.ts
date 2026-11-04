@@ -108,3 +108,16 @@ test('xAI rejects responses without output text', async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test('xAI rejects nonterminal Responses API status even when output text exists', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    status: 'incomplete',
+    output: [{ type: 'message', content: [{ type: 'output_text', text: 'Partial Acme mention' }] }],
+  }), { status: 200 });
+  try {
+    await assert.rejects(chatCompletion('test-key', 'Question', 'System'), /response incomplete: incomplete/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

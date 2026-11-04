@@ -40,3 +40,16 @@ test('Anthropic fails when response has no usable text blocks', async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test('Anthropic rejects truncated but nonempty text rather than scoring a partial answer', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    stop_reason: 'max_tokens',
+    content: [{ type: 'text', text: 'Partial Acme mention' }],
+  }), { status: 200 });
+  try {
+    await assert.rejects(chatCompletion('test-key', 'Find Acme', 'Be concise.'), /response incomplete: max_tokens/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
