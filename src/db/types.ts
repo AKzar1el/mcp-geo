@@ -174,6 +174,12 @@ export interface VisibilityHistoryRow {
   completed_at: number;
   total: number | null;
   hits: number | null;
+  // Roster coverage includes all response statuses, not just successful
+  // responses used in scoring. Missing/incomplete rosters cannot establish
+  // that two historical runs used the same set of prompts.
+  roster_expected?: number | null;
+  roster_observed?: number | null;
+  roster_ids_csv?: string | null;
 }
 
 // Row shape behind the get_citations tool: every status='ok',

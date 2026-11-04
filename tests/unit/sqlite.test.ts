@@ -883,6 +883,9 @@ test('read history: getVisibilityHistoryRows aggregates ok rows per run', async 
     assert.equal(rows[0].engine, 'claude');
     assert.equal(Number(rows[0].total), 2);
     assert.equal(Number(rows[0].hits), 1);
+    assert.equal(Number(rows[0].roster_expected), 2);
+    assert.equal(Number(rows[0].roster_observed), 2);
+    assert.deepEqual(rows[0].roster_ids_csv?.split(',').sort(), ['p1', 'p2']);
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });

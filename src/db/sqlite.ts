@@ -768,7 +768,12 @@ export function openSqliteDb(path?: string): SqliteDb {
           `SELECT r.id AS run_id, r.engine,
                   COALESCE(r.completed_at, r.started_at) AS completed_at,
                   COUNT(pr.id) AS total,
-                  SUM(pr.brand_mentioned) AS hits
+                  SUM(pr.brand_mentioned) AS hits,
+                  r.prompts_total AS roster_expected,
+                  (SELECT COUNT(DISTINCT all_pr.prompt_id)
+                     FROM prompt_responses all_pr WHERE all_pr.run_id = r.id) AS roster_observed,
+                  (SELECT GROUP_CONCAT(DISTINCT all_pr.prompt_id)
+                     FROM prompt_responses all_pr WHERE all_pr.run_id = r.id) AS roster_ids_csv
              FROM runs r
              JOIN prompt_responses pr
                ON pr.run_id = r.id AND pr.status = 'ok'
