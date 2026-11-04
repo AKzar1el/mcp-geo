@@ -117,6 +117,8 @@ export async function chatCompletion(
     },
     body: JSON.stringify({
       preset: PRESET,
+      // Independent scans need no later response retrieval. This is not ZDR.
+      store: false,
       input: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userText },

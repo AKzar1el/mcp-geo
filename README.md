@@ -1042,7 +1042,7 @@ When you run `digestseo-mcp` locally (npx, the desktop extension, or Docker), al
 
 **Data use and storage:** Local brand configuration, prompts, scan runs, responses, and cached responses are used only to provide the MCP server features you invoke. They remain in the local SQLite database described above; this project does not operate an account service or collect telemetry.
 
-**Third-party processing:** Prompt and scan traffic is sent only to the AI providers you explicitly configure. Those providers process and retain that traffic under their own privacy policies; the project author does not receive copies of it. Independent Grok Responses API scans use `store:false` to avoid retrievable server-side response state; this does **not** disable xAI's separately documented default 30-day abuse-audit retention or constitute Zero Data Retention.
+**Third-party processing:** Prompt and scan traffic is sent only to the AI providers you explicitly configure. Those providers process and retain that traffic under their own privacy policies; the project author does not receive copies of it. Independent Grok and Perplexity Agent API scans use `store:false` to avoid later response retrieval. This is **not** Zero Data Retention: Perplexity may still persist response state, and xAI separately documents default 30-day abuse-audit retention.
 
 **Retention and deletion:** Local data remains on your machine until you delete the SQLite database (or the custom `DIGESTSEO_DB_PATH` you configured). Removing that local database removes mcp-geo's stored local history and cache. Provider-side retention is controlled by each configured provider.
 
