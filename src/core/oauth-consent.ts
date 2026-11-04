@@ -16,3 +16,10 @@ export function missingConnectSecretResponse(secret: unknown): Response | null {
     },
   );
 }
+
+// A shared secret proves control of the deployment, but not consent to
+// authorize the particular client initiating this request.
+export function hasExplicitClientApproval(form: FormData | null): boolean {
+  const approvals = form?.getAll('approve_client') ?? [];
+  return approvals.length === 1 && approvals[0] === 'yes';
+}
