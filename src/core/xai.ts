@@ -111,6 +111,8 @@ export async function chatCompletion(
     },
     body: JSON.stringify({
       model: MODEL,
+      // Each visibility scan is independent; no server-side response continuation is needed.
+      store: false,
       input: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userText },
