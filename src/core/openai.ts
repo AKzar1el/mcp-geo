@@ -248,7 +248,7 @@ export function hasBrandInEngineCitations(
   });
 }
 
-function extractUrls(text: string): string[] {
+export function extractUrls(text: string): string[] {
   const markdownRe = /\[[^\]]+\]\((https?:\/\/[^\s)]+)\)/g;
   const plainRe = /https?:\/\/[^\s)\]\}'"`<>]+/g;
   const urls: string[] = [];

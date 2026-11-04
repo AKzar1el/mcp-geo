@@ -935,6 +935,39 @@ test('replacePrompts soft-deletes old prompts and getCitationRows filters by eng
   }
 });
 
+test('getCitationRows returns genuine link-only citations but excludes failed and unrelated responses', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'digestseo.sqlite'));
+  try {
+    seedBrandFixture(db, 'acme');
+    for (const promptId of ['p-link', 'p-mention', 'p-unrelated', 'p-failed']) {
+      seedPromptFixture(db, 'acme', promptId, promptId);
+    }
+    const brand = await db.getBrand('acme');
+    assert.ok(brand);
+    const run = await db.createRun(brand, 'perplexity', 'live', 4);
+    await db.persistEngineRun(run.id, 'perplexity', 'preset:fast', 3600, [
+      { prompt_id: 'p-link', raw_response: 'Other brands only.', brand_mentioned: 0,
+        brand_cited_with_link: 1, cited_urls: ['acme.com'],
+        engine_citations: ['https://acme.com/report'], competitors_mentioned: [], status: 'ok' },
+      { prompt_id: 'p-mention', raw_response: 'Acme has features.', brand_mentioned: 1,
+        brand_cited_with_link: 0, cited_urls: [], competitors_mentioned: [], status: 'ok' },
+      { prompt_id: 'p-unrelated', raw_response: 'No brand.', brand_mentioned: 0,
+        brand_cited_with_link: 0, cited_urls: [], competitors_mentioned: [], status: 'ok' },
+      { prompt_id: 'p-failed', raw_response: 'An incomplete result.', brand_mentioned: 0,
+        brand_cited_with_link: 1, cited_urls: ['acme.com'], competitors_mentioned: [], status: 'failed' },
+    ]);
+    const rows = await db.getCitationRows('acme', 0);
+    assert.deepEqual(rows.map((row) => row.prompt).sort(), ['p-link', 'p-mention']);
+    assert.equal(rows.find((row) => row.prompt === 'p-link')?.brand_mentioned, 0);
+    assert.equal(rows.find((row) => row.prompt === 'p-link')?.brand_cited_with_link, 1);
+    assert.equal((await db.getCitationRows('acme', 0, 'chatgpt')).length, 0);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('upsertUser + createBrand: insert-or-ignore semantics, getBrand round-trip', async () => {
   const root = tempRoot();
   const db = openSqliteDb(join(root, 'digestseo.sqlite'));
