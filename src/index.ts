@@ -45,6 +45,7 @@ import {
 import { seedBrand, type SeedBrandInput } from './core/seed.js';
 import { DomainInputError } from './core/domain.js';
 import { handlePublicAudit } from './public-audit.js';
+import { missingConnectSecretResponse } from './core/oauth-consent.js';
 
 export interface Env {
   OAUTH_KV: KVNamespace;
@@ -62,13 +63,8 @@ export interface Env {
   SERPAPI_AI_MODE_ENABLED?: string;
   // Shared secret gating /admin/* routes.
   SEED_SECRET: string;
-  // Optional shared secret gating the OAuth /authorize auto-complete.
-  // When set, anyone connecting an MCP client must type this secret
-  // into a one-field browser form before a token is issued. When
-  // unset, /authorize auto-completes for any client that knows the
-  // worker URL — fine for private/obscure deployments, risky for
-  // anything you've shared publicly (connected clients can call
-  // refresh_brand, which spends your engine API credits).
+  // Required for hosted OAuth authorization. Without it, /authorize fails
+  // closed instead of granting any client who knows the Worker URL a token.
   CONNECT_SECRET?: string;
   // Service binding back to this same worker. /admin/run-live fans out
   // by self-fetching /admin/run-engine once per engine via env.SELF.
@@ -822,12 +818,8 @@ ${errorHtml}
   });
 }
 
-// Self-hosted OSS authorization. Without CONNECT_SECRET this
-// auto-completes with a single local dev user so the Worker can be
-// connected as a custom MCP connector without a real OAuth round trip.
-// With CONNECT_SECRET set, the browser step of the OAuth flow shows a
-// one-field form and only completes when the secret matches — anyone
-// who merely knows the worker URL can no longer mint a token. Replace
+// Self-hosted OSS authorization requires CONNECT_SECRET. The browser step
+// shows a one-field form and completes only when the secret matches. Replace
 // with Google/GitHub OAuth in a fork if you expose the Worker to
 // multiple end-users.
 async function handleAuthorize(request: Request, env: Env): Promise<Response> {
@@ -846,6 +838,9 @@ async function handleAuthorize(request: Request, env: Env): Promise<Response> {
   if (!url.searchParams.has('client_id')) {
     return invalidRequest();
   }
+
+  const missingSecret = missingConnectSecretResponse(env.CONNECT_SECRET);
+  if (missingSecret) return missingSecret;
 
   let authRequestSource = request;
   if (env.CONNECT_SECRET) {

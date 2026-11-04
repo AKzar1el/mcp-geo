@@ -22,19 +22,19 @@ This is a **single-user, self-hosted** MCP server. The trust boundaries are:
   (`X-Seed-Secret` header, compared in constant time). Anyone with the
   secret can seed brands, trigger paid engine scans, and delete response
   rows. Treat it like an API key.
-- **`/mcp` (the MCP endpoint)** requires an OAuth token. By default the
-  `/authorize` step **auto-completes for any client that knows your
-  worker URL** — convenient for a personal deploy, but it means a
-  stranger who finds the URL can connect an MCP client, read your
-  visibility data, and call `refresh_brand` (which spends your engine
-  API credits). Set the optional `CONNECT_SECRET` secret to require a
-  shared secret in the browser step of the OAuth flow:
+- **`/mcp` (the MCP endpoint)** requires an OAuth token. The `/authorize`
+  step **fails closed with HTTP 503 unless `CONNECT_SECRET` is configured**.
+  This protects against anyone who knows the Worker URL minting a token,
+  reading visibility data or invoking paid `refresh_brand` scans. Set the
+  required deployment secret before connecting an MCP client:
 
   ```bash
   npx wrangler secret put CONNECT_SECRET
   ```
 
-  **Recommended for every deployment whose URL is shared anywhere.**
+  The browser authorization form requires that secret before issuing a token.
+  Deployments upgrading from an earlier version must configure it; already
+  issued OAuth tokens are not automatically revoked by this change.
 - **Engine API keys** live in Cloudflare's encrypted secret store
   (`wrangler secret put`), never in `wrangler.jsonc` or the repo. They
   are only ever sent to their respective first-party APIs.

@@ -981,7 +981,7 @@ For manual/operator scans, keep `wait_for_completion: true`. The request then st
 
 ### Step 10 — Connect the MCP client
 
-The connect URL is the Worker URL with path `/mcp`. The OAuth handshake auto-completes; if `CONNECT_SECRET` is set, a one-field browser form asks for it first.
+The connect URL is the Worker URL with path `/mcp`. Before connecting, configure the required `CONNECT_SECRET` with `npx wrangler secret put CONNECT_SECRET`. The OAuth browser form asks for this secret before issuing a token; without it, `/authorize` returns HTTP 503.
 
 #### Claude Code
 
