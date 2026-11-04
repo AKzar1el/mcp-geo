@@ -500,6 +500,8 @@ Kiro supports local STDIO MCP servers across its current surfaces. The zero-key 
 
 **Reading combined scores:** `check_visibility` reports each engine's observation time and a `freshness` range for the combined score. `mixed_age_warning=true` means at least one engine was measured 24 hours or more before the newest engine; `older_engines` identifies which. The overall score still averages available engine scores, not a synchronized new scan. Use `refresh_brand` to update old measurements before comparisons; this may incur configured provider API costs.
 
+**Search evidence vs. model-only answers:** `check_visibility.measurement_scope` separates the mean visibility score from engines whose live request uses search/SERP (`search_requested`) from engines without live search (`model_only`). The Claude and Gemini adapters currently use model-only generation; ChatGPT batch runs are also model-only. Each `per_engine` record carries its `measurement_mode`. `mixed_modes=true` means the legacy `overall_score` blends these unlike observations. Even `search_requested` does **not** prove that a response returned verifiable citations: inspect the actual evidence through `get_citations`, and never present model-generated links as independently observed AI-search citations. No additional provider calls are made to calculate this disclosure.
+
 AI agents installing this server: follow [llms-install.md](https://github.com/AKzar1el/mcp-geo/blob/main/llms-install.md). Prefer a remote server with cron auto-refresh? Self-host on Cloudflare Workers below.
 
 ---
