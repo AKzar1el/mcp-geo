@@ -701,7 +701,7 @@ export function registerTools(
     {
       title: 'Find AI visibility content gaps',
       description:
-        "Prioritize content topics and formats from prompts where competitors beat the brand; falls back deterministically if AI analysis is unavailable. Example: brand_id='acme', max_recommendations=5.",
+        "Prioritize observed competitor-winning prompts. Provider-free by default; ai_analysis=true opts in to token-billed Claude (may retry once). Example: brand_id='acme'.",
       inputSchema: {
         brand_id: z
           .string()
@@ -712,6 +712,10 @@ export function registerTools(
           .max(10)
           .default(5)
           .describe('Maximum recommendations to return.'),
+        ai_analysis: z
+          .boolean()
+          .default(false)
+          .describe('True: token-billed Claude analysis (may retry once). False: provider-free fallback.'),
       },
       outputSchema: contentGapsOutputSchema,
       annotations: {
@@ -720,7 +724,7 @@ export function registerTools(
         openWorldHint: true,
       },
     },
-    async ({ brand_id, max_recommendations }) => {
+    async ({ brand_id, max_recommendations, ai_analysis }) => {
       const brand = await deps.db.getBrand(brand_id);
       if (!brand) {
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
@@ -779,29 +783,23 @@ export function registerTools(
         return toolResult(payload);
       }
 
-      let recommendations;
-      let prompt_source: 'generated' | 'fallback';
-      try {
-        if (!deps.env.ANTHROPIC_API_KEY) {
-          throw new Error('ANTHROPIC_API_KEY not set');
+      let recommendations = buildFallbackRecommendations(losingPrompts, max_recommendations);
+      let prompt_source: 'generated' | 'fallback' = 'fallback';
+      if (ai_analysis && deps.env.ANTHROPIC_API_KEY) {
+        try {
+          recommendations = await analyzeContentGaps(
+            { ANTHROPIC_API_KEY: deps.env.ANTHROPIC_API_KEY },
+            brand,
+            losingPrompts,
+            max_recommendations,
+          );
+          prompt_source = 'generated';
+        } catch (err) {
+          console.warn('get_content_gaps: analyzer failed, returning fallback', {
+            brand_id,
+            message: (err as Error).message,
+          });
         }
-        recommendations = await analyzeContentGaps(
-          { ANTHROPIC_API_KEY: deps.env.ANTHROPIC_API_KEY },
-          brand,
-          losingPrompts,
-          max_recommendations,
-        );
-        prompt_source = 'generated';
-      } catch (err) {
-        console.warn('get_content_gaps: analyzer failed, returning fallback', {
-          brand_id,
-          message: (err as Error).message,
-        });
-        recommendations = buildFallbackRecommendations(
-          losingPrompts,
-          max_recommendations,
-        );
-        prompt_source = 'fallback';
       }
 
       const payload = {

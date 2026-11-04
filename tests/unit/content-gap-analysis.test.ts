@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { buildFallbackRecommendations } from '../../src/core/content-gap-analysis.ts';
+import { registerTools } from '../../src/core/tools.ts';
+import type { Brand, Db, PromptResponse } from '../../src/db/types.ts';
 
 test('fallback recommendations stay grounded in observed losing prompts', () => {
   const recommendations = buildFallbackRecommendations(
@@ -59,4 +62,106 @@ test('fallback recommendations rank stronger observed losses first and respect t
   assert.equal(recommendations[0].suggested_format, 'listicle');
   assert.match(recommendations[1].topic, /Does Acme support SSO/);
   assert.equal(recommendations[1].suggested_format, 'faq_page');
+});
+
+test('content gaps require an explicit opt-in before any paid Anthropic call', async () => {
+  const brand: Brand = {
+    id: 'acme',
+    user_id: 'test-user',
+    domain: 'acme.com',
+    name: 'Acme',
+    category: 'Project management',
+    competitors: ['asana.com'],
+    aliases: [],
+    exclude_terms: [],
+    refresh_frequency: 'weekly',
+    created_at: 0,
+    updated_at: 0,
+  };
+  const response: PromptResponse = {
+    id: 'response-1',
+    run_id: 'run-1',
+    prompt_id: 'prompt-1',
+    prompt_text: 'Best project management for agencies',
+    engine: 'chatgpt',
+    raw_response: '',
+    brand_mentioned: 0,
+    brand_cited_with_link: 0,
+    cited_urls: [],
+    competitors_mentioned: ['asana.com'],
+    engine_citations: [],
+    status: 'ok',
+    error_message: null,
+    captured_at: Date.now(),
+  };
+  type GapResult = {
+    structuredContent: {
+      prompt_source: 'generated' | 'fallback';
+      recommendations: Array<{ topic: string }>;
+    };
+  };
+  let handler: ((input: {
+    brand_id: string;
+    max_recommendations: number;
+    ai_analysis?: boolean;
+  }) => Promise<GapResult>) | undefined;
+  let schema: { ai_analysis: { parse: (value: unknown) => boolean } } | undefined;
+  const server = {
+    registerTool(
+      name: string,
+      config: { inputSchema?: typeof schema },
+      callback: unknown,
+    ) {
+      if (name === 'get_content_gaps') {
+        handler = callback as typeof handler;
+        schema = config.inputSchema;
+      }
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getLatestCompletedRun: async (_id, engine) =>
+        engine === 'chatgpt' ? { id: 'run-1' } : null,
+      getResponsesForRun: async () => [response],
+    } as Db,
+    env: { ANTHROPIC_API_KEY: 'fake-test-key' },
+    refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(handler);
+  assert.ok(schema);
+  assert.equal(schema.ai_analysis.parse(undefined), false);
+  assert.equal(schema.ai_analysis.parse(true), true);
+
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async (input) => {
+    calls += 1;
+    assert.match(String(input), /api\.anthropic\.com/);
+    return Response.json({
+      content: [{ type: 'text', text: JSON.stringify([{
+        priority: 1,
+        topic: 'Comparison page: Acme vs Asana',
+        rationale: 'Answer the observed agencies question',
+        suggested_format: 'comparison_page',
+      }]) }],
+    });
+  };
+  try {
+    const defaultResult = await handler({ brand_id: 'acme', max_recommendations: 3 });
+    assert.equal(defaultResult.structuredContent.prompt_source, 'fallback');
+    assert.equal(defaultResult.structuredContent.recommendations.length, 1);
+    assert.equal(calls, 0, 'configured API key must not trigger a paid call without opt-in');
+
+    const explicitResult = await handler({
+      brand_id: 'acme',
+      max_recommendations: 3,
+      ai_analysis: true,
+    });
+    assert.equal(explicitResult.structuredContent.prompt_source, 'generated');
+    assert.equal(calls, 1, 'explicit paid analysis should make one successful call');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
