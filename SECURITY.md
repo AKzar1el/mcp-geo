@@ -32,7 +32,12 @@ This is a **single-user, self-hosted** MCP server. The trust boundaries are:
   npx wrangler secret put CONNECT_SECRET
   ```
 
-  The browser authorization form requires that secret before issuing a token.
+  The browser authorization form requires that secret and a separate explicit
+  approval of the requesting client before issuing a token. It displays the
+  requesting client identifier and scope, but **these values are client-supplied,
+  not independently verified identities**. Authorize only clients you recognize;
+  a connected client may trigger provider calls that consume your API quota.
+  The form is not cached and cannot be framed by other sites.
   Deployments upgrading from an earlier version must configure it; already
   issued OAuth tokens are not automatically revoked by this change.
 - **Engine API keys** live in Cloudflare's encrypted secret store

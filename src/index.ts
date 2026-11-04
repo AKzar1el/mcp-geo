@@ -45,7 +45,10 @@ import {
 import { seedBrand, type SeedBrandInput } from './core/seed.js';
 import { DomainInputError } from './core/domain.js';
 import { handlePublicAudit } from './public-audit.js';
-import { missingConnectSecretResponse } from './core/oauth-consent.js';
+import {
+  hasExplicitClientApproval,
+  missingConnectSecretResponse,
+} from './core/oauth-consent.js';
 
 export interface Env {
   OAUTH_KV: KVNamespace;
@@ -772,11 +775,15 @@ function escapeHtml(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
-// One-field consent form shown when CONNECT_SECRET is set. The form
+// Owner-secret and explicit client-approval form shown when CONNECT_SECRET is set. The form
 // POSTs back to /authorize with the original OAuth query string intact
 // so parseAuthRequest sees the exact params the MCP client sent.
 function renderConnectForm(query: string, error?: string): Response {
   const action = `/authorize${escapeHtml(query)}`;
+  const params = new URLSearchParams(query);
+  // These labels are provided by the requesting client, not verified identities.
+  const clientId = escapeHtml((params.get('client_id') ?? '').slice(0, 240));
+  const requestedScope = escapeHtml((params.get('scope') ?? '').slice(0, 240));
   const errorHtml = error
     ? `<p class="err">${escapeHtml(error)}</p>`
     : '';
@@ -792,9 +799,12 @@ function renderConnectForm(query: string, error?: string): Response {
   main { max-width: 26rem; padding: 2rem; }
   h1 { font-size: 1.25rem; margin: 0 0 .5rem; }
   p { color: #9aa0ae; font-size: .9rem; line-height: 1.5; }
+  code { overflow-wrap: anywhere; }
   .err { color: #f87171; }
   input { width: 100%; box-sizing: border-box; padding: .6rem .75rem; margin: .75rem 0;
-          border: 1px solid #2a2f3a; border-radius: 6px; background: #161a22; color: #e6e6e6; }
+         border: 1px solid #2a2f3a; border-radius: 6px; background: #161a22; color: #e6e6e6; }
+  label.approval { display: flex; align-items: flex-start; gap: .6rem; font-size: .9rem; line-height: 1.5; margin: 1rem 0; }
+  label.approval input { width: auto; margin: .35rem 0 0; }
   button { width: 100%; padding: .6rem; border: 0; border-radius: 6px;
            background: #4f7df9; color: #fff; font-size: .95rem; cursor: pointer; }
 </style>
@@ -804,22 +814,35 @@ function renderConnectForm(query: string, error?: string): Response {
 <h1>DigestSEO MCP</h1>
 <p>This server requires a connect secret before an MCP client can be
 authorized. Enter the <code>CONNECT_SECRET</code> you set during deploy.</p>
+<p>Requesting client ID (unverified): <code>${clientId}</code></p>
+${requestedScope ? `<p>Requested scope: <code>${requestedScope}</code></p>` : ''}
+<p>Approve only if you recognize the client. Authorized clients may access
+your stored GEO data and trigger scans using your configured provider quotas.</p>
 ${errorHtml}
 <form method="post" action="${action}">
-  <input type="password" name="connect_secret" placeholder="Connect secret" autofocus required>
-  <button type="submit">Authorize client</button>
+  <label for="connect-secret">Connect secret</label>
+  <input id="connect-secret" type="password" name="connect_secret" placeholder="Connect secret" autocomplete="off" autofocus required>
+  <label class="approval"><input type="checkbox" name="approve_client" value="yes" required>
+    I recognize this requesting client and approve its access.</label>
+  <button type="submit">Authorize this client</button>
 </form>
 </main>
 </body>
 </html>`;
   return new Response(html, {
     status: error ? 401 : 200,
-    headers: { 'content-type': 'text/html; charset=utf-8' },
+    headers: {
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'no-store',
+      'referrer-policy': 'no-referrer',
+      'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+    },
   });
 }
 
 // Self-hosted OSS authorization requires CONNECT_SECRET. The browser step
-// shows a one-field form and completes only when the secret matches. Replace
+// shows client information and completes only with the secret and explicit
+// approval. Replace
 // with Google/GitHub OAuth in a fork if you expose the Worker to
 // multiple end-users.
 async function handleAuthorize(request: Request, env: Env): Promise<Response> {
@@ -863,6 +886,9 @@ async function handleAuthorize(request: Request, env: Env): Promise<Response> {
         url.search,
         'Wrong connect secret. Use the CONNECT_SECRET value you set with `wrangler secret put CONNECT_SECRET`.',
       );
+    }
+    if (!hasExplicitClientApproval(form)) {
+      return renderConnectForm(url.search, 'Confirm that you recognize and approve this client.');
     }
     // parseAuthRequest reads OAuth params from the URL query (preserved
     // verbatim by the form action); re-wrap as GET so the library sees
