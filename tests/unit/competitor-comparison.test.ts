@@ -47,6 +47,10 @@ type ComparisonResult = {
   days: number;
   your_share_of_voice_pct: number;
   your_mentions: number;
+  comparison_semantics: string;
+  prompts_you_win: Array<{ prompt: string; you_cited_by: string[]; competitors_cited: string[] }>;
+  prompts_brand_only: Array<{ prompt: string; you_cited_by: string[]; competitors_cited: string[] }>;
+  prompts_co_mentioned: Array<{ prompt: string; you_cited_by: string[]; competitors_cited: string[] }>;
   competitors: Array<{
     domain: string;
     share_of_voice_pct: number;
@@ -112,6 +116,63 @@ test('compare_competitors uses the full response window and exposes raw mention 
       { domain: 'monday.com', mentions: 2, share_of_voice_pct: 40 },
     ],
   );
+});
+
+test('compare_competitors separates brand-only, co-mentioned and competitor-only evidence', async () => {
+  let comparison: ComparisonTool | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, handler: unknown) {
+      if (name === 'compare_competitors') {
+        comparison = { handler: handler as ComparisonTool['handler'] };
+      }
+    },
+  } as unknown as McpServer;
+  const mixedSecondEngine = {
+    ...response('mixed-other-engine', 'mixed across engines', 1, ['monday.com']),
+    prompt_id: 'prompt-mixed',
+    engine: 'claude',
+  };
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getResponsesSince: async () => [
+        response('brand-only', 'brand-only prompt', 1, []),
+        response('shared', 'shared prompt', 1, ['asana.com']),
+        response('competitor-only', 'competitor-only prompt', 0, ['asana.com']),
+        response('neither', 'neither prompt', 0, []),
+        response('mixed', 'mixed across engines', 1, []),
+        mixedSecondEngine,
+      ],
+    } as Db,
+    env: {},
+    refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(comparison);
+  const result = (await comparison.handler({ brand_id: brand.id })).structuredContent;
+  assert.deepEqual(
+    result.prompts_brand_only.map((item) => item.prompt).sort(),
+    ['brand-only prompt', 'mixed across engines'],
+  );
+  assert.deepEqual(
+    result.prompts_co_mentioned.map((item) => item.prompt).sort(),
+    ['mixed across engines', 'shared prompt'],
+  );
+  assert.deepEqual(
+    result.prompts_co_mentioned.find((item) => item.prompt === 'mixed across engines'),
+    { prompt: 'mixed across engines', you_cited_by: ['claude'], competitors_cited: ['monday.com'] },
+  );
+  assert.deepEqual(
+    result.prompts_brand_only.find((item) => item.prompt === 'mixed across engines'),
+    { prompt: 'mixed across engines', you_cited_by: ['chatgpt'], competitors_cited: [] },
+  );
+  assert.deepEqual(
+    result.competitors.find((item) => item.domain === 'asana.com')?.prompts_won_against_you,
+    ['competitor-only prompt'],
+  );
+  assert.equal(result.prompts_you_win.length, 3);
+  assert.match(result.comparison_semantics, /legacy/i);
+  assert.match(result.comparison_semantics, /co-mention/i);
 });
 
 
