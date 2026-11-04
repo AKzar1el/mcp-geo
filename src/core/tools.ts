@@ -150,10 +150,18 @@ const COMPARISON_SEMANTICS =
   'a prompt can occur in both when engines differ. ' +
   'prompts_won_against_you lists competitor mentions where the tracked brand is absent.';
 
+const COMPARISON_HISTORY_CAVEAT =
+  'Competitor mentions were captured using the competitor list configured at scan time. ' +
+  'Changing that list does not re-evaluate historical responses; a zero for a newly added ' +
+  'competitor may mean it was not tracked, not that it was absent from AI answers. ' +
+  'The current configuration cannot prove which competitors were tracked in past scans.';
+
 const compareOutputSchema = z.object({
   brand_id: z.string(),
   days: z.number(),
   comparison_semantics: z.string(),
+  historical_coverage_note: z.string(),
+  outside_current_tracking: z.array(z.string()),
   your_share_of_voice_pct: z.number(),
   your_mentions: z.number(),
   competitors: z.array(
@@ -608,7 +616,7 @@ export function registerTools(
     {
       title: 'Compare competitor AI visibility',
       description:
-        "Compare brand and competitor mentions, brand-only versus co-mentioned prompts, and share of voice. Example: brand_id='acme', competitor_domains=['rival.com'], days=7.",
+        "Compare recorded brand/competitor mentions, co-mentions and share of voice. New competitors are not retroactively scored. Example: brand_id='acme', competitor_domains=['rival.com'], days=7.",
       inputSchema: {
         brand_id: z
           .string()
@@ -640,6 +648,9 @@ export function registerTools(
         competitor_domains && competitor_domains.length > 0
           ? normalizeCompetitorDomains(competitor_domains, brand.domain)
           : brand.competitors;
+      const outsideCurrentTracking = targets.filter(
+        (domain) => !brand.competitors.includes(domain),
+      );
       if (targets.length === 0) {
         const payload = {
           brand_id,
@@ -649,6 +660,8 @@ export function registerTools(
           your_share_of_voice_pct: 0,
           your_mentions: 0,
           comparison_semantics: COMPARISON_SEMANTICS,
+          historical_coverage_note: COMPARISON_HISTORY_CAVEAT,
+          outside_current_tracking: outsideCurrentTracking,
           competitors: [],
           prompts_you_win: [],
           prompts_brand_only: [],
@@ -750,6 +763,8 @@ export function registerTools(
         your_share_of_voice_pct: pct(brandMentions),
         your_mentions: brandMentions,
         comparison_semantics: COMPARISON_SEMANTICS,
+        historical_coverage_note: COMPARISON_HISTORY_CAVEAT,
+        outside_current_tracking: outsideCurrentTracking,
         competitors: competitorsOut,
         prompts_you_win,
         prompts_brand_only,
