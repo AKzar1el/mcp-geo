@@ -45,6 +45,7 @@ test('Perplexity uses the Agent API fast preset and parses search-result URLs', 
     assert.equal(seenInit?.method, 'POST');
     assert.deepEqual(JSON.parse(String(seenInit?.body)), {
       preset: 'fast',
+      store: false,
       input: [
         { role: 'system', content: 'Be concise.' },
         { role: 'user', content: 'Where is Acme visible?' },
