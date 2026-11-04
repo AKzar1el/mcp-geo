@@ -21,6 +21,7 @@ export interface UpdateTrackedBrandResult {
   brand_id: string;
   changed_fields: string[];
   prompt_set_review_recommended: boolean;
+  historical_attribution_review_recommended: boolean;
   brand: Brand;
 }
 
@@ -110,6 +111,10 @@ export async function updateTrackedBrand(
     brand_id: input.brand_id,
     changed_fields: changedFields,
     prompt_set_review_recommended: changedFields.includes('category'),
+    // Stored observations were scored against the old matching identity.
+    historical_attribution_review_recommended: changedFields.some((field) =>
+      ['name', 'domain', 'aliases', 'exclude_terms'].includes(field),
+    ),
     brand,
   };
 }

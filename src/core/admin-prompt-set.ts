@@ -143,6 +143,7 @@ export async function handleAdminUpdateBrand(
       brand_id: result.brand_id,
       changed_fields: result.changed_fields,
       prompt_set_review_recommended: result.prompt_set_review_recommended,
+      historical_attribution_review_recommended: result.historical_attribution_review_recommended,
       brand: {
         name: result.brand.name,
         domain: result.brand.domain,
@@ -152,9 +153,14 @@ export async function handleAdminUpdateBrand(
         exclude_terms: result.brand.exclude_terms,
         refresh_frequency: result.brand.refresh_frequency,
       },
-      next_steps: result.prompt_set_review_recommended
-        ? `Category changed, but active prompts and historical runs were preserved. Review GET /admin/list-prompts?brand_id=${encodeURIComponent(brandId)} and POST /admin/set-prompts with a corrected prompt set before POST /admin/run-live. Paid /admin/generate-prompts is optional.`
-        : `POST /admin/run-live with brand_id '${brandId}' to scan using the updated brand metadata. Active prompts and historical runs were preserved.`,
+      next_steps: [
+        result.prompt_set_review_recommended
+          ? `Category changed, but active prompts and historical runs were preserved. Review GET /admin/list-prompts?brand_id=${encodeURIComponent(brandId)} and POST /admin/set-prompts with a corrected prompt set before POST /admin/run-live. Paid /admin/generate-prompts is optional.`
+          : `POST /admin/run-live with brand_id '${brandId}' to scan using the updated brand metadata. Active prompts and historical runs were preserved.`,
+        ...(result.historical_attribution_review_recommended
+          ? ['Matching identity changed: previously stored visibility scores reflect the former name/domain/aliases/exclusions and are not directly comparable to new scans. Preserve historical evidence and establish a new baseline.']
+          : []),
+      ].join(' '),
     });
   } catch (err) {
     const message = (err as Error).message;

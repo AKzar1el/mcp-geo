@@ -259,6 +259,7 @@ const updateBrandOutputSchema = z.object({
   brand_id: z.string(),
   changed_fields: z.array(z.string()),
   prompt_set_review_recommended: z.boolean(),
+  historical_attribution_review_recommended: z.boolean(),
   brand: z.object({
     name: z.string(),
     domain: z.string(),
@@ -1257,6 +1258,7 @@ export function registerLocalManagementTools(
         brand_id: result.brand_id,
         changed_fields: result.changed_fields,
         prompt_set_review_recommended: result.prompt_set_review_recommended,
+        historical_attribution_review_recommended: result.historical_attribution_review_recommended,
         brand: {
           name: result.brand.name,
           domain: result.brand.domain,
@@ -1266,9 +1268,14 @@ export function registerLocalManagementTools(
           exclude_terms: result.brand.exclude_terms,
           refresh_frequency: result.brand.refresh_frequency,
         },
-        next_steps: result.prompt_set_review_recommended
-          ? `Category changed, but active prompts and historical runs were preserved. Review list_prompts and use set_prompts to replace outdated buyer-intent prompts before calling refresh_brand for '${brand_id}'. generate_prompts uses a paid API and is optional.`
-          : `Call refresh_brand with brand_id '${brand_id}' to scan using the updated metadata. Active prompts and historical runs were preserved.`,
+        next_steps: [
+          result.prompt_set_review_recommended
+            ? `Category changed, but active prompts and historical runs were preserved. Review list_prompts and use set_prompts to replace outdated buyer-intent prompts before calling refresh_brand for '${brand_id}'. generate_prompts uses a paid API and is optional.`
+            : `Call refresh_brand with brand_id '${brand_id}' to scan using the updated metadata. Active prompts and historical runs were preserved.`,
+          ...(result.historical_attribution_review_recommended
+            ? ['Brand matching identity changed. Historical visibility scores were measured under the previous name/domain/aliases/exclusions and must not be treated as directly comparable to new scans; retain prior evidence and establish a new baseline.']
+            : []),
+        ].join(' '),
       };
       return toolResult(payload);
     },
