@@ -295,6 +295,7 @@ test('stdio CLI: initialize + tools/list returns all twelve tools, local brand/p
         arguments: {
           brand_id: 'smoke-brand',
           domain: 'https://www.New-Smoke.example/pricing',
+          category: 'Continuous integration',
           competitors: ['rival.example', 'new-smoke.example'],
           aliases: ['Smoke Suite', ' smoke suite '],
           refresh_frequency: 'manual',
@@ -308,6 +309,8 @@ test('stdio CLI: initialize + tools/list returns all twelve tools, local brand/p
     );
     const updatePayload = JSON.parse(updated.result.content[0].text);
     assert.equal(updatePayload.updated, true);
+    assert.equal(updatePayload.prompt_set_review_recommended, true);
+    assert.match(updatePayload.next_steps, /set_prompts/);
     assert.equal(updatePayload.brand.domain, 'new-smoke.example');
     assert.deepEqual(updatePayload.brand.competitors, ['rival.example']);
     assert.deepEqual(updatePayload.brand.aliases, ['Smoke Suite']);

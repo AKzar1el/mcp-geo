@@ -45,6 +45,7 @@ test('updateTrackedBrand updates mutable metadata and preserves active prompts',
     });
 
     assert.equal(result.updated, true);
+    assert.equal(result.prompt_set_review_recommended, true);
     assert.deepEqual(result.changed_fields, [
       'name',
       'domain',
@@ -73,6 +74,7 @@ test('updateTrackedBrand updates mutable metadata and preserves active prompts',
       refresh_frequency: 'manual',
     });
     assert.equal(paused.updated, true);
+    assert.equal(paused.prompt_set_review_recommended, false);
     assert.deepEqual(paused.changed_fields, ['refresh_frequency']);
     assert.equal(paused.brand.refresh_frequency, 'manual');
     assert.deepEqual(
@@ -91,6 +93,7 @@ test('updateTrackedBrand updates mutable metadata and preserves active prompts',
       refresh_frequency: 'manual',
     });
     assert.equal(noOp.updated, false);
+    assert.equal(noOp.prompt_set_review_recommended, false);
     assert.deepEqual(noOp.changed_fields, []);
   } finally {
     db.close();
@@ -127,6 +130,7 @@ test('admin update-brand exposes the same safe partial update contract', async (
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           brand_id: 'acme',
+          category: 'CRM software',
           competitors: ['linear.app'],
           aliases: ['Acme PM', 'Acme Cloud'],
           refresh_frequency: 'manual',
@@ -138,6 +142,7 @@ test('admin update-brand exposes the same safe partial update contract', async (
     const body = (await response.json()) as {
       updated: boolean;
       changed_fields: string[];
+      prompt_set_review_recommended: boolean;
       brand: {
         competitors: string[];
         aliases: string[];
@@ -146,7 +151,9 @@ test('admin update-brand exposes the same safe partial update contract', async (
       next_steps: string;
     };
     assert.equal(body.updated, true);
+    assert.equal(body.prompt_set_review_recommended, true);
     assert.deepEqual(body.changed_fields, [
+      'category',
       'competitors',
       'aliases',
       'refresh_frequency',
@@ -155,6 +162,7 @@ test('admin update-brand exposes the same safe partial update contract', async (
     assert.deepEqual(body.brand.aliases, ['Acme PM', 'Acme Cloud']);
     assert.equal(body.brand.refresh_frequency, 'manual');
     assert.match(body.next_steps, /historical runs were preserved/);
+    assert.match(body.next_steps, /admin\/set-prompts/);
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });
