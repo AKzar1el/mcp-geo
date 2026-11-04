@@ -444,17 +444,24 @@ export function registerTools(
         const date = bucketStart(row.completed_at, granularity);
         const total = Number(row.total ?? 0);
         const hits = Number(row.hits ?? 0);
-        const score = total > 0 ? Math.round((100 * hits) / total) : 0;
         let perEngine = buckets.get(date);
         if (!perEngine) {
           perEngine = new Map();
           buckets.set(date, perEngine);
         }
+        // Each row represents one run, not an entire bucket. Aggregate the
+        // evidence denominator before rounding to avoid losing earlier scans.
+        const previous = perEngine.get(row.engine);
+        const brand_mentions = (previous?.brand_mentions ?? 0) + hits;
+        const usable_prompts = (previous?.usable_prompts ?? 0) + total;
+        const observedAt = new Date(row.completed_at).toISOString();
         perEngine.set(row.engine, {
-          score,
-          brand_mentions: hits,
-          usable_prompts: total,
-          observed_at: new Date(row.completed_at).toISOString(),
+          score: usable_prompts > 0 ? Math.round((100 * brand_mentions) / usable_prompts) : 0,
+          brand_mentions,
+          usable_prompts,
+          observed_at: previous && previous.observed_at > observedAt
+            ? previous.observed_at
+            : observedAt,
         });
       }
       const series = [...buckets.entries()]

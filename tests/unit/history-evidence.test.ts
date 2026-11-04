@@ -82,18 +82,57 @@ test('visibility history exposes the evidence denominator behind each engine sco
   assert.deepEqual(result.structuredContent.series, [
     {
       date: '2026-01-05',
-      overall_score: 70,
-      per_engine: { chatgpt: 60, claude: 80 },
+      overall_score: 69,
+      per_engine: { chatgpt: 57, claude: 80 },
       per_engine_evidence: {
         chatgpt: {
-          brand_mentions: 12,
-          usable_prompts: 20,
+          brand_mentions: 17,
+          usable_prompts: 30,
           observed_at: new Date(chatgptLatest).toISOString(),
         },
         claude: {
           brand_mentions: 8,
           usable_prompts: 10,
           observed_at: new Date(claude).toISOString(),
+        },
+      },
+    },
+  ]);
+});
+
+test('weekly history aggregates all same-engine scans and separates ISO weeks', async () => {
+  const monday = Date.UTC(2026, 0, 5, 8);
+  const wednesday = Date.UTC(2026, 0, 7, 14);
+  const nextMonday = Date.UTC(2026, 0, 12, 9);
+  const history = registerHistoryTool([
+    { run_id: 'week1-a', engine: 'chatgpt', completed_at: wednesday, total: 8, hits: 6 },
+    { run_id: 'week1-b', engine: 'chatgpt', completed_at: monday, total: 5, hits: 3 },
+    { run_id: 'week2', engine: 'chatgpt', completed_at: nextMonday, total: 10, hits: 2 },
+  ]);
+
+  const result = await history.handler({ brand_id: 'acme', days: 30, granularity: 'weekly' });
+  assert.deepEqual(result.structuredContent.series, [
+    {
+      date: '2026-01-05',
+      overall_score: 69,
+      per_engine: { chatgpt: 69 },
+      per_engine_evidence: {
+        chatgpt: {
+          brand_mentions: 9,
+          usable_prompts: 13,
+          observed_at: new Date(wednesday).toISOString(),
+        },
+      },
+    },
+    {
+      date: '2026-01-12',
+      overall_score: 20,
+      per_engine: { chatgpt: 20 },
+      per_engine_evidence: {
+        chatgpt: {
+          brand_mentions: 2,
+          usable_prompts: 10,
+          observed_at: new Date(nextMonday).toISOString(),
         },
       },
     },
