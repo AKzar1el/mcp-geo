@@ -48,6 +48,8 @@ type ComparisonResult = {
   your_share_of_voice_pct: number;
   your_mentions: number;
   comparison_semantics: string;
+  historical_coverage_note: string;
+  outside_current_tracking: string[];
   prompts_you_win: Array<{ prompt: string; you_cited_by: string[]; competitors_cited: string[] }>;
   prompts_brand_only: Array<{ prompt: string; you_cited_by: string[]; competitors_cited: string[] }>;
   prompts_co_mentioned: Array<{ prompt: string; you_cited_by: string[]; competitors_cited: string[] }>;
@@ -105,6 +107,8 @@ test('compare_competitors uses the full response window and exposes raw mention 
   assert.ok(capturedSince >= before && capturedSince <= after);
   assert.equal(result.structuredContent.your_mentions, 1);
   assert.equal(result.structuredContent.your_share_of_voice_pct, 20);
+  assert.deepEqual(result.structuredContent.outside_current_tracking, []);
+  assert.match(result.structuredContent.historical_coverage_note, /not re-evaluate historical responses/);
   assert.deepEqual(
     result.structuredContent.competitors.map((competitor) => ({
       domain: competitor.domain,
@@ -209,4 +213,35 @@ test('compare_competitors normalizes explicit competitor URL inputs before match
   assert.equal(result.structuredContent.competitors[0].domain, 'asana.com');
   assert.equal(result.structuredContent.competitors[0].mentions, 1);
   assert.equal(result.structuredContent.competitors[0].share_of_voice_pct, 100);
+  assert.deepEqual(result.structuredContent.outside_current_tracking, []);
+});
+
+test('comparison flags newly selected competitors whose historical capture cannot be verified', async () => {
+  let comparison: ComparisonTool | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, handler: unknown) {
+      if (name === 'compare_competitors') {
+        comparison = { handler: handler as ComparisonTool['handler'] };
+      }
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getResponsesSince: async () => [
+        response('brand', 'best workflow software', 1, ['asana.com']),
+      ],
+    } as Db,
+    env: {},
+    refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(comparison);
+  const result = (await comparison.handler({
+    brand_id: brand.id,
+    competitor_domains: ['https://NEW.example.com/products', 'asana.com'],
+  })).structuredContent;
+  assert.deepEqual(result.outside_current_tracking, ['new.example.com']);
+  assert.equal(result.competitors.find((c) => c.domain === 'new.example.com')?.mentions, 0);
+  assert.match(result.historical_coverage_note, /not that it was absent/);
 });
