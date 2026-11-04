@@ -1009,6 +1009,95 @@ test('seedBrand (core): fallback prompts without ANTHROPIC_API_KEY, $CATEGORY su
   }
 });
 
+test('seedBrand requires an explicit opt-in before generating paid Anthropic prompts', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'digestseo.sqlite'));
+  const originalFetch = globalThis.fetch;
+  let providerCalls = 0;
+  globalThis.fetch = async (input) => {
+    providerCalls++;
+    assert.match(String(input), /api\.anthropic\.com/);
+    return Response.json({
+      content: [{
+        type: 'text',
+        text: JSON.stringify([{
+          prompt: 'Best project management software for agencies?',
+          intent_stage: 'awareness',
+          shape: 'best X for Y',
+        }]),
+      }],
+    });
+  };
+  try {
+    const free = await seedBrand(
+      { db, ANTHROPIC_API_KEY: 'mock-key' },
+      { brand_id: 'free', name: 'Free', domain: 'free.example.com' },
+    );
+    assert.equal(free.prompt_source, 'fallback');
+    assert.equal(free.prompts_inserted, 3);
+    assert.equal(providerCalls, 0, 'configured key alone must not trigger billed generation');
+
+    await assert.rejects(
+      seedBrand(
+        { db },
+        {
+          brand_id: 'missing-key',
+          name: 'Missing Key',
+          domain: 'missing-key.example.com',
+          prompt_generation: 'anthropic',
+        },
+      ),
+      /requires ANTHROPIC_API_KEY/,
+    );
+    assert.equal(await db.getBrand('missing-key'), null);
+
+    const generated = await seedBrand(
+      { db, ANTHROPIC_API_KEY: 'mock-key' },
+      {
+        brand_id: 'generated',
+        name: 'Generated',
+        domain: 'generated.example.com',
+        prompt_generation: 'anthropic',
+      },
+      1,
+    );
+    assert.equal(generated.prompt_source, 'generated');
+    assert.equal(generated.prompts_inserted, 1);
+    assert.equal(providerCalls, 1, 'explicit generation makes one successful mocked request');
+    assert.equal((await db.getActivePrompts('generated')).length, 1);
+
+    const duplicate = await seedBrand(
+      { db, ANTHROPIC_API_KEY: 'mock-key' },
+      {
+        brand_id: 'generated',
+        name: 'Duplicate',
+        domain: 'duplicate.example.com',
+        prompt_generation: 'anthropic',
+      },
+      1,
+    );
+    assert.equal(duplicate.seeded, false);
+    assert.equal(duplicate.reason, 'already exists');
+    assert.equal(providerCalls, 1);
+    const duplicateWithoutKey = await seedBrand(
+      { db },
+      {
+        brand_id: 'generated',
+        name: 'Duplicate Without Key',
+        domain: 'duplicate.example.com',
+        prompt_generation: 'anthropic',
+      },
+      1,
+    );
+    assert.equal(duplicateWithoutKey.reason, 'already exists');
+    assert.equal(providerCalls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('seedBrand normalizes hosted domain and competitor inputs before writing', async () => {
   const root = tempRoot();
   const db = openSqliteDb(join(root, 'digestseo.sqlite'));

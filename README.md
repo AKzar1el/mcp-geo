@@ -480,7 +480,7 @@ Kiro supports local STDIO MCP servers across its current surfaces. The zero-key 
 
 **Claude Desktop extension (one-click):** download the `.mcpb` bundle from the [latest release](https://github.com/AKzar1el/mcp-geo/releases/latest) and double-click it — Claude Desktop prompts for the API keys.
 
-**First run:** ask your client to *"track acme.com as brand `acme`, then refresh it"* — `track_brand` creates the brand with generated prompts, `refresh_brand` runs the first scan, `check_visibility` shows the scores.
+**First run:** ask your client to *"track acme.com as brand `acme`, then refresh it"* — `track_brand` creates three provider-free starter prompts, `refresh_brand` runs the first scan, and `check_visibility` shows the scores. To opt in to token-billed Claude prompt generation, specify `prompt_generation='anthropic'`.
 
 AI agents installing this server: follow [llms-install.md](https://github.com/AKzar1el/mcp-geo/blob/main/llms-install.md). Prefer a remote server with cron auto-refresh? Self-host on Cloudflare Workers below.
 
@@ -752,7 +752,7 @@ The local stdio CLI (npx, desktop extension, Docker) additionally provides brand
 
 | Tool (local CLI only) | What it does | What you provide |
 |---|---|---|
-| `track_brand` | Start tracking a brand: creates it locally and generates its buyer-intent prompt set (Claude Haiku when `ANTHROPIC_API_KEY` is set, three starter prompts otherwise). | `brand_id`, `name`, `domain`, optional `category`, `competitors[]`, `aliases[]`, `exclude_terms[]`, `prompt_count`, `refresh_frequency` (`daily`/`weekly`/`manual`, default `weekly`) |
+| `track_brand` | Start tracking a brand with three provider-free prompts by default. `prompt_generation='anthropic'` opts in to token-billed Claude generation (at most two attempts). | `brand_id`, `name`, `domain`, optional `category`, `competitors[]`, `aliases[]`, `exclude_terms[]`, `prompt_generation` (`fallback` default or `anthropic`), `prompt_count` (Anthropic only), `refresh_frequency` (`daily`/`weekly`/`manual`, default `weekly`) |
 | `update_brand` | Correct an existing brand's domain, name, category, competitors, aliases, exclusions, or refresh cadence without replacing active prompts or historical runs. Set cadence to `manual` to pause scheduled Worker scans while keeping manual refresh available. | `brand_id` plus any fields to change |
 | `list_brands` | List tracked brands with domains, competitors, aliases, exclusions, and active prompt counts. | — |
 | `list_prompts` | Inspect the exact active buyer-intent prompts for a tracked brand without changing them. | `brand_id` |
@@ -940,7 +940,7 @@ args = [
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `OPENAI_API_KEY` | opt-in | unset | Enables the ChatGPT engine. Without it, ChatGPT is skipped. |
-| `ANTHROPIC_API_KEY` | opt-in | unset | Enables the Claude engine *and* the Claude-Haiku-powered prompt generator + content-gap analyzer. |
+| `ANTHROPIC_API_KEY` | opt-in | unset | Enables the Claude engine and permits explicitly requested prompt generation (`prompt_generation='anthropic'`) and content-gap analysis (`ai_analysis=true`). Merely configuring a key does not opt in to these helper calls. |
 | `GEMINI_API_KEY` | opt-in | unset | Enables the Gemini engine. Rate limits vary by model, project, and usage tier; check the project's active limits in Google AI Studio (see Troubleshooting). |
 | `PERPLEXITY_API_KEY` | opt-in | unset | Enables the Perplexity Agent API `fast` preset. Paid API usage; check current Agent API pricing. |
 | `XAI_API_KEY` | opt-in | unset | Enables the Grok engine (`grok-4.7`) with required Web Search grounding. |

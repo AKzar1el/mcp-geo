@@ -1,9 +1,8 @@
 // Brand seeding, shared by the Worker's POST /admin/seed route and the
 // local CLI's track_brand tool. Creates the user + brand rows
 // (INSERT OR IGNORE — existing rows are never clobbered), then
-// generates buyer-intent prompts via Claude Haiku when an Anthropic key
-// is available, falling back to three generic prompts otherwise so the
-// brand is immediately scannable.
+// uses three provider-free starter prompts by default. Claude Haiku
+// prompt generation requires an explicit opt-in at brand creation.
 
 import type { Db, NewPromptInput } from '../db/types.js';
 import {
@@ -16,8 +15,8 @@ import { generatePrompts } from './prompt-generation.js';
 const DEFAULT_USER_ID = 'dev-user';
 const DEFAULT_USER_EMAIL = 'dev@local';
 
-// Used only when prompt generation fails (no ANTHROPIC_API_KEY,
-// network/API issue) so the brand still has something to query against.
+// Used by default and when explicitly requested generation fails, so
+// the brand always has something to query against.
 // Generic shapes; the generator produces category-specific prompts when
 // it succeeds. $CATEGORY is substituted with the brand's category (or
 // its name when no category was given) before insert.
@@ -53,6 +52,7 @@ export interface SeedBrandInput {
   brand_id: string;
   name: string;
   domain: string;
+  prompt_generation?: 'fallback' | 'anthropic';
   category?: string;
   competitors?: string[];
   refresh_frequency?: 'daily' | 'weekly' | 'manual';
@@ -108,6 +108,15 @@ export async function seedBrand(
       'refresh_frequency must be daily, weekly, or manual',
     );
   }
+  if (
+    input.prompt_generation !== undefined &&
+    input.prompt_generation !== 'fallback' &&
+    input.prompt_generation !== 'anthropic'
+  ) {
+    throw new DomainInputError(
+      'prompt_generation must be fallback or anthropic',
+    );
+  }
 
   const domain = normalizeRequiredDomain(input.domain);
   const competitors = normalizeCompetitorDomains(
@@ -122,6 +131,11 @@ export async function seedBrand(
       brand_id: input.brand_id,
       reason: 'already exists',
     };
+  }
+  if (input.prompt_generation === 'anthropic' && !deps.ANTHROPIC_API_KEY) {
+    throw new DomainInputError(
+      'prompt_generation=anthropic requires ANTHROPIC_API_KEY',
+    );
   }
 
   const category = input.category ?? null;
@@ -144,33 +158,35 @@ export async function seedBrand(
     throw new Error('seedBrand: brand insert apparently failed');
   }
 
-  try {
-    const generated = await generatePrompts(
-      { db: deps.db, ANTHROPIC_API_KEY: deps.ANTHROPIC_API_KEY },
-      brand,
-      promptCount,
-    );
-    return {
-      seeded: true,
-      brand_id: input.brand_id,
-      prompts_inserted: generated.length,
-      prompt_source: 'generated',
-    };
-  } catch (err) {
-    console.warn('seedBrand: generator failed, using fallback prompts', {
-      brand_id: input.brand_id,
-      message: (err as Error).message,
-    });
-    const fallback = substituteFallbackPlaceholders(
-      FALLBACK_PROMPTS,
-      brand.category ?? brand.name,
-    );
-    await deps.db.replacePrompts(input.brand_id, fallback);
-    return {
-      seeded: true,
-      brand_id: input.brand_id,
-      prompts_inserted: fallback.length,
-      prompt_source: 'fallback',
-    };
+  if (input.prompt_generation === 'anthropic') {
+    try {
+      const generated = await generatePrompts(
+        { db: deps.db, ANTHROPIC_API_KEY: deps.ANTHROPIC_API_KEY },
+        brand,
+        promptCount,
+      );
+      return {
+        seeded: true,
+        brand_id: input.brand_id,
+        prompts_inserted: generated.length,
+        prompt_source: 'generated',
+      };
+    } catch (err) {
+      console.warn('seedBrand: generator failed, using fallback prompts', {
+        brand_id: input.brand_id,
+        message: (err as Error).message,
+      });
+    }
   }
+  const fallback = substituteFallbackPlaceholders(
+    FALLBACK_PROMPTS,
+    brand.category ?? brand.name,
+  );
+  await deps.db.replacePrompts(input.brand_id, fallback);
+  return {
+    seeded: true,
+    brand_id: input.brand_id,
+    prompts_inserted: fallback.length,
+    prompt_source: 'fallback',
+  };
 }
