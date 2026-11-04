@@ -295,7 +295,11 @@ test('OpenAI Batch completion continues to populate its persistent cache', async
   await withMockFetch(() => {
     request += 1;
     return request === 1
-      ? jsonResponse({ status: 'completed', output_file_id: 'output-1' })
+      ? jsonResponse({
+        status: 'completed',
+        output_file_id: 'output-1',
+        request_counts: { total: 1, completed: 1, failed: 0 },
+      })
       : new Response(`${batchOutput}\n`);
   }, async (calls) => {
     const result = await collectBatch(
@@ -326,11 +330,12 @@ test('OpenAI Batch completion continues to populate its persistent cache', async
 
 test('OpenAI Batch completed result files must cover every submitted prompt', async () => {
   let persisted = false;
+  const updates: Array<Partial<Run>> = [];
   const db = {
     getPromptsByIds: async (ids: string[]) =>
       ids.includes(prompt.id) ? [prompt] : [],
     persistEngineRun: async () => { persisted = true; },
-    updateRun: async () => {},
+    updateRun: async (_id: string, fields: Partial<Run>) => { updates.push(fields); },
   } as unknown as Db;
   const run: Run = {
     id: 'cardinality-batch-run', brand_id: brand.id, engine: 'chatgpt',
@@ -355,7 +360,64 @@ test('OpenAI Batch completed result files must cover every submitted prompt', as
     },
   );
   assert.equal(persisted, false);
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].status, 'failed');
+  assert.match(String(updates[0].error), /completed batch returned 1 result row/);
 });
+
+test('OpenAI Batch completed metadata must match submitted and finished requests', async () => {
+  const run: Run = {
+    id: 'metadata-batch-run', brand_id: brand.id, engine: 'chatgpt',
+    mode: 'batch', status: 'in_progress', prompts_total: 1,
+    prompts_completed: 0, batch_id: 'batch-metadata',
+    batch_input_file_id: null, started_at: 0, completed_at: null, error: null,
+  };
+  const output = JSON.stringify({
+    custom_id: prompt.id,
+    response: { body: { choices: [{ message: { content: 'Acme response.' } }] } },
+  });
+  const scenarios = [
+    {
+      counts: { total: 2, completed: 1, failed: 0 },
+      expected: /provider request_counts\.total is 2 for 1 submitted prompts/,
+    },
+    {
+      counts: { total: 1, completed: 0, failed: 0 },
+      expected: /provider request_counts completed\+failed is 0 for 1 submitted prompts/,
+    },
+  ];
+  for (const scenario of scenarios) {
+    const updates: Array<Partial<Run>> = [];
+    let persisted = false;
+    const db = {
+      getPromptsByIds: async () => [prompt],
+      persistEngineRun: async () => { persisted = true; },
+      updateRun: async (_id: string, fields: Partial<Run>) => { updates.push(fields); },
+    } as unknown as Db;
+    let request = 0;
+    await withMockFetch(
+      () => (++request === 1
+        ? jsonResponse({
+          status: 'completed', output_file_id: 'output-1',
+          request_counts: scenario.counts,
+        })
+        : new Response(output + '\n')),
+      async (calls) => {
+        await assert.rejects(
+          collectBatch({ db, OPENAI_API_KEY: 'test-key' }, run, brand),
+          scenario.expected,
+        );
+        assert.equal(calls.length, 2);
+      },
+    );
+    assert.equal(persisted, false);
+    assert.equal(updates.length, 1);
+    assert.equal(updates[0].status, 'failed');
+    assert.equal(typeof updates[0].completed_at, 'number');
+    assert.match(String(updates[0].error), /OpenAI batch integrity error/);
+  }
+});
+
 test('OpenAI Batch terminal failures without files stop polling and close the run', async () => {
   for (const status of ['failed', 'expired', 'cancelled']) {
     const updates: Array<Partial<Run>> = [];
