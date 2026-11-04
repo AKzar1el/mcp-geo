@@ -962,6 +962,30 @@ test('getCitationRows returns genuine link-only citations but excludes failed an
     assert.equal(rows.find((row) => row.prompt === 'p-link')?.brand_mentioned, 0);
     assert.equal(rows.find((row) => row.prompt === 'p-link')?.brand_cited_with_link, 1);
     assert.equal((await db.getCitationRows('acme', 0, 'chatgpt')).length, 0);
+    const until = Date.now();
+    const firstPage = await db.getCitationRows('acme', 0, undefined, { limit: 1, until });
+    assert.equal(firstPage.length, 1);
+    const anchor = firstPage[0];
+    const secondPage = await db.getCitationRows('acme', 0, undefined, {
+      limit: 1,
+      until,
+      before: {
+        captured_at: anchor.captured_at,
+        run_id: anchor.run_id,
+        prompt_id: anchor.prompt_id,
+      },
+    });
+    assert.equal(secondPage.length, 1);
+    assert.notEqual(secondPage[0].prompt_id, anchor.prompt_id);
+    assert.equal((await db.getCitationRows('acme', 0, undefined, {
+      limit: 1,
+      until,
+      before: {
+        captured_at: secondPage[0].captured_at,
+        run_id: secondPage[0].run_id,
+        prompt_id: secondPage[0].prompt_id,
+      },
+    })).length, 0);
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });

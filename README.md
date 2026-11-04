@@ -760,9 +760,11 @@ The six analysis capabilities are shared across both transports, but the exposed
 | `visibility.check` | `check_visibility` | Latest AI visibility snapshot across all configured engines for a tracked brand, with per-engine scores, winning prompts, and losing prompts. | `brand_id`, optional `engines[]` filter |
 | `visibility.history` | `get_visibility_history` | Time-series history of overall and per-engine visibility, bucketed daily or weekly. | `brand_id`, optional `days` (default 30), optional `granularity` (`daily`/`weekly`) |
 | `visibility.compare` | `compare_competitors` | Share-of-voice comparison against competitor domains, with prompts you win and prompts they win. | `brand_id`, optional `competitor_domains[]`, optional `days` |
-| `visibility.citations` | `get_citations` | The actual citation events — prompt, engine, response excerpt, citation type, brand URL when present. | `brand_id`, optional `days`, optional `engine` filter |
+| `visibility.citations` | `get_citations` | Paginated citation events — prompt, engine, excerpt, citation type and brand URL when present. | `brand_id`, optional `days`, `engine`, `limit` (1-100), `cursor` |
 | `visibility.content_gaps` | `get_content_gaps` | Evidence-grounded content recommendations by default; optional Claude Haiku analysis when explicitly requested. | `brand_id`, optional `max_recommendations` (1-10), `ai_analysis` (default `false`; `true` incurs Anthropic token charges and may retry once) |
 | `visibility.refresh` | `refresh_brand` | Manually trigger a fresh scan across every engine whose API key is set. | `brand_id`, optional `engines[]` filter |
+
+Citation pages default to 50 rows; when `has_more=true`, send the returned `next_cursor` with the same `brand_id`, `days`, and `engine`. Pagination uses the observation timestamp plus stable run/prompt identifiers, not shifting offsets, and holds the first page's time window fixed. `top_sources` summarizes that whole window, not only the current page. No extra AI provider requests are made to page stored evidence.
 
 The local stdio CLI (npx, desktop extension, Docker) additionally provides brand management — on a Workers deployment the same operations live behind the `X-Seed-Secret`-gated `/admin/*` routes instead:
 

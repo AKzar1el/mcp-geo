@@ -7,6 +7,7 @@ import type {
   Brand,
   BrandSummary,
   CachedResponse,
+  CitationPageOptions,
   CitationRow,
   CreateBrandInput,
   Db,
@@ -742,6 +743,7 @@ export function createD1Db(d1: D1Database): Db {
       brandId: string,
       since: number,
       engine?: string,
+      page?: CitationPageOptions,
     ): Promise<CitationRow[]> {
       let sql = `SELECT r.engine AS engine, p.text AS prompt, pr.raw_response,
                   pr.brand_mentioned, pr.brand_cited_with_link,
@@ -759,7 +761,19 @@ export function createD1Db(d1: D1Database): Db {
         sql += ' AND r.engine = ?';
         params.push(engine);
       }
-      sql += ' ORDER BY pr.captured_at DESC LIMIT 50';
+      if (page?.until !== undefined) {
+        sql += ' AND pr.captured_at <= ?';
+        params.push(page.until);
+      }
+      if (page?.before) {
+        const { captured_at, run_id, prompt_id } = page.before;
+        sql += ` AND (pr.captured_at < ? OR
+          (pr.captured_at = ? AND (pr.run_id < ? OR
+            (pr.run_id = ? AND pr.prompt_id < ?))))`;
+        params.push(captured_at, captured_at, run_id, run_id, prompt_id);
+      }
+      sql += ' ORDER BY pr.captured_at DESC, pr.run_id DESC, pr.prompt_id DESC LIMIT ?';
+      params.push(page?.limit ?? 50);
       const { results } = await d1
         .prepare(sql)
         .bind(...params)
