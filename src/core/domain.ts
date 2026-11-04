@@ -14,6 +14,15 @@ export function normalizeDomainInput(raw: string): string | null {
   s = s.split('#')[0] ?? s; // fragment without a path
   s = s.replace(/:\d+$/, ''); // port
   if (s.startsWith('www.')) s = s.slice(4);
+  // WHATWG URL applies IDNA normalization consistently in Node and Workers.
+  // Check the original host first: URL parsing also accepts encoded or
+  // authority-like syntax that should never be treated as a domain input.
+  if (!/^[\p{L}\p{M}\p{N}.-]+$/u.test(s)) return null;
+  try {
+    s = new URL(`http://${s}`).hostname;
+  } catch {
+    return null;
+  }
   if (s.length === 0 || s.length > 253) return null;
   if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(s)) {
     return null;
