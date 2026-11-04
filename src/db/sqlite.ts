@@ -351,6 +351,17 @@ export function openSqliteDb(path?: string): SqliteDb {
         .run(...(values as never[]));
     },
 
+    async failRunIfInProgress(runId: string, error: string): Promise<boolean> {
+      const result = sqlite
+        .prepare(
+          `UPDATE runs
+              SET status = 'failed', error = ?, completed_at = ?
+            WHERE id = ? AND status = 'in_progress'`,
+        )
+        .run(error.slice(0, 500), Date.now(), runId);
+      return result.changes > 0;
+    },
+
     async getLatestRun(brandId: string, engine: string): Promise<Run | null> {
       const row = sqlite
         .prepare(

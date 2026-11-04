@@ -183,22 +183,38 @@ export async function runEngines(
         });
         return response;
       }),
-  ).then((results) => {
-    results.forEach((r, i) => {
+  ).then(async (results) => {
+    for (const [i, r] of results.entries()) {
+      let dispatchError: string | null = null;
       if (r.status === 'rejected') {
         console.error('runEngines: self-fetch threw past its own try/catch', {
           engine: engineRuns[i].engine,
           run_id: engineRuns[i].run_id,
           reason: String(r.reason),
         });
+        dispatchError = 'Engine dispatch failed before completion';
       } else if (!r.value.ok) {
         console.error('runEngines: /admin/run-engine returned non-2xx', {
           engine: engineRuns[i].engine,
           run_id: engineRuns[i].run_id,
           status: r.value.status,
         });
+        dispatchError = `Engine dispatch returned HTTP ${r.value.status}`;
       }
-    });
+      if (dispatchError) {
+        try {
+          await env.db.failRunIfInProgress(engineRuns[i].run_id, dispatchError);
+        } catch (err) {
+          // The transport already failed. Do not mask the original failure or
+          // issue another provider request just because status storage failed.
+          console.error('runEngines: could not mark failed dispatch terminal', {
+            engine: engineRuns[i].engine,
+            run_id: engineRuns[i].run_id,
+            reason: String(err),
+          });
+        }
+      }
+    }
   });
 
   // Top-level HTTP waitUntil() work is canceled 30 seconds after the
