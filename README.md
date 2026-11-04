@@ -12,6 +12,22 @@
 [![GitHub stars](https://img.shields.io/github/stars/AKzar1el/mcp-geo?style=social)](https://github.com/AKzar1el/mcp-geo/stargazers)
 [![EUR 99 AI Visibility Audit](https://img.shields.io/badge/AI_Visibility_Audit-EUR_99-2ea44f)](https://geo-mcp.digestseo.com/audit)
 
+## See your first result
+
+**mcp-geo** is a free, self-hostable MCP server for measuring brand mentions and, where providers return them, source citations across supported AI answer surfaces. It helps SEO practitioners and agencies compare observations by engine and inspect the underlying evidence. A scan is a point-in-time sample, not a guaranteed ranking or citation outcome.
+
+[![Example AI visibility report](https://raw.githubusercontent.com/AKzar1el/mcp-geo/main/docs/demo-report-hero.png)](https://github.com/AKzar1el/mcp-geo/blob/main/docs/demo-report-full.png)
+
+*[Open the full example report](https://github.com/AKzar1el/mcp-geo/blob/main/docs/demo-report-full.png) · [How the methodology works](https://github.com/AKzar1el/mcp-geo/blob/main/docs/ai-visibility-audit-methodology.md)*. This is an example report generated through the MCP tools, not a customer testimonial or a promised result.
+
+**Your first local scan, after connecting the stdio MCP server:**
+
+1. **Track:** ask your MCP client to run `track_brand` with your own `brand_id`, name, and domain. By default it creates three starter questions without an AI-provider request.
+2. **Measure:** run `refresh_brand` with that `brand_id` to scan the configured engines. **Live scans use your provider API keys and may incur charges.** Engines without keys are skipped; Google AI Mode requires a separate explicit opt-in.
+3. **Inspect:** run `check_visibility` with the same `brand_id` to view available per-engine scores and evidence. Use `get_citations` to inspect citation records where providers supply sources.
+
+**Choose your setup:** [Quick Install and client-specific instructions](#quick-install) for local MCP hosts · [Getting Started](#getting-started) for provider keys and optional Cloudflare hosting · [What the report contains](#what-it-produces) · [Privacy](#privacy-policy). Hosted remote MCP deployments manage brands through their protected admin routes rather than local `track_brand`.
+
 
 ## Quick Install
 
@@ -510,9 +526,7 @@ Engineering case study: [DigestSEO MCP Suite — AI visibility, Search Console, 
 
 ## What it produces
 
-Connect via MCP, ask Claude *"Run an AI visibility analysis on [my brand]"*, and within 90 seconds you get a strategist-quality memo grounded in real per-engine data:
-
-[![Example AI visibility report](https://raw.githubusercontent.com/AKzar1el/mcp-geo/main/docs/demo-report-hero.png)](https://github.com/AKzar1el/mcp-geo/blob/main/docs/demo-report-full.png)
+Connect via MCP and ask an assistant to *"Run an AI visibility analysis on [my brand]"* to synthesize a memo from the per-engine measurements actually available. Results depend on configured providers and successful scans; there is no fixed completion-time or citation guarantee. [Preview the example report above](#see-your-first-result).
 
 *[View the full report including content gaps, engine recommendations, and synthesis →](https://github.com/AKzar1el/mcp-geo/blob/main/docs/demo-report-full.png)*
 
