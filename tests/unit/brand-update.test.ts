@@ -46,6 +46,7 @@ test('updateTrackedBrand updates mutable metadata and preserves active prompts',
 
     assert.equal(result.updated, true);
     assert.equal(result.prompt_set_review_recommended, true);
+    assert.equal(result.historical_attribution_review_recommended, true);
     assert.deepEqual(result.changed_fields, [
       'name',
       'domain',
@@ -75,6 +76,7 @@ test('updateTrackedBrand updates mutable metadata and preserves active prompts',
     });
     assert.equal(paused.updated, true);
     assert.equal(paused.prompt_set_review_recommended, false);
+    assert.equal(paused.historical_attribution_review_recommended, false);
     assert.deepEqual(paused.changed_fields, ['refresh_frequency']);
     assert.equal(paused.brand.refresh_frequency, 'manual');
     assert.deepEqual(
@@ -94,7 +96,22 @@ test('updateTrackedBrand updates mutable metadata and preserves active prompts',
     });
     assert.equal(noOp.updated, false);
     assert.equal(noOp.prompt_set_review_recommended, false);
+    assert.equal(noOp.historical_attribution_review_recommended, false);
     assert.deepEqual(noOp.changed_fields, []);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('identity-only edits flag historical comparability, while competitor-only edits do not', async () => {
+  const { root, db } = await seededDb();
+  try {
+    const identity = await updateTrackedBrand(db, { brand_id: 'acme', domain: 'new-acme.com' });
+    assert.equal(identity.prompt_set_review_recommended, false);
+    assert.equal(identity.historical_attribution_review_recommended, true);
+    const competitors = await updateTrackedBrand(db, { brand_id: 'acme', competitors: ['linear.app'] });
+    assert.equal(competitors.historical_attribution_review_recommended, false);
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });
@@ -152,6 +169,7 @@ test('admin update-brand exposes the same safe partial update contract', async (
     };
     assert.equal(body.updated, true);
     assert.equal(body.prompt_set_review_recommended, true);
+    assert.equal((body as typeof body & { historical_attribution_review_recommended: boolean }).historical_attribution_review_recommended, true);
     assert.deepEqual(body.changed_fields, [
       'category',
       'competitors',
@@ -163,6 +181,7 @@ test('admin update-brand exposes the same safe partial update contract', async (
     assert.equal(body.brand.refresh_frequency, 'manual');
     assert.match(body.next_steps, /historical runs were preserved/);
     assert.match(body.next_steps, /admin\/set-prompts/);
+    assert.match(body.next_steps, /not directly comparable/);
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });
