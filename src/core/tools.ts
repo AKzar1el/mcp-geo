@@ -887,8 +887,8 @@ export interface ManagementDeps {
 // Local brand-management tools, registered ONLY by the stdio CLI
 // (src/cli.ts). The Worker deliberately does not expose these over MCP:
 // on a hosted deployment, brand creation and prompt regeneration stay
-// behind the X-Seed-Secret-gated /admin/* routes, while the OSS
-// Worker's OAuth flow auto-approves any connector.
+// behind the X-Seed-Secret-gated /admin/* routes. Hosted MCP access
+// requires the independent CONNECT_SECRET OAuth authorization gate.
 export function registerLocalManagementTools(
   server: McpServer,
   deps: ManagementDeps,

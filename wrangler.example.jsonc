@@ -104,8 +104,8 @@
 	//   - XAI_API_KEY         (Grok engine with web search - paid)
 	//   - SERPAPI_API_KEY     (Google AI Overviews + optional AI Mode credential - paid)
 	//   - SEED_SECRET         (required — gates /admin/* routes)
-	//   - CONNECT_SECRET      (recommended — gates the OAuth connect flow;
-	//                          without it anyone with the URL can connect)
+		//   - CONNECT_SECRET      (required for hosted OAuth authorization;
+		//                          without it /authorize returns HTTP 503)
 	//   - TURNSTILE_SITE_KEY  (optional — for forks adding a public /check route)
 	//   - TURNSTILE_SECRET_KEY (optional — same)
 }
