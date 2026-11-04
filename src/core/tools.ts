@@ -898,7 +898,7 @@ export function registerLocalManagementTools(
     {
       title: 'Track a brand',
       description:
-        "Create a local tracked brand and starter buyer-intent prompts; uses Claude Haiku when configured, otherwise three generic prompts. Example: brand_id='acme', name='Acme', domain='acme.com'. Call refresh_brand next.",
+        "Track a brand with 3 provider-free starter prompts. Set prompt_generation='anthropic' for paid Claude generation (may retry). Example: brand_id='acme', name='Acme', domain='acme.com'.",
       inputSchema: {
         brand_id: z
           .string()
@@ -944,7 +944,11 @@ export function registerLocalManagementTools(
           .min(1)
           .max(50)
           .default(20)
-          .describe('Buyer-intent prompts to create.'),
+          .describe('Prompt count for explicit Anthropic generation.'),
+        prompt_generation: z
+          .enum(['fallback', 'anthropic'])
+          .default('fallback')
+          .describe('Free fallback by default; anthropic allows token-billed Claude and one retry.'),
         refresh_frequency: z
           .enum(['daily', 'weekly', 'manual'])
           .default('weekly')
@@ -969,6 +973,7 @@ export function registerLocalManagementTools(
       aliases,
       exclude_terms,
       prompt_count,
+      prompt_generation,
       refresh_frequency,
     }) => {
       const normalizedDomain = normalizeRequiredDomain(domain);
@@ -987,6 +992,7 @@ export function registerLocalManagementTools(
           competitors: normalizedCompetitors,
           aliases,
           exclude_terms,
+          prompt_generation,
           refresh_frequency,
         },
         prompt_count,
@@ -996,7 +1002,7 @@ export function registerLocalManagementTools(
       if (result.seeded) {
         next_steps =
           result.prompt_source === 'fallback'
-            ? `Tracked with ${result.prompts_inserted} generic starter prompts (no ANTHROPIC_API_KEY configured for prompt generation). Call refresh_brand with brand_id '${result.brand_id}' to run the first scan; add ANTHROPIC_API_KEY and call generate_prompts later for category-specific prompts.`
+            ? `Tracked with ${result.prompts_inserted} provider-free starter prompts. Call refresh_brand with brand_id '${result.brand_id}' to run the first scan; use generate_prompts later for explicitly requested paid category-specific prompts.`
             : `Call refresh_brand with brand_id '${result.brand_id}' to run the first scan, then check_visibility for the results.`;
       } else if (result.reason === 'already exists') {
         next_steps = `Brand '${result.brand_id}' is already tracked — nothing was changed. Use list_brands to inspect it, update_brand to correct its metadata, or generate_prompts to refresh its prompt set.`;
