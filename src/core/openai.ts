@@ -111,7 +111,7 @@ export async function chatCompletion(
   }
   const message = data.choices?.[0]?.message;
   const content = message?.content;
-  if (typeof content !== 'string') {
+  if (typeof content !== 'string' || content.trim().length === 0) {
     throw new Error('OpenAI response missing choices[0].message.content');
   }
   const citations = (message?.annotations ?? [])

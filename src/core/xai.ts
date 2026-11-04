@@ -131,7 +131,7 @@ export async function chatCompletion(
     throw new Error(`xAI response incomplete: ${data.status ?? 'missing status'}`);
   }
   const text = extractResponseText(data);
-  if (text.length === 0) {
+  if (text.trim().length === 0) {
     throw new Error('xAI response missing output_text');
   }
   return { text, citations: extractResponseCitations(data) };

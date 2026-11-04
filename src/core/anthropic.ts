@@ -74,7 +74,7 @@ export async function chatCompletion(
         : [],
     )
     .join('\n');
-  if (typeof text !== 'string' || text.length === 0) {
+  if (text.trim().length === 0) {
     throw new Error('Anthropic response missing text content block');
   }
   return text;
