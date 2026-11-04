@@ -22,6 +22,7 @@ import type {
   Prompt,
 } from '../db/types.js';
 import { fetchWithTimeout } from './fetch.js';
+import { flattenSerpApiAnswer, type SerpApiAnswerBlock } from './serpapi-answer.js';
 
 export const MODEL = 'serpapi-google-ai-overview';
 export const ENGINE = 'ai_overviews';
@@ -47,12 +48,6 @@ export interface AiOverviewCompletion {
   citations: string[];
 }
 
-interface SerpApiTextBlock {
-  type?: string;
-  snippet?: string;
-  list?: Array<{ snippet?: string }>;
-}
-
 interface SerpApiReference {
   link?: string;
   source?: string;
@@ -60,7 +55,7 @@ interface SerpApiReference {
 }
 
 interface SerpApiAiOverview {
-  text_blocks?: SerpApiTextBlock[];
+  text_blocks?: SerpApiAnswerBlock[];
   references?: SerpApiReference[];
   page_token?: string;
   serpapi_link?: string;
@@ -69,25 +64,6 @@ interface SerpApiAiOverview {
 interface SerpApiResponse {
   ai_overview?: SerpApiAiOverview;
   error?: string;
-}
-
-function flattenTextBlocks(blocks: SerpApiTextBlock[] | undefined): string {
-  if (!blocks || blocks.length === 0) return '';
-  const parts: string[] = [];
-  for (const block of blocks) {
-    if (!block) continue;
-    if (typeof block.snippet === 'string' && block.snippet.length > 0) {
-      parts.push(block.snippet);
-    }
-    if (Array.isArray(block.list)) {
-      for (const item of block.list) {
-        if (item && typeof item.snippet === 'string' && item.snippet.length > 0) {
-          parts.push('• ' + item.snippet);
-        }
-      }
-    }
-  }
-  return parts.join('\n\n');
 }
 
 function flattenReferences(refs: SerpApiReference[] | undefined): string[] {
@@ -104,7 +80,7 @@ function flattenReferences(refs: SerpApiReference[] | undefined): string[] {
 function completionFromOverview(
   overview: SerpApiAiOverview,
 ): AiOverviewCompletion {
-  const text = flattenTextBlocks(overview.text_blocks);
+  const text = flattenSerpApiAnswer(overview.text_blocks, '•');
   const citations = flattenReferences(overview.references);
   return { text: text.length > 0 ? text : NO_AI_OVERVIEW, citations };
 }
