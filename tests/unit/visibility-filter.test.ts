@@ -22,12 +22,12 @@ const brand: Brand = {
 const claudeTimestamp = Date.UTC(2026, 0, 1, 12);
 const chatgptTimestamp = Date.UTC(2026, 0, 2, 12);
 
-function run(engine: EngineName, timestamp: number): Run {
+function run(engine: EngineName, timestamp: number, mode: 'live' | 'batch' = 'live'): Run {
   return {
     id: `run-${engine}`,
     brand_id: brand.id,
     engine,
-    mode: 'live',
+    mode,
     status: 'completed',
     batch_id: null,
     prompts_total: 2,
@@ -83,6 +83,12 @@ const responses = {
 type VisibilitySnapshot = {
   refreshed_at: string;
   overall_score: number;
+  measurement_scope: {
+    search_requested: { score: number | null; engines: string[] };
+    model_only: { score: number | null; engines: string[] };
+    mixed_modes: boolean;
+    note: string;
+  };
   google_search_sampling: null | {
     engines: string[];
     country: 'us';
@@ -98,6 +104,7 @@ type VisibilitySnapshot = {
   };
   per_engine: Array<{
     engine: string;
+    measurement_mode: 'search_requested' | 'model_only';
     score: number;
     refreshed_at: string;
     coverage: {
@@ -162,6 +169,7 @@ test('check_visibility scopes every snapshot field to the requested engine', asy
   assert.deepEqual(result.structuredContent.per_engine, [
     {
       engine: 'claude',
+      measurement_mode: 'model_only',
       score: 50,
       prompts_appeared_in: 1,
       total_prompts: 2,
@@ -208,6 +216,7 @@ test('check_visibility deduplicates repeated engine filters before scoring', asy
   assert.deepEqual(result.structuredContent.per_engine, [
     {
       engine: 'claude',
+      measurement_mode: 'model_only',
       score: 50,
       prompts_appeared_in: 1,
       total_prompts: 2,
@@ -224,6 +233,14 @@ test('check_visibility treats omitted and empty engine filters as all engines', 
   const empty = await visibility.handler({ brand_id: brand.id, engines: [] });
 
   assert.equal(omitted.structuredContent.overall_score, 75);
+  assert.deepEqual(omitted.structuredContent.measurement_scope.search_requested, {
+    score: 100, engines: ['chatgpt'],
+  });
+  assert.deepEqual(omitted.structuredContent.measurement_scope.model_only, {
+    score: 50, engines: ['claude'],
+  });
+  assert.equal(omitted.structuredContent.measurement_scope.mixed_modes, true);
+  assert.match(omitted.structuredContent.measurement_scope.note, /not independently verified search citations/);
   assert.deepEqual(
     omitted.structuredContent.per_engine.map((engine) => engine.engine),
     ['chatgpt', 'claude'],
@@ -268,6 +285,21 @@ test('check_visibility excludes unselected engines from age warnings', async () 
     mixed_age_warning: false,
     older_engines: [],
   });
+});
+
+test('batch ChatGPT results are not falsely classified as live-search observations', async () => {
+  const batchRun = run('chatgpt', chatgptTimestamp, 'batch');
+  const visibility = registerVisibilityTool({ runs: { chatgpt: batchRun } });
+  const result = await visibility.handler({ brand_id: brand.id, engines: ['chatgpt'] });
+  assert.equal(result.structuredContent.overall_score, 100);
+  assert.deepEqual(result.structuredContent.measurement_scope.search_requested, {
+    score: null, engines: [],
+  });
+  assert.deepEqual(result.structuredContent.measurement_scope.model_only, {
+    score: 100, engines: ['chatgpt'],
+  });
+  assert.equal(result.structuredContent.per_engine[0].measurement_mode, 'model_only');
+  assert.equal(result.structuredContent.measurement_scope.mixed_modes, false);
 });
 
 test('check_visibility keeps sub-day engine scans out of mixed-age warnings', async () => {

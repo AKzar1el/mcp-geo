@@ -51,6 +51,19 @@ const ENGINE_NAMES = [
 
 const engineSchema = z.enum(ENGINE_NAMES);
 
+// Current Claude/Gemini adapters do not request web search. OpenAI Batch
+// outputs also lack the live web-search request made by the ChatGPT adapter.
+// This describes the request path, not a guarantee that a provider supplied
+// independently verifiable citations for every prompt.
+function visibilityMeasurementMode(
+  engine: string,
+  runMode: 'live' | 'batch',
+): 'model_only' | 'search_requested' {
+  return runMode === 'batch' || engine === 'claude' || engine === 'gemini'
+    ? 'model_only'
+    : 'search_requested';
+}
+
 const winningPromptOutputSchema = z.object({
   prompt: z.string(),
   engines_cited_in: z.array(z.string()),
@@ -85,6 +98,18 @@ const visibilityOutputSchema = z.object({
   }),
   refreshed_at: z.string(),
   overall_score: z.number(),
+  measurement_scope: z.object({
+    search_requested: z.object({
+      score: z.number().nullable(),
+      engines: z.array(z.string()),
+    }),
+    model_only: z.object({
+      score: z.number().nullable(),
+      engines: z.array(z.string()),
+    }),
+    mixed_modes: z.boolean(),
+    note: z.string(),
+  }),
   google_search_sampling: z.object({
     engines: z.array(z.string()),
     country: z.literal('us'),
@@ -101,6 +126,7 @@ const visibilityOutputSchema = z.object({
   per_engine: z.array(
     z.object({
       engine: z.string(),
+      measurement_mode: z.enum(['search_requested', 'model_only']),
       score: z.number(),
       prompts_appeared_in: z.number(),
       total_prompts: z.number(),
@@ -432,6 +458,7 @@ export function registerTools(
       const refreshedAtByEngine = new Map<string, string>();
       const refreshMsByEngine = new Map<string, number>();
       const expectedPromptsByEngine = new Map<string, number>();
+      const measurementModeByEngine = new Map<string, 'search_requested' | 'model_only'>();
       let mostRecentTimestamp = 0;
       for (const engine of selectedEngines) {
         const run = await deps.db.getLatestCompletedRun(brand_id, engine);
@@ -439,6 +466,7 @@ export function registerTools(
         const responses = await deps.db.getResponsesForRun(run.id);
         if (responses.length === 0) continue;
         selectedResponses.push(...responses);
+        measurementModeByEngine.set(engine, visibilityMeasurementMode(engine, run.mode));
         expectedPromptsByEngine.set(engine, run.prompts_total);
         const ts = run.completed_at ?? run.started_at;
         refreshedAtByEngine.set(engine, new Date(ts).toISOString());
@@ -471,6 +499,7 @@ export function registerTools(
         );
         return {
           ...engine,
+          measurement_mode: measurementModeByEngine.get(engine.engine)!,
           refreshed_at: refreshedAtByEngine.get(engine.engine)!,
           coverage: {
             usable_prompts: engine.total_prompts,
@@ -481,6 +510,18 @@ export function registerTools(
         };
       });
 
+      const measurementGroup = (mode: 'search_requested' | 'model_only') => {
+        const engines = perEngine.filter((engine) => engine.measurement_mode === mode);
+        return {
+          score: engines.length === 0
+            ? null
+            : Math.round(engines.reduce((sum, engine) => sum + engine.score, 0) / engines.length),
+          engines: engines.map((engine) => engine.engine),
+        };
+      };
+      const searchRequested = measurementGroup('search_requested');
+      const modelOnly = measurementGroup('model_only');
+
       const payload = {
         brand: {
           id: brand.id,
@@ -490,6 +531,12 @@ export function registerTools(
         },
         refreshed_at: new Date(mostRecentTimestamp).toISOString(),
         overall_score: scored.overall_score,
+        measurement_scope: {
+          search_requested: searchRequested,
+          model_only: modelOnly,
+          mixed_modes: searchRequested.engines.length > 0 && modelOnly.engines.length > 0,
+          note: 'Scores count brand mentions in usable responses, not independently verified search citations. Search-requested engines use a live search/SERP request path but may return no source links. Claude and Gemini here use model-only answers; ungrounded batch runs are also model-only. Compare these groups separately, especially before interpreting the combined overall_score.',
+        },
         google_search_sampling: (() => {
           const googleEngines = perEngine
             .filter(({ engine }) => engine === 'ai_overviews' || engine === 'ai_mode')
