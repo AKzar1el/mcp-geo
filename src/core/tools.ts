@@ -132,9 +132,22 @@ const historyOutputSchema = z.object({
   ),
 });
 
+const comparedPromptOutputSchema = z.object({
+  prompt: z.string(),
+  you_cited_by: z.array(z.string()),
+  competitors_cited: z.array(z.string()),
+});
+
+const COMPARISON_SEMANTICS =
+  'Legacy prompts_you_win includes all brand-mentioned prompts, including co-mentions. ' +
+  'prompts_brand_only and prompts_co_mentioned classify individual engine responses; ' +
+  'a prompt can occur in both when engines differ. ' +
+  'prompts_won_against_you lists competitor mentions where the tracked brand is absent.';
+
 const compareOutputSchema = z.object({
   brand_id: z.string(),
   days: z.number(),
+  comparison_semantics: z.string(),
   your_share_of_voice_pct: z.number(),
   your_mentions: z.number(),
   competitors: z.array(
@@ -145,13 +158,9 @@ const compareOutputSchema = z.object({
       prompts_won_against_you: z.array(z.string()),
     }),
   ),
-  prompts_you_win: z.array(
-    z.object({
-      prompt: z.string(),
-      you_cited_by: z.array(z.string()),
-      competitors_cited: z.array(z.string()),
-    }),
-  ),
+  prompts_you_win: z.array(comparedPromptOutputSchema),
+  prompts_brand_only: z.array(comparedPromptOutputSchema),
+  prompts_co_mentioned: z.array(comparedPromptOutputSchema),
   requested_competitor_domains: z.array(z.string()).nullable(),
 });
 
@@ -580,7 +589,7 @@ export function registerTools(
     {
       title: 'Compare competitor AI visibility',
       description:
-        "Compare stored brand and competitor mentions, share of voice, and prompt wins over a time window. Example: brand_id='acme', competitor_domains=['rival.com'], days=7.",
+        "Compare brand and competitor mentions, brand-only versus co-mentioned prompts, and share of voice. Example: brand_id='acme', competitor_domains=['rival.com'], days=7.",
       inputSchema: {
         brand_id: z
           .string()
@@ -620,8 +629,11 @@ export function registerTools(
             'No competitor list configured for this brand. Pass competitor_domains or set brand.competitors.',
           your_share_of_voice_pct: 0,
           your_mentions: 0,
+          comparison_semantics: COMPARISON_SEMANTICS,
           competitors: [],
           prompts_you_win: [],
+          prompts_brand_only: [],
+          prompts_co_mentioned: [],
           requested_competitor_domains: competitor_domains ?? null,
         };
         return toolResult(payload);
@@ -667,33 +679,41 @@ export function registerTools(
         };
       });
 
-      const winsByPrompt = new Map<
-        string,
-        {
-          prompt: string;
-          engines: Set<string>;
-          competitors: Set<string>;
-        }
-      >();
-      for (const r of allResponses) {
-        if (r.brand_mentioned !== 1) continue;
-        const existing = winsByPrompt.get(r.prompt_id);
+      type ComparedPrompt = {
+        prompt: string;
+        engines: Set<string>;
+        competitors: Set<string>;
+      };
+      const winsByPrompt = new Map<string, ComparedPrompt>();
+      const brandOnlyByPrompt = new Map<string, ComparedPrompt>();
+      const coMentionedByPrompt = new Map<string, ComparedPrompt>();
+      const collectPrompt = (
+        map: Map<string, ComparedPrompt>,
+        r: PromptResponse,
+        mentionedCompetitors: string[],
+      ) => {
+        const existing = map.get(r.prompt_id);
         if (existing) {
           existing.engines.add(r.engine);
-          for (const c of r.competitors_mentioned) {
-            if (targets.includes(c)) existing.competitors.add(c);
+          for (const competitor of mentionedCompetitors) {
+            existing.competitors.add(competitor);
           }
         } else {
-          winsByPrompt.set(r.prompt_id, {
+          map.set(r.prompt_id, {
             prompt: r.prompt_text,
             engines: new Set([r.engine]),
-            competitors: new Set(
-              r.competitors_mentioned.filter((c) => targets.includes(c)),
-            ),
+            competitors: new Set(mentionedCompetitors),
           });
         }
+      };
+      for (const r of allResponses) {
+        if (r.brand_mentioned !== 1) continue;
+        const mentioned = r.competitors_mentioned.filter((c) => targets.includes(c));
+        collectPrompt(winsByPrompt, r, mentioned);
+        // Keep legacy inclusive mentions while exposing unambiguous per-response cohorts.
+        collectPrompt(mentioned.length > 0 ? coMentionedByPrompt : brandOnlyByPrompt, r, mentioned);
       }
-      const prompts_you_win = [...winsByPrompt.values()]
+      const topPrompts = (map: Map<string, ComparedPrompt>) => [...map.values()]
         .sort((a, b) => b.engines.size - a.engines.size)
         .slice(0, 5)
         .map((w) => ({
@@ -701,14 +721,20 @@ export function registerTools(
           you_cited_by: [...w.engines].sort(),
           competitors_cited: [...w.competitors].sort(),
         }));
+      const prompts_you_win = topPrompts(winsByPrompt);
+      const prompts_brand_only = topPrompts(brandOnlyByPrompt);
+      const prompts_co_mentioned = topPrompts(coMentionedByPrompt);
 
       const payload = {
         brand_id,
         days,
         your_share_of_voice_pct: pct(brandMentions),
         your_mentions: brandMentions,
+        comparison_semantics: COMPARISON_SEMANTICS,
         competitors: competitorsOut,
         prompts_you_win,
+        prompts_brand_only,
+        prompts_co_mentioned,
         requested_competitor_domains: competitor_domains ?? null,
       };
       return toolResult(payload);
