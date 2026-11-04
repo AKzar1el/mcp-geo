@@ -83,6 +83,13 @@ const responses = {
 type VisibilitySnapshot = {
   refreshed_at: string;
   overall_score: number;
+  freshness: {
+    oldest_refreshed_at: string;
+    newest_refreshed_at: string;
+    age_spread_hours: number;
+    mixed_age_warning: boolean;
+    older_engines: string[];
+  };
   per_engine: Array<{
     engine: string;
     score: number;
@@ -220,6 +227,34 @@ test('check_visibility treats omitted and empty engine filters as all engines', 
     ],
   );
   assert.deepEqual(empty.structuredContent, omitted.structuredContent);
+  assert.deepEqual(omitted.structuredContent.freshness, {
+    oldest_refreshed_at: new Date(claudeTimestamp).toISOString(),
+    newest_refreshed_at: new Date(chatgptTimestamp).toISOString(),
+    age_spread_hours: 24,
+    mixed_age_warning: true,
+    older_engines: ['claude'],
+  });
+});
+
+test('check_visibility excludes unselected engines from age warnings', async () => {
+  const visibility = registerVisibilityTool();
+  const result = await visibility.handler({ brand_id: brand.id, engines: ['claude'] });
+  assert.deepEqual(result.structuredContent.freshness, {
+    oldest_refreshed_at: new Date(claudeTimestamp).toISOString(),
+    newest_refreshed_at: new Date(claudeTimestamp).toISOString(),
+    age_spread_hours: 0,
+    mixed_age_warning: false,
+    older_engines: [],
+  });
+});
+
+test('check_visibility keeps sub-day engine scans out of mixed-age warnings', async () => {
+  const recentClaude = Date.UTC(2026, 0, 2, 11, 30);
+  const tool = registerVisibilityTool({ runs: { claude: run('claude', recentClaude) } });
+  const result = await tool.handler({ brand_id: brand.id });
+  assert.equal(result.structuredContent.freshness.age_spread_hours, 0.5);
+  assert.equal(result.structuredContent.freshness.mixed_age_warning, false);
+  assert.deepEqual(result.structuredContent.freshness.older_engines, []);
 });
 
 test('check_visibility does not fall back to other engines when the selection has no data', async () => {

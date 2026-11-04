@@ -35,6 +35,13 @@ test('visibility output schema describes winning and losing prompt records', () 
     brand: { id: 'acme', name: 'Acme', domain: 'acme.com', category: null },
     refreshed_at: '2026-09-19T00:00:00.000Z',
     overall_score: 50,
+    freshness: {
+      oldest_refreshed_at: '2026-09-18T00:00:00.000Z',
+      newest_refreshed_at: '2026-09-19T00:00:00.000Z',
+      age_spread_hours: 24,
+      mixed_age_warning: true,
+      older_engines: ['claude'],
+    },
     per_engine: [],
     top_winning_prompts: [
       { prompt: 'best project tools', engines_cited_in: ['chatgpt'] },
@@ -49,6 +56,13 @@ test('visibility output schema describes winning and losing prompt records', () 
     brand: { id: 'acme', name: 'Acme', domain: 'acme.com', category: null },
     refreshed_at: '2026-09-19T00:00:00.000Z',
     overall_score: 50,
+    freshness: {
+      oldest_refreshed_at: '2026-09-18T00:00:00.000Z',
+      newest_refreshed_at: '2026-09-19T00:00:00.000Z',
+      age_spread_hours: 24,
+      mixed_age_warning: true,
+      older_engines: ['claude'],
+    },
     per_engine: [],
     top_winning_prompts: [{ prompt: 'missing engines' }],
     top_losing_prompts: [],
