@@ -35,6 +35,7 @@ test('visibility output schema describes winning and losing prompt records', () 
     brand: { id: 'acme', name: 'Acme', domain: 'acme.com', category: null },
     refreshed_at: '2026-09-19T00:00:00.000Z',
     overall_score: 50,
+    google_search_sampling: null,
     freshness: {
       oldest_refreshed_at: '2026-09-18T00:00:00.000Z',
       newest_refreshed_at: '2026-09-19T00:00:00.000Z',
@@ -56,6 +57,7 @@ test('visibility output schema describes winning and losing prompt records', () 
     brand: { id: 'acme', name: 'Acme', domain: 'acme.com', category: null },
     refreshed_at: '2026-09-19T00:00:00.000Z',
     overall_score: 50,
+    google_search_sampling: null,
     freshness: {
       oldest_refreshed_at: '2026-09-18T00:00:00.000Z',
       newest_refreshed_at: '2026-09-19T00:00:00.000Z',

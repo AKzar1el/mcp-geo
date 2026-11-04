@@ -85,6 +85,12 @@ const visibilityOutputSchema = z.object({
   }),
   refreshed_at: z.string(),
   overall_score: z.number(),
+  google_search_sampling: z.object({
+    engines: z.array(z.string()),
+    country: z.literal('us'),
+    language: z.literal('en'),
+    scope_note: z.string(),
+  }).nullable(),
   freshness: z.object({
     oldest_refreshed_at: z.string(),
     newest_refreshed_at: z.string(),
@@ -468,6 +474,17 @@ export function registerTools(
         },
         refreshed_at: new Date(mostRecentTimestamp).toISOString(),
         overall_score: scored.overall_score,
+        google_search_sampling: (() => {
+          const googleEngines = perEngine
+            .filter(({ engine }) => engine === 'ai_overviews' || engine === 'ai_mode')
+            .map(({ engine }) => engine);
+          return googleEngines.length === 0 ? null : {
+            engines: googleEngines,
+            country: 'us' as const,
+            language: 'en' as const,
+            scope_note: 'Google AI Overviews and AI Mode are sampled using US location (gl=us) and English interface (hl=en); results do not establish visibility in other markets or languages.',
+          };
+        })(),
         freshness: {
           oldest_refreshed_at: new Date(oldestTimestamp).toISOString(),
           newest_refreshed_at: new Date(mostRecentTimestamp).toISOString(),

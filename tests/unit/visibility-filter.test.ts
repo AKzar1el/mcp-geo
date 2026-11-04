@@ -83,6 +83,12 @@ const responses = {
 type VisibilitySnapshot = {
   refreshed_at: string;
   overall_score: number;
+  google_search_sampling: null | {
+    engines: string[];
+    country: 'us';
+    language: 'en';
+    scope_note: string;
+  };
   freshness: {
     oldest_refreshed_at: string;
     newest_refreshed_at: string;
@@ -152,6 +158,7 @@ test('check_visibility scopes every snapshot field to the requested engine', asy
   });
 
   assert.equal(result.structuredContent.overall_score, 50);
+  assert.equal(result.structuredContent.google_search_sampling, null);
   assert.deepEqual(result.structuredContent.per_engine, [
     {
       engine: 'claude',
@@ -172,6 +179,21 @@ test('check_visibility scopes every snapshot field to the requested engine', asy
     result.structuredContent.refreshed_at,
     new Date(claudeTimestamp).toISOString(),
   );
+});
+
+test('check_visibility discloses US-English sampling only when Google search results are included', async () => {
+  const googleRun = run('ai_overviews', chatgptTimestamp);
+  const visibility = registerVisibilityTool({
+    runs: { ai_overviews: googleRun },
+    responses: {
+      [googleRun.id]: [response('ai_overviews', 'google-prompt', 'Google result', 1)],
+    },
+  });
+  const result = await visibility.handler({ brand_id: brand.id, engines: ['ai_overviews'] });
+  assert.deepEqual(result.structuredContent.google_search_sampling?.engines, ['ai_overviews']);
+  assert.equal(result.structuredContent.google_search_sampling?.country, 'us');
+  assert.equal(result.structuredContent.google_search_sampling?.language, 'en');
+  assert.match(result.structuredContent.google_search_sampling?.scope_note ?? '', /other markets or languages/);
 });
 
 test('check_visibility deduplicates repeated engine filters before scoring', async () => {
