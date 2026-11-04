@@ -214,6 +214,9 @@ export interface Db {
     promptsTotal: number,
   ): Promise<Run>;
   updateRun(runId: string, fields: UpdateRunFields): Promise<void>;
+  // Close transport-level dispatch failures only if the engine has not
+  // already completed independently; leave any partial evidence intact.
+  failRunIfInProgress(runId: string, error: string): Promise<boolean>;
   getLatestRun(brandId: string, engine: string): Promise<Run | null>;
   // "Latest run that produced any usable data for this (brand, engine)"
   // — anchors on EXISTS(ok rows), NOT run.status='completed', so

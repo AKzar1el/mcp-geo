@@ -272,6 +272,18 @@ export function createD1Db(d1: D1Database): Db {
         .run();
     },
 
+    async failRunIfInProgress(runId: string, error: string): Promise<boolean> {
+      const result = await d1
+        .prepare(
+          `UPDATE runs
+              SET status = 'failed', error = ?, completed_at = ?
+            WHERE id = ? AND status = 'in_progress'`,
+        )
+        .bind(error.slice(0, 500), Date.now(), runId)
+        .run();
+      return (result.meta.changes ?? 0) > 0;
+    },
+
     async getLatestRun(brandId: string, engine: string): Promise<Run | null> {
       const row = await d1
         .prepare(

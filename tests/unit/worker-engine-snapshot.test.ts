@@ -182,3 +182,50 @@ test('runEngines can keep HTTP admin dispatch attached until service-binding wor
   });
   assert.equal(settled, true);
 });
+
+test('runEngines marks non-2xx and rejected service dispatches terminal without retries', async () => {
+  for (const [label, handler, expectedMessage] of [
+    ['503', async () => new Response('temporarily unavailable', { status: 503 }), 'Engine dispatch returned HTTP 503'],
+    ['rejection', async () => { throw new Error('connection lost'); }, 'Engine dispatch failed before completion'],
+  ] as const) {
+    let fetchCalls = 0;
+    const failures: Array<{ runId: string; error: string }> = [];
+    const db = {
+      createRun: async () => ({
+        id: 'transport-' + label,
+        brand_id: brand.id,
+        engine: 'chatgpt',
+        mode: 'live' as const,
+        status: 'in_progress' as const,
+        batch_id: null,
+        prompts_total: 1,
+        prompts_completed: 0,
+        cost_eur_estimate: null,
+        error: null,
+        started_at: 0,
+        completed_at: null,
+      }),
+      failRunIfInProgress: async (runId: string, error: string) => {
+        failures.push({ runId, error });
+        return true;
+      },
+    } as Db;
+    const env = {
+      db,
+      SEED_SECRET: 'test-secret',
+      SELF_URL: 'https://worker.example.test',
+      OPENAI_API_KEY: 'test-key',
+      SELF: {
+        fetch: async () => {
+          fetchCalls += 1;
+          return handler();
+        },
+      },
+    };
+    const ctx = { waitUntil: () => { throw new Error('waitUntil not expected'); } };
+    const result = await runEngines(env, ctx, brand, [oldPrompts[0]], ['chatgpt'], undefined, true);
+    assert.deepEqual(result.engines, ['chatgpt']);
+    assert.deepEqual(failures, [{ runId: 'transport-' + label, error: expectedMessage }]);
+    assert.equal(fetchCalls, 1, 'transport failure must not trigger another provider request');
+  }
+});

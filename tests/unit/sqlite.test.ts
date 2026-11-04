@@ -134,6 +134,47 @@ test('openSqliteDb() with no argument honors DIGESTSEO_DB_PATH', () => {
   }
 });
 
+test('dispatch failure closes only an in-progress run and keeps completed evidence', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'digestseo.sqlite'));
+  try {
+    seedBrandFixture(db, 'acme');
+    seedPromptFixture(db, 'acme', 'prompt-1', 'What is Acme?');
+    const brand = await db.getBrand('acme');
+    assert.ok(brand);
+    const failed = await db.createRun(brand, 'chatgpt', 'live', 1);
+    await db.insertPromptResponse({
+      run_id: failed.id,
+      prompt_id: 'prompt-1',
+      engine: 'chatgpt',
+      raw_response: 'Acme appeared in a partial result.',
+      brand_mentioned: 1,
+      brand_cited_with_link: 0,
+      cited_urls: [],
+      competitors_mentioned: [],
+      status: 'ok',
+    });
+    assert.equal(await db.failRunIfInProgress(failed.id, 'HTTP 503'), true);
+    assert.equal((await db.getRunById(failed.id))?.status, 'failed');
+    assert.equal((await db.getRunById(failed.id))?.error, 'HTTP 503');
+    assert.ok((await db.getRunById(failed.id))?.completed_at);
+    assert.equal((await db.getResponsesForRun(failed.id)).length, 1);
+    assert.equal(await db.failRunIfInProgress(failed.id, 'late retry'), false);
+    assert.equal((await db.getRunById(failed.id))?.error, 'HTTP 503');
+
+    const completed = await db.createRun(brand, 'claude', 'live', 1);
+    await db.updateRun(completed.id, {
+      status: 'completed', prompts_completed: 1, completed_at: Date.now(),
+    });
+    assert.equal(await db.failRunIfInProgress(completed.id, 'late 503'), false);
+    assert.equal((await db.getRunById(completed.id))?.status, 'completed');
+    assert.equal((await db.getRunById(completed.id))?.error, null);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('insert brand → getBrand round-trips with parsed competitors', async () => {
   const root = tempRoot();
   const db = openSqliteDb(join(root, 'digestseo.sqlite'));
