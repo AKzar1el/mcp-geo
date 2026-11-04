@@ -20,6 +20,7 @@ export interface UpdateTrackedBrandResult {
   updated: boolean;
   brand_id: string;
   changed_fields: string[];
+  prompt_set_review_recommended: boolean;
   brand: Brand;
 }
 
@@ -108,6 +109,7 @@ export async function updateTrackedBrand(
     updated: changedFields.length > 0,
     brand_id: input.brand_id,
     changed_fields: changedFields,
+    prompt_set_review_recommended: changedFields.includes('category'),
     brand,
   };
 }
