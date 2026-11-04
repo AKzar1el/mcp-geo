@@ -13,6 +13,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openSqliteDb, type SqliteDb } from '../../src/db/sqlite.ts';
+import { createD1Db } from '../../src/db/d1.ts';
 import { seedBrand } from '../../src/core/seed.ts';
 import { collectBatch } from '../../src/core/openai.ts';
 
@@ -779,6 +780,105 @@ test('getBrandsDueForRefresh uses the latest run with usable responses', async (
       (await db.getBrandsDueForRefresh(['chatgpt'])).map((brand) => brand.id),
     );
     assert.equal(engineDue.has('manual-only'), false);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('partial prompt failures do not reset engine freshness and retry after a bounded cooldown', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'digestseo.sqlite'));
+  try {
+    await db.upsertUser('test-user', 'test@local');
+    await db.createBrand({
+      id: 'partial-retry',
+      user_id: 'test-user',
+      domain: 'partial-retry.com',
+      name: 'Partial Retry',
+      category: null,
+      competitors: [],
+      aliases: [],
+      exclude_terms: [],
+      refresh_frequency: 'weekly',
+    });
+    seedPromptFixture(db, 'partial-retry', 'retry-p1', 'First buyer question');
+    seedPromptFixture(db, 'partial-retry', 'retry-p2', 'Second buyer question');
+    const brand = await db.getBrand('partial-retry');
+    assert.ok(brand);
+    // Exercise the D1 SQL through a compatible node:sqlite read-only binding,
+    // so both adapters must agree on the same real database fixture.
+    const hosted = createD1Db({
+      prepare(sql: string) {
+        return {
+          bind(...params: unknown[]) {
+            return {
+              async all() {
+                const statement = db.raw.prepare(sql);
+                return { results: statement.all(...(params as Parameters<typeof statement.all>)) };
+              },
+            };
+          },
+        };
+      },
+    } as unknown as Parameters<typeof createD1Db>[0]);
+    const assertBothDue = async (expected: boolean) => {
+      for (const adapter of [db, hosted]) {
+        assert.equal(
+          (await adapter.getBrandsDueForRefresh(['chatgpt'])).some((b) => b.id === brand.id),
+          expected,
+        );
+        assert.equal(
+          (await adapter.getBrandsDueForRefresh()).some((b) => b.id === brand.id),
+          expected,
+        );
+      }
+    };
+    const now = Date.now();
+    const partial = await db.createRun(brand, 'chatgpt', 'live', 2);
+    const result = (prompt_id: string, status: 'ok' | 'failed') => ({
+      prompt_id,
+      raw_response: status === 'ok' ? 'Partial Retry is mentioned.' : '',
+      brand_mentioned: status === 'ok' ? 1 : 0,
+      brand_cited_with_link: 0,
+      cited_urls: [],
+      competitors_mentioned: [],
+      status,
+      error_message: status === 'failed' ? 'Provider unavailable' : null,
+    });
+    await db.persistEngineRun(partial.id, 'chatgpt', 'test-model', 3600, [
+      result('retry-p1', 'ok'),
+      result('retry-p2', 'failed'),
+    ]);
+    // A recent failed attempt must not trigger another paid retry every 6-hour cron.
+    await assertBothDue(false);
+    db.raw.prepare('UPDATE runs SET started_at = ?, completed_at = ? WHERE id = ?')
+      .run(now - 25 * 60 * 60 * 1000, now - 25 * 60 * 60 * 1000, partial.id);
+    // Having one usable row must not make the failed prompt fresh for a week.
+    await assertBothDue(true);
+
+    const secondPartial = await db.createRun(brand, 'chatgpt', 'live', 2);
+    await db.persistEngineRun(secondPartial.id, 'chatgpt', 'test-model', 3600, [
+      result('retry-p1', 'ok'),
+      result('retry-p2', 'failed'),
+    ]);
+    // Even after another 24 hours, a weekly brand cannot consume quota daily
+    // on an indefinitely failing prompt: two attempts within a week is the cap.
+    db.raw.prepare('UPDATE runs SET started_at = ?, completed_at = ? WHERE id = ?')
+      .run(now - 25 * 60 * 60 * 1000, now - 25 * 60 * 60 * 1000, secondPartial.id);
+    await assertBothDue(false);
+
+    // After the earlier attempt falls outside the rolling week, retry is due.
+    db.raw.prepare('UPDATE runs SET started_at = ?, completed_at = ? WHERE id = ?')
+      .run(now - 8 * 24 * 60 * 60 * 1000, now - 8 * 24 * 60 * 60 * 1000, partial.id);
+    await assertBothDue(true);
+
+    const complete = await db.createRun(brand, 'chatgpt', 'live', 2);
+    await db.persistEngineRun(complete.id, 'chatgpt', 'test-model', 3600, [
+      result('retry-p1', 'ok'),
+      result('retry-p2', 'ok'),
+    ]);
+    await assertBothDue(false);
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });
