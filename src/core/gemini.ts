@@ -75,16 +75,17 @@ export async function chatCompletion(
   if (!candidate) {
     throw new Error('Gemini response missing candidates[0]');
   }
-  if (candidate.finishReason && candidate.finishReason !== 'STOP') {
+  // Missing termination metadata is not evidence of a complete answer.
+  if (candidate.finishReason !== 'STOP') {
     throw new Error(
-      `Gemini finished with non-STOP reason: ${candidate.finishReason}`,
+      `Gemini response incomplete: ${candidate.finishReason ?? 'missing finishReason'}`,
     );
   }
   const text = candidate.content?.parts
     ?.filter((part) => part.thought !== true && typeof part.text === 'string')
     .map((part) => part.text)
     .join('');
-  if (typeof text !== 'string' || text.length === 0) {
+  if (typeof text !== 'string' || text.trim().length === 0) {
     throw new Error('Gemini response missing usable non-thinking text parts');
   }
   return text;

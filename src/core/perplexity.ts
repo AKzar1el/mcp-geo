@@ -143,7 +143,7 @@ export async function chatCompletion(
     );
   }
   const text = extractAgentText(data);
-  if (text.length === 0) {
+  if (text.trim().length === 0) {
     throw new Error('Perplexity Agent API response missing output_text');
   }
   const citations = extractAgentCitations(data);
