@@ -336,3 +336,26 @@ test('get_citations rejects a cursor used with a different brand or engine', asy
     /Invalid citation cursor/,
   );
 });
+
+test('get_citations refuses forged or expired time windows in cursor pagination', async () => {
+  const observed = Date.now() - 1_000;
+  const tool = registerCitationTool([
+    citationRow({ captured_at: observed, prompt_id: 'p1' }),
+    citationRow({ captured_at: observed, prompt_id: 'p2' }),
+  ]);
+  const first = await tool.handler({ brand_id: brand.id, limit: 1 });
+  assert.ok(first.structuredContent.next_cursor);
+  const original = JSON.parse(decodeURIComponent(first.structuredContent.next_cursor!));
+  const alterations = [
+    { ...original, since: 0 },
+    { ...original, until: Date.now() + 86_400_000, since: Date.now() + 86_400_000 - 14 * 86_400_000 },
+    { ...original, until: Date.now() - 3 * 86_400_000, since: Date.now() - 17 * 86_400_000 },
+    { ...original, before: { ...original.before, captured_at: original.since - 1 } },
+  ];
+  for (const forged of alterations) {
+    await assert.rejects(
+      tool.handler({ brand_id: brand.id, limit: 1, cursor: encodeURIComponent(JSON.stringify(forged)) }),
+      /Invalid citation cursor/,
+    );
+  }
+});
