@@ -104,8 +104,10 @@ export async function chatCompletion(
   }
   const data = (await resp.json()) as ChatCompletionResponse;
   const finishReason = data.choices?.[0]?.finish_reason;
-  if (finishReason === 'length' || finishReason === 'content_filter') {
-    throw new Error(`OpenAI response incomplete: ${finishReason}`);
+  // Only a normally finished, non-streaming answer is scoreable. Missing
+  // metadata or tool handoff can contain partial text.
+  if (finishReason !== 'stop') {
+    throw new Error(`OpenAI response incomplete: ${finishReason ?? 'missing finish_reason'}`);
   }
   const message = data.choices?.[0]?.message;
   const content = message?.content;
