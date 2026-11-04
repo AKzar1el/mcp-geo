@@ -85,6 +85,13 @@ const visibilityOutputSchema = z.object({
   }),
   refreshed_at: z.string(),
   overall_score: z.number(),
+  freshness: z.object({
+    oldest_refreshed_at: z.string(),
+    newest_refreshed_at: z.string(),
+    age_spread_hours: z.number(),
+    mixed_age_warning: z.boolean(),
+    older_engines: z.array(z.string()),
+  }),
   per_engine: z.array(
     z.object({
       engine: z.string(),
@@ -361,6 +368,7 @@ export function registerTools(
         !engines || engines.length === 0 ? ALL_ENGINES : uniqueEngineNames(engines);
       const selectedResponses: PromptResponse[] = [];
       const refreshedAtByEngine = new Map<string, string>();
+      const refreshMsByEngine = new Map<string, number>();
       const expectedPromptsByEngine = new Map<string, number>();
       let mostRecentTimestamp = 0;
       for (const engine of selectedEngines) {
@@ -372,6 +380,7 @@ export function registerTools(
         expectedPromptsByEngine.set(engine, run.prompts_total);
         const ts = run.completed_at ?? run.started_at;
         refreshedAtByEngine.set(engine, new Date(ts).toISOString());
+        refreshMsByEngine.set(engine, ts);
         if (ts > mostRecentTimestamp) mostRecentTimestamp = ts;
       }
       if (selectedResponses.length === 0) {
@@ -382,6 +391,15 @@ export function registerTools(
         );
       }
       const scored = computeOverallScore(brand, selectedResponses);
+      const oldestTimestamp = Math.min(...refreshMsByEngine.values());
+      const ageSpreadMs = mostRecentTimestamp - oldestTimestamp;
+      // Warn only for materially different observation windows, not minor
+      // dispatch delays within a normal multi-engine refresh.
+      const mixedAgeCutoffMs = 24 * 60 * 60 * 1000;
+      const olderEngines = [...refreshMsByEngine.entries()]
+        .filter(([, timestamp]) => mostRecentTimestamp - timestamp >= mixedAgeCutoffMs)
+        .map(([engine]) => engine)
+        .sort();
       const perEngine = scored.per_engine.map((engine) => {
         // The score is conditional on usable responses. Report its sample
         // coverage explicitly rather than presenting a partial scan as full.
@@ -410,6 +428,13 @@ export function registerTools(
         },
         refreshed_at: new Date(mostRecentTimestamp).toISOString(),
         overall_score: scored.overall_score,
+        freshness: {
+          oldest_refreshed_at: new Date(oldestTimestamp).toISOString(),
+          newest_refreshed_at: new Date(mostRecentTimestamp).toISOString(),
+          age_spread_hours: Math.round((ageSpreadMs / 3600000) * 10) / 10,
+          mixed_age_warning: olderEngines.length > 0,
+          older_engines: olderEngines,
+        },
         per_engine: perEngine,
         top_winning_prompts: scored.top_winning_prompts,
         top_losing_prompts: scored.top_losing_prompts,

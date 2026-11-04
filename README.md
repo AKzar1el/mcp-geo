@@ -498,6 +498,8 @@ Kiro supports local STDIO MCP servers across its current surfaces. The zero-key 
 
 **First run:** ask your client to *"track acme.com as brand `acme`, then refresh it"* — `track_brand` creates three provider-free starter prompts, `refresh_brand` runs the first scan, and `check_visibility` shows the scores. To opt in to token-billed Claude prompt generation, specify `prompt_generation='anthropic'`.
 
+**Reading combined scores:** `check_visibility` reports each engine's observation time and a `freshness` range for the combined score. `mixed_age_warning=true` means at least one engine was measured 24 hours or more before the newest engine; `older_engines` identifies which. The overall score still averages available engine scores, not a synchronized new scan. Use `refresh_brand` to update old measurements before comparisons; this may incur configured provider API costs.
+
 AI agents installing this server: follow [llms-install.md](https://github.com/AKzar1el/mcp-geo/blob/main/llms-install.md). Prefer a remote server with cron auto-refresh? Self-host on Cloudflare Workers below.
 
 ---
