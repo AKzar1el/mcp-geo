@@ -127,8 +127,8 @@ export async function chatCompletion(
     throw new Error(`xAI Responses API failed: ${resp.status} ${text}`);
   }
   const data = (await resp.json()) as XAiResponse;
-  if (data.status !== undefined && data.status !== 'completed') {
-    throw new Error(`xAI response incomplete: ${data.status}`);
+  if (data.status !== 'completed') {
+    throw new Error(`xAI response incomplete: ${data.status ?? 'missing status'}`);
   }
   const text = extractResponseText(data);
   if (text.length === 0) {

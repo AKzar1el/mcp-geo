@@ -8,6 +8,7 @@ test('Anthropic joins all text blocks while ignoring non-text content', async ()
   globalThis.fetch = async (input) => {
     seenUrl = String(input);
     return new Response(JSON.stringify({
+      stop_reason: 'end_turn',
       content: [
         { type: 'text', text: 'Acme is visible.' },
         { type: 'thinking', thinking: 'not user-visible' },
@@ -29,6 +30,7 @@ test('Anthropic joins all text blocks while ignoring non-text content', async ()
 test('Anthropic fails when response has no usable text blocks', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => new Response(JSON.stringify({
+    stop_reason: 'end_turn',
     content: [{ type: 'thinking', thinking: 'not user-visible' }],
   }), { status: 200 });
   try {

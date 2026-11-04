@@ -13,6 +13,7 @@ test('xAI uses Responses API with required web search and captures citations', a
     seenInit = init;
     return new Response(
       JSON.stringify({
+        status: 'completed',
         output: [
           {
             type: 'message',
@@ -94,7 +95,7 @@ test('xAI surfaces non-2xx Responses API failures', async () => {
 test('xAI rejects responses without output text', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () =>
-    new Response(JSON.stringify({ output: [], citations: [] }), {
+    new Response(JSON.stringify({ status: 'completed', output: [], citations: [] }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });

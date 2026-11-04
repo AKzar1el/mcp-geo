@@ -6,6 +6,7 @@ import type { Brand, Db, NewPromptInput } from '../../src/db/types.ts';
 function anthropicResponse(prompts: unknown[]): Response {
   return new Response(
     JSON.stringify({
+      stop_reason: 'end_turn',
       content: [{ type: 'text', text: JSON.stringify(prompts) }],
     }),
     { status: 200, headers: { 'content-type': 'application/json' } },

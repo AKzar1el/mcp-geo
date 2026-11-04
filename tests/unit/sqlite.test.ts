@@ -1144,6 +1144,7 @@ test('seedBrand requires an explicit opt-in before generating paid Anthropic pro
     providerCalls++;
     assert.match(String(input), /api\.anthropic\.com/);
     return Response.json({
+      stop_reason: 'end_turn',
       content: [{
         type: 'text',
         text: JSON.stringify([{

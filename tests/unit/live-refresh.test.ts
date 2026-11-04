@@ -130,6 +130,7 @@ test('live scans bypass shared cached responses for every provider', async (t) =
       { OPENAI_API_KEY: 'test-key' },
       {
         choices: [{
+          finish_reason: 'stop',
           message: {
             content: 'Fresh Acme provider response.',
             annotations: [{
@@ -157,7 +158,7 @@ test('live scans bypass shared cached responses for every provider', async (t) =
     assertLiveRunBypassesSharedCache(
       runAnthropicLive as LiveRunner,
       { ANTHROPIC_API_KEY: 'test-key' },
-      { content: [{ type: 'text', text: 'Fresh Acme provider response.' }] },
+      { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Fresh Acme provider response.' }] },
     ));
   await t.test('Perplexity', () =>
     assertLiveRunBypassesSharedCache(
@@ -196,6 +197,7 @@ test('live scans bypass shared cached responses for every provider', async (t) =
       runXAiLive as LiveRunner,
       { XAI_API_KEY: 'test-key' },
       {
+        status: 'completed',
         output: [
           {
             type: 'message',

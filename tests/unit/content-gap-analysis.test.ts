@@ -140,6 +140,7 @@ test('content gaps require an explicit opt-in before any paid Anthropic call', a
     calls += 1;
     assert.match(String(input), /api\.anthropic\.com/);
     return Response.json({
+      stop_reason: 'end_turn',
       content: [{ type: 'text', text: JSON.stringify([{
         priority: 1,
         topic: 'Comparison page: Acme vs Asana',

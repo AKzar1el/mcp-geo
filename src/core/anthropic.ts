@@ -62,10 +62,10 @@ export async function chatCompletion(
     throw new Error(`Anthropic completion failed: ${resp.status} ${text}`);
   }
   const data = (await resp.json()) as AnthropicMessageResponse;
-  // A truncated answer is not a complete visibility observation, even if
-  // Anthropic returned some text before exhausting its output budget.
-  if (data.stop_reason === 'max_tokens' || data.stop_reason === 'model_context_window_exceeded') {
-    throw new Error(`Anthropic response incomplete: ${data.stop_reason}`);
+  // Non-streaming responses have a terminal stop_reason. Never score text
+  // from a paused, refused, tool-use or metadata-incomplete response.
+  if (data.stop_reason !== 'end_turn' && data.stop_reason !== 'stop_sequence') {
+    throw new Error(`Anthropic response incomplete: ${data.stop_reason ?? 'missing stop_reason'}`);
   }
   const text = (data.content ?? [])
     .flatMap((block) =>
