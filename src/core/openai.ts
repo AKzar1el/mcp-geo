@@ -692,11 +692,30 @@ export async function collectBatch(
     );
   }
 
-  if (batch.status === 'completed' &&
-      outputLines.length + errorLines.length !== run.prompts_total) {
-    throw new Error(
-      `OpenAI batch integrity error: completed batch returned ${outputLines.length + errorLines.length} result row(s) for ${run.prompts_total} submitted prompts`,
-    );
+  if (batch.status === 'completed') {
+    const rowCount = outputLines.length + errorLines.length;
+    const counts = batch.request_counts;
+    let discrepancy: string | null = null;
+    if (rowCount !== run.prompts_total) {
+      discrepancy = `completed batch returned ${rowCount} result row(s) for ${run.prompts_total} submitted prompts`;
+    } else if (counts?.total !== undefined && counts.total !== run.prompts_total) {
+      discrepancy = `provider request_counts.total is ${counts.total} for ${run.prompts_total} submitted prompts`;
+    } else if (
+      counts?.completed !== undefined && counts.failed !== undefined &&
+      counts.completed + counts.failed !== run.prompts_total
+    ) {
+      discrepancy = `provider request_counts completed+failed is ${counts.completed + counts.failed} for ${run.prompts_total} submitted prompts`;
+    }
+    if (discrepancy) {
+      const error = `OpenAI batch integrity error: ${discrepancy}`;
+      // Retain any prior partial response evidence; never publish a completed score.
+      await env.db.updateRun(run.id, {
+        status: 'failed',
+        error,
+        completed_at: Date.now(),
+      });
+      throw new Error(error);
+    }
   }
 
   const results: EnginePromptResult[] = [];
