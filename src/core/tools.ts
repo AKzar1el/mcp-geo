@@ -11,7 +11,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { Brand, Db, Prompt, PromptResponse } from '../db/types.js';
-import { findTermSetMatchIndex, hostMatchesDomain } from './openai.js';
+import { extractUrls, findTermSetMatchIndex, hostMatchesDomain } from './openai.js';
 import {
   ALL_ENGINES,
   getAvailableEngines,
@@ -165,6 +165,7 @@ const citationsOutputSchema = z.object({
       citation_type: z.string(),
       response_excerpt: z.string(),
       cited_url: z.string().nullable(),
+      url_source: z.enum(['provider_source', 'answer_text']).nullable(),
     }),
   ),
 });
@@ -635,7 +636,7 @@ export function registerTools(
     {
       title: 'Get AI citation evidence',
       description:
-        "Return stored brand citation evidence plus the top engine-native source domains across the same tracked-prompt window. Example: brand_id='acme', days=14, engine='perplexity'.",
+        "Return brand mentions and link-only evidence with genuine URL provenance and top source domains. Provider sources need not appear in the answer. Example: brand_id='acme', days=14.",
       inputSchema: {
         brand_id: z
           .string()
@@ -669,19 +670,22 @@ export function registerTools(
       );
 
       const citations = results.map((row) => {
-        const citedHosts = parseStringArray(row.cited_urls_json);
         const engineHosts = parseStringArray(row.engine_citations_json);
+        const brandUrl = pickBrandUrl(brand, engineHosts, row.raw_response);
         return {
           id: citationId(row.run_id, row.prompt_id),
           engine: row.engine,
           prompt: row.prompt,
           cited_at: new Date(row.captured_at).toISOString(),
           citation_type:
-            row.brand_cited_with_link === 1
+            row.brand_mentioned !== 1 && row.brand_cited_with_link === 1
+              ? 'source_link_only'
+              : row.brand_cited_with_link === 1
               ? 'mention_with_link'
               : 'mention_without_link',
           response_excerpt: buildResponseExcerpt(row.raw_response, brand),
-          cited_url: pickBrandUrl(brand, engineHosts, citedHosts),
+          cited_url: brandUrl?.url ?? null,
+          url_source: brandUrl?.source ?? null,
         };
       });
 
@@ -1388,23 +1392,27 @@ export function buildResponseExcerpt(text: string, brand: Brand): string {
 function pickBrandUrl(
   brand: Brand,
   engineCitations: string[],
-  citedHosts: string[],
-): string | null {
-  for (const rawUrl of engineCitations) {
-    try {
-      const parsed = new URL(rawUrl);
-      if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') continue;
-      let host = parsed.hostname.toLowerCase();
-      if (host.startsWith('www.')) host = host.slice(4);
-      if (hostMatchesDomain(host, brand.domain)) return rawUrl;
-    } catch {
-      // Engine citation payloads are external data. Ignore malformed URLs
-      // and fall back to the normalized host evidence persisted separately.
+  rawResponse: string,
+): { url: string; source: 'provider_source' | 'answer_text' } | null {
+  // Prefer original provider-listed URLs; answer-authored links are a distinct
+  // evidence class and should not silently masquerade as native sources.
+  for (const [urls, source] of [
+    [engineCitations, 'provider_source'],
+    [extractUrls(rawResponse), 'answer_text'],
+  ] as const) {
+    for (const rawUrl of urls) {
+      const url = source === 'answer_text' ? rawUrl.replace(/[.,;!]+$/, '') : rawUrl;
+      try {
+        const parsed = new URL(url);
+        if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') continue;
+        let host = parsed.hostname.toLowerCase();
+        if (host.startsWith('www.')) host = host.slice(4);
+        if (hostMatchesDomain(host, brand.domain)) return { url, source };
+      } catch {
+        // A malformed source cannot establish an actionable citation URL.
+      }
     }
   }
-  const fromExtracted = citedHosts.find((h) =>
-    hostMatchesDomain(h, brand.domain),
-  );
-  if (fromExtracted) return `https://${fromExtracted}/`;
+  // Cited hosts are lossy evidence: do not fabricate a homepage URL from one.
   return null;
 }

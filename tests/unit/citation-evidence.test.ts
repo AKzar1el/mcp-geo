@@ -32,7 +32,11 @@ type CitationResult = {
     sample_url: string;
     is_brand_domain: boolean;
   }>;
-  citations: Array<{ cited_url: string | null }>;
+  citations: Array<{
+    cited_url: string | null;
+    citation_type: string;
+    url_source: 'provider_source' | 'answer_text' | null;
+  }>;
 };
 
 type CitationTool = {
@@ -124,9 +128,10 @@ test('get_citations preserves the full engine-native brand citation URL', async 
     result.structuredContent.citations[0].cited_url,
     'https://www.acme.com/guides/ai-search?utm_source=chatgpt',
   );
+  assert.equal(result.structuredContent.citations[0].url_source, 'provider_source');
 });
 
-test('get_citations falls back to normalized host evidence when engine URLs are unrelated', async () => {
+test('get_citations never fabricates a URL from host-only evidence', async () => {
   const citation = registerCitationTool(
     citationRow({
       engine_citations_json: JSON.stringify([
@@ -138,7 +143,50 @@ test('get_citations falls back to normalized host evidence when engine URLs are 
 
   const result = await citation.handler({ brand_id: brand.id });
 
-  assert.equal(result.structuredContent.citations[0].cited_url, 'https://acme.com/');
+  assert.equal(result.structuredContent.citations[0].cited_url, null);
+  assert.equal(result.structuredContent.citations[0].url_source, null);
+});
+
+test('get_citations preserves an actual answer-authored brand URL when no native source matches', async () => {
+  const citation = registerCitationTool(
+    citationRow({
+      raw_response: 'Compare [Acme](https://docs.acme.com/pricing?ref=answer) to rivals.',
+      engine_citations_json: JSON.stringify(['https://example.org/report']),
+    }),
+  );
+  const result = await citation.handler({ brand_id: brand.id });
+  assert.equal(result.structuredContent.citations[0].cited_url, 'https://docs.acme.com/pricing?ref=answer');
+  assert.equal(result.structuredContent.citations[0].url_source, 'answer_text');
+});
+
+test('get_citations distinguishes provider-listed link-only evidence from textual brand mentions', async () => {
+  const citation = registerCitationTool(
+    citationRow({
+      raw_response: 'An unrelated vendor is recommended.',
+      brand_mentioned: 0,
+      brand_cited_with_link: 1,
+      engine_citations_json: JSON.stringify(['https://acme.com/research']),
+    }),
+  );
+  const result = await citation.handler({ brand_id: brand.id });
+  assert.equal(result.structuredContent.citations[0].citation_type, 'source_link_only');
+  assert.equal(result.structuredContent.citations[0].cited_url, 'https://acme.com/research');
+  assert.equal(result.structuredContent.citations[0].url_source, 'provider_source');
+});
+
+test('get_citations does not attach unrelated or lookalike URLs to mention-only evidence', async () => {
+  const citation = registerCitationTool(
+    citationRow({
+      raw_response: 'Acme is named, but https://notacme.com/ is another site.',
+      brand_cited_with_link: 0,
+      cited_urls_json: JSON.stringify([]),
+      engine_citations_json: JSON.stringify(['https://acme.com.evil.example/article']),
+    }),
+  );
+  const result = await citation.handler({ brand_id: brand.id });
+  assert.equal(result.structuredContent.citations[0].citation_type, 'mention_without_link');
+  assert.equal(result.structuredContent.citations[0].cited_url, null);
+  assert.equal(result.structuredContent.citations[0].url_source, null);
 });
 
 test('get_citations ranks engine-native source domains across the requested window', async () => {

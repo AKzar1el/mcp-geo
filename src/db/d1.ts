@@ -752,7 +752,7 @@ export function createD1Db(d1: D1Database): Db {
              JOIN prompts p ON p.id = pr.prompt_id
             WHERE r.brand_id = ?
               AND pr.captured_at >= ?
-              AND pr.brand_mentioned = 1
+              AND (pr.brand_mentioned = 1 OR pr.brand_cited_with_link = 1)
               AND pr.status = 'ok'`;
       const params: unknown[] = [brandId, since];
       if (engine) {
