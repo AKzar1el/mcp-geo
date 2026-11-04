@@ -55,6 +55,7 @@ test('xAI uses Responses API with required web search and captures citations', a
     );
     assert.deepEqual(JSON.parse(String(seenInit?.body)), {
       model: 'grok-4.7',
+      store: false,
       input: [
         { role: 'system', content: 'Be concise.' },
         { role: 'user', content: 'Where is Acme visible?' },
