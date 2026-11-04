@@ -1,6 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { getScheduledRefreshTargets } from '../../src/core/scheduling.ts';
+import {
+  getScheduledRefreshTargets,
+  planScheduledDispatch,
+  MAX_SCHEDULED_SERVICE_INVOCATIONS,
+} from '../../src/core/scheduling.ts';
 import type { Brand, Db } from '../../src/db/types.ts';
 
 function brand(id: string): Brand {
@@ -49,4 +53,65 @@ test('scheduled refresh targets include only the engines that are actually due',
       { brand_id: 'claude-only', engines: ['claude'] },
     ],
   );
+});
+
+test('cron dispatch stays below the service binding invocation limit', () => {
+  const targets = Array.from({ length: 17 }, (_, i) => ({
+    brand: brand(`brand-${String(i).padStart(2, '0')}`),
+    engines: ['chatgpt', 'claude', 'gemini'] as const,
+  }));
+  const plan = planScheduledDispatch(
+    targets.map((target) => ({ ...target, engines: [...target.engines] })),
+    0,
+  );
+  assert.equal(MAX_SCHEDULED_SERVICE_INVOCATIONS, 28);
+  assert.equal(plan.requestedInvocations, 51);
+  assert.equal(plan.scheduledInvocations, 28);
+  assert.equal(plan.deferredInvocations, 23);
+  assert.equal(plan.targets.reduce((sum, target) => sum + target.engines.length, 0), 28);
+  assert.equal(new Set(plan.targets.map((target) => target.brand.id)).size, plan.targets.length);
+});
+
+test('deferred brands eventually receive a slot even when the due set stays unchanged', () => {
+  const targets = Array.from({ length: 41 }, (_, i) => ({
+    brand: brand(`brand-${String(i).padStart(2, '0')}`),
+    engines: ['chatgpt'] as const,
+  }));
+  const seen = new Set<string>();
+  for (let slot = 0; slot < targets.length; slot++) {
+    const plan = planScheduledDispatch(
+      targets.map((target) => ({ ...target, engines: [...target.engines] })),
+      slot * 6 * 60 * 60 * 1000,
+      7,
+    );
+    assert.equal(plan.scheduledInvocations, 7);
+    for (const target of plan.targets) seen.add(target.brand.id);
+  }
+  assert.equal(seen.size, targets.length);
+});
+
+test('partially selected brands rotate their due engines across cron windows', () => {
+  const targets = [{
+    brand: brand('many-engines'),
+    engines: ['chatgpt', 'claude', 'gemini', 'grok', 'perplexity'] as const,
+  }];
+  const seen = new Set<string>();
+  for (let slot = 0; slot < 5; slot++) {
+    const plan = planScheduledDispatch(
+      targets.map((target) => ({ ...target, engines: [...target.engines] })),
+      slot * 6 * 60 * 60 * 1000,
+      2,
+    );
+    assert.equal(plan.scheduledInvocations, 2);
+    for (const target of plan.targets) {
+      for (const engine of target.engines) seen.add(engine);
+    }
+  }
+  assert.deepEqual([...seen].sort(), [...targets[0].engines].sort());
+});
+
+test('an empty due set dispatches nothing', () => {
+  assert.deepEqual(planScheduledDispatch([], 0), {
+    targets: [], requestedInvocations: 0, scheduledInvocations: 0, deferredInvocations: 0,
+  });
 });
