@@ -91,3 +91,29 @@ test('competitor is matched as a standalone word', () => {
   );
   assert.deepEqual(competitors_mentioned, ['notion.so']);
 });
+
+test('plain-text competitor names match the registrable label of common multi-part public suffixes', () => {
+  const brand = makeBrand({
+    domain: 'example.com',
+    name: 'Example',
+    competitors: ['acme.co.uk', 'zen.com.au', 'kumo.co.jp'],
+  });
+  const { competitors_mentioned } = extractCitations(
+    brand,
+    'For the shortlist, compare Acme with Zen and Kumo.',
+  );
+  assert.deepEqual(competitors_mentioned, ['acme.co.uk', 'zen.com.au', 'kumo.co.jp']);
+});
+
+test('multi-part public suffix matching does not count embedded words or lookalike hosts', () => {
+  const brand = makeBrand({
+    domain: 'example.com',
+    name: 'Example',
+    competitors: ['acme.co.uk'],
+  });
+  const { competitors_mentioned } = extractCitations(
+    brand,
+    'AcmeBank is not this brand; fakeacme.co.uk is an unrelated domain.',
+  );
+  assert.deepEqual(competitors_mentioned, []);
+});

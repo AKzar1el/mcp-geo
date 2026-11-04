@@ -126,12 +126,28 @@ export interface CitationExtraction {
   competitors_mentioned: string[];
 }
 
+// These common two-label public suffixes need the label immediately before
+// the suffix, not the entire host minus its final label. This deliberately
+// avoids guessing that every two-letter TLD has the same registry structure.
+const COMMON_TWO_LABEL_PUBLIC_SUFFIXES = new Set([
+  'co.uk', 'org.uk', 'net.uk', 'ac.uk', 'gov.uk',
+  'com.au', 'net.au', 'org.au', 'edu.au',
+  'co.nz', 'org.nz', 'govt.nz',
+  'co.jp', 'or.jp', 'ne.jp',
+  'com.br', 'com.mx', 'com.tr', 'com.sg', 'com.hk', 'com.tw',
+  'co.kr', 'co.za', 'co.in', 'com.cn', 'com.ar',
+]);
+
 function rootTermFromDomain(domain: string): string {
   // 'example.com' -> 'example', 'monday.com' -> 'monday', 'notion.so' -> 'notion'
   const noProto = domain.replace(/^https?:\/\//i, '').replace(/^www\./i, '');
   const host = noProto.split('/')[0] ?? noProto;
   const parts = host.split('.');
   if (parts.length <= 1) return host.toLowerCase();
+  const suffix = parts.slice(-2).join('.').toLowerCase();
+  if (parts.length >= 3 && COMMON_TWO_LABEL_PUBLIC_SUFFIXES.has(suffix)) {
+    return parts[parts.length - 3]!.toLowerCase();
+  }
   return parts.slice(0, -1).join('.').toLowerCase();
 }
 
