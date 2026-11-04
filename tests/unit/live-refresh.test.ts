@@ -290,7 +290,7 @@ test('OpenAI Batch completion continues to populate its persistent cache', async
   };
   const batchOutput = JSON.stringify({
     custom_id: prompt.id,
-    response: { body: { choices: [{ message: { content: 'Fresh Acme provider response.' } }] } },
+    response: { body: { choices: [{ finish_reason: 'stop', message: { content: 'Fresh Acme provider response.' } }] } },
   });
 
   let request = 0;
@@ -330,6 +330,51 @@ test('OpenAI Batch completion continues to populate its persistent cache', async
   assert.equal(replaceExisting, true);
 });
 
+test('OpenAI Batch never scores or caches unfinished or empty choices', async () => {
+  for (const choice of [
+    { finish_reason: 'length', message: { content: 'Partial Acme mention' } },
+    { finish_reason: 'content_filter', message: { content: 'Acme' } },
+    { message: { content: 'Acme without completion metadata' } },
+    { finish_reason: 'stop', message: { content: ' \n\t ' } },
+  ]) {
+    let persisted: EnginePromptResult[] | undefined;
+    const db = {
+      getPromptsByIds: async () => [prompt],
+      persistEngineRun: async (
+        _id: string, _engine: string, _model: string, _ttl: number,
+        results: EnginePromptResult[],
+      ) => { persisted = results; },
+      updateRun: async () => {},
+    } as unknown as Db;
+    const run: Run = {
+      id: 'batch-invalid-choice', brand_id: brand.id, engine: 'chatgpt',
+      mode: 'batch', status: 'in_progress', prompts_total: 1,
+      prompts_completed: 0, batch_id: 'batch-1',
+      batch_input_file_id: null, started_at: 0, completed_at: null, error: null,
+    };
+    const output = JSON.stringify({
+      custom_id: prompt.id,
+      response: { status_code: 200, body: { choices: [choice] } },
+    });
+    let call = 0;
+    await withMockFetch(
+      () => ++call === 1
+        ? jsonResponse({ status: 'completed', output_file_id: 'output-1' })
+        : new Response(output + '\n'),
+      async () => {
+        assert.deepEqual(
+          await collectBatch({ db, OPENAI_API_KEY: 'test-key' }, run, brand),
+          { ready: true, status: 'completed', completed: 0, failed: 1 },
+        );
+      },
+    );
+    assert.equal(persisted?.length, 1);
+    assert.equal(persisted?.[0].status, 'failed');
+    assert.equal(persisted?.[0].brand_mentioned, 0);
+    assert.equal(persisted?.[0].cache_to_put, undefined);
+  }
+});
+
 test('OpenAI Batch completed result files must cover every submitted prompt', async () => {
   let persisted = false;
   const updates: Array<Partial<Run>> = [];
@@ -347,7 +392,7 @@ test('OpenAI Batch completed result files must cover every submitted prompt', as
   };
   const resultLine = JSON.stringify({
     custom_id: prompt.id,
-    response: { body: { choices: [{ message: { content: 'One response only.' } }] } },
+    response: { body: { choices: [{ finish_reason: 'stop', message: { content: 'One response only.' } }] } },
   });
   let request = 0;
   await withMockFetch(
@@ -376,7 +421,7 @@ test('OpenAI Batch completed metadata must match submitted and finished requests
   };
   const output = JSON.stringify({
     custom_id: prompt.id,
-    response: { body: { choices: [{ message: { content: 'Acme response.' } }] } },
+    response: { body: { choices: [{ finish_reason: 'stop', message: { content: 'Acme response.' } }] } },
   });
   const scenarios = [
     {
@@ -488,7 +533,7 @@ test('OpenAI Batch expiry preserves available partial results and records failur
   } as Run;
   const output = JSON.stringify({
     custom_id: prompt.id,
-    response: { body: { choices: [{ message: { content: 'Partial Acme response.' } }] } },
+    response: { body: { choices: [{ finish_reason: 'stop', message: { content: 'Partial Acme response.' } }] } },
   });
   let request = 0;
   await withMockFetch(
@@ -606,7 +651,7 @@ test('OpenAI Batch rejects invalid error-file IDs before persistence', async () 
           custom_id: prompt.id,
           response: {
             body: {
-              choices: [{ message: { content: 'Acme success.' } }],
+              choices: [{ finish_reason: 'stop', message: { content: 'Acme success.' } }],
             },
           },
         }),

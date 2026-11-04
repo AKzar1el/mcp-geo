@@ -543,7 +543,7 @@ interface BatchOutputLine {
   response?: {
     status_code?: number;
     body?: {
-      choices?: Array<{ message?: { content?: string } }>;
+      choices?: Array<{ finish_reason?: string | null; message?: { content?: string } }>;
       error?: { message?: string };
     };
   };
@@ -744,8 +744,23 @@ export async function collectBatch(
         `OpenAI batch integrity error: unresolved custom_id ${parsed.custom_id}`,
       );
     }
-    const content = parsed.response?.body?.choices?.[0]?.message?.content;
-    if (typeof content !== 'string') {
+    const choice = parsed.response?.body?.choices?.[0];
+    const content = choice?.message?.content;
+    const finishReason = choice?.finish_reason;
+    const statusCode = parsed.response?.status_code;
+    // A provider file can contain partial text from a length-limited or
+    // filtered completion. Do not score or cache it as a visibility answer.
+    if (
+      (statusCode !== undefined && (statusCode < 200 || statusCode >= 300)) ||
+      finishReason !== 'stop' ||
+      typeof content !== 'string' ||
+      content.trim().length === 0
+    ) {
+      const errorMessage = statusCode !== undefined && (statusCode < 200 || statusCode >= 300)
+        ? batchErrorMessage(parsed)
+        : finishReason !== 'stop'
+          ? `OpenAI batch response incomplete: ${finishReason ?? 'missing finish_reason'}`
+          : 'OpenAI batch response missing non-empty content';
       results.push({
         prompt_id: prompt.id,
         raw_response: '',
@@ -754,7 +769,7 @@ export async function collectBatch(
         cited_urls: [],
         competitors_mentioned: [],
         status: 'failed',
-        error_message: batchErrorMessage(parsed),
+        error_message: errorMessage,
       });
       continue;
     }

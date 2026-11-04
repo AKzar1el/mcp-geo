@@ -409,7 +409,7 @@ test('collectBatch resolves submitted prompts after they are deactivated', async
             custom_id: 'old-b',
             response: {
               body: {
-                choices: [{ message: { content: 'Acme answer for B.' } }],
+                choices: [{ finish_reason: 'stop', message: { content: 'Acme answer for B.' } }],
               },
             },
           }),
@@ -417,7 +417,7 @@ test('collectBatch resolves submitted prompts after they are deactivated', async
             custom_id: 'old-a',
             response: {
               body: {
-                choices: [{ message: { content: 'Acme answer for A.' } }],
+                choices: [{ finish_reason: 'stop', message: { content: 'Acme answer for A.' } }],
               },
             },
           }),
@@ -507,7 +507,7 @@ test('collectBatch replaces partial results when the same completed batch is col
             custom_id: 'prompt-a',
             response: {
               body: {
-                choices: [{ message: { content: `Acme ${suffix} answer A.` } }],
+                choices: [{ finish_reason: 'stop', message: { content: `Acme ${suffix} answer A.` } }],
               },
             },
           }),
@@ -515,7 +515,7 @@ test('collectBatch replaces partial results when the same completed batch is col
             custom_id: 'prompt-b',
             response: {
               body: {
-                choices: [{ message: { content: `Acme ${suffix} answer B.` } }],
+                choices: [{ finish_reason: 'stop', message: { content: `Acme ${suffix} answer B.` } }],
               },
             },
           }),
@@ -664,7 +664,7 @@ test('collectBatch rejects unknown output prompt IDs before writing responses', 
             custom_id: 'known-prompt',
             response: {
               body: {
-                choices: [{ message: { content: 'Acme valid answer.' } }],
+                choices: [{ finish_reason: 'stop', message: { content: 'Acme valid answer.' } }],
               },
             },
           }),
@@ -672,7 +672,7 @@ test('collectBatch rejects unknown output prompt IDs before writing responses', 
             custom_id: 'missing-prompt',
             response: {
               body: {
-                choices: [{ message: { content: 'Unknown answer.' } }],
+                choices: [{ finish_reason: 'stop', message: { content: 'Unknown answer.' } }],
               },
             },
           }),
