@@ -255,11 +255,23 @@ const citationCursorSchema = z.object({
   }),
 });
 
+const CITATION_CURSOR_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const CITATION_DAY_MS = 86_400_000;
+
 function decodeCitationCursor(cursor: string, brandId: string, days: number, engine: string | null) {
   try {
     const parsed = citationCursorSchema.parse(JSON.parse(decodeURIComponent(cursor)));
+    const now = Date.now();
+    // Cursor parameters are client-controlled, not authenticated. Never allow
+    // one to expand a requested 1-90-day citation query into an unbounded scan
+    // or to select an arbitrary older historical window.
     if (parsed.brand_id !== brandId || parsed.days !== days || parsed.engine !== engine ||
-      parsed.since > parsed.until || parsed.before.captured_at > parsed.until) {
+      !Number.isSafeInteger(parsed.since) || !Number.isSafeInteger(parsed.until) ||
+      !Number.isSafeInteger(parsed.before.captured_at) ||
+      parsed.until > now || parsed.until < now - CITATION_CURSOR_MAX_AGE_MS ||
+      parsed.since !== parsed.until - days * CITATION_DAY_MS ||
+      parsed.before.captured_at < parsed.since ||
+      parsed.before.captured_at > parsed.until) {
       throw new Error('Mismatched cursor scope');
     }
     return parsed;
@@ -870,7 +882,7 @@ export function registerTools(
     {
       title: 'Get AI citation evidence',
       description:
-        "Return paginated brand mentions and link-only evidence with genuine URL provenance and top source domains. Continue with next_cursor. Example: brand_id='acme', days=14.",
+        "Return paginated brand mentions and link-only evidence with genuine URL provenance and top source domains. Continue with next_cursor within 24 hours; restart without a cursor after it expires. Example: brand_id='acme', days=14.",
       inputSchema: {
         brand_id: z
           .string()
