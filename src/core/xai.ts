@@ -48,6 +48,7 @@ interface XAiOutputItem {
 }
 
 interface XAiResponse {
+  status?: string;
   output?: XAiOutputItem[];
   citations?: unknown[];
 }
@@ -126,6 +127,9 @@ export async function chatCompletion(
     throw new Error(`xAI Responses API failed: ${resp.status} ${text}`);
   }
   const data = (await resp.json()) as XAiResponse;
+  if (data.status !== undefined && data.status !== 'completed') {
+    throw new Error(`xAI response incomplete: ${data.status}`);
+  }
   const text = extractResponseText(data);
   if (text.length === 0) {
     throw new Error('xAI response missing output_text');

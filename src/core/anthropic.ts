@@ -33,6 +33,7 @@ function requireAnthropicKey(env: AnthropicEnv): string {
 }
 
 interface AnthropicMessageResponse {
+  stop_reason?: string | null;
   content?: Array<{ type?: string; text?: string }>;
 }
 
@@ -61,6 +62,11 @@ export async function chatCompletion(
     throw new Error(`Anthropic completion failed: ${resp.status} ${text}`);
   }
   const data = (await resp.json()) as AnthropicMessageResponse;
+  // A truncated answer is not a complete visibility observation, even if
+  // Anthropic returned some text before exhausting its output budget.
+  if (data.stop_reason === 'max_tokens' || data.stop_reason === 'model_context_window_exceeded') {
+    throw new Error(`Anthropic response incomplete: ${data.stop_reason}`);
+  }
   const text = (data.content ?? [])
     .flatMap((block) =>
       block.type === 'text' && typeof block.text === 'string' && block.text.length > 0

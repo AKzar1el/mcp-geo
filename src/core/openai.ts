@@ -63,6 +63,7 @@ export async function hashPrompt(
 
 interface ChatCompletionResponse {
   choices?: Array<{
+    finish_reason?: string | null;
     message?: {
       content?: string;
       annotations?: Array<{
@@ -102,6 +103,10 @@ export async function chatCompletion(
     throw new Error(`OpenAI chat completion failed: ${resp.status} ${text}`);
   }
   const data = (await resp.json()) as ChatCompletionResponse;
+  const finishReason = data.choices?.[0]?.finish_reason;
+  if (finishReason === 'length' || finishReason === 'content_filter') {
+    throw new Error(`OpenAI response incomplete: ${finishReason}`);
+  }
   const message = data.choices?.[0]?.message;
   const content = message?.content;
   if (typeof content !== 'string') {
