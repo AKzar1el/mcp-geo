@@ -262,6 +262,7 @@ const trackBrandOutputSchema = z.object({
   reason: z.string().optional(),
   prompts_inserted: z.number().optional(),
   prompt_source: z.enum(['generated', 'fallback']).optional(),
+  starter_prompt_limitations: z.string().optional(),
   domain: z.string().optional(),
   competitors: z.array(z.string()).optional(),
   refresh_frequency: z.enum(['daily', 'weekly', 'manual']).optional(),
@@ -1223,7 +1224,9 @@ export function registerLocalManagementTools(
       if (result.seeded) {
         next_steps =
           result.prompt_source === 'fallback'
-            ? `Tracked with ${result.prompts_inserted} provider-free starter prompts. Call refresh_brand with brand_id '${result.brand_id}' to run the first scan; use generate_prompts later for explicitly requested paid category-specific prompts.`
+            ? category?.trim()
+              ? `Tracked with ${result.prompts_inserted} provider-free category-anchored starter prompts. Review list_prompts and customize with set_prompts for representative buyer questions before interpreting scores. Call refresh_brand with brand_id '${result.brand_id}' for a starter scan; paid generate_prompts remains optional.`
+              : `Tracked with ${result.prompts_inserted} limited starter prompts. No category was supplied, so these prompts use your brand name and can bias visibility scores. Set a category with update_brand and supply independent category prompts with set_prompts before refresh_brand.`
             : `Call refresh_brand with brand_id '${result.brand_id}' to run the first scan, then check_visibility for the results.`;
       } else if (result.reason === 'already exists') {
         next_steps = `Brand '${result.brand_id}' is already tracked — nothing was changed. Use list_brands to inspect it, update_brand to correct its metadata, or generate_prompts to refresh its prompt set.`;
