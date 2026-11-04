@@ -413,28 +413,39 @@ export function openSqliteDb(path?: string): SqliteDb {
       return row ?? null;
     },
 
-    // Cron freshness uses the same usable-data definition as visibility.
-    // When configured engines are supplied, every one of them must have a
-    // fresh usable run; one fresh engine must not mask stale peers.
+    // Visibility can show partial evidence; cron requires every current active
+    // prompt to have an ok response. Retry incomplete scans after a 24h cooldown,
+    // but at most twice per rolling week for weekly brands (protect billed API quotas).
     async getBrandsDueForRefresh(engines?: string[]): Promise<Brand[]> {
       const now = Date.now();
       const weeklyCutoff = now - 7 * 24 * 60 * 60 * 1000;
       const dailyCutoff = now - 24 * 60 * 60 * 1000;
+      const retryCutoff = dailyCutoff;
       const targetEngines = [...new Set(engines ?? [])];
       if (targetEngines.length > 0) {
         const values = targetEngines.map(() => '(?)').join(', ');
         const rows = sqlite
           .prepare(
             `WITH target_engines(engine) AS (VALUES ${values}),
-                  latest_usable AS (
+                  latest_complete AS (
                     SELECT r.brand_id, r.engine,
-                           MAX(COALESCE(r.completed_at, r.started_at)) AS last_usable_run
+                           MAX(COALESCE(r.completed_at, r.started_at)) AS last_complete_run
                       FROM runs r
-                     WHERE EXISTS (
-                       SELECT 1 FROM prompt_responses pr
-                        WHERE pr.run_id = r.id AND pr.status = 'ok'
+                     WHERE EXISTS (SELECT 1 FROM prompts p WHERE p.brand_id = r.brand_id AND p.active = 1)
+                       AND NOT EXISTS (
+                         SELECT 1 FROM prompts p
+                          WHERE p.brand_id = r.brand_id AND p.active = 1
+                            AND NOT EXISTS (
+                              SELECT 1 FROM prompt_responses pr
+                               WHERE pr.run_id = r.id AND pr.prompt_id = p.id AND pr.status = 'ok'
+                            )
                      )
                      GROUP BY r.brand_id, r.engine
+                  ),
+                  latest_attempt AS (
+                    SELECT brand_id, engine, MAX(started_at) AS last_attempt,
+                           SUM(CASE WHEN started_at >= ? THEN 1 ELSE 0 END) AS attempts_week
+                      FROM runs GROUP BY brand_id, engine
                   )
              SELECT b.id, b.user_id, b.domain, b.name, b.category, b.competitors_json,
                     b.aliases_json, b.exclude_terms_json,
@@ -444,14 +455,18 @@ export function openSqliteDb(path?: string): SqliteDb {
                 AND EXISTS (
                 SELECT 1
                   FROM target_engines te
-                  LEFT JOIN latest_usable lu
-                    ON lu.brand_id = b.id AND lu.engine = te.engine
-                 WHERE lu.last_usable_run IS NULL
-                    OR (b.refresh_frequency = 'weekly' AND lu.last_usable_run < ?)
-                    OR (b.refresh_frequency = 'daily'  AND lu.last_usable_run < ?)
+                  LEFT JOIN latest_complete lc
+                    ON lc.brand_id = b.id AND lc.engine = te.engine
+                  LEFT JOIN latest_attempt la
+                    ON la.brand_id = b.id AND la.engine = te.engine
+                 WHERE (lc.last_complete_run IS NULL
+                    OR (b.refresh_frequency = 'weekly' AND lc.last_complete_run < ?)
+                    OR (b.refresh_frequency = 'daily'  AND lc.last_complete_run < ?))
+                   AND (la.last_attempt IS NULL OR la.last_attempt < ?)
+                   AND (b.refresh_frequency <> 'weekly' OR COALESCE(la.attempts_week, 0) < 2)
               )`,
           )
-          .all(...targetEngines, weeklyCutoff, dailyCutoff) as unknown as BrandRow[];
+          .all(...targetEngines, weeklyCutoff, weeklyCutoff, dailyCutoff, retryCutoff) as unknown as BrandRow[];
         return rows.map(rowToBrand);
       }
 
@@ -460,24 +475,32 @@ export function openSqliteDb(path?: string): SqliteDb {
           `SELECT b.id, b.user_id, b.domain, b.name, b.category, b.competitors_json,
                   b.aliases_json, b.exclude_terms_json,
                   b.refresh_frequency, b.created_at, b.updated_at,
-                  MAX(COALESCE(r.completed_at, r.started_at)) AS last_usable_run
+                  MAX(CASE WHEN
+                    EXISTS (SELECT 1 FROM prompts p WHERE p.brand_id = b.id AND p.active = 1)
+                    AND NOT EXISTS (
+                      SELECT 1 FROM prompts p WHERE p.brand_id = b.id AND p.active = 1
+                        AND NOT EXISTS (
+                          SELECT 1 FROM prompt_responses pr
+                           WHERE pr.run_id = r.id AND pr.prompt_id = p.id AND pr.status = 'ok'
+                        )
+                    )
+                    THEN COALESCE(r.completed_at, r.started_at) END) AS last_complete_run,
+                  MAX(r.started_at) AS last_attempt,
+                  SUM(CASE WHEN r.started_at >= ? THEN 1 ELSE 0 END) AS attempts_week
              FROM brands b
-             LEFT JOIN runs r
-               ON r.brand_id = b.id
-              AND EXISTS (
-                SELECT 1 FROM prompt_responses pr
-                 WHERE pr.run_id = r.id AND pr.status = 'ok'
-              )
+             LEFT JOIN runs r ON r.brand_id = b.id
             GROUP BY b.id
            HAVING b.refresh_frequency <> 'manual'
               AND (
-                last_usable_run IS NULL
-                OR (b.refresh_frequency = 'weekly' AND last_usable_run < ?)
-                OR (b.refresh_frequency = 'daily'  AND last_usable_run < ?)
-              )`,
+                last_complete_run IS NULL
+                OR (b.refresh_frequency = 'weekly' AND last_complete_run < ?)
+                OR (b.refresh_frequency = 'daily'  AND last_complete_run < ?)
+              )
+              AND (last_attempt IS NULL OR last_attempt < ?)
+              AND (b.refresh_frequency <> 'weekly' OR COALESCE(attempts_week, 0) < 2)`,
         )
-        .all(weeklyCutoff, dailyCutoff) as unknown as Array<
-        BrandRow & { last_usable_run: number | null }
+        .all(weeklyCutoff, weeklyCutoff, dailyCutoff, retryCutoff) as unknown as Array<
+        BrandRow & { last_complete_run: number | null; last_attempt: number | null }
       >;
       return rows.map(rowToBrand);
     },
