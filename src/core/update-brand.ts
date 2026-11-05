@@ -100,7 +100,12 @@ export async function updateTrackedBrand(
   if (fields.refresh_frequency !== existing.refresh_frequency) changedFields.push('refresh_frequency');
 
   if (changedFields.length > 0) {
-    await db.updateBrand(input.brand_id, fields);
+    await db.updateBrand(input.brand_id, {
+      ...fields,
+      identity_changed: changedFields.some((field) =>
+        ['name', 'domain', 'aliases', 'exclude_terms'].includes(field),
+      ),
+    });
   }
 
   const brand = changedFields.length > 0 ? await db.getBrand(input.brand_id) : existing;

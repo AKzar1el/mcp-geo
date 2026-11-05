@@ -113,6 +113,7 @@ interface BrandRow {
   refresh_frequency: string;
   created_at: number;
   updated_at: number;
+  identity_changed_at: number | null;
 }
 
 function rowToBrand(row: BrandRow): Brand {
@@ -139,6 +140,7 @@ function rowToBrand(row: BrandRow): Brand {
     refresh_frequency: row.refresh_frequency,
     created_at: row.created_at,
     updated_at: row.updated_at,
+    identity_changed_at: row.identity_changed_at,
   };
 }
 
@@ -189,7 +191,7 @@ export function openSqliteDb(path?: string): SqliteDb {
     async getBrand(brandId: string): Promise<Brand | null> {
       const row = sqlite
         .prepare(
-          'SELECT id, user_id, domain, name, category, competitors_json, aliases_json, exclude_terms_json, refresh_frequency, created_at, updated_at FROM brands WHERE id = ?',
+          'SELECT id, user_id, domain, name, category, competitors_json, aliases_json, exclude_terms_json, refresh_frequency, created_at, updated_at, identity_changed_at FROM brands WHERE id = ?',
         )
         .get(brandId) as BrandRow | undefined;
       if (!row) return null;
@@ -257,12 +259,14 @@ export function openSqliteDb(path?: string): SqliteDb {
     },
 
     async updateBrand(brandId: string, fields: UpdateBrandFields): Promise<void> {
+      const now = Date.now();
       sqlite
         .prepare(
           `UPDATE brands
               SET domain = ?, name = ?, category = ?, competitors_json = ?,
                   aliases_json = ?, exclude_terms_json = ?, refresh_frequency = ?,
-                  updated_at = ?
+                  updated_at = ?,
+                  identity_changed_at = CASE WHEN ? = 1 THEN ? ELSE identity_changed_at END
             WHERE id = ?`,
         )
         .run(
@@ -273,7 +277,9 @@ export function openSqliteDb(path?: string): SqliteDb {
           JSON.stringify(fields.aliases),
           JSON.stringify(fields.exclude_terms),
           fields.refresh_frequency,
-          Date.now(),
+          now,
+          fields.identity_changed ? 1 : 0,
+          now,
           brandId,
         );
     },
@@ -283,7 +289,7 @@ export function openSqliteDb(path?: string): SqliteDb {
         .prepare(
           `SELECT b.id, b.user_id, b.domain, b.name, b.category,
                   b.competitors_json, b.aliases_json, b.exclude_terms_json,
-                  b.refresh_frequency, b.created_at, b.updated_at,
+                  b.refresh_frequency, b.created_at, b.updated_at, b.identity_changed_at,
                   COUNT(p.id) AS active_prompts
              FROM brands b
              LEFT JOIN prompts p ON p.brand_id = b.id AND p.active = 1

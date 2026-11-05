@@ -123,6 +123,11 @@ const visibilityOutputSchema = z.object({
     mixed_age_warning: z.boolean(),
     older_engines: z.array(z.string()),
   }),
+  identity_attribution: z.object({
+    last_identity_change_at: z.string().nullable(),
+    stale_engines: z.array(z.string()),
+    note: z.string(),
+  }),
   per_engine: z.array(
     z.object({
       engine: z.string(),
@@ -151,6 +156,13 @@ const historyOutputSchema = z.object({
     changes_detected: z.boolean(),
     changed_engines: z.array(z.string()),
     insufficient_evidence_engines: z.array(z.string()),
+    note: z.string(),
+  }),
+  identity_comparability: z.object({
+    last_identity_change_at: z.string().nullable(),
+    pre_change_runs: z.number(),
+    post_change_runs: z.number(),
+    mixes_identity_versions: z.boolean(),
     note: z.string(),
   }),
   series: z.array(
@@ -470,6 +482,8 @@ export function registerTools(
       const refreshedAtByEngine = new Map<string, string>();
       const refreshMsByEngine = new Map<string, number>();
       const expectedPromptsByEngine = new Map<string, number>();
+      const identityChangedAt = brand.identity_changed_at ?? null;
+      const staleIdentityEngines: string[] = [];
       const measurementModeByEngine = new Map<string, 'search_requested' | 'model_only'>();
       let mostRecentTimestamp = 0;
       for (const engine of selectedEngines) {
@@ -478,6 +492,9 @@ export function registerTools(
         const responses = await deps.db.getResponsesForRun(run.id);
         if (responses.length === 0) continue;
         selectedResponses.push(...responses);
+        if (identityChangedAt !== null && run.started_at < identityChangedAt) {
+          staleIdentityEngines.push(engine);
+        }
         measurementModeByEngine.set(engine, visibilityMeasurementMode(engine, run.mode));
         expectedPromptsByEngine.set(engine, run.prompts_total);
         const ts = run.completed_at ?? run.started_at;
@@ -567,6 +584,12 @@ export function registerTools(
           mixed_age_warning: olderEngines.length > 0,
           older_engines: olderEngines,
         },
+        identity_attribution: {
+          last_identity_change_at: identityChangedAt === null
+            ? null : new Date(identityChangedAt).toISOString(),
+          stale_engines: staleIdentityEngines.sort(),
+          note: 'Scores for engines whose runs began before the last matching-identity change were measured against an older name/domain/alias/exclusion set. Refresh those engines before attributing results to the current brand identity. Older changes before the identity-boundary migration are unknown.',
+        },
         per_engine: perEngine,
         top_winning_prompts: scored.top_winning_prompts,
         top_losing_prompts: scored.top_losing_prompts,
@@ -604,11 +627,24 @@ export function registerTools(
       },
     },
     async ({ brand_id, days, granularity }) => {
-      if (!await deps.db.getBrand(brand_id)) {
+      const brand = await deps.db.getBrand(brand_id);
+      if (!brand) {
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
       }
       const since = Date.now() - days * 86_400_000;
       const results = await deps.db.getVisibilityHistoryRows(brand_id, since);
+      const identityChangedAt = brand.identity_changed_at ?? null;
+      const preChangeRuns = identityChangedAt === null ? 0
+        : results.filter((row) => row.completed_at < identityChangedAt).length;
+      const postChangeRuns = identityChangedAt === null ? 0 : results.length - preChangeRuns;
+      const identity_comparability = {
+        last_identity_change_at: identityChangedAt === null
+          ? null : new Date(identityChangedAt).toISOString(),
+        pre_change_runs: preChangeRuns,
+        post_change_runs: postChangeRuns,
+        mixes_identity_versions: preChangeRuns > 0 && postChangeRuns > 0,
+        note: 'Stored runs before the latest brand matching-identity edit may not be comparable with later runs. Historical scores are retained, not re-scored against the current name/domain/aliases/exclusions. The boundary is based on recorded run timestamps; older edits before this migration cannot be reconstructed.',
+      };
 
       // Only compare complete recorded run rosters. Comparing successful
       // responses alone would falsely flag a change after a partial scan.
@@ -711,7 +747,7 @@ export function registerTools(
           };
         });
 
-      const payload = { brand_id, days, granularity, prompt_set_comparability, series };
+      const payload = { brand_id, days, granularity, prompt_set_comparability, identity_comparability, series };
       return toolResult(payload);
     },
   );

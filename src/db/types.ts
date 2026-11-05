@@ -21,6 +21,9 @@ export interface Brand {
   refresh_frequency: string;
   created_at: number;
   updated_at: number;
+  // NULL for unchanged brands and for pre-migration changes, which are unknown.
+  // Set only on name/domain/aliases/exclusion edits, never cadence edits.
+  identity_changed_at?: number | null;
 }
 
 export interface Prompt {
@@ -142,6 +145,8 @@ export interface UpdateBrandFields {
   aliases: string[];
   exclude_terms: string[];
   refresh_frequency: string;
+  // Internal update signal, not user input or a directly stored field.
+  identity_changed?: boolean;
 }
 
 // Row shape behind the list_brands tool: every brand plus how many
