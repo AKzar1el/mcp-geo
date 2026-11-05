@@ -86,7 +86,8 @@ function completionFromOverview(
 }
 
 function hasOverviewContent(completion: AiOverviewCompletion): boolean {
-  return completion.text !== NO_AI_OVERVIEW || completion.citations.length > 0;
+  // Reference metadata alone is not an AI-generated answer to score.
+  return completion.text !== NO_AI_OVERVIEW;
 }
 
 async function fetchSerpApi(
