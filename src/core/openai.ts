@@ -267,8 +267,8 @@ export function hasBrandInEngineCitations(
 }
 
 export function extractUrls(text: string): string[] {
-  const markdownRe = /\[[^\]]+\]\((https?:\/\/[^\s)]+)\)/g;
-  const plainRe = /https?:\/\/[^\s)\]\}'"`<>]+/g;
+  const markdownRe = /\[[^\]]+\]\((https?:\/\/[^\s)]+)\)/gi;
+  const plainRe = /https?:\/\/[^\s)\]\}'"`<>]+/gi;
   const urls: string[] = [];
   let m: RegExpExecArray | null;
   while ((m = markdownRe.exec(text)) !== null) {
@@ -286,14 +286,15 @@ export function extractCitations(
   brand: Brand,
   responseText: string,
 ): CitationExtraction {
-  const brandMentioned = mentionsTermSet(responseText, {
+  const urls = extractUrls(responseText);
+  // Only visible prose and real URL hosts provide mention evidence.
+  const mentionText = responseText.replace(/https?:\/\/[^\s)\]\}'"\x60<>]+/gi, ' ');
+  let brandMentioned = mentionsTermSet(mentionText, {
     domain: brand.domain,
     name: brand.name,
     aliases: brand.aliases,
     excludeTerms: brand.exclude_terms,
   });
-
-  const urls = extractUrls(responseText);
   const hosts: string[] = [];
   const seen = new Set<string>();
   // Keep the evidence list bounded without missing later brand links.
@@ -301,7 +302,10 @@ export function extractCitations(
   for (const url of urls) {
     const host = normalizeHost(url);
     if (!host) continue;
-    if (hostMatchesDomain(host, brand.domain)) brandCitedWithLink = true;
+    if (hostMatchesDomain(host, brand.domain)) {
+      brandCitedWithLink = true;
+      brandMentioned = true;
+    }
     if (hosts.length >= 20 || seen.has(host)) continue;
     seen.add(host);
     hosts.push(host);
@@ -309,7 +313,13 @@ export function extractCitations(
 
   const competitorsMentioned: string[] = [];
   for (const competitor of brand.competitors) {
-    if (mentionsTermSet(responseText, { domain: competitor })) {
+    if (
+      mentionsTermSet(mentionText, { domain: competitor }) ||
+      urls.some((url) => {
+        const host = normalizeHost(url);
+        return host !== null && hostMatchesDomain(host, competitor);
+      })
+    ) {
       competitorsMentioned.push(competitor);
     }
   }
