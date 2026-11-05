@@ -21,6 +21,12 @@ type HistoryTool = {
     granularity: 'daily' | 'weekly';
   }) => Promise<{ structuredContent: {
     series: HistoryPoint[];
+    google_search_sampling: null | {
+      engines: string[];
+      country: 'us';
+      language: 'en';
+      scope_note: string;
+    };
     prompt_set_comparability: {
       changes_detected: boolean;
       changed_engines: string[];
@@ -77,6 +83,20 @@ test('visibility history preserves an empty series for an existing unscanned bra
   const history = registerHistoryTool([]);
   const result = await history.handler({ brand_id: 'acme', days: 30, granularity: 'weekly' });
   assert.deepEqual(result.structuredContent.series, []);
+  assert.equal(result.structuredContent.google_search_sampling, null);
+});
+
+test('visibility history discloses US-English scope when historical Google scans are present', async () => {
+  const history = registerHistoryTool([
+    { run_id: 'google-1', engine: 'ai_overviews', completed_at: Date.UTC(2026, 0, 5), total: 3, hits: 2 },
+    { run_id: 'google-2', engine: 'ai_mode', completed_at: Date.UTC(2026, 0, 5), total: 3, hits: 1 },
+    { run_id: 'other', engine: 'chatgpt', completed_at: Date.UTC(2026, 0, 5), total: 3, hits: 2 },
+  ]);
+  const result = await history.handler({ brand_id: 'acme', days: 30, granularity: 'weekly' });
+  assert.deepEqual(result.structuredContent.google_search_sampling?.engines, ['ai_overviews', 'ai_mode']);
+  assert.equal(result.structuredContent.google_search_sampling?.country, 'us');
+  assert.equal(result.structuredContent.google_search_sampling?.language, 'en');
+  assert.match(result.structuredContent.google_search_sampling?.scope_note ?? '', /other markets or languages/);
 });
 
 test('visibility history exposes the evidence denominator behind each engine score', async () => {

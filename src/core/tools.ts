@@ -51,6 +51,28 @@ const ENGINE_NAMES = [
 
 const engineSchema = z.enum(ENGINE_NAMES);
 
+const GOOGLE_SEARCH_SCOPE_NOTE =
+  'Google AI Overviews and AI Mode are sampled using US location (gl=us) and English interface (hl=en); results do not establish visibility in other markets or languages.';
+
+const googleSearchSamplingSchema = z.object({
+  engines: z.array(z.string()),
+  country: z.literal('us'),
+  language: z.literal('en'),
+  scope_note: z.string(),
+}).nullable();
+
+function googleSearchSampling(engines: readonly string[]) {
+  const googleEngines = [...new Set(engines.filter(
+    (engine) => engine === 'ai_overviews' || engine === 'ai_mode',
+  ))];
+  return googleEngines.length === 0 ? null : {
+    engines: googleEngines,
+    country: 'us' as const,
+    language: 'en' as const,
+    scope_note: GOOGLE_SEARCH_SCOPE_NOTE,
+  };
+}
+
 // Current Claude/Gemini adapters do not request web search. OpenAI Batch
 // outputs also lack the live web-search request made by the ChatGPT adapter.
 // This describes the request path, not a guarantee that a provider supplied
@@ -110,12 +132,7 @@ const visibilityOutputSchema = z.object({
     mixed_modes: z.boolean(),
     note: z.string(),
   }),
-  google_search_sampling: z.object({
-    engines: z.array(z.string()),
-    country: z.literal('us'),
-    language: z.literal('en'),
-    scope_note: z.string(),
-  }).nullable(),
+  google_search_sampling: googleSearchSamplingSchema,
   freshness: z.object({
     oldest_refreshed_at: z.string(),
     newest_refreshed_at: z.string(),
@@ -147,6 +164,7 @@ const historyOutputSchema = z.object({
   brand_id: z.string(),
   days: z.number(),
   granularity: z.enum(['daily', 'weekly']),
+  google_search_sampling: googleSearchSamplingSchema,
   prompt_set_comparability: z.object({
     changes_detected: z.boolean(),
     changed_engines: z.array(z.string()),
@@ -214,6 +232,7 @@ const citationsOutputSchema = z.object({
   brand_id: z.string(),
   days: z.number(),
   engine: z.string().nullable(),
+  google_search_sampling: googleSearchSamplingSchema,
   limit: z.number().int(),
   has_more: z.boolean(),
   next_cursor: z.string().nullable(),
@@ -549,17 +568,7 @@ export function registerTools(
           mixed_modes: searchRequested.engines.length > 0 && modelOnly.engines.length > 0,
           note: 'Scores count brand mentions in usable responses, not independently verified search citations. Search-requested engines use a live search/SERP request path but may return no source links. Claude and Gemini here use model-only answers; ungrounded batch runs are also model-only. Compare these groups separately, especially before interpreting the combined overall_score.',
         },
-        google_search_sampling: (() => {
-          const googleEngines = perEngine
-            .filter(({ engine }) => engine === 'ai_overviews' || engine === 'ai_mode')
-            .map(({ engine }) => engine);
-          return googleEngines.length === 0 ? null : {
-            engines: googleEngines,
-            country: 'us' as const,
-            language: 'en' as const,
-            scope_note: 'Google AI Overviews and AI Mode are sampled using US location (gl=us) and English interface (hl=en); results do not establish visibility in other markets or languages.',
-          };
-        })(),
+        google_search_sampling: googleSearchSampling(perEngine.map(({ engine }) => engine)),
         freshness: {
           oldest_refreshed_at: new Date(oldestTimestamp).toISOString(),
           newest_refreshed_at: new Date(mostRecentTimestamp).toISOString(),
@@ -711,7 +720,14 @@ export function registerTools(
           };
         });
 
-      const payload = { brand_id, days, granularity, prompt_set_comparability, series };
+      const payload = {
+        brand_id,
+        days,
+        granularity,
+        google_search_sampling: googleSearchSampling(results.map(({ engine }) => engine)),
+        prompt_set_comparability,
+        series,
+      };
       return toolResult(payload);
     },
   );
@@ -956,6 +972,11 @@ export function registerTools(
         brand_id,
         days,
         engine: engine ?? null,
+        google_search_sampling: googleSearchSampling([
+          ...(engine ? [engine] : []),
+          ...sourceResponses.map(({ engine: sourceEngine }) => sourceEngine),
+          ...results.map(({ engine: citationEngine }) => citationEngine),
+        ]),
         limit,
         has_more: hasMore,
         next_cursor: hasMore && results.length > 0
