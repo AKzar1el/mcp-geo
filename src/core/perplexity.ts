@@ -192,7 +192,7 @@ function buildSkippedResult(prompt: Prompt): EnginePromptResult {
 }
 
 function buildFailedResult(prompt: Prompt, err: unknown): EnginePromptResult {
-  const msg = (err as Error).message;
+  const msg = err instanceof Error ? err.message : String(err);
   console.error('runLive[perplexity]: prompt failed', {
     prompt_id: prompt.id,
     message: msg,
@@ -286,13 +286,14 @@ export async function runLive(
       results,
     );
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
     console.error('runLive[perplexity]: persistEngineRun failed', {
       run_id: runId,
-      message: (err as Error).message,
+      message,
     });
     await env.db.updateRun(runId, {
       status: 'failed',
-      error: (err as Error).message,
+      error: message,
       completed_at: Date.now(),
     }).catch(() => {});
   }
