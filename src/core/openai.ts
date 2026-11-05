@@ -244,6 +244,8 @@ export function hostMatchesDomain(host: string, domain: string): boolean {
 function normalizeHost(rawUrl: string): string | null {
   try {
     const u = new URL(rawUrl);
+    // Native source metadata is link evidence only when it points to a web URL.
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
     let host = u.hostname.toLowerCase();
     // Strip terminal prose punctuation from a bare URL's hostname.
     // DNS names cannot end in commas, semicolons or exclamation marks.
@@ -261,8 +263,8 @@ export function hasBrandInEngineCitations(
   urls: readonly string[],
 ): boolean {
   return urls.some((url) => {
-    const host = normalizeHost(url) ?? url.toLowerCase();
-    return hostMatchesDomain(host, brandDomain);
+    const host = normalizeHost(url);
+    return host !== null && hostMatchesDomain(host, brandDomain);
   });
 }
 
