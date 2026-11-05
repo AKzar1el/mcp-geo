@@ -119,6 +119,47 @@ test('Google AI Mode rejects provider errors and empty payloads', async () => {
   );
 });
 
+test('Google AI Mode rejects reference-only responses with no scoreable answer text', async () => {
+  for (const payload of [
+    { references: [{ link: 'https://acme.com/pricing' }] },
+    { reconstructed_markdown: ' \n\t ', references: [{ link: 'https://acme.com/pricing' }] },
+  ]) {
+    await withMockFetch([jsonResponse(payload)], async () => {
+      await assert.rejects(chatCompletion('test-key', 'best project management tools'), /no usable content/);
+    });
+  }
+});
+
+test('AI Mode records reference-only results as failed instead of successful misses', async () => {
+  const brand: Brand = {
+    id: 'acme', user_id: 'user', domain: 'acme.com', name: 'Acme', category: null,
+    competitors: [], aliases: [], exclude_terms: [], refresh_frequency: 'weekly',
+    created_at: 0, updated_at: 0,
+  };
+  const prompt: Prompt = {
+    id: 'p1', brand_id: 'acme', text: 'Best project management tools', intent_stage: null,
+    shape: null, active: 1, created_at: 0,
+  };
+  let persisted: EnginePromptResult[] | undefined;
+  const db = {
+    persistEngineRun: async (
+      _runId: string, _engine: string, _model: string, _ttl: number, results: EnginePromptResult[],
+    ) => { persisted = results; },
+  } as Db;
+  await withMockFetch(
+    [jsonResponse({ references: [{ link: 'https://acme.com/pricing' }] })],
+    async () => {
+      await runLive(
+        { db, SERPAPI_API_KEY: 'test-key', SERPAPI_AI_MODE_ENABLED: 'true' },
+        brand, [prompt], 'run-1',
+      );
+    },
+  );
+  assert.equal(persisted?.length, 1);
+  assert.equal(persisted?.[0].status, 'failed');
+  assert.match(persisted?.[0].error_message ?? '', /no usable content/);
+});
+
 
 test('Google AI Mode runLive skips without the explicit cost opt-in', async () => {
   const brand: Brand = {

@@ -75,7 +75,8 @@ export async function chatCompletion(
     ? reconstructed
     : flattenSerpApiAnswer(data.text_blocks);
   const citations = flattenReferences(data.references);
-  if (text.length === 0 && citations.length === 0) {
+  // References without an answer cannot establish an AI visibility result.
+  if (text.length === 0) {
     throw new Error('SerpAPI AI Mode returned no usable content');
   }
   return { text, citations };
