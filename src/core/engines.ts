@@ -70,16 +70,21 @@ export interface EngineKeys {
   SERPAPI_AI_MODE_ENABLED?: string;
 }
 
+function hasConfiguredKey(value: string | undefined): boolean {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
 export function getAvailableEngines(env: EngineKeys): EngineName[] {
   const engines: EngineName[] = [];
-  if (env.OPENAI_API_KEY) engines.push('chatgpt');
-  if (env.ANTHROPIC_API_KEY) engines.push('claude');
-  if (env.GEMINI_API_KEY) engines.push('gemini');
-  if (env.PERPLEXITY_API_KEY) engines.push('perplexity');
-  if (env.XAI_API_KEY) engines.push('grok');
-  if (env.SERPAPI_API_KEY) engines.push('ai_overviews');
+  if (hasConfiguredKey(env.OPENAI_API_KEY)) engines.push('chatgpt');
+  if (hasConfiguredKey(env.ANTHROPIC_API_KEY)) engines.push('claude');
+  if (hasConfiguredKey(env.GEMINI_API_KEY)) engines.push('gemini');
+  if (hasConfiguredKey(env.PERPLEXITY_API_KEY)) engines.push('perplexity');
+  if (hasConfiguredKey(env.XAI_API_KEY)) engines.push('grok');
+  const serpApiConfigured = hasConfiguredKey(env.SERPAPI_API_KEY);
+  if (serpApiConfigured) engines.push('ai_overviews');
   if (
-    env.SERPAPI_API_KEY &&
+    serpApiConfigured &&
     /^(1|true|yes|on)$/i.test(env.SERPAPI_AI_MODE_ENABLED?.trim() ?? '')
   ) {
     engines.push('ai_mode');

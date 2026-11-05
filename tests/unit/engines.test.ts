@@ -37,3 +37,22 @@ test('getAvailableEngines requires an explicit opt-in before SerpAPI AI Mode add
   );
   assert.deepEqual(getAvailableEngines({ XAI_API_KEY: '' }), []);
 });
+
+test('getAvailableEngines ignores whitespace-only provider credentials', () => {
+  assert.deepEqual(
+    getAvailableEngines({
+      OPENAI_API_KEY: ' ',
+      ANTHROPIC_API_KEY: '\t',
+      GEMINI_API_KEY: '\n ',
+      PERPLEXITY_API_KEY: ' \r\n ',
+      XAI_API_KEY: '  ',
+      SERPAPI_API_KEY: ' \t ',
+      SERPAPI_AI_MODE_ENABLED: 'true',
+    }),
+    [],
+  );
+  assert.deepEqual(
+    getAvailableEngines({ XAI_API_KEY: ' xai-token ', SERPAPI_API_KEY: '  ' }),
+    ['grok'],
+  );
+});
