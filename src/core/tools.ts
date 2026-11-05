@@ -604,6 +604,9 @@ export function registerTools(
       },
     },
     async ({ brand_id, days, granularity }) => {
+      if (!await deps.db.getBrand(brand_id)) {
+        throw new Error(BRAND_NOT_FOUND_MESSAGE);
+      }
       const since = Date.now() - days * 86_400_000;
       const results = await deps.db.getVisibilityHistoryRows(brand_id, since);
 

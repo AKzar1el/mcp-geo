@@ -30,7 +30,10 @@ type HistoryTool = {
   } }>;
 };
 
-function registerHistoryTool(rows: VisibilityHistoryRow[]): HistoryTool {
+function registerHistoryTool(
+  rows: VisibilityHistoryRow[],
+  options: { brandExists?: boolean; onHistoryQuery?: () => void } = {},
+): HistoryTool {
   let history: HistoryTool | undefined;
   const server = {
     registerTool(name: string, _config: unknown, handler: unknown) {
@@ -42,7 +45,11 @@ function registerHistoryTool(rows: VisibilityHistoryRow[]): HistoryTool {
 
   registerTools(server, {
     db: {
-      getVisibilityHistoryRows: async () => rows,
+      getBrand: async () => (options.brandExists === false ? null : { id: 'acme' }),
+      getVisibilityHistoryRows: async () => {
+        options.onHistoryQuery?.();
+        return rows;
+      },
     } as Db,
     env: {},
     refreshExecution: 'sync',
@@ -52,6 +59,25 @@ function registerHistoryTool(rows: VisibilityHistoryRow[]): HistoryTool {
   assert.ok(history, 'get_visibility_history tool registration missing');
   return history;
 }
+
+test('visibility history rejects unknown brand IDs without reading history rows', async () => {
+  let historyQueries = 0;
+  const history = registerHistoryTool([], {
+    brandExists: false,
+    onHistoryQuery: () => { historyQueries += 1; },
+  });
+  await assert.rejects(
+    history.handler({ brand_id: 'missing', days: 30, granularity: 'weekly' }),
+    /brand.*not found/i,
+  );
+  assert.equal(historyQueries, 0);
+});
+
+test('visibility history preserves an empty series for an existing unscanned brand', async () => {
+  const history = registerHistoryTool([]);
+  const result = await history.handler({ brand_id: 'acme', days: 30, granularity: 'weekly' });
+  assert.deepEqual(result.structuredContent.series, []);
+});
 
 test('visibility history exposes the evidence denominator behind each engine score', async () => {
   const chatgptEarly = Date.UTC(2026, 0, 5, 10);
