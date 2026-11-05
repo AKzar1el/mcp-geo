@@ -131,6 +131,62 @@ test('AI Overview page token is immediately resolved through the SerpAPI endpoin
   );
 });
 
+test('AI Overview follows a page token even when the initial response has only references', async () => {
+  await withMockFetch(
+    [
+      jsonResponse({
+        ai_overview: {
+          references: [{ link: 'https://acme.com/unrelated-reference' }],
+          page_token: 'references-first-token',
+        },
+      }),
+      jsonResponse({
+        ai_overview: {
+          text_blocks: [{ snippet: 'The follow-up contains the actual answer.' }],
+          references: [{ link: 'https://example.com/answer' }],
+        },
+      }),
+    ],
+    async (calls) => {
+      const result = await chatCompletion('test-key', 'What is Acme?');
+      assert.equal(result.text, 'The follow-up contains the actual answer.');
+      assert.deepEqual(result.citations, ['https://example.com/answer']);
+      assert.equal(calls.length, 2);
+      assert.equal(calls[1].url.searchParams.get('engine'), 'google_ai_overview');
+      assert.equal(calls[1].url.searchParams.get('page_token'), 'references-first-token');
+    },
+  );
+});
+
+test('AI Overview ignores reference-only results with no page token', async () => {
+  await withMockFetch(
+    [jsonResponse({ ai_overview: { references: [{ link: 'https://acme.com/' }] } })],
+    async (calls) => {
+      assert.deepEqual(await chatCompletion('test-key', 'Acme'), {
+        text: NO_AI_OVERVIEW,
+        citations: [],
+      });
+      assert.equal(calls.length, 1);
+    },
+  );
+});
+
+test('AI Overview rejects a reference-only page-token follow-up', async () => {
+  await withMockFetch(
+    [
+      jsonResponse({ ai_overview: { page_token: 'token' } }),
+      jsonResponse({ ai_overview: { references: [{ link: 'https://acme.com/' }] } }),
+    ],
+    async (calls) => {
+      await assert.rejects(
+        chatCompletion('test-key', 'Acme'),
+        /follow-up returned no usable content/,
+      );
+      assert.equal(calls.length, 2);
+    },
+  );
+});
+
 test('AI Overview page-token follow-up failures throw', async () => {
   await withMockFetch(
     [
