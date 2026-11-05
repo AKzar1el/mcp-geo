@@ -64,6 +64,36 @@ test('Perplexity uses the Agent API fast preset and parses search-result URLs', 
   }
 });
 
+test('Perplexity excludes non-web search-result references from native citations', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    status: 'completed',
+    output: [
+      { type: 'search_results', results: [
+        { url: 'ftp://acme.example/private' },
+        { url: 'file://acme.example/private' },
+        { url: 'mailto:owner@acme.example' },
+        { url: 'acme.example' },
+        { url: 'HTTPS://source.example/reference' },
+        { url: 'https://valid.example/page' },
+      ] },
+      { type: 'message', content: [
+        { type: 'output_text', text: 'Independent answer with web sources.' },
+      ] },
+    ],
+  }), { status: 200 });
+
+  try {
+    const result = await chatCompletion('test-key', 'Question', 'System');
+    assert.deepEqual(result.citations, [
+      'HTTPS://source.example/reference',
+      'https://valid.example/page',
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('Perplexity treats HTTP-200 failed Agent responses as failures', async () => {
   const originalFetch = globalThis.fetch;
 

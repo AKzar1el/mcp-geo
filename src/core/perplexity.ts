@@ -88,7 +88,16 @@ function extractAgentCitations(data: PerplexityResponse): string[] {
       !Array.isArray(item.results)
     ) continue;
     for (const result of item.results) {
-      if (typeof result.url === 'string') urls.push(result.url);
+      if (typeof result.url !== 'string') continue;
+      try {
+        const parsed = new URL(result.url);
+        // Only HTTP(S) search results are valid citation sources.
+        if ((parsed.protocol === 'http:' || parsed.protocol === 'https:') && parsed.hostname) {
+          urls.push(result.url);
+        }
+      } catch {
+        // Bare hosts and malformed provider metadata are not source links.
+      }
     }
   }
   return urls;
