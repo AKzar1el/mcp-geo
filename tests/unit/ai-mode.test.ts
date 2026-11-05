@@ -195,3 +195,45 @@ test('Google AI Mode runLive skips without the explicit cost opt-in', async () =
   assert.equal(persisted[0].status, 'skipped');
   assert.match(persisted[0].error_message ?? '', /SERPAPI_AI_MODE_ENABLED/);
 });
+
+test('Google AI Mode persists primitive provider rejections as failed prompts', async () => {
+  const originalFetch = globalThis.fetch;
+  const brand = { domain: 'acme.com', name: 'Acme', competitors: [], aliases: [], exclude_terms: [] } as Brand;
+  const prompt = { id: 'offline-prompt', text: 'Where is Acme visible?' } as Prompt;
+  let persisted: EnginePromptResult[] = [];
+  const db = {
+    persistEngineRun: async (
+      _id: string, _engine: string, _model: string, _ttl: number, results: EnginePromptResult[],
+    ) => { persisted = results; },
+  } as Db;
+  globalThis.fetch = (async () => { throw 'offline AI Mode rejection'; }) as typeof fetch;
+  try {
+    await runLive(
+      { db, SERPAPI_API_KEY: 'offline-key', SERPAPI_AI_MODE_ENABLED: 'true' },
+      brand, [prompt], 'offline-run',
+    );
+    assert.equal(persisted.length, 1);
+    assert.equal(persisted[0].status, 'failed');
+    assert.match(persisted[0].error_message ?? '', /offline AI Mode rejection/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Google AI Mode preserves primitive persistence errors on failed runs', async () => {
+  const updates: Array<{ status: string; error?: string }> = [];
+  const brand = { domain: 'acme.com', name: 'Acme', competitors: [], aliases: [], exclude_terms: [] } as Brand;
+  const db = {
+    persistEngineRun: async () => { throw 'offline AI Mode persistence failure'; },
+    updateRun: async (_id: string, update: { status: string; error?: string }) => {
+      updates.push(update);
+    },
+  } as unknown as Db;
+  await runLive(
+    { db, SERPAPI_API_KEY: 'offline-key', SERPAPI_AI_MODE_ENABLED: 'true' },
+    brand, [], 'offline-run',
+  );
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].status, 'failed');
+  assert.match(updates[0].error ?? '', /offline AI Mode persistence failure/);
+});
