@@ -184,3 +184,18 @@ test('native citation lookalikes and redirect text do not count as brand links',
   assert.equal(hasBrandInEngineCitations(acme.domain, misleading), false);
   assert.equal(hasBrandInEngineCitations(acme.domain, ['https://docs.acme.com/source']), true);
 });
+
+test('native citation evidence requires an actual HTTP(S) link to the brand', () => {
+  const unlinked = [
+    'acme.com',
+    'docs.acme.com',
+    'ftp://acme.com/report',
+    'file://acme.com/report',
+    'https://unrelated.example/?to=https://acme.com',
+  ];
+  for (const citation of unlinked) {
+    assert.equal(hasBrandInEngineCitations(acme.domain, [citation]), false, citation);
+  }
+  assert.equal(hasBrandInEngineCitations(acme.domain, ['HTTP://ACME.COM/guide']), true);
+  assert.equal(hasBrandInEngineCitations(acme.domain, ['https://docs.acme.com/guide']), true);
+});
