@@ -76,6 +76,13 @@ function extractResponseCitations(data: XAiResponse): string[] {
   const seen = new Set<string>();
   const add = (value: unknown) => {
     if (typeof value !== 'string' || value.length === 0 || seen.has(value)) return;
+    try {
+      const parsed = new URL(value);
+      // Provider metadata is link evidence only for actual web sources.
+      if ((parsed.protocol !== 'http:' && parsed.protocol !== 'https:') || !parsed.hostname) return;
+    } catch {
+      return;
+    }
     seen.add(value);
     urls.push(value);
   };
