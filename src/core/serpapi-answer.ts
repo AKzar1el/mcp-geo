@@ -9,6 +9,15 @@ export interface SerpApiAnswerBlock {
   text_blocks?: SerpApiAnswerBlock[];
 }
 
+export function isWebSerpApiReference(link: string): boolean {
+  try {
+    const url = new URL(link);
+    return (url.protocol === 'http:' || url.protocol === 'https:') && url.hostname.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 const MAX_DEPTH = 24;
 const MAX_BLOCKS = 2048;
 const MAX_TEXT_LENGTH = 250_000;

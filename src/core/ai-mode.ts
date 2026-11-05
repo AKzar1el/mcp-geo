@@ -6,7 +6,11 @@
 import { extractCitations, hasBrandInEngineCitations } from './openai.js';
 import type { Brand, Db, EnginePromptResult, Prompt } from '../db/types.js';
 import { fetchWithTimeout } from './fetch.js';
-import { flattenSerpApiAnswer, type SerpApiAnswerBlock } from './serpapi-answer.js';
+import {
+  flattenSerpApiAnswer,
+  isWebSerpApiReference,
+  type SerpApiAnswerBlock,
+} from './serpapi-answer.js';
 
 export const MODEL = 'serpapi-google-ai-mode';
 export const ENGINE = 'ai_mode';
@@ -45,7 +49,8 @@ function flattenReferences(refs: SerpApiReference[] | undefined): string[] {
   if (!refs || refs.length === 0) return [];
   return refs
     .map((ref) => ref?.link)
-    .filter((link): link is string => typeof link === 'string' && link.length > 0);
+    .filter((link): link is string =>
+      typeof link === 'string' && isWebSerpApiReference(link));
 }
 
 export async function chatCompletion(

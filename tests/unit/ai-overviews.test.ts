@@ -61,6 +61,22 @@ test('AI Overview direct content uses one normal Google request', async () => {
   );
 });
 
+test('Google AI Overviews excludes non-web provider reference links', async () => {
+  await withMockFetch([
+    jsonResponse({ ai_overview: {
+      text_blocks: [{ snippet: 'Acme is reviewed.' }],
+      references: [
+        { link: 'ftp://acme.com/legacy' },
+        { link: 'data:text/html,bad' },
+        { link: 'https://acme.com/review' },
+      ],
+    } }),
+  ], async () => {
+    const result = await chatCompletion('test-key', 'Acme');
+    assert.deepEqual(result.citations, ['https://acme.com/review']);
+  });
+});
+
 test('AI Overview retains list titles, nested answer content and excludes source metadata', async () => {
   await withMockFetch(
     [

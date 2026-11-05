@@ -58,6 +58,24 @@ test('Google AI Mode uses the dedicated SerpAPI engine and reconstructed markdow
   );
 });
 
+test('Google AI Mode retains only web citations from native SerpAPI references', async () => {
+  await withMockFetch([
+    jsonResponse({
+      reconstructed_markdown: 'Acme is recommended.',
+      references: [
+        { link: 'ftp://acme.com/file' },
+        { link: 'mailto:hello@acme.com' },
+        { link: 'https://acme.com/report' },
+        { link: 'http://example.com/source' },
+        { link: 'not-a-url' },
+      ],
+    }),
+  ], async () => {
+    const result = await chatCompletion('test-key', 'Acme');
+    assert.deepEqual(result.citations, ['https://acme.com/report', 'http://example.com/source']);
+  });
+});
+
 test('Google AI Mode falls back to text blocks when reconstructed markdown is absent', async () => {
   await withMockFetch(
     [

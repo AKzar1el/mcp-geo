@@ -22,7 +22,11 @@ import type {
   Prompt,
 } from '../db/types.js';
 import { fetchWithTimeout } from './fetch.js';
-import { flattenSerpApiAnswer, type SerpApiAnswerBlock } from './serpapi-answer.js';
+import {
+  flattenSerpApiAnswer,
+  isWebSerpApiReference,
+  type SerpApiAnswerBlock,
+} from './serpapi-answer.js';
 
 export const MODEL = 'serpapi-google-ai-overview';
 export const ENGINE = 'ai_overviews';
@@ -70,7 +74,7 @@ function flattenReferences(refs: SerpApiReference[] | undefined): string[] {
   if (!refs || refs.length === 0) return [];
   const out: string[] = [];
   for (const r of refs) {
-    if (r && typeof r.link === 'string' && r.link.length > 0) {
+    if (r && typeof r.link === 'string' && isWebSerpApiReference(r.link)) {
       out.push(r.link);
     }
   }
