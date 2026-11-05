@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import {
   chatCompletion,
   NO_AI_OVERVIEW,
+  runLive,
 } from '../../src/core/ai-overviews.ts';
+import type { Brand, Db, EnginePromptResult, Prompt } from '../../src/db/types.ts';
 
 type FetchCall = {
   url: URL;
@@ -212,4 +214,40 @@ test('Google results without an AI Overview return the no-overview sentinel', as
       assert.equal(calls.length, 1);
     },
   );
+});
+
+test('AI Overview records primitive provider failures as failed prompts', async () => {
+  const originalFetch = globalThis.fetch;
+  const brand = { domain: 'acme.com', name: 'Acme', competitors: [], aliases: [], exclude_terms: [] } as Brand;
+  const prompt = { id: 'offline-prompt', text: 'How is Acme mentioned?' } as Prompt;
+  let persisted: EnginePromptResult[] = [];
+  const db = {
+    persistEngineRun: async (
+      _id: string, _engine: string, _model: string, _ttl: number, results: EnginePromptResult[],
+    ) => { persisted = results; },
+  } as Db;
+  globalThis.fetch = (async () => { throw 'offline AI Overview provider failure'; }) as typeof fetch;
+  try {
+    await runLive({ db, SERPAPI_API_KEY: 'offline-key' }, brand, [prompt], 'offline-run');
+    assert.equal(persisted.length, 1);
+    assert.equal(persisted[0].status, 'failed');
+    assert.match(persisted[0].error_message ?? '', /offline AI Overview provider failure/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('AI Overview preserves primitive persistence errors on failed runs', async () => {
+  const updates: Array<{ status: string; error?: string }> = [];
+  const brand = { domain: 'acme.com', name: 'Acme', competitors: [], aliases: [], exclude_terms: [] } as Brand;
+  const db = {
+    persistEngineRun: async () => { throw 'offline AI Overview persistence failure'; },
+    updateRun: async (_id: string, update: { status: string; error?: string }) => {
+      updates.push(update);
+    },
+  } as unknown as Db;
+  await runLive({ db, SERPAPI_API_KEY: 'offline-key' }, brand, [], 'offline-run');
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].status, 'failed');
+  assert.match(updates[0].error ?? '', /offline AI Overview persistence failure/);
 });
