@@ -27,6 +27,12 @@ type CitationResult = {
   has_more: boolean;
   next_cursor: string | null;
   limit: number;
+  google_search_sampling: null | {
+    engines: string[];
+    country: 'us';
+    language: 'en';
+    scope_note: string;
+  };
   top_sources: Array<{
     domain: string;
     citation_count: number;
@@ -46,7 +52,7 @@ type CitationTool = {
   handler: (args: {
     brand_id: string;
     days?: number;
-    engine?: 'chatgpt' | 'claude' | 'perplexity' | 'gemini' | 'ai_overviews';
+    engine?: 'chatgpt' | 'claude' | 'perplexity' | 'gemini' | 'ai_overviews' | 'ai_mode';
     limit?: number;
     cursor?: string;
   }) => Promise<{ structuredContent: CitationResult }>;
@@ -129,6 +135,27 @@ function citationRow(overrides: Partial<CitationRow> = {}): CitationRow {
     ...overrides,
   };
 }
+
+test('citation evidence discloses Google US-English sampling even without a Google citation match', async () => {
+  const tool = registerCitationTool(citationRow({ engine: 'chatgpt' }));
+  const google = await tool.handler({ brand_id: brand.id, engine: 'ai_overviews' });
+  assert.deepEqual(google.structuredContent.citations, []);
+  assert.deepEqual(google.structuredContent.google_search_sampling?.engines, ['ai_overviews']);
+  assert.equal(google.structuredContent.google_search_sampling?.country, 'us');
+  assert.equal(google.structuredContent.google_search_sampling?.language, 'en');
+  assert.match(google.structuredContent.google_search_sampling?.scope_note ?? '', /other markets or languages/);
+  const other = await tool.handler({ brand_id: brand.id, engine: 'chatgpt' });
+  assert.equal(other.structuredContent.google_search_sampling, null);
+});
+
+test('unfiltered citation evidence flags only the Google surfaces actually represented', async () => {
+  const tool = registerCitationTool([
+    citationRow({ engine: 'chatgpt', run_id: 'chatgpt-1' }),
+    citationRow({ engine: 'ai_mode', run_id: 'google-1' }),
+  ]);
+  const result = await tool.handler({ brand_id: brand.id });
+  assert.deepEqual(result.structuredContent.google_search_sampling?.engines, ['ai_mode']);
+});
 
 test('get_citations preserves the full engine-native brand citation URL', async () => {
   const citation = registerCitationTool(
