@@ -199,3 +199,18 @@ test('native citation evidence requires an actual HTTP(S) link to the brand', ()
   assert.equal(hasBrandInEngineCitations(acme.domain, ['HTTP://ACME.COM/guide']), true);
   assert.equal(hasBrandInEngineCitations(acme.domain, ['https://docs.acme.com/guide']), true);
 });
+
+test('credential-bearing URLs in model answer text cannot establish a brand citation', () => {
+  const result = extractCitations(acme, 'https://reader:secret@acme.com/private');
+  assert.equal(result.brand_cited_with_link, 0);
+  assert.equal(result.brand_mentioned, 0);
+  assert.deepEqual(result.cited_urls, []);
+});
+
+test('credential-bearing native provider URLs cannot establish a brand citation', () => {
+  assert.equal(
+    hasBrandInEngineCitations(acme.domain, ['https://reader:secret@acme.com/private']),
+    false,
+  );
+  assert.equal(hasBrandInEngineCitations(acme.domain, ['https://docs.acme.com/source']), true);
+});
