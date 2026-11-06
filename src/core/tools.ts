@@ -1710,6 +1710,7 @@ function buildTopSources(responses: PromptResponse[], brand: Brand) {
       try {
         const parsed = new URL(rawUrl);
         if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') continue;
+        if (parsed.username || parsed.password) continue;
         let domain = parsed.hostname.toLowerCase();
         if (domain.startsWith('www.')) domain = domain.slice(4);
         if (!domain) continue;
@@ -1786,6 +1787,7 @@ function pickBrandUrl(
       try {
         const parsed = new URL(url);
         if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') continue;
+        if (parsed.username || parsed.password) continue;
         let host = parsed.hostname.toLowerCase();
         if (host.startsWith('www.')) host = host.slice(4);
         if (hostMatchesDomain(host, brand.domain)) return { url, source };
