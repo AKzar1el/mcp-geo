@@ -35,6 +35,7 @@ test('visibility output schema describes winning and losing prompt records', () 
     brand: { id: 'acme', name: 'Acme', domain: 'acme.com', category: null },
     refreshed_at: '2026-09-19T00:00:00.000Z',
     overall_score: 50,
+    missing_requested_engines: [],
     measurement_scope: {
       search_requested: { score: null, engines: [] },
       model_only: { score: 50, engines: ['claude'] },

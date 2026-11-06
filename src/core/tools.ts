@@ -120,6 +120,7 @@ const visibilityOutputSchema = z.object({
   }),
   refreshed_at: z.string(),
   overall_score: z.number(),
+  missing_requested_engines: z.array(z.string()),
   measurement_scope: z.object({
     search_requested: z.object({
       score: z.number().nullable(),
@@ -455,7 +456,7 @@ export function registerTools(
     {
       title: 'Check AI visibility',
       description:
-        "Read the latest stored visibility snapshot, including scores and winning/losing prompts; call refresh_brand first for fresh data. Example: brand_id='acme', engines=['chatgpt','perplexity'].",
+        "Read stored visibility scores and missing requested engines. Scores omit engines without usable scans; refresh_brand updates data. Example: brand_id='acme', engines=['chatgpt','gemini'].",
       inputSchema: {
         brand_id: z
           .string()
@@ -511,6 +512,11 @@ export function registerTools(
             : 'No visibility data yet for this brand. Call refresh_brand to populate it.',
         );
       }
+      // An explicit multi-engine request can otherwise look complete even
+      // when only one engine has usable data and contributes to the score.
+      const missingRequestedEngines = engines && engines.length > 0
+        ? selectedEngines.filter((engine) => !refreshedAtByEngine.has(engine))
+        : [];
       const scored = computeOverallScore(brand, selectedResponses);
       const oldestTimestamp = Math.min(...refreshMsByEngine.values());
       const ageSpreadMs = mostRecentTimestamp - oldestTimestamp;
@@ -562,6 +568,7 @@ export function registerTools(
         },
         refreshed_at: new Date(mostRecentTimestamp).toISOString(),
         overall_score: scored.overall_score,
+        missing_requested_engines: missingRequestedEngines,
         measurement_scope: {
           search_requested: searchRequested,
           model_only: modelOnly,
