@@ -39,6 +39,35 @@ test('OpenAI accepts normal completed answer text and preserves citations', asyn
   }
 });
 
+test('OpenAI excludes malformed and credential-bearing native citation metadata', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    choices: [{
+      finish_reason: 'stop',
+      message: {
+        content: 'Unrelated answer text.',
+        annotations: [
+          { type: 'url_citation', url_citation: { url: 'javascript:alert(1)' } },
+          { type: 'url_citation', url_citation: { url: 'acme.com' } },
+          { type: 'url_citation', url_citation: { url: 'ftp://acme.com/source' } },
+          { type: 'url_citation', url_citation: { url: 'https://acme.com@other.example/source' } },
+          { type: 'url_citation', url_citation: { url: 'https://other.example@acme.com/source' } },
+          null,
+          { type: 'url_citation', url_citation: { url: 'https://docs.acme.com/source' } },
+        ],
+      },
+    }],
+  }), { status: 200 });
+  try {
+    assert.deepEqual(await chatCompletion('test-key', 'Find Acme'), {
+      text: 'Unrelated answer text.',
+      citations: ['https://docs.acme.com/source'],
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('OpenAI live scan persists primitive provider rejections as failed prompt evidence', async () => {
   const originalFetch = globalThis.fetch;
   let persisted: EnginePromptResult[] | undefined;

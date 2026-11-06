@@ -115,9 +115,9 @@ export async function chatCompletion(
     throw new Error('OpenAI response missing choices[0].message.content');
   }
   const citations = (message?.annotations ?? [])
-    .filter((annotation) => annotation.type === 'url_citation')
+    .filter((annotation) => annotation && annotation.type === 'url_citation')
     .map((annotation) => annotation.url_citation?.url)
-    .filter((url): url is string => typeof url === 'string');
+    .filter((url): url is string => typeof url === 'string' && normalizeHost(url) !== null);
   return { text: content, citations };
 }
 
@@ -245,7 +245,7 @@ function normalizeHost(rawUrl: string): string | null {
   try {
     const u = new URL(rawUrl);
     // Native source metadata is link evidence only when it points to a web URL.
-    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+    if ((u.protocol !== 'http:' && u.protocol !== 'https:') || u.username || u.password) return null;
     let host = u.hostname.toLowerCase();
     // Strip terminal prose punctuation from a bare URL's hostname.
     // DNS names cannot end in commas, semicolons or exclamation marks.

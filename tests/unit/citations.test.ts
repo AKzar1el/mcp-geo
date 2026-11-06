@@ -192,6 +192,7 @@ test('native citation evidence requires an actual HTTP(S) link to the brand', ()
     'ftp://acme.com/report',
     'file://acme.com/report',
     'https://unrelated.example/?to=https://acme.com',
+    'https://unrelated.example@acme.com/guide',
   ];
   for (const citation of unlinked) {
     assert.equal(hasBrandInEngineCitations(acme.domain, [citation]), false, citation);
