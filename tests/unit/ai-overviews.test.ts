@@ -61,6 +61,35 @@ test('AI Overview direct content uses one normal Google request', async () => {
   );
 });
 
+test('AI Overview counts only HTTP(S) provider references as source evidence', async () => {
+  await withMockFetch(
+    [jsonResponse({
+      ai_overview: {
+        text_blocks: [{ snippet: 'Independent summary of Acme.' }],
+        references: [
+          { link: 'ftp://acme.example/private' },
+          { link: 'mailto:press@acme.example' },
+          { link: 'file://acme.example/private' },
+          { link: 'javascript:alert(1)' },
+          { link: 'acme.example' },
+          { link: 'https://' },
+          { link: 'HTTPS://source.example/article' },
+          { link: 'http://valid.example/page' },
+        ],
+      },
+    })],
+    async (calls) => {
+      const result = await chatCompletion('test-key', 'Acme');
+      assert.equal(result.text, 'Independent summary of Acme.');
+      assert.deepEqual(result.citations, [
+        'HTTPS://source.example/article',
+        'http://valid.example/page',
+      ]);
+      assert.equal(calls.length, 1, 'reference validation must not trigger another paid search');
+    },
+  );
+});
+
 test('AI Overview retains list titles, nested answer content and excludes source metadata', async () => {
   await withMockFetch(
     [

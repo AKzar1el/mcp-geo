@@ -22,7 +22,11 @@ import type {
   Prompt,
 } from '../db/types.js';
 import { fetchWithTimeout } from './fetch.js';
-import { flattenSerpApiAnswer, type SerpApiAnswerBlock } from './serpapi-answer.js';
+import {
+  flattenSerpApiAnswer,
+  flattenSerpApiReferences,
+  type SerpApiAnswerBlock,
+} from './serpapi-answer.js';
 
 export const MODEL = 'serpapi-google-ai-overview';
 export const ENGINE = 'ai_overviews';
@@ -66,22 +70,11 @@ interface SerpApiResponse {
   error?: string;
 }
 
-function flattenReferences(refs: SerpApiReference[] | undefined): string[] {
-  if (!refs || refs.length === 0) return [];
-  const out: string[] = [];
-  for (const r of refs) {
-    if (r && typeof r.link === 'string' && r.link.length > 0) {
-      out.push(r.link);
-    }
-  }
-  return out;
-}
-
 function completionFromOverview(
   overview: SerpApiAiOverview,
 ): AiOverviewCompletion {
   const text = flattenSerpApiAnswer(overview.text_blocks, '•');
-  const citations = flattenReferences(overview.references);
+  const citations = flattenSerpApiReferences(overview.references);
   return { text: text.length > 0 ? text : NO_AI_OVERVIEW, citations };
 }
 

@@ -6,7 +6,11 @@
 import { extractCitations, hasBrandInEngineCitations } from './openai.js';
 import type { Brand, Db, EnginePromptResult, Prompt } from '../db/types.js';
 import { fetchWithTimeout } from './fetch.js';
-import { flattenSerpApiAnswer, type SerpApiAnswerBlock } from './serpapi-answer.js';
+import {
+  flattenSerpApiAnswer,
+  flattenSerpApiReferences,
+  type SerpApiAnswerBlock,
+} from './serpapi-answer.js';
 
 export const MODEL = 'serpapi-google-ai-mode';
 export const ENGINE = 'ai_mode';
@@ -41,13 +45,6 @@ function requireSerpApiKey(env: AiModeEnv): string {
   return env.SERPAPI_API_KEY;
 }
 
-function flattenReferences(refs: SerpApiReference[] | undefined): string[] {
-  if (!refs || refs.length === 0) return [];
-  return refs
-    .map((ref) => ref?.link)
-    .filter((link): link is string => typeof link === 'string' && link.length > 0);
-}
-
 export async function chatCompletion(
   apiKey: string,
   userText: string,
@@ -74,7 +71,7 @@ export async function chatCompletion(
   const text = reconstructed.length > 0
     ? reconstructed
     : flattenSerpApiAnswer(data.text_blocks);
-  const citations = flattenReferences(data.references);
+  const citations = flattenSerpApiReferences(data.references);
   // References without an answer cannot establish an AI visibility result.
   if (text.length === 0) {
     throw new Error('SerpAPI AI Mode returned no usable content');
