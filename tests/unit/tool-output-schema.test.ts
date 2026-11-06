@@ -52,8 +52,14 @@ test('visibility output schema describes winning and losing prompt records', () 
     },
     per_engine: [],
     top_winning_prompts: [
-      { prompt: 'best project tools', engines_cited_in: ['chatgpt'] },
+      {
+        prompt: 'best project tools',
+        engines_cited_in: ['chatgpt'],
+        engines_mentioned_in: ['chatgpt'],
+        engines_with_brand_link: [],
+      },
     ],
+    winning_prompt_evidence_note: 'Legacy cited field is mention-only.',
     top_losing_prompts: [
       { prompt: 'project tools for agencies', competitors_cited: ['beta.com'] },
     ],
