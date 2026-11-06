@@ -1146,7 +1146,7 @@ export function registerTools(
         const payload = {
           brand_id,
           recommendations: [],
-          prompt_source: 'generated' as const,
+          prompt_source: 'fallback' as const,
           reason:
             'no losing prompts yet — collect more data first (run refresh_brand, then re-check competitors)',
         };
@@ -1155,7 +1155,7 @@ export function registerTools(
 
       let recommendations = buildFallbackRecommendations(losingPrompts, max_recommendations);
       let prompt_source: 'generated' | 'fallback' = 'fallback';
-      if (ai_analysis && deps.env.ANTHROPIC_API_KEY) {
+      if (ai_analysis && deps.env.ANTHROPIC_API_KEY?.trim()) {
         try {
           recommendations = await analyzeContentGaps(
             { ANTHROPIC_API_KEY: deps.env.ANTHROPIC_API_KEY },
@@ -1167,7 +1167,7 @@ export function registerTools(
         } catch (err) {
           console.warn('get_content_gaps: analyzer failed, returning fallback', {
             brand_id,
-            message: (err as Error).message,
+            message: err instanceof Error ? err.message : String(err),
           });
         }
       }
