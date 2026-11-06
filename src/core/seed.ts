@@ -133,7 +133,7 @@ export async function seedBrand(
       reason: 'already exists',
     };
   }
-  if (input.prompt_generation === 'anthropic' && !deps.ANTHROPIC_API_KEY) {
+  if (input.prompt_generation === 'anthropic' && !deps.ANTHROPIC_API_KEY?.trim()) {
     throw new DomainInputError(
       'prompt_generation=anthropic requires ANTHROPIC_API_KEY',
     );
@@ -175,7 +175,7 @@ export async function seedBrand(
     } catch (err) {
       console.warn('seedBrand: generator failed, using fallback prompts', {
         brand_id: input.brand_id,
-        message: (err as Error).message,
+        message: err instanceof Error ? err.message : String(err),
       });
     }
   }
