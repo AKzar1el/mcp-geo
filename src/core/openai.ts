@@ -352,7 +352,7 @@ function buildSkippedResult(prompt: Prompt): EnginePromptResult {
 }
 
 function buildFailedResult(prompt: Prompt, err: unknown): EnginePromptResult {
-  const msg = (err as Error).message;
+  const msg = err instanceof Error ? err.message : String(err);
   console.error('runLive: prompt failed', {
     prompt_id: prompt.id,
     message: msg,
@@ -441,9 +441,10 @@ export async function runLive(
       results,
     );
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
     console.error('runLive: persistEngineRun failed', {
       run_id: runId,
-      message: (err as Error).message,
+      message,
     });
     // Best-effort: mark the run failed so it's not stuck in
     // 'in_progress' forever. If updateRun also throws (e.g. the
@@ -452,7 +453,7 @@ export async function runLive(
     // status='completed', so the data we wrote still surfaces.
     await env.db.updateRun(runId, {
       status: 'failed',
-      error: (err as Error).message,
+      error: message,
       completed_at: Date.now(),
     }).catch(() => {});
   }
