@@ -234,3 +234,26 @@ test('content-gap analyzer still retries malformed model output once', async () 
     globalThis.fetch = originalFetch;
   }
 });
+
+test('content-gap analyzer rejects whitespace-only Anthropic credentials before requests', async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = async () => {
+    fetchCalls++;
+    return new Response('invalid key', { status: 401 });
+  };
+  try {
+    await assert.rejects(
+      analyzeContentGaps(
+        { ANTHROPIC_API_KEY: ' \n ' },
+        { id: 'acme', name: 'Acme', domain: 'acme.com' } as Brand,
+        [{ prompt_text: 'Best agency tools', engines_lost_on: ['chatgpt'], competitors_winning: ['rival.com'] }],
+        1,
+      ),
+      /ANTHROPIC_API_KEY not set/,
+    );
+    assert.equal(fetchCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
