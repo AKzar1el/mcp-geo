@@ -26,6 +26,8 @@
 2. **Measure:** after reviewing and, when needed, replacing the starter questions with representative independent buyer prompts, run `refresh_brand` with that `brand_id`. **Live scans use your provider API keys and may incur charges.** Engines without keys are skipped; Google AI Mode requires a separate explicit opt-in.
 3. **Inspect:** run `check_visibility` with the same `brand_id` to view available per-engine scores and evidence. Use `get_citations` to inspect citation records where providers supply sources.
 
+Winning prompts now distinguish `engines_mentioned_in` (brand named in the answer) from `engines_with_brand_link` (the answer or provider sources included a brand-domain link). The older `engines_cited_in` field is retained for compatibility but counts **mentions**, not verified citations. A linked source alone is not scored as an answer mention.
+
 **Choose your setup:** [Quick Install and client-specific instructions](#quick-install) for local MCP hosts · [Getting Started](#getting-started) for provider keys and optional Cloudflare hosting · [What the report contains](#what-it-produces) · [Privacy](#privacy-policy). Hosted remote MCP deployments manage brands through their protected admin routes rather than local `track_brand`.
 
 

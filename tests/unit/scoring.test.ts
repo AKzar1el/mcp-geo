@@ -30,6 +30,7 @@ function response(
   opts: {
     status?: ResponseStatus;
     competitors?: string[];
+    brandCitedWithLink?: 0 | 1;
   } = {},
 ): PromptResponse {
   nextId += 1;
@@ -41,7 +42,7 @@ function response(
     engine,
     raw_response: 'response body',
     brand_mentioned: brandMentioned,
-    brand_cited_with_link: 0,
+    brand_cited_with_link: opts.brandCitedWithLink ?? 0,
     cited_urls: [],
     competitors_mentioned: opts.competitors ?? [],
     engine_citations: [],
@@ -105,6 +106,21 @@ test('winning prompts rank by number of engines citing the brand', () => {
     'gemini',
   ]);
   assert.equal(result.top_winning_prompts[1].prompt, 'prompt text for p2');
+});
+
+test('winning prompt evidence distinguishes answer mentions from actual brand links', () => {
+  const result = computeOverallScore(brand, [
+    response('chatgpt', 'p1', 1, { brandCitedWithLink: 1 }),
+    response('claude', 'p1', 1),
+    response('gemini', 'p1', 1),
+    response('perplexity', 'p2', 0, { brandCitedWithLink: 1 }),
+    response('chatgpt', 'p3', 1, { brandCitedWithLink: 1, status: 'failed' }),
+  ]);
+  assert.equal(result.top_winning_prompts.length, 1);
+  const winner = result.top_winning_prompts[0];
+  assert.deepEqual(winner.engines_mentioned_in, ['chatgpt', 'claude', 'gemini']);
+  assert.deepEqual(winner.engines_with_brand_link, ['chatgpt']);
+  assert.deepEqual(winner.engines_cited_in, winner.engines_mentioned_in);
 });
 
 test('losing prompts require a competitor mention and aggregate across engines', () => {

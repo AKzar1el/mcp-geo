@@ -89,6 +89,8 @@ function visibilityMeasurementMode(
 const winningPromptOutputSchema = z.object({
   prompt: z.string(),
   engines_cited_in: z.array(z.string()),
+  engines_mentioned_in: z.array(z.string()),
+  engines_with_brand_link: z.array(z.string()),
 });
 
 const losingPromptOutputSchema = z.object({
@@ -158,6 +160,7 @@ const visibilityOutputSchema = z.object({
     }),
   ),
   top_winning_prompts: z.array(winningPromptOutputSchema),
+  winning_prompt_evidence_note: z.string(),
   top_losing_prompts: z.array(losingPromptOutputSchema),
 });
 
@@ -601,6 +604,7 @@ export function registerTools(
         },
         per_engine: perEngine,
         top_winning_prompts: scored.top_winning_prompts,
+        winning_prompt_evidence_note: 'engines_cited_in is a legacy field counting brand mentions in answers, not source citations. Use engines_mentioned_in for mention evidence and engines_with_brand_link for linked brand evidence. A link-only source without an answer mention is not a winning prompt.',
         top_losing_prompts: scored.top_losing_prompts,
       };
       return toolResult(payload);

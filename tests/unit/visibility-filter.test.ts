@@ -115,7 +115,13 @@ type VisibilitySnapshot = {
       partial: boolean;
     };
   }>;
-  top_winning_prompts: Array<{ prompt: string; engines_cited_in: string[] }>;
+  top_winning_prompts: Array<{
+    prompt: string;
+    engines_cited_in: string[];
+    engines_mentioned_in: string[];
+    engines_with_brand_link: string[];
+  }>;
+  winning_prompt_evidence_note: string;
   top_losing_prompts: Array<{ prompt: string; competitors_cited: string[] }>;
 };
 
@@ -179,8 +185,14 @@ test('check_visibility scopes every snapshot field to the requested engine', asy
     },
   ]);
   assert.deepEqual(result.structuredContent.top_winning_prompts, [
-    { prompt: 'Claude winner', engines_cited_in: ['claude'] },
+    {
+      prompt: 'Claude winner',
+      engines_cited_in: ['claude'],
+      engines_mentioned_in: ['claude'],
+      engines_with_brand_link: [],
+    },
   ]);
+  assert.match(result.structuredContent.winning_prompt_evidence_note, /not source citations/);
   assert.deepEqual(result.structuredContent.top_losing_prompts, [
     { prompt: 'Claude loss', competitors_cited: ['beta.com'] },
   ]);
