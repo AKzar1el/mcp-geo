@@ -86,6 +86,32 @@ test('generatePrompts persists exactly the requested number of unique prompts', 
   );
 });
 
+test('generatePrompts rejects invalid counts before any billable request or database write', async () => {
+  const originalFetch = globalThis.fetch;
+  let providerCalls = 0;
+  let writeCalls = 0;
+  const db = {
+    replacePrompts: async () => { writeCalls += 1; return 0; },
+  } as unknown as Db;
+  globalThis.fetch = (async () => {
+    providerCalls += 1;
+    return anthropicResponse([prompt('Example commercial prompt')]);
+  }) as typeof fetch;
+
+  try {
+    for (const count of [0, -1, 1.5, 51, Number.NaN, Infinity]) {
+      await assert.rejects(
+        generatePrompts({ db, ANTHROPIC_API_KEY: 'offline-key' }, brand, count),
+        /count must be an integer between 1 and 50/,
+      );
+    }
+    assert.equal(providerCalls, 0);
+    assert.equal(writeCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('generatePrompts retries when the first response has fewer unique prompts than requested', async () => {
   const first = [prompt('Best tool for agencies'), prompt(' best   tool for agencies '), prompt('Best tool for startups')];
   const second = [prompt('Best tool for agencies'), prompt('Best tool for startups'), prompt('Best tool for enterprise')];
