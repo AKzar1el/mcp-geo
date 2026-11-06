@@ -69,6 +69,8 @@ test('Google AI Mode counts only HTTP(S) provider references as source evidence'
         { link: 'javascript:alert(1)' },
         { link: 'acme.example' },
         { link: 'https://' },
+        { link: 'https://acme.example@attacker.example/misleading' },
+        { link: 'https://user:password@acme.example/private' },
         { link: 'HTTPS://source.example/article' },
         { link: 'http://valid.example/page' },
       ],
