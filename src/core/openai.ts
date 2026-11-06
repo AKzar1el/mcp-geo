@@ -720,19 +720,34 @@ export async function collectBatch(
     throw new Error(error);
   }
 
-  const outputLines = batch.output_file_id
-    ? parseBatchOutputLines(
-      await downloadBatchFile(env, batch.output_file_id, 'output'),
-      'output',
-    )
-    : [];
-  const errorLines = batch.error_file_id
-    ? parseBatchOutputLines(
-      await downloadBatchFile(env, batch.error_file_id, 'error'),
-      'error',
-    )
-    : [];
-  assertUniqueBatchCustomIds(outputLines, errorLines);
+  let outputLines: BatchOutputLine[];
+  let errorLines: BatchOutputLine[];
+  try {
+    outputLines = batch.output_file_id
+      ? parseBatchOutputLines(
+        await downloadBatchFile(env, batch.output_file_id, 'output'),
+        'output',
+      )
+      : [];
+    errorLines = batch.error_file_id
+      ? parseBatchOutputLines(
+        await downloadBatchFile(env, batch.error_file_id, 'error'),
+        'error',
+      )
+      : [];
+    assertUniqueBatchCustomIds(outputLines, errorLines);
+  } catch (error) {
+    // Corrupt provider output is permanent; a failed download may be transient.
+    // Do not close the run for transport failures that a later poll can retry.
+    if (error instanceof Error && error.message.startsWith('OpenAI batch integrity error:')) {
+      await env.db.updateRun(run.id, {
+        status: 'failed',
+        error: truncateError(error.message),
+        completed_at: Date.now(),
+      });
+    }
+    throw error;
+  }
 
   const promptIds = [
     ...outputLines.map((line) => line.custom_id),
@@ -745,9 +760,13 @@ export async function collectBatch(
     return !prompt || prompt.brand_id !== brand.id;
   });
   if (unresolved.length > 0) {
-    throw new Error(
-      `OpenAI batch integrity error: batch custom_id(s) do not match stored prompts for brand ${brand.id}: ${unresolved.join(', ')}`,
-    );
+    const error = `OpenAI batch integrity error: batch custom_id(s) do not match stored prompts for brand ${brand.id}: ${unresolved.join(', ')}`;
+    await env.db.updateRun(run.id, {
+      status: 'failed',
+      error: truncateError(error),
+      completed_at: Date.now(),
+    });
+    throw new Error(error);
   }
 
   if (batch.status === 'completed') {
