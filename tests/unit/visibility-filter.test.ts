@@ -83,6 +83,7 @@ const responses = {
 type VisibilitySnapshot = {
   refreshed_at: string;
   overall_score: number;
+  missing_requested_engines: string[];
   measurement_scope: {
     search_requested: { score: number | null; engines: string[] };
     model_only: { score: number | null; engines: string[] };
@@ -318,6 +319,20 @@ test('check_visibility does not fall back to other engines when the selection ha
     visibility.handler({ brand_id: brand.id, engines: ['gemini'] }),
     /No visibility data yet for the selected engines/,
   );
+});
+
+test('check_visibility identifies explicitly requested engines missing usable scan data', async () => {
+  const visibility = registerVisibilityTool();
+  const result = await visibility.handler({
+    brand_id: brand.id,
+    engines: ['chatgpt', 'gemini', 'gemini', 'claude'],
+  });
+  assert.equal(result.structuredContent.overall_score, 75);
+  assert.deepEqual(result.structuredContent.missing_requested_engines, ['gemini']);
+  assert.deepEqual(result.structuredContent.per_engine.map(({ engine }) => engine), ['chatgpt', 'claude']);
+
+  const implicit = await visibility.handler({ brand_id: brand.id });
+  assert.deepEqual(implicit.structuredContent.missing_requested_engines, []);
 });
 
 test('check_visibility labels a score based on partial successful prompt coverage', async () => {
