@@ -21,6 +21,14 @@ type HistoryTool = {
     granularity: 'daily' | 'weekly';
   }) => Promise<{ structuredContent: {
     series: HistoryPoint[];
+    measurement_scope: {
+      mixed_mode_engines: string[];
+      by_engine: Record<string, {
+        search_requested: { brand_mentions: number; usable_prompts: number; score: number } | null;
+        model_only: { brand_mentions: number; usable_prompts: number; score: number } | null;
+      }>;
+      note: string;
+    };
     google_search_sampling: null | {
       engines: string[];
       country: 'us';
@@ -84,6 +92,32 @@ test('visibility history preserves an empty series for an existing unscanned bra
   const result = await history.handler({ brand_id: 'acme', days: 30, granularity: 'weekly' });
   assert.deepEqual(result.structuredContent.series, []);
   assert.equal(result.structuredContent.google_search_sampling, null);
+  assert.deepEqual(result.structuredContent.measurement_scope.mixed_mode_engines, []);
+});
+
+test('history discloses batch/model-only evidence separately from live search requests', async () => {
+  const date = Date.UTC(2026, 0, 5);
+  const history = registerHistoryTool([
+    { run_id: 'chatgpt-live', engine: 'chatgpt', mode: 'live', completed_at: date, total: 4, hits: 1 },
+    { run_id: 'chatgpt-batch', engine: 'chatgpt', mode: 'batch', completed_at: date + 1000, total: 4, hits: 4 },
+    { run_id: 'claude-live', engine: 'claude', mode: 'live', completed_at: date + 2000, total: 4, hits: 3 },
+  ]);
+  const { structuredContent: result } = await history.handler({
+    brand_id: 'acme', days: 30, granularity: 'daily',
+  });
+  assert.equal(result.series[0]?.per_engine.chatgpt, 63, 'legacy combined series remains compatible');
+  assert.deepEqual(result.measurement_scope.mixed_mode_engines, ['chatgpt']);
+  assert.deepEqual(result.measurement_scope.by_engine, {
+    chatgpt: {
+      search_requested: { brand_mentions: 1, usable_prompts: 4, score: 25 },
+      model_only: { brand_mentions: 4, usable_prompts: 4, score: 100 },
+    },
+    claude: {
+      search_requested: null,
+      model_only: { brand_mentions: 3, usable_prompts: 4, score: 75 },
+    },
+  });
+  assert.match(result.measurement_scope.note, /combined.*mode|mode.*combined/i);
 });
 
 test('visibility history discloses US-English scope when historical Google scans are present', async () => {
