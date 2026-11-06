@@ -9,6 +9,7 @@ import type { Db } from '../../src/db/types.ts';
 
 type ToolConfig = {
   title?: string;
+  description?: string;
   annotations?: {
     readOnlyHint?: boolean;
     destructiveHint?: boolean;
@@ -17,7 +18,10 @@ type ToolConfig = {
   };
 };
 
-function captureHostedToolConfigs(): Map<string, ToolConfig> {
+function captureHostedToolConfigs(
+  refreshExecution: 'async' | 'sync' = 'async',
+  namespaced = true,
+): Map<string, ToolConfig> {
   const tools = new Map<string, ToolConfig>();
   const server = {
     registerTool(name: string, config: ToolConfig) {
@@ -30,10 +34,10 @@ function captureHostedToolConfigs(): Map<string, ToolConfig> {
     {
       db: {} as Db,
       env: {},
-      refreshExecution: 'async',
+      refreshExecution,
       runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
     },
-    { namespaced: true },
+    { namespaced },
   );
 
   return tools;
@@ -76,6 +80,18 @@ test('hosted tools expose titles and complete safety annotations', () => {
     destructiveHint: false,
     openWorldHint: true,
   });
+});
+
+test('refresh descriptions disclose billed calls and full prompt reruns on partial retry', () => {
+  for (const [mode, namespaced, name] of [
+    ['async', true, 'visibility.refresh'],
+    ['sync', false, 'refresh_brand'],
+  ] as const) {
+    const description = captureHostedToolConfigs(mode, namespaced).get(name)?.description;
+    assert.match(description ?? '', /provider API requests may incur charges/i);
+    assert.match(description ?? '', /retries rerun every active prompt/i);
+    assert.ok(description && description.length <= 240, `${name} description is too long`);
+  }
 });
 
 test('local management tools expose precise Claude Desktop safety metadata', () => {

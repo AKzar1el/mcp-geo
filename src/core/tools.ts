@@ -466,9 +466,10 @@ export function registerTools(
   const toolName = (legacyName: keyof typeof HOSTED_TOOL_NAMES) =>
     options.namespaced ? HOSTED_TOOL_NAMES[legacyName] : legacyName;
   const refreshIsAsync = deps.refreshExecution === 'async';
+  const refreshCostNote = ' Provider API requests may incur charges. Retries rerun every active prompt, including prior successes.';
   const refreshDescription = refreshIsAsync
-    ? "Start a fresh scan on selected configured engines using the brand's active prompts. Returns run IDs immediately; results usually populate in 30-60 seconds. Example: brand_id='acme', engines=['chatgpt','gemini']."
-    : "Run a fresh scan on selected configured engines using the brand's active prompts and return after completion. Example: brand_id='acme', engines=['chatgpt','gemini'].";
+    ? "Start fresh scans on selected engines; returns run IDs immediately." + refreshCostNote + " Example: brand_id='acme', engines=['chatgpt','gemini']."
+    : "Scan selected engines and return after completion." + refreshCostNote + " Example: brand_id='acme', engines=['chatgpt','gemini'].";
 
   server.registerTool(
     toolName('check_visibility'),
