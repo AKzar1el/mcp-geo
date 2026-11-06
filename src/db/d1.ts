@@ -3,6 +3,7 @@
 // methods on an object so the Worker and the local CLI share one
 // interface. Worker-only file — imports Workers types.
 
+import { LIVE_RUN_STALE_AFTER_MS } from './types';
 import type {
   Brand,
   BrandSummary,
@@ -13,6 +14,7 @@ import type {
   Db,
   EnginePromptResult,
   InsertPromptResponseInput,
+  LiveRunReservation,
   NewPromptInput,
   Prompt,
   PromptResponse,
@@ -256,6 +258,55 @@ export function createD1Db(d1: D1Database): Db {
         )
         .run();
       return run;
+    },
+
+    async reserveLiveRun(
+      brand: Brand,
+      engine: string,
+      promptsTotal: number,
+    ): Promise<LiveRunReservation | null> {
+      const now = Date.now();
+      const cutoff = now - LIVE_RUN_STALE_AFTER_MS;
+      const run: Run = {
+        id: randomId(),
+        brand_id: brand.id,
+        engine,
+        mode: 'live',
+        status: 'in_progress',
+        batch_id: null,
+        prompts_total: promptsTotal,
+        prompts_completed: 0,
+        cost_eur_estimate: null,
+        error: null,
+        started_at: now,
+        completed_at: null,
+      };
+      // D1 serializes writes to the database; keep the exclusion predicate
+      // inside the INSERT, never in a separate preflight read.
+      const result = await d1
+        .prepare(
+          `INSERT INTO runs
+           (id, brand_id, engine, mode, status, batch_id, prompts_total,
+            prompts_completed, cost_eur_estimate, error, started_at, completed_at)
+         SELECT ?, ?, ?, 'live', 'in_progress', NULL, ?, 0, NULL, NULL, ?, NULL
+          WHERE NOT EXISTS (
+            SELECT 1 FROM runs WHERE brand_id = ? AND engine = ?
+              AND mode = 'live' AND status IN ('pending', 'in_progress')
+              AND started_at > ?
+          )`,
+        )
+        .bind(run.id, brand.id, engine, promptsTotal, now, brand.id, engine, cutoff)
+        .run();
+      if ((result.meta.changes ?? 0) > 0) return { run, started: true };
+      const active = await d1
+        .prepare(
+          `SELECT * FROM runs WHERE brand_id = ? AND engine = ?
+           AND mode = 'live' AND status IN ('pending', 'in_progress')
+           AND started_at > ? ORDER BY started_at DESC LIMIT 1`,
+        )
+        .bind(brand.id, engine, cutoff)
+        .first<Run>();
+      return active ? { run: active, started: false } : null;
     },
 
     async updateRun(runId: string, fields: UpdateRunFields): Promise<void> {

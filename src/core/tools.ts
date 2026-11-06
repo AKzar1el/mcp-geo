@@ -1238,9 +1238,13 @@ export function registerTools(
         prompts,
         filtered,
       );
+      const alreadyRunning = Object.keys(run_ids).length - kicked.length;
       const payload = {
         brand_id: brand.id,
-        message: `Refresh ${refreshIsAsync ? 'started' : 'completed'} for ${kicked.length} engine${kicked.length === 1 ? '' : 's'}`,
+        message: `Refresh ${refreshIsAsync ? 'started' : 'completed'} for ${kicked.length} engine${kicked.length === 1 ? '' : 's'}` +
+          (alreadyRunning > 0
+            ? `; ${alreadyRunning} engine${alreadyRunning === 1 ? '' : 's'} already in progress (existing run IDs reused)`
+            : ''),
         run_ids,
         estimated_completion_seconds: refreshIsAsync ? 30 : 0,
       };
