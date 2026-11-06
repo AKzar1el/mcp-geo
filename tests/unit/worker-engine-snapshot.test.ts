@@ -116,6 +116,41 @@ test('runEngines dispatches the prompt IDs present when the run is created', asy
   assert.equal(activePromptLookupUsed, false);
 });
 
+test('runEngines dispatches each requested engine only once', async () => {
+  const created: string[] = [];
+  const dispatched: string[] = [];
+  const db = {
+    createRun: async (_brand: Brand, engine: string) => {
+      created.push(engine);
+      return { id: `run-${engine}` } as Run;
+    },
+  } as Db;
+  const env = {
+    db,
+    SEED_SECRET: 'test-secret',
+    SELF_URL: 'https://worker.example.test',
+    OPENAI_API_KEY: 'test-key',
+    ANTHROPIC_API_KEY: 'test-key',
+    SELF: {
+      fetch: async (request: Request) => {
+        const body = (await request.json()) as { engine: string };
+        dispatched.push(body.engine);
+        return new Response(null, { status: 204 });
+      },
+    },
+  };
+  const ctx = { waitUntil: () => { throw new Error('unexpected background dispatch'); } };
+
+  const result = await runEngines(
+    env, ctx, brand, oldPrompts,
+    ['chatgpt', 'claude', 'chatgpt', 'claude'], undefined, true,
+  );
+  assert.deepEqual(result.engines, ['chatgpt', 'claude']);
+  assert.deepEqual(result.run_ids, { chatgpt: 'run-chatgpt', claude: 'run-claude' });
+  assert.deepEqual(created, ['chatgpt', 'claude']);
+  assert.deepEqual(dispatched, ['chatgpt', 'claude']);
+});
+
 test('runEngines can keep HTTP admin dispatch attached until service-binding work completes', async () => {
   let releaseFetch!: () => void;
   const fetchGate = new Promise<void>((resolve) => {

@@ -16,6 +16,7 @@
 
 import {
   getAvailableEngines,
+  uniqueEngineNames,
   type EngineKeys,
   type EngineName,
   type EngineRun,
@@ -123,7 +124,8 @@ export async function runEngines(
   const promptIds = prompts.map((prompt) => prompt.id);
   const available = getAvailableEngines(env);
   const availableSet = new Set<EngineName>(available);
-  const requested = engineNames ?? available;
+  // A repeated engine name must never create a second run/provider request.
+  const requested = uniqueEngineNames(engineNames ?? available);
   const filtered = requested.filter((e) => {
     if (availableSet.has(e)) return true;
     console.warn('runEngines: requested engine has no API key, skipping', {
