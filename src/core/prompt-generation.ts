@@ -69,6 +69,8 @@ function extractJsonArrayText(text: string): string {
 
 const VALID_STAGES = new Set(['awareness', 'comparison', 'decision']);
 
+class InvalidGeneratedPromptsResponse extends Error {}
+
 function validateAndShape(
   raw: unknown,
   expectedCount: number,
@@ -127,9 +129,16 @@ async function callGenerator(
     systemPrompt,
     4000,
   );
-  const jsonText = extractJsonArrayText(responseText);
-  const parsed = JSON.parse(jsonText);
-  return validateAndShape(parsed, count);
+  try {
+    const jsonText = extractJsonArrayText(responseText);
+    const parsed = JSON.parse(jsonText);
+    return validateAndShape(parsed, count);
+  } catch (error) {
+    throw new InvalidGeneratedPromptsResponse(
+      error instanceof Error ? error.message : String(error),
+      { cause: error },
+    );
+  }
 }
 
 export async function generatePrompts(
@@ -141,6 +150,8 @@ export async function generatePrompts(
   try {
     prompts = await callGenerator(env, brand, count, false);
   } catch (firstErr) {
+    // A stricter JSON instruction cannot fix a provider or transport failure.
+    if (!(firstErr instanceof InvalidGeneratedPromptsResponse)) throw firstErr;
     console.warn('generatePrompts: first attempt failed, retrying strict', {
       brand_id: brand.id,
       message: (firstErr as Error).message,

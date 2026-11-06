@@ -144,3 +144,42 @@ test('generatePrompts leaves the existing prompt set untouched when both attempt
     globalThis.fetch = originalFetch;
   }
 });
+
+test('generatePrompts does not retry a provider rate-limit response', async () => {
+  let replaceCalls = 0;
+  const db = {
+    replacePrompts: async () => {
+      replaceCalls++;
+      return 0;
+    },
+  } as unknown as Db;
+
+  await withMockAnthropic([new Response('rate limit', { status: 429 })], async (state) => {
+    await assert.rejects(
+      generatePrompts({ db, ANTHROPIC_API_KEY: 'test-key' }, brand, 3),
+      /Anthropic completion failed: 429/,
+    );
+    assert.equal(state.calls, 1);
+    assert.equal(replaceCalls, 0);
+  });
+});
+
+test('generatePrompts does not retry an incomplete provider response', async () => {
+  const incomplete = new Response(JSON.stringify({
+    stop_reason: 'max_tokens',
+    content: [{ type: 'text', text: JSON.stringify([prompt('Best tool')]) }],
+  }), { status: 200, headers: { 'content-type': 'application/json' } });
+  const db = {
+    replacePrompts: async () => {
+      throw new Error('must not replace existing prompts');
+    },
+  } as unknown as Db;
+
+  await withMockAnthropic([incomplete], async (state) => {
+    await assert.rejects(
+      generatePrompts({ db, ANTHROPIC_API_KEY: 'test-key' }, brand, 3),
+      /Anthropic response incomplete: max_tokens/,
+    );
+    assert.equal(state.calls, 1);
+  });
+});
