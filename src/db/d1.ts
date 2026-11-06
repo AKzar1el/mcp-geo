@@ -746,7 +746,7 @@ export function createD1Db(d1: D1Database): Db {
       // (stuck at in_progress) still count toward history.
       const { results } = await d1
         .prepare(
-          `SELECT r.id AS run_id, r.engine,
+          `SELECT r.id AS run_id, r.engine, r.mode,
                   COALESCE(r.completed_at, r.started_at) AS completed_at,
                   COUNT(pr.id) AS total,
                   SUM(pr.brand_mentioned) AS hits,

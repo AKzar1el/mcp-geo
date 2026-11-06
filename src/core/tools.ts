@@ -166,6 +166,22 @@ const historyOutputSchema = z.object({
   days: z.number(),
   granularity: z.enum(['daily', 'weekly']),
   google_search_sampling: googleSearchSamplingSchema,
+  measurement_scope: z.object({
+    mixed_mode_engines: z.array(z.string()),
+    by_engine: z.record(z.string(), z.object({
+      search_requested: z.object({
+        brand_mentions: z.number(),
+        usable_prompts: z.number(),
+        score: z.number(),
+      }).nullable(),
+      model_only: z.object({
+        brand_mentions: z.number(),
+        usable_prompts: z.number(),
+        score: z.number(),
+      }).nullable(),
+    })),
+    note: z.string(),
+  }),
   prompt_set_comparability: z.object({
     changes_detected: z.boolean(),
     changed_engines: z.array(z.string()),
@@ -596,7 +612,7 @@ export function registerTools(
     {
       title: 'Get AI visibility history',
       description:
-        "Return daily or weekly visibility history with per-engine evidence. Example: brand_id='acme', days=30, granularity='weekly'.",
+        "Return daily or weekly visibility history with per-engine evidence and model-only versus search-requested measurement scope. Example: brand_id='acme', days=30, granularity='weekly'.",
       inputSchema: {
         brand_id: z
           .string()
@@ -625,6 +641,42 @@ export function registerTools(
       }
       const since = Date.now() - days * 86_400_000;
       const results = await deps.db.getVisibilityHistoryRows(brand_id, since);
+
+      // Historical runs can contain both ungrounded OpenAI batches and
+      // search-requested ChatGPT samples. Preserve the legacy series while
+      // reporting their distinct evidence denominators for this time window.
+      type Counts = { brand_mentions: number; usable_prompts: number };
+      const scopeCounts = new Map<string, {
+        search_requested: Counts;
+        model_only: Counts;
+      }>();
+      for (const row of results) {
+        const counts = scopeCounts.get(row.engine) ?? {
+          search_requested: { brand_mentions: 0, usable_prompts: 0 },
+          model_only: { brand_mentions: 0, usable_prompts: 0 },
+        };
+        const mode = visibilityMeasurementMode(row.engine, row.mode ?? 'live');
+        counts[mode].brand_mentions += Number(row.hits ?? 0);
+        counts[mode].usable_prompts += Number(row.total ?? 0);
+        scopeCounts.set(row.engine, counts);
+      }
+      const scoredCounts = (counts: Counts) => counts.usable_prompts === 0 ? null : {
+        ...counts,
+        score: Math.round(100 * counts.brand_mentions / counts.usable_prompts),
+      };
+      const measurement_scope = {
+        mixed_mode_engines: [...scopeCounts.entries()]
+          .filter(([, counts]) =>
+            counts.search_requested.usable_prompts > 0 && counts.model_only.usable_prompts > 0,
+          )
+          .map(([engine]) => engine).sort(),
+        by_engine: Object.fromEntries([...scopeCounts.entries()].sort(([a], [b]) => a.localeCompare(b))
+          .map(([engine, counts]) => [engine, {
+            search_requested: scoredCounts(counts.search_requested),
+            model_only: scoredCounts(counts.model_only),
+          }])),
+        note: 'Combined legacy daily and weekly scores may mix model-only and search-requested run evidence in the same bucket. These window-wide, separately scored denominators identify mixed-mode engines; they do not prove that every search-requested response returned citations.',
+      };
 
       // Only compare complete recorded run rosters. Comparing successful
       // responses alone would falsely flag a change after a partial scan.
@@ -732,6 +784,7 @@ export function registerTools(
         days,
         granularity,
         google_search_sampling: googleSearchSampling(results.map(({ engine }) => engine)),
+        measurement_scope,
         prompt_set_comparability,
         series,
       };

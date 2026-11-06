@@ -171,6 +171,8 @@ export type UpdateRunFields = Partial<
 export interface VisibilityHistoryRow {
   run_id: string;
   engine: string;
+  // Production SQL selects runs.mode; optional for older in-memory test fixtures.
+  mode?: 'live' | 'batch';
   completed_at: number;
   total: number | null;
   hits: number | null;
