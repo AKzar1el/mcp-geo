@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { buildFallbackRecommendations } from '../../src/core/content-gap-analysis.ts';
+import {
+  analyzeContentGaps,
+  buildFallbackRecommendations,
+} from '../../src/core/content-gap-analysis.ts';
 import { registerTools } from '../../src/core/tools.ts';
 import type { Brand, Db, PromptResponse } from '../../src/db/types.ts';
 
@@ -162,6 +165,71 @@ test('content gaps require an explicit opt-in before any paid Anthropic call', a
     });
     assert.equal(explicitResult.structuredContent.prompt_source, 'generated');
     assert.equal(calls, 1, 'explicit paid analysis should make one successful call');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('content-gap analyzer does not repeat a failed paid provider request', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return Response.json({ error: { message: 'rate limited' } }, { status: 429 });
+  };
+  try {
+    await assert.rejects(
+      analyzeContentGaps(
+        { ANTHROPIC_API_KEY: 'fake-test-key' },
+        { id: 'acme', name: 'Acme', domain: 'acme.com' } as Brand,
+        [{
+          prompt_text: 'Acme vs Asana for agencies',
+          engines_lost_on: ['chatgpt'],
+          competitors_winning: ['asana.com'],
+        }],
+        1,
+      ),
+      /Anthropic completion failed: 429/,
+    );
+    assert.equal(calls, 1, 'provider HTTP failures should not trigger a paid strict-format retry');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('content-gap analyzer still retries malformed model output once', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return Response.json({
+      stop_reason: 'end_turn',
+      content: [{
+        type: 'text',
+        text: calls === 1
+          ? 'not valid JSON'
+          : JSON.stringify([{
+            priority: 1,
+            topic: 'Compare Acme with Asana',
+            rationale: 'The observed buyer question mentions Asana',
+            suggested_format: 'comparison_page',
+          }]),
+      }],
+    });
+  };
+  try {
+    const result = await analyzeContentGaps(
+      { ANTHROPIC_API_KEY: 'fake-test-key' },
+      { id: 'acme', name: 'Acme', domain: 'acme.com' } as Brand,
+      [{
+        prompt_text: 'Acme vs Asana for agencies',
+        engines_lost_on: ['chatgpt'],
+        competitors_winning: ['asana.com'],
+      }],
+      1,
+    );
+    assert.equal(calls, 2);
+    assert.equal(result[0]?.topic, 'Compare Acme with Asana');
   } finally {
     globalThis.fetch = originalFetch;
   }

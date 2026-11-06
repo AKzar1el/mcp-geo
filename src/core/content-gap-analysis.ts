@@ -65,6 +65,8 @@ const BASE_SYSTEM_PROMPT = [
 const STRICT_SUFFIX =
   '\nReturn ONLY a JSON array. No prose. No code fences.';
 
+class InvalidContentGapResponse extends Error {}
+
 function inferFallbackFormat(promptText: string): string {
   const prompt = promptText.toLowerCase();
   if (/\b(vs\.?|versus|compare|comparison|alternative|alternatives)\b/.test(prompt)) {
@@ -230,9 +232,16 @@ async function callAnalyzer(
     systemPrompt,
     4000,
   );
-  const jsonText = extractJsonArrayText(responseText);
-  const parsed = JSON.parse(jsonText);
-  return validateAndShape(parsed);
+  try {
+    const jsonText = extractJsonArrayText(responseText);
+    const parsed = JSON.parse(jsonText);
+    return validateAndShape(parsed);
+  } catch (err) {
+    throw new InvalidContentGapResponse(
+      err instanceof Error ? err.message : String(err),
+      { cause: err },
+    );
+  }
 }
 
 export async function analyzeContentGaps(
@@ -251,6 +260,9 @@ export async function analyzeContentGaps(
       false,
     );
   } catch (firstErr) {
+    // A stricter response format can fix malformed JSON, not HTTP failures,
+    // quota errors, network timeouts, or incomplete provider responses.
+    if (!(firstErr instanceof InvalidContentGapResponse)) throw firstErr;
     console.warn('analyzeContentGaps: first attempt failed, retrying strict', {
       brand_id: brand.id,
       message: (firstErr as Error).message,
