@@ -143,6 +143,12 @@ const visibilityOutputSchema = z.object({
     mixed_age_warning: z.boolean(),
     older_engines: z.array(z.string()),
   }),
+  prompt_set_comparability: z.object({
+    active_prompt_count: z.number(),
+    engines_with_retired_prompt_evidence: z.array(z.string()),
+    historical_prompt_warning: z.boolean(),
+    note: z.string(),
+  }),
   per_engine: z.array(
     z.object({
       engine: z.string(),
@@ -510,6 +516,7 @@ export function registerTools(
       const refreshedAtByEngine = new Map<string, string>();
       const refreshMsByEngine = new Map<string, number>();
       const expectedPromptsByEngine = new Map<string, number>();
+      const observedPromptIdsByEngine = new Map<string, Set<string>>();
       const measurementModeByEngine = new Map<string, 'search_requested' | 'model_only'>();
       let mostRecentTimestamp = 0;
       for (const engine of selectedEngines) {
@@ -518,6 +525,7 @@ export function registerTools(
         const responses = await deps.db.getResponsesForRun(run.id);
         if (responses.length === 0) continue;
         selectedResponses.push(...responses);
+        observedPromptIdsByEngine.set(engine, new Set(responses.map((response) => response.prompt_id)));
         measurementModeByEngine.set(engine, visibilityMeasurementMode(engine, run.mode));
         expectedPromptsByEngine.set(engine, run.prompts_total);
         const ts = run.completed_at ?? run.started_at;
@@ -545,6 +553,14 @@ export function registerTools(
       const mixedAgeCutoffMs = 24 * 60 * 60 * 1000;
       const olderEngines = [...refreshMsByEngine.entries()]
         .filter(([, timestamp]) => mostRecentTimestamp - timestamp >= mixedAgeCutoffMs)
+        .map(([engine]) => engine)
+        .sort();
+      const activePrompts = await deps.db.getActivePrompts(brand_id);
+      const activePromptIds = new Set(activePrompts.map((prompt) => prompt.id));
+      // Successful rows can be a partial sample. Only *observed* retired IDs
+      // prove stale evidence; missing current IDs belong to coverage warnings.
+      const retiredPromptEngines = [...observedPromptIdsByEngine.entries()]
+        .filter(([, ids]) => [...ids].some((id) => !activePromptIds.has(id)))
         .map(([engine]) => engine)
         .sort();
       const perEngine = scored.per_engine.map((engine) => {
@@ -602,6 +618,14 @@ export function registerTools(
           age_spread_hours: Math.round((ageSpreadMs / 3600000) * 10) / 10,
           mixed_age_warning: olderEngines.length > 0,
           older_engines: olderEngines,
+        },
+        prompt_set_comparability: {
+          active_prompt_count: activePromptIds.size,
+          engines_with_retired_prompt_evidence: retiredPromptEngines,
+          historical_prompt_warning: retiredPromptEngines.length > 0,
+          note: retiredPromptEngines.length > 0
+            ? 'Latest scored responses from the listed engines include prompts no longer in the active set. Their scores remain historical observations and should not be compared as measurements of the current prompt set. Partial scan coverage is reported separately.'
+            : 'No retired prompt IDs were observed in these scored responses. This does not prove complete coverage of the current prompt set; inspect per-engine coverage separately.',
         },
         per_engine: perEngine,
         top_winning_prompts: scored.top_winning_prompts,
