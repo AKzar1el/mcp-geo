@@ -512,34 +512,59 @@ export async function submitBatch(
     `geo-mcp-run-${runId}.jsonl`,
   );
 
-  const uploadResp = await fetchWithTimeout(`${OPENAI_BASE}/files`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${requireOpenAiKey(env)}` },
-    body: form,
-  });
-  if (!uploadResp.ok) {
-    const text = await uploadResp.text();
-    throw new Error(`OpenAI file upload failed: ${uploadResp.status} ${text}`);
-  }
-  const file = (await uploadResp.json()) as OpenAiFile;
+  let file: OpenAiFile;
+  let batch: OpenAiBatch;
+  try {
+    const uploadResp = await fetchWithTimeout(`${OPENAI_BASE}/files`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${requireOpenAiKey(env)}` },
+      body: form,
+    });
+    if (!uploadResp.ok) {
+      const text = await uploadResp.text();
+      throw new Error(`OpenAI file upload failed: ${uploadResp.status} ${text}`);
+    }
+    file = (await uploadResp.json()) as OpenAiFile;
+    if (typeof file?.id !== 'string' || !file.id.trim()) {
+      throw new Error('OpenAI file upload returned no file id');
+    }
 
-  const createResp = await fetchWithTimeout(`${OPENAI_BASE}/batches`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${requireOpenAiKey(env)}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      input_file_id: file.id,
-      endpoint: '/v1/chat/completions',
-      completion_window: '24h',
-    }),
-  });
-  if (!createResp.ok) {
-    const text = await createResp.text();
-    throw new Error(`OpenAI batch create failed: ${createResp.status} ${text}`);
+    const createResp = await fetchWithTimeout(`${OPENAI_BASE}/batches`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${requireOpenAiKey(env)}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        input_file_id: file.id,
+        endpoint: '/v1/chat/completions',
+        completion_window: '24h',
+      }),
+    });
+    if (!createResp.ok) {
+      const text = await createResp.text();
+      throw new Error(`OpenAI batch create failed: ${createResp.status} ${text}`);
+    }
+    batch = (await createResp.json()) as OpenAiBatch;
+    if (typeof batch?.id !== 'string' || !batch.id.trim()) {
+      throw new Error('OpenAI batch create returned no batch id');
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    try {
+      await env.db.updateRun(runId, {
+        status: 'failed',
+        error: message.slice(0, 500),
+        completed_at: Date.now(),
+      });
+    } catch (persistError) {
+      console.error('submitBatch: failed to mark rejected batch submission terminal', {
+        run_id: runId,
+        message: persistError instanceof Error ? persistError.message : String(persistError),
+      });
+    }
+    throw error;
   }
-  const batch = (await createResp.json()) as OpenAiBatch;
 
   await env.db.updateRun(runId, { batch_id: batch.id, status: 'in_progress' });
 

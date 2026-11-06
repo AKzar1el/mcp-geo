@@ -738,9 +738,12 @@ test('OpenAI Batch submit preserves JSONL prompt identities and provider contrac
   }]);
 });
 
-test('OpenAI Batch rejects upload failure without batch creation or run mutation', async () => {
+test('OpenAI Batch failed upload terminates the local run without batch creation', async () => {
+  const updates: Array<{ id: string; fields: Record<string, unknown> }> = [];
   const db = {
-    updateRun: async () => { throw new Error('unexpected run mutation'); },
+    updateRun: async (id: string, fields: Record<string, unknown>) => {
+      updates.push({ id, fields });
+    },
   } as unknown as Db;
   await withMockFetch(new Response('rate limited', { status: 429 }), async (calls) => {
     await assert.rejects(
@@ -750,4 +753,62 @@ test('OpenAI Batch rejects upload failure without batch creation or run mutation
     assert.equal(calls.length, 1);
     assert.equal(calls[0].url.pathname, '/v1/files');
   });
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].id, 'batch-failed');
+  assert.equal(updates[0].fields.status, 'failed');
+  assert.match(String(updates[0].fields.error), /OpenAI file upload failed: 429/);
+  assert.equal(typeof updates[0].fields.completed_at, 'number');
+});
+
+test('OpenAI Batch failed creation terminates the run after successful upload', async () => {
+  const updates: Array<Record<string, unknown>> = [];
+  const db = {
+    updateRun: async (_id: string, fields: Record<string, unknown>) => {
+      updates.push(fields);
+    },
+  } as unknown as Db;
+  let callCount = 0;
+  await withMockFetch(() => {
+    callCount += 1;
+    return callCount === 1
+      ? jsonResponse({ id: 'uploaded-file' })
+      : new Response('temporarily unavailable', { status: 503 });
+  }, async (calls) => {
+    await assert.rejects(
+      submitBatch({ db, OPENAI_API_KEY: 'test-key' }, brand, [prompt], 'batch-create-failed'),
+      /OpenAI batch create failed: 503/,
+    );
+    assert.deepEqual(calls.map((call) => call.url.pathname), ['/v1/files', '/v1/batches']);
+  });
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].status, 'failed');
+  assert.match(String(updates[0].error), /OpenAI batch create failed: 503/);
+  assert.equal(typeof updates[0].completed_at, 'number');
+});
+
+test('OpenAI Batch rejects malformed upload and creation receipts instead of leaving pending runs', async () => {
+  for (const malformedStep of ['upload', 'create'] as const) {
+    const updates: Array<Record<string, unknown>> = [];
+    const db = {
+      updateRun: async (_id: string, fields: Record<string, unknown>) => {
+        updates.push(fields);
+      },
+    } as unknown as Db;
+    let requests = 0;
+    await withMockFetch(() => {
+      requests += 1;
+      return jsonResponse(requests === 1
+        ? (malformedStep === 'upload' ? {} : { id: 'uploaded-file' })
+        : {});
+    }, async (calls) => {
+      await assert.rejects(
+        submitBatch({ db, OPENAI_API_KEY: 'test-key' }, brand, [prompt], `batch-bad-${malformedStep}`),
+        malformedStep === 'upload' ? /no file id/ : /no batch id/,
+      );
+      assert.equal(calls.length, malformedStep === 'upload' ? 1 : 2);
+    });
+    assert.equal(updates.length, 1);
+    assert.equal(updates[0].status, 'failed');
+    assert.equal(typeof updates[0].completed_at, 'number');
+  }
 });
