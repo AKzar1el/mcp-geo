@@ -86,6 +86,7 @@ test('async refresh metadata and result report dispatched scans', async () => {
   const result = await refresh.handler({ brand_id: brand.id });
   assert.equal(result.structuredContent.message, 'Refresh started for 2 engines');
   assert.equal(result.structuredContent.estimated_completion_seconds, 30);
+  assert.deepEqual(result.structuredContent.skipped_unconfigured_engines, []);
 });
 
 test('sync refresh metadata and result report completed scans', async () => {
@@ -107,6 +108,19 @@ test('refresh names an explicitly requested engine when its provider key is unav
     refresh.handler({ brand_id: brand.id, engines: ['claude'] }),
     /requested engines are not configured: claude/i,
   );
+});
+
+test('refresh discloses unconfigured engines in a partially eligible explicit selection', async () => {
+  const refresh = registerRefreshTool('sync', false, {
+    OPENAI_API_KEY: 'test-openai-key',
+  });
+  const result = await refresh.handler({
+    brand_id: brand.id,
+    engines: ['chatgpt', 'claude', 'chatgpt'],
+  });
+  assert.deepEqual(result.structuredContent.run_ids, { chatgpt: 'run-chatgpt' });
+  assert.deepEqual(result.structuredContent.skipped_unconfigured_engines, ['claude']);
+  assert.match(String(result.structuredContent.message), /skipped.*claude/i);
 });
 
 test('refresh deduplicates explicitly requested engines before dispatch', async () => {
