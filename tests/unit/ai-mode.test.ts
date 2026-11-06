@@ -58,6 +58,33 @@ test('Google AI Mode uses the dedicated SerpAPI engine and reconstructed markdow
   );
 });
 
+test('Google AI Mode counts only HTTP(S) provider references as source evidence', async () => {
+  await withMockFetch(
+    [jsonResponse({
+      reconstructed_markdown: 'Independent summary of Acme.',
+      references: [
+        { link: 'ftp://acme.example/private' },
+        { link: 'mailto:press@acme.example' },
+        { link: 'file://acme.example/private' },
+        { link: 'javascript:alert(1)' },
+        { link: 'acme.example' },
+        { link: 'https://' },
+        { link: 'HTTPS://source.example/article' },
+        { link: 'http://valid.example/page' },
+      ],
+    })],
+    async (calls) => {
+      const result = await chatCompletion('test-key', 'Acme');
+      assert.equal(result.text, 'Independent summary of Acme.');
+      assert.deepEqual(result.citations, [
+        'HTTPS://source.example/article',
+        'http://valid.example/page',
+      ]);
+      assert.equal(calls.length, 1, 'reference validation must not trigger another paid search');
+    },
+  );
+});
+
 test('Google AI Mode falls back to text blocks when reconstructed markdown is absent', async () => {
   await withMockFetch(
     [

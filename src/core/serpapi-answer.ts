@@ -9,6 +9,26 @@ export interface SerpApiAnswerBlock {
   text_blocks?: SerpApiAnswerBlock[];
 }
 
+export function flattenSerpApiReferences(
+  refs: Array<{ link?: unknown }> | undefined,
+): string[] {
+  if (!Array.isArray(refs)) return [];
+  const urls: string[] = [];
+  for (const ref of refs) {
+    if (!ref || typeof ref.link !== 'string') continue;
+    try {
+      const parsed = new URL(ref.link);
+      // Provider metadata is evidence only when it points to a web source.
+      if ((parsed.protocol === 'http:' || parsed.protocol === 'https:') && parsed.hostname) {
+        urls.push(ref.link);
+      }
+    } catch {
+      // Bare domains and malformed references cannot be cited as links.
+    }
+  }
+  return urls;
+}
+
 const MAX_DEPTH = 24;
 const MAX_BLOCKS = 2048;
 const MAX_TEXT_LENGTH = 250_000;
