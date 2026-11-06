@@ -144,9 +144,23 @@ export async function runEngines(
   const selfUrl = resolveSelfUrl(env, request);
 
   const engineRuns: EngineRun[] = [];
-  for (const engine of filtered) {
-    const run = await env.db.createRun(brand, engine, 'live', prompts.length);
-    engineRuns.push({ engine, run_id: run.id });
+  const run_ids: Record<string, string> = {};
+  try {
+    for (const engine of filtered) {
+      const reservation = await env.db.reserveLiveRun(brand, engine, prompts.length);
+      if (!reservation) continue;
+      run_ids[engine] = reservation.run.id;
+      if (reservation.started) {
+        engineRuns.push({ engine, run_id: reservation.run.id });
+      }
+    }
+  } catch (error) {
+    // No provider calls have started yet: release any earlier reservations
+    // rather than leaving them unusable until the stale-run window expires.
+    await Promise.allSettled(engineRuns.map((er) =>
+      env.db.failRunIfInProgress(er.run_id, 'A later engine reservation failed'),
+    ));
+    throw error;
   }
 
   const completion = Promise.allSettled(
@@ -225,11 +239,9 @@ export async function runEngines(
   // attached to the live HTTP request instead of being orphaned mid-scan.
   if (waitForCompletion) {
     await completion;
-  } else {
+  } else if (engineRuns.length > 0) {
     ctx.waitUntil(completion);
   }
 
-  const run_ids: Record<string, string> = {};
-  for (const er of engineRuns) run_ids[er.engine] = er.run_id;
-  return { run_ids, engines: filtered };
+  return { run_ids, engines: engineRuns.map((er) => er.engine) };
 }
