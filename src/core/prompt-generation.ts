@@ -15,7 +15,7 @@ export interface PromptGenEnv {
 }
 
 function requireAnthropicKey(env: PromptGenEnv): string {
-  if (!env.ANTHROPIC_API_KEY) {
+  if (!env.ANTHROPIC_API_KEY?.trim()) {
     throw new Error('ANTHROPIC_API_KEY not set — prompt generation requires Claude Haiku');
   }
   return env.ANTHROPIC_API_KEY;
