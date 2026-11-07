@@ -1461,6 +1461,43 @@ test('seedBrand normalizes hosted domain and competitor inputs before writing', 
   }
 });
 
+test('seedBrand rejects a whitespace-only name before creating any records', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'digestseo.sqlite'));
+  try {
+    await assert.rejects(
+      seedBrand({ db }, { brand_id: 'blank-name', name: '  \t ', domain: 'example.com' }),
+      /name must not be empty/,
+    );
+    assert.equal(await db.getBrand('blank-name'), null);
+    const users = db.raw.prepare('SELECT COUNT(*) AS count FROM users').get() as { count: number };
+    assert.equal(users.count, 0);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('seedBrand trims brand name for stored identity and provider-free prompts', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'digestseo.sqlite'));
+  try {
+    const result = await seedBrand(
+      { db },
+      { brand_id: 'spaced-name', name: '  Acme Studio  ', domain: 'acme.com' },
+    );
+    assert.equal(result.seeded, true);
+    assert.equal((await db.getBrand('spaced-name'))?.name, 'Acme Studio');
+    const prompts = await db.getActivePrompts('spaced-name');
+    assert.equal(prompts.length, 3);
+    assert.ok(prompts.every(({ text }) => text.includes('Acme Studio')));
+    assert.ok(prompts.every(({ text }) => !text.includes('  Acme Studio  ')));
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('seedBrand rejects malformed domains before writing any rows', async () => {
   const root = tempRoot();
   const db = openSqliteDb(join(root, 'digestseo.sqlite'));
