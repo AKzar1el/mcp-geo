@@ -103,6 +103,7 @@ test('content gaps require an explicit opt-in before any paid Anthropic call', a
     structuredContent: {
       prompt_source: 'generated' | 'fallback';
       recommendations: Array<{ topic: string }>;
+      reason?: string;
     };
   };
   let handler: ((input: {
@@ -160,6 +161,8 @@ test('content gaps require an explicit opt-in before any paid Anthropic call', a
     const defaultResult = await handler({ brand_id: 'acme', max_recommendations: 3 });
     assert.equal(defaultResult.structuredContent.prompt_source, 'fallback');
     assert.equal(defaultResult.structuredContent.recommendations.length, 1);
+    assert.equal(defaultResult.structuredContent.reason, undefined,
+      'provider-free default is expected behavior, not an analyzer failure');
     assert.equal(calls, 0, 'configured API key must not trigger a paid call without opt-in');
 
     const explicitResult = await handler({
@@ -168,6 +171,7 @@ test('content gaps require an explicit opt-in before any paid Anthropic call', a
       ai_analysis: true,
     });
     assert.equal(explicitResult.structuredContent.prompt_source, 'generated');
+    assert.equal(explicitResult.structuredContent.reason, undefined);
     assert.equal(calls, 1, 'explicit paid analysis should make one successful call');
 
     rejectWithNull = true;
@@ -176,6 +180,9 @@ test('content gaps require an explicit opt-in before any paid Anthropic call', a
     });
     assert.equal(failedResult.structuredContent.prompt_source, 'fallback');
     assert.equal(failedResult.structuredContent.recommendations.length, 1);
+    assert.match(failedResult.structuredContent.reason ?? '', /requested.*failed.*provider-free/i);
+    assert.match(failedResult.structuredContent.reason ?? '', /bill/i,
+      'failed paid requests can still incur provider usage');
     assert.equal(calls, 2, 'failed provider requests must not be retried for formatting');
 
     env.ANTHROPIC_API_KEY = '  \t  ';
@@ -183,6 +190,7 @@ test('content gaps require an explicit opt-in before any paid Anthropic call', a
       brand_id: 'acme', max_recommendations: 3, ai_analysis: true,
     });
     assert.equal(blankKeyResult.structuredContent.prompt_source, 'fallback');
+    assert.match(blankKeyResult.structuredContent.reason ?? '', /requested.*ANTHROPIC_API_KEY.*not configured/i);
     assert.equal(calls, 2, 'whitespace-only credentials must never reach a provider');
 
     includeResponses = false;
