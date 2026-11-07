@@ -24,6 +24,9 @@ export function normalizeDomainInput(raw: string): string | null {
     return null;
   }
   if (s.length === 0 || s.length > 253) return null;
+  // The whole hostname may fit while an individual ASCII/IDNA DNS label
+  // exceeds the 63-octet wire limit. Validate after URL's IDNA conversion.
+  if (s.split('.').some((label) => label.length > 63)) return null;
   if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(s)) {
     return null;
   }

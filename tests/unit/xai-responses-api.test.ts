@@ -92,6 +92,37 @@ test('xAI surfaces non-2xx Responses API failures', async () => {
   }
 });
 
+test('xAI only returns valid web citation evidence from provider metadata', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    status: 'completed',
+    output: [{ type: 'message', content: [{
+      type: 'output_text', text: 'The answer names Acme.',
+      annotations: [
+        { url: 'ftp://acme.example/other' },
+        { url_citation: { url: 'https://acme.example/article' } },
+        { url: 'https://example.org:bad/path' },
+      ],
+    }] }],
+    citations: [
+      'acme.example',
+      'javascript:alert(1)',
+      'https://user:password@example.com/private',
+      'https://example.org/source',
+      { url: 'https://acme.example/article' },
+    ],
+  }), { status: 200 });
+  try {
+    const result = await chatCompletion('test-key', 'Question', 'System');
+    assert.deepEqual(result.citations, [
+      'https://example.org/source',
+      'https://acme.example/article',
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('xAI rejects responses without output text', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () =>

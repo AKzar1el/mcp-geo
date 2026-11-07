@@ -17,7 +17,10 @@ export interface PerEngineScore {
 
 export interface WinningPrompt {
   prompt: string;
+  // Backwards-compatible legacy field: this counts answer mentions, not links.
   engines_cited_in: string[];
+  engines_mentioned_in: string[];
+  engines_with_brand_link: string[];
 }
 
 export interface LosingPrompt {
@@ -69,30 +72,38 @@ export function computeOverallScore(
           per_engine.reduce((sum, e) => sum + e.score, 0) / per_engine.length,
         );
 
-  // Winning prompts: brand_mentioned across the most engines. With one engine
-  // today every winner has exactly one entry; the structure generalizes for
-  // when claude/perplexity/gemini land in Days 3-4.
+  // Winning prompts rank by answer mentions; linked evidence is tracked
+  // separately so legacy "cited" labels cannot imply an actual source URL.
   const winsByPrompt = new Map<
     string,
-    { prompt: string; engines: Set<string> }
+    { prompt: string; engines: Set<string>; linkedEngines: Set<string> }
   >();
   for (const r of okResponses) {
     if (r.brand_mentioned !== 1) continue;
     const existing = winsByPrompt.get(r.prompt_id);
-    if (existing) existing.engines.add(r.engine);
-    else
+    if (existing) {
+      existing.engines.add(r.engine);
+      if (r.brand_cited_with_link === 1) existing.linkedEngines.add(r.engine);
+    } else {
       winsByPrompt.set(r.prompt_id, {
         prompt: r.prompt_text,
         engines: new Set([r.engine]),
+        linkedEngines: new Set(r.brand_cited_with_link === 1 ? [r.engine] : []),
       });
+    }
   }
   const top_winning_prompts: WinningPrompt[] = [...winsByPrompt.values()]
     .sort((a, b) => b.engines.size - a.engines.size)
     .slice(0, 3)
-    .map((w) => ({
-      prompt: w.prompt,
-      engines_cited_in: [...w.engines].sort(),
-    }));
+    .map((w) => {
+      const mentionedIn = [...w.engines].sort();
+      return {
+        prompt: w.prompt,
+        engines_cited_in: [...mentionedIn],
+        engines_mentioned_in: mentionedIn,
+        engines_with_brand_link: [...w.linkedEngines].sort(),
+      };
+    });
 
   // Losing prompts: per (prompt, engine), brand_mentioned=0 AND at least
   // one competitor present. Aggregate competitors across engines for the

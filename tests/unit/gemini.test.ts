@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { chatCompletion, MODEL } from '../../src/core/gemini.js';
+import { chatCompletion, MODEL, runLive } from '../../src/core/gemini.js';
+import type { Brand, Db, EnginePromptResult, Prompt } from '../../src/db/types.js';
 
 test('Gemini uses the current Flash-Lite model with the existing GenerateContent contract', async () => {
   const originalFetch = globalThis.fetch;
@@ -72,4 +73,46 @@ test('Gemini concatenates output text parts and excludes thinking parts', async 
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test('Gemini retains primitive provider rejections as failed prompt evidence', async () => {
+  const originalFetch = globalThis.fetch;
+  let persisted: EnginePromptResult[] | undefined;
+  const db = {
+    persistEngineRun: async (
+      _runId: string, _engine: string, _model: string, _ttl: number,
+      results: EnginePromptResult[],
+    ) => { persisted = results; },
+  } as Db;
+  globalThis.fetch = (async () => { throw 'offline Gemini provider failure'; }) as typeof fetch;
+  try {
+    await runLive(
+      { db, GEMINI_API_KEY: 'offline-key' },
+      { name: 'Acme', domain: 'acme.com', competitors: [], aliases: [], exclude_terms: [] } as Brand,
+      [{ id: 'p1', text: 'Find Acme' } as Prompt],
+      'offline-run',
+    );
+    assert.equal(persisted?.[0].status, 'failed');
+    assert.equal(persisted?.[0].error_message, 'offline Gemini provider failure');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Gemini records primitive persistence errors as terminal failed run metadata', async () => {
+  let failure: { status?: string; error?: string } | undefined;
+  const db = {
+    persistEngineRun: async () => { throw 'offline Gemini database failure'; },
+    updateRun: async (_runId: string, update: { status?: string; error?: string }) => {
+      failure = update;
+    },
+  } as unknown as Db;
+  await runLive(
+    { db, GEMINI_API_KEY: 'offline-key' },
+    { name: 'Acme', domain: 'acme.com', competitors: [], aliases: [], exclude_terms: [] } as Brand,
+    [],
+    'offline-run',
+  );
+  assert.equal(failure?.status, 'failed');
+  assert.equal(failure?.error, 'offline Gemini database failure');
 });
