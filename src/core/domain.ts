@@ -8,7 +8,13 @@ export class DomainInputError extends Error {}
 // input doesn't reduce to something domain-shaped.
 export function normalizeDomainInput(raw: string): string | null {
   let s = raw.trim().toLowerCase();
-  s = s.replace(/^[a-z][a-z0-9+.-]*:\/\//, ''); // scheme
+  const scheme = /^[a-z][a-z0-9+.-]*:\/\//.exec(s)?.[0];
+  if (scheme) {
+    // Brand citations and scans are web-only; do not reinterpret FTP,
+    // file or custom-protocol URLs as unrelated HTTP brand domains.
+    if (scheme !== 'http://' && scheme !== 'https://') return null;
+    s = s.slice(scheme.length);
+  }
   s = s.split('/')[0] ?? s; // path
   s = s.split('?')[0] ?? s; // query without a path
   s = s.split('#')[0] ?? s; // fragment without a path
