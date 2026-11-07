@@ -1347,9 +1347,11 @@ test('seedBrand requires an explicit opt-in before generating paid Anthropic pro
   const db = openSqliteDb(join(root, 'digestseo.sqlite'));
   const originalFetch = globalThis.fetch;
   let providerCalls = 0;
+  let rejectWithNull = false;
   globalThis.fetch = async (input) => {
     providerCalls++;
     assert.match(String(input), /api\.anthropic\.com/);
+    if (rejectWithNull) throw null;
     return Response.json({
       stop_reason: 'end_turn',
       content: [{
@@ -1425,6 +1427,41 @@ test('seedBrand requires an explicit opt-in before generating paid Anthropic pro
     );
     assert.equal(duplicateWithoutKey.reason, 'already exists');
     assert.equal(providerCalls, 1);
+
+    rejectWithNull = true;
+    const unavailable = await seedBrand(
+      { db, ANTHROPIC_API_KEY: 'mock-key' },
+      {
+        brand_id: 'unavailable',
+        name: 'Unavailable Provider',
+        domain: 'unavailable.example.com',
+        category: 'Project management',
+        prompt_generation: 'anthropic',
+      },
+      1,
+    );
+    assert.equal(unavailable.prompt_source, 'fallback');
+    assert.equal(unavailable.prompts_inserted, 3);
+    assert.equal((await db.getActivePrompts('unavailable')).length, 3,
+      'a failed provider must not strand a newly created brand without prompts');
+    assert.equal(providerCalls, 2, 'provider errors must not trigger extra billed retries');
+
+    await assert.rejects(
+      seedBrand(
+        { db, ANTHROPIC_API_KEY: ' \t ' },
+        {
+          brand_id: 'blank-key',
+          name: 'Blank Key',
+          domain: 'blank-key.example.com',
+          prompt_generation: 'anthropic',
+        },
+        1,
+      ),
+      /requires ANTHROPIC_API_KEY/,
+    );
+    assert.equal(await db.getBrand('blank-key'), null,
+      'blank provider credentials must be rejected before brand creation');
+    assert.equal(providerCalls, 2);
   } finally {
     globalThis.fetch = originalFetch;
     db.close();
