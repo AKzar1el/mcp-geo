@@ -149,6 +149,12 @@ const visibilityOutputSchema = z.object({
     historical_prompt_warning: z.boolean(),
     note: z.string(),
   }),
+  configuration_comparability: z.object({
+    brand_updated_at: z.string(),
+    engines_scanned_before_update: z.array(z.string()),
+    historical_settings_warning: z.boolean(),
+    note: z.string(),
+  }),
   per_engine: z.array(
     z.object({
       engine: z.string(),
@@ -515,6 +521,7 @@ export function registerTools(
       const selectedResponses: PromptResponse[] = [];
       const refreshedAtByEngine = new Map<string, string>();
       const refreshMsByEngine = new Map<string, number>();
+      const startedMsByEngine = new Map<string, number>();
       const expectedPromptsByEngine = new Map<string, number>();
       const observedPromptIdsByEngine = new Map<string, Set<string>>();
       const measurementModeByEngine = new Map<string, 'search_requested' | 'model_only'>();
@@ -531,6 +538,7 @@ export function registerTools(
         const ts = run.completed_at ?? run.started_at;
         refreshedAtByEngine.set(engine, new Date(ts).toISOString());
         refreshMsByEngine.set(engine, ts);
+        startedMsByEngine.set(engine, run.started_at);
         if (ts > mostRecentTimestamp) mostRecentTimestamp = ts;
       }
       if (selectedResponses.length === 0) {
@@ -561,6 +569,13 @@ export function registerTools(
       // prove stale evidence; missing current IDs belong to coverage warnings.
       const retiredPromptEngines = [...observedPromptIdsByEngine.entries()]
         .filter(([, ids]) => [...ids].some((id) => !activePromptIds.has(id)))
+        .map(([engine]) => engine)
+        .sort();
+      // The database stores the latest settings timestamp, not a per-run
+      // identity snapshot. Report potentially older scoring evidence without
+      // claiming we know which metadata fields actually changed.
+      const enginesBeforeBrandUpdate = [...startedMsByEngine.entries()]
+        .filter(([, startedAt]) => startedAt < brand.updated_at)
         .map(([engine]) => engine)
         .sort();
       const perEngine = scored.per_engine.map((engine) => {
@@ -626,6 +641,12 @@ export function registerTools(
           note: retiredPromptEngines.length > 0
             ? 'Latest scored responses from the listed engines include prompts no longer in the active set. Their scores remain historical observations and should not be compared as measurements of the current prompt set. Partial scan coverage is reported separately.'
             : 'No retired prompt IDs were observed in these scored responses. This does not prove complete coverage of the current prompt set; inspect per-engine coverage separately.',
+        },
+        configuration_comparability: {
+          brand_updated_at: new Date(brand.updated_at).toISOString(),
+          engines_scanned_before_update: enginesBeforeBrandUpdate,
+          historical_settings_warning: enginesBeforeBrandUpdate.length > 0,
+          note: 'Brand settings were updated after the listed engines began their latest scans. Stored responses retain their original scoring and may reflect earlier brand identity, aliases, exclusions, or competitor tracking; the database cannot establish which settings changed. A cadence-only update may not affect the evidence. Review changes and refresh affected engines before relying on current-configuration comparisons.',
         },
         per_engine: perEngine,
         top_winning_prompts: scored.top_winning_prompts,

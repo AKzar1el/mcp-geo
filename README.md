@@ -30,6 +30,8 @@ Winning prompts now distinguish `engines_mentioned_in` (brand named in the answe
 
 `check_visibility.prompt_set_comparability` warns when the latest scored observations include prompts no longer in the active prompt set, such as after replacing buyer-intent questions. Its `engines_with_retired_prompt_evidence` identifies affected engines without rewriting historical measurements. Missing or failed answers are handled separately by per-engine `coverage`, not misclassified as retired prompts. Rerun the affected engines when a current-prompt comparison is needed; this uses your configured providers and may incur charges.
 
+`check_visibility.configuration_comparability` separately identifies engines whose latest scans started before the tracked brand's most recent settings update. Historical scores are not silently recomputed under a new domain, name, alias, exclusion, or competitor list. This is a conservative warning: the database does not retain which settings changed, so a refresh-cadence-only edit can also trigger it. Review the change before interpreting old scores as current-brand evidence; rescanning uses your provider keys and may incur charges.
+
 **Choose your setup:** [Quick Install and client-specific instructions](#quick-install) for local MCP hosts · [Getting Started](#getting-started) for provider keys and optional Cloudflare hosting · [What the report contains](#what-it-produces) · [Privacy](#privacy-policy). Hosted remote MCP deployments manage brands through their protected admin routes rather than local `track_brand`.
 
 
