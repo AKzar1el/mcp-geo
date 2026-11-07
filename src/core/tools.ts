@@ -342,6 +342,7 @@ const refreshOutputSchema = z.object({
   brand_id: z.string(),
   message: z.string(),
   run_ids: z.record(z.string(), z.string()),
+  skipped_unconfigured_engines: z.array(z.string()),
   estimated_completion_seconds: z.number(),
 });
 
@@ -1275,6 +1276,9 @@ export function registerTools(
         }
       }
       const filtered = filterRequestedEngines(deps.env, requested);
+      const skippedUnconfigured = requested && requested.length > 0
+        ? uniqueEngineNames(requested).filter((engine) => !filtered.includes(engine))
+        : [];
       if (filtered.length === 0) {
         if (requested && requested.length > 0) {
           throw new Error(
@@ -1296,8 +1300,10 @@ export function registerTools(
         message: `Refresh ${refreshIsAsync ? 'started' : 'completed'} for ${kicked.length} engine${kicked.length === 1 ? '' : 's'}` +
           (alreadyRunning > 0
             ? `; ${alreadyRunning} engine${alreadyRunning === 1 ? '' : 's'} already in progress (existing run IDs reused)`
-            : ''),
+            : '') +
+          (skippedUnconfigured.length > 0 ? `; skipped unconfigured: ${skippedUnconfigured.join(', ')}` : ''),
         run_ids,
+        skipped_unconfigured_engines: skippedUnconfigured,
         estimated_completion_seconds: refreshIsAsync ? 30 : 0,
       };
       return toolResult(payload);
