@@ -115,9 +115,9 @@ export async function chatCompletion(
     throw new Error('OpenAI response missing choices[0].message.content');
   }
   const citations = (message?.annotations ?? [])
-    .filter((annotation) => annotation.type === 'url_citation')
+    .filter((annotation) => annotation && annotation.type === 'url_citation')
     .map((annotation) => annotation.url_citation?.url)
-    .filter((url): url is string => typeof url === 'string');
+    .filter((url): url is string => typeof url === 'string' && normalizeHost(url) !== null);
   return { text: content, citations };
 }
 
