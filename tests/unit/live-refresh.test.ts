@@ -602,13 +602,14 @@ test('OpenAI Batch rejects invalid error-file IDs before persistence', async () 
     expected: RegExp,
   ): Promise<void> {
     let persisted = false;
+    const updates: Array<Partial<Run>> = [];
     const db = {
       getPromptsByIds: async (promptIds: string[]) =>
         promptIds.includes(prompt.id) ? [prompt] : [],
       persistEngineRun: async () => {
         persisted = true;
       },
-      updateRun: async () => {},
+      updateRun: async (_id: string, fields: Partial<Run>) => { updates.push(fields); },
     } as Db;
     let request = 0;
     await withMockFetch(() => responses[request++], async () => {
@@ -618,6 +619,9 @@ test('OpenAI Batch rejects invalid error-file IDs before persistence', async () 
       );
     });
     assert.equal(persisted, false);
+    assert.equal(updates.length, 1);
+    assert.equal(updates[0].status, 'failed');
+    assert.equal(typeof updates[0].completed_at, 'number');
   }
 
   await expectIntegrityFailure(
@@ -665,6 +669,72 @@ test('OpenAI Batch rejects invalid error-file IDs before persistence', async () 
     ],
     /appears in both output and error files/,
   );
+});
+
+test('OpenAI Batch makes irrecoverably malformed completed output terminal without scoring it', async () => {
+  const run: Run = {
+    id: 'malformed-batch', brand_id: brand.id, engine: 'chatgpt', mode: 'batch',
+    status: 'in_progress', prompts_total: 1, prompts_completed: 0,
+    batch_id: 'batch-malformed', batch_input_file_id: null,
+    started_at: 0, completed_at: null, error: null,
+  };
+  for (const [output, expected] of [
+    ['{not-json}', /invalid JSON output file line/],
+    [
+      `${JSON.stringify({ custom_id: prompt.id })}\n${JSON.stringify({ custom_id: prompt.id })}`,
+      /duplicate custom_id prompt-1/,
+    ],
+  ] as const) {
+    const updates: Array<Partial<Run>> = [];
+    let persisted = false;
+    const db = {
+      updateRun: async (_id: string, fields: Partial<Run>) => { updates.push(fields); },
+      persistEngineRun: async () => { persisted = true; },
+    } as unknown as Db;
+    let request = 0;
+    await withMockFetch(
+      () => ++request === 1
+        ? jsonResponse({ status: 'completed', output_file_id: 'output-malformed' })
+        : new Response(output),
+      async () => {
+        await assert.rejects(
+          collectBatch({ db, OPENAI_API_KEY: 'test-key' }, run, brand),
+          expected,
+        );
+      },
+    );
+    assert.equal(persisted, false);
+    assert.equal(updates.length, 1);
+    assert.equal(updates[0].status, 'failed');
+    assert.equal(typeof updates[0].completed_at, 'number');
+    assert.match(String(updates[0].error), /OpenAI batch integrity error/);
+  }
+});
+
+test('OpenAI Batch allows retry after a transient completed-output download failure', async () => {
+  const updates: Array<Partial<Run>> = [];
+  const db = {
+    updateRun: async (_id: string, fields: Partial<Run>) => { updates.push(fields); },
+  } as unknown as Db;
+  const run: Run = {
+    id: 'download-retry-batch', brand_id: brand.id, engine: 'chatgpt',
+    mode: 'batch', status: 'in_progress', prompts_total: 1,
+    prompts_completed: 0, batch_id: 'batch-download-retry',
+    batch_input_file_id: null, started_at: 0, completed_at: null, error: null,
+  };
+  let request = 0;
+  await withMockFetch(
+    () => ++request === 1
+      ? jsonResponse({ status: 'completed', output_file_id: 'temporarily-unavailable' })
+      : new Response('temporary provider failure', { status: 503 }),
+    async () => {
+      await assert.rejects(
+        collectBatch({ db, OPENAI_API_KEY: 'test-key' }, run, brand),
+        /OpenAI batch output file failed: 503/,
+      );
+    },
+  );
+  assert.deepEqual(updates, []);
 });
 
 test('OpenAI Batch submit preserves JSONL prompt identities and provider contract offline', async () => {
