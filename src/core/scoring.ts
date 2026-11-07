@@ -39,11 +39,22 @@ export function computeOverallScore(
   _brand: Brand,
   responses: PromptResponse[],
 ): ScoreResult {
-  // Defense in depth: getResponsesForRun already filters status='ok',
-  // but any future caller that bypasses that helper would otherwise
-  // count failed/skipped rows as zero-mention hits and silently inflate
-  // the denominator. Belt + suspenders.
-  const okResponses = responses.filter((r) => r.status === 'ok');
+  // A run may retain repeated successful observations of the same prompt.
+  // Citation evidence keeps every row, but visibility scores count prompts,
+  // not response attempts. Select one deterministic latest observation per
+  // engine/prompt so retries cannot inflate coverage or bias the hit rate.
+  const latestByEnginePrompt = new Map<string, PromptResponse>();
+  for (const row of responses) {
+    if (row.status !== 'ok') continue;
+    const key = JSON.stringify([row.engine, row.prompt_id]);
+    const previous = latestByEnginePrompt.get(key);
+    if (!previous ||
+        row.captured_at > previous.captured_at ||
+        (row.captured_at === previous.captured_at && row.id > previous.id)) {
+      latestByEnginePrompt.set(key, row);
+    }
+  }
+  const okResponses = [...latestByEnginePrompt.values()];
   const byEngine = new Map<string, PromptResponse[]>();
   for (const r of okResponses) {
     const arr = byEngine.get(r.engine);

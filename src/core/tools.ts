@@ -581,8 +581,9 @@ export function registerTools(
         .map(([engine]) => engine)
         .sort();
       const perEngine = scored.per_engine.map((engine) => {
-        // The score is conditional on usable responses. Report its sample
-        // coverage explicitly rather than presenting a partial scan as full.
+        // The score is conditional on distinct usable prompt observations.
+        // Report sample coverage explicitly rather than treating retries as
+        // extra prompts or presenting a partial scan as full.
         const expected = Math.max(
           engine.total_prompts,
           expectedPromptsByEngine.get(engine.engine) ?? 0,
@@ -626,7 +627,7 @@ export function registerTools(
           search_requested: searchRequested,
           model_only: modelOnly,
           mixed_modes: searchRequested.engines.length > 0 && modelOnly.engines.length > 0,
-          note: 'Scores count brand mentions in usable responses, not independently verified search citations. Search-requested engines use a live search/SERP request path but may return no source links. Claude and Gemini here use model-only answers; ungrounded batch runs are also model-only. Compare these groups separately, especially before interpreting the combined overall_score.',
+          note: 'Scores count brand mentions in the latest usable observation per distinct prompt and engine, not independently verified search citations. Search-requested engines use a live search/SERP request path but may return no source links. Claude and Gemini here use model-only answers; ungrounded batch runs are also model-only. Compare these groups separately, especially before interpreting the combined overall_score.',
         },
         google_search_sampling: googleSearchSampling(perEngine.map(({ engine }) => engine)),
         freshness: {

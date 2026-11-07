@@ -138,3 +138,37 @@ test('losing prompts require a competitor mention and aggregate across engines',
     'monday.com',
   ]);
 });
+
+test('visibility scoring counts each prompt once when a run has repeated successful observations', () => {
+  const earlier = {
+    ...response('chatgpt', 'p1', 1),
+    captured_at: 100,
+  };
+  const latest = {
+    ...response('chatgpt', 'p1', 0, { competitors: ['asana.com'] }),
+    captured_at: 200,
+  };
+  const other = {
+    ...response('chatgpt', 'p2', 1),
+    captured_at: 150,
+  };
+
+  for (const rows of [[earlier, latest, other], [other, latest, earlier]]) {
+    const result = computeOverallScore(brand, rows);
+    assert.equal(result.per_engine[0].total_prompts, 2);
+    assert.equal(result.per_engine[0].prompts_appeared_in, 1);
+    assert.equal(result.per_engine[0].score, 50);
+    assert.deepEqual(result.top_winning_prompts.map((p) => p.prompt), ['prompt text for p2']);
+    assert.deepEqual(result.top_losing_prompts[0].competitors_cited, ['asana.com']);
+  }
+});
+
+test('same-timestamp repeated observations use a stable response-ID tiebreaker', () => {
+  const first = { ...response('chatgpt', 'p1', 1), id: 'response-a', captured_at: 100 };
+  const second = { ...response('chatgpt', 'p1', 0), id: 'response-b', captured_at: 100 };
+  for (const rows of [[first, second], [second, first]]) {
+    const result = computeOverallScore(brand, rows);
+    assert.equal(result.per_engine[0].total_prompts, 1);
+    assert.equal(result.per_engine[0].score, 0);
+  }
+});
