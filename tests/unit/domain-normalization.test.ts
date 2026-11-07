@@ -62,6 +62,20 @@ test('domain normalization still rejects invalid host syntax and encoded URL tri
   }
 });
 
+test('IP addresses cannot be enrolled as a brand or competitor domain', () => {
+  for (const input of [
+    '127.0.0.1',
+    'https://192.168.0.1/dashboard',
+    '8.8.8.8',
+    '0x7f.0.0.1',
+  ]) {
+    assert.equal(normalizeDomainInput(input), null, input);
+    assert.throws(() => normalizeRequiredDomain(input), DomainInputError, input);
+    assert.throws(() => normalizeCompetitorDomains([input], 'acme.com'), DomainInputError, input);
+  }
+  assert.equal(normalizeDomainInput('123.example.com'), '123.example.com');
+});
+
 test('domain labels cannot exceed the DNS 63-octet limit after IDNA conversion', () => {
   const validAscii = `${'a'.repeat(63)}.example`;
   const tooLongAscii = `${'a'.repeat(64)}.example`;
