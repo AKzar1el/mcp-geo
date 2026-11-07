@@ -22,6 +22,9 @@ export function normalizeDomainInput(raw: string): string | null {
   } catch {
     return null;
   }
+  // WHATWG URL also canonicalizes hex/octal IPv4 spellings. These are hosts,
+  // not brand domains, and would waste paid visibility scans.
+  if (/^(?:\d{1,3}\.){3}\d{1,3}$/.test(s)) return null;
   // Remove www after IDNA folds Unicode compatibility equivalents of its letters.
   if (s.startsWith('www.')) s = s.slice(4);
   if (s.length === 0 || s.length > 253) return null;
