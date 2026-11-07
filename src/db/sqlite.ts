@@ -17,6 +17,7 @@ import { mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { LIVE_RUN_STALE_AFTER_MS } from './types.js';
 import type {
   Brand,
   BrandSummary,
@@ -27,6 +28,7 @@ import type {
   Db,
   EnginePromptResult,
   InsertPromptResponseInput,
+  LiveRunReservation,
   NewPromptInput,
   Prompt,
   PromptResponse,
@@ -336,6 +338,53 @@ export function openSqliteDb(path?: string): SqliteDb {
           run.started_at,
         );
       return run;
+    },
+
+    async reserveLiveRun(
+      brand: Brand,
+      engine: string,
+      promptsTotal: number,
+    ): Promise<LiveRunReservation | null> {
+      const now = Date.now();
+      const cutoff = now - LIVE_RUN_STALE_AFTER_MS;
+      const run: Run = {
+        id: randomUUID(),
+        brand_id: brand.id,
+        engine,
+        mode: 'live',
+        status: 'in_progress',
+        batch_id: null,
+        prompts_total: promptsTotal,
+        prompts_completed: 0,
+        cost_eur_estimate: null,
+        error: null,
+        started_at: now,
+        completed_at: null,
+      };
+      // A single INSERT ... WHERE NOT EXISTS is serialized by SQLite's
+      // writer lock. A separate SELECT followed by INSERT would race.
+      const result = sqlite
+        .prepare(
+          `INSERT INTO runs
+           (id, brand_id, engine, mode, status, batch_id, prompts_total,
+            prompts_completed, cost_eur_estimate, error, started_at, completed_at)
+         SELECT ?, ?, ?, 'live', 'in_progress', NULL, ?, 0, NULL, NULL, ?, NULL
+          WHERE NOT EXISTS (
+            SELECT 1 FROM runs WHERE brand_id = ? AND engine = ?
+              AND mode = 'live' AND status IN ('pending', 'in_progress')
+              AND started_at > ?
+          )`,
+        )
+        .run(run.id, brand.id, engine, promptsTotal, now, brand.id, engine, cutoff);
+      if (result.changes > 0) return { run, started: true };
+      const active = sqlite
+        .prepare(
+          `SELECT * FROM runs WHERE brand_id = ? AND engine = ?
+           AND mode = 'live' AND status IN ('pending', 'in_progress')
+           AND started_at > ? ORDER BY started_at DESC LIMIT 1`,
+        )
+        .get(brand.id, engine, cutoff) as Run | undefined;
+      return active ? { run: active, started: false } : null;
     },
 
     async updateRun(runId: string, fields: UpdateRunFields): Promise<void> {

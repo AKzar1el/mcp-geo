@@ -146,6 +146,10 @@ export async function generatePrompts(
   brand: Brand,
   count = 20,
 ): Promise<NewPromptInput[]> {
+  // Validate before either provider attempt: invalid counts cannot be fulfilled.
+  if (!Number.isInteger(count) || count < 1 || count > 50) {
+    throw new RangeError('count must be an integer between 1 and 50');
+  }
   let prompts: NewPromptInput[];
   try {
     prompts = await callGenerator(env, brand, count, false);

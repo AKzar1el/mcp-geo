@@ -376,10 +376,12 @@ async function handleAdminGeneratePrompts(
       400,
     );
   }
-  const count =
-    typeof body?.count === 'number' && body.count > 0 && body.count <= 50
-      ? body.count
-      : 20;
+  // Reject bad counts rather than silently billing for the 20-prompt default.
+  if (body?.count !== undefined &&
+      (!Number.isInteger(body.count) || body.count < 1 || body.count > 50)) {
+    return jsonResponse({ error: 'count must be an integer between 1 and 50' }, 400);
+  }
+  const count = body?.count ?? 20;
   const brand = await db.getBrand(brandId);
   if (!brand) return jsonResponse({ error: 'brand not found' }, 404);
   try {
