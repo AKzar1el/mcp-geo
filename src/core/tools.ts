@@ -1191,7 +1191,20 @@ export function registerTools(
         const run = await deps.db.getLatestCompletedRun(brand_id, engine);
         if (!run) continue;
         const responses = await deps.db.getResponsesForRun(run.id);
+        // Historical successful retries remain citation evidence, but only
+        // the latest successful observation of each prompt can establish a
+        // current content gap. Match visibility scoring's tie-break rule.
+        const latestOkByPrompt = new Map<string, PromptResponse>();
         for (const r of responses) {
+          if (r.status !== 'ok') continue;
+          const previous = latestOkByPrompt.get(r.prompt_id);
+          if (!previous ||
+              r.captured_at > previous.captured_at ||
+              (r.captured_at === previous.captured_at && r.id > previous.id)) {
+            latestOkByPrompt.set(r.prompt_id, r);
+          }
+        }
+        for (const r of latestOkByPrompt.values()) {
           if (r.brand_mentioned !== 0) continue;
           if (r.competitors_mentioned.length === 0) continue;
           const existing = losingByPrompt.get(r.prompt_id);
