@@ -99,6 +99,27 @@ export async function seedBrand(
     };
   }
 
+  // Hosted JSON is untrusted even when it has been cast to SeedBrandInput.
+  // Validate all fields before the first DB lookup or mutation.
+  for (const field of ['brand_id', 'name', 'domain'] as const) {
+    if (typeof input[field] !== 'string') {
+      throw new DomainInputError(`${field} must be a string`);
+    }
+  }
+  if (!input.brand_id.trim()) {
+    throw new DomainInputError('brand_id must not be empty');
+  }
+  if (input.category != null && typeof input.category !== 'string') {
+    throw new DomainInputError('category must be a string');
+  }
+  for (const field of ['competitors', 'aliases', 'exclude_terms'] as const) {
+    const values = input[field];
+    if (values != null &&
+        (!Array.isArray(values) || !values.every((value) => typeof value === 'string'))) {
+      throw new DomainInputError(`${field} must be an array of strings`);
+    }
+  }
+
   const name = input.name.trim();
   if (!name) {
     throw new DomainInputError('name must not be empty');
