@@ -1177,11 +1177,14 @@ export function registerTools(
           competitors: Set<string>;
         }
       >();
+      let observedSuccessfulResponses = 0;
       for (const engine of ALL_ENGINES) {
         const run = await deps.db.getLatestCompletedRun(brand_id, engine);
         if (!run) continue;
         const responses = await deps.db.getResponsesForRun(run.id);
         for (const r of responses) {
+          if (r.status !== 'ok') continue;
+          observedSuccessfulResponses += 1;
           if (r.brand_mentioned !== 0) continue;
           if (r.competitors_mentioned.length === 0) continue;
           const existing = losingByPrompt.get(r.prompt_id);
@@ -1216,8 +1219,9 @@ export function registerTools(
           brand_id,
           recommendations: [],
           prompt_source: 'fallback' as const,
-          reason:
-            'no losing prompts yet — collect more data first (run refresh_brand, then re-check competitors)',
+          reason: observedSuccessfulResponses === 0
+            ? 'No successful prompt responses available yet — collect data first (run refresh_brand, then re-check competitors).'
+            : `No competitor-only losses observed across ${observedSuccessfulResponses} successful latest-run responses. This is limited to the recorded prompts and competitors, not proof that all market content gaps are absent.`,
         };
         return toolResult(payload);
       }

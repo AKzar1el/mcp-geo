@@ -202,6 +202,18 @@ test('content gaps require an explicit opt-in before any paid Anthropic call', a
       'no evidence must not be represented as generated recommendations');
     assert.equal(noEvidence.structuredContent.recommendations.length, 0);
     assert.equal(calls, 2);
+
+    includeResponses = true;
+    response.brand_mentioned = 1;
+    const noObservedLoss = await handler({
+      brand_id: 'acme', max_recommendations: 3, ai_analysis: true,
+    });
+    assert.equal(noObservedLoss.structuredContent.prompt_source, 'fallback');
+    assert.equal(noObservedLoss.structuredContent.recommendations.length, 0);
+    assert.match(noObservedLoss.structuredContent.reason ?? '', /no competitor-only losses observed/i,
+      'successful co-mentions must not be misreported as missing scan data');
+    assert.doesNotMatch(noObservedLoss.structuredContent.reason ?? '', /collect more data first/i);
+    assert.equal(calls, 2, 'no observed losses must not invoke a billed analyzer');
   } finally {
     globalThis.fetch = originalFetch;
   }
