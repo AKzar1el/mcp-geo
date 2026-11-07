@@ -364,6 +364,28 @@ test('get_citations provides stable cursor pages for tied observation timestamps
   assert.equal(new Set(ids).size, 3);
 });
 
+test('get_citations paginates fractional-day windows without losing the cursor scope', async () => {
+  const observed = Date.now() - 60_000;
+  const tool = registerCitationTool([
+    citationRow({ prompt_id: 'p1', captured_at: observed }),
+    citationRow({ prompt_id: 'p2', captured_at: observed - 1000 }),
+  ]);
+  const days = 1.23456789;
+  const first = await tool.handler({ brand_id: brand.id, days, limit: 1 });
+  assert.equal(first.structuredContent.has_more, true);
+  assert.ok(first.structuredContent.next_cursor);
+  const second = await tool.handler({
+    brand_id: brand.id, days, limit: 1, cursor: first.structuredContent.next_cursor!,
+  });
+  assert.equal(second.structuredContent.citations.length, 1);
+  assert.equal(second.structuredContent.has_more, false);
+  assert.equal(second.structuredContent.next_cursor, null);
+  await assert.rejects(
+    tool.handler({ brand_id: brand.id, days: 1.5, limit: 1, cursor: first.structuredContent.next_cursor! }),
+    /Invalid citation cursor/,
+  );
+});
+
 test('get_citations rejects a cursor used with a different brand or engine', async () => {
   const observed = Date.now() - 1_000;
   const tool = registerCitationTool([
