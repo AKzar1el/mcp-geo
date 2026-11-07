@@ -434,6 +434,7 @@ export function createD1Db(d1: D1Database): Db {
                     b.refresh_frequency, b.created_at, b.updated_at
                FROM brands b
               WHERE b.refresh_frequency <> 'manual'
+                AND EXISTS (SELECT 1 FROM prompts p WHERE p.brand_id = b.id AND p.active = 1)
                 AND EXISTS (
                 SELECT 1
                   FROM target_engines te
@@ -472,6 +473,7 @@ export function createD1Db(d1: D1Database): Db {
                   SUM(CASE WHEN r.started_at >= ? THEN 1 ELSE 0 END) AS attempts_week
              FROM brands b
              LEFT JOIN runs r ON r.brand_id = b.id
+            WHERE EXISTS (SELECT 1 FROM prompts p WHERE p.brand_id = b.id AND p.active = 1)
             GROUP BY b.id
            HAVING b.refresh_frequency <> 'manual'
               AND (
