@@ -109,6 +109,12 @@ type VisibilitySnapshot = {
     historical_prompt_warning: boolean;
     note: string;
   };
+  configuration_comparability: {
+    brand_updated_at: string;
+    engines_scanned_before_update: string[];
+    historical_settings_warning: boolean;
+    note: string;
+  };
   per_engine: Array<{
     engine: string;
     measurement_mode: 'search_requested' | 'model_only';
@@ -142,6 +148,7 @@ function registerVisibilityTool(overrides?: {
   runs?: Partial<Record<EngineName, Run>>;
   responses?: Record<string, PromptResponse[]>;
   activePromptIds?: string[];
+  brand?: Brand;
 }): VisibilityTool {
   let visibility: VisibilityTool | undefined;
   const runMap: Partial<Record<EngineName, Run>> = { ...runs, ...overrides?.runs };
@@ -159,7 +166,7 @@ function registerVisibilityTool(overrides?: {
 
   registerTools(server, {
     db: {
-      getBrand: async () => brand,
+      getBrand: async () => overrides?.brand ?? brand,
       getLatestCompletedRun: async (_brandId, engine) =>
         runMap[engine as EngineName] ?? null,
       getResponsesForRun: async (runId) => responseMap[runId] ?? [],
@@ -416,4 +423,25 @@ test('missing successful responses do not count as retired prompts', async () =>
   })).structuredContent;
   assert.equal(snapshot.per_engine[0].coverage.partial, true);
   assert.equal(snapshot.prompt_set_comparability.historical_prompt_warning, false);
+});
+
+test('check_visibility identifies engines measured before a brand configuration update', async () => {
+  const updatedAt = Date.UTC(2026, 0, 2, 0);
+  const tool = registerVisibilityTool({ brand: { ...brand, updated_at: updatedAt } });
+  const snapshot = (await tool.handler({ brand_id: brand.id })).structuredContent;
+  assert.equal(snapshot.configuration_comparability.brand_updated_at, new Date(updatedAt).toISOString());
+  assert.deepEqual(snapshot.configuration_comparability.engines_scanned_before_update, ['claude']);
+  assert.equal(snapshot.configuration_comparability.historical_settings_warning, true);
+  assert.match(snapshot.configuration_comparability.note, /cannot establish which settings changed/);
+
+  const filtered = (await tool.handler({ brand_id: brand.id, engines: ['chatgpt'] })).structuredContent;
+  assert.deepEqual(filtered.configuration_comparability.engines_scanned_before_update, []);
+  assert.equal(filtered.configuration_comparability.historical_settings_warning, false);
+});
+
+test('check_visibility does not infer a configuration mismatch from older metadata', async () => {
+  const tool = registerVisibilityTool({ brand: { ...brand, updated_at: claudeTimestamp - 1 } });
+  const snapshot = (await tool.handler({ brand_id: brand.id })).structuredContent;
+  assert.deepEqual(snapshot.configuration_comparability.engines_scanned_before_update, []);
+  assert.equal(snapshot.configuration_comparability.historical_settings_warning, false);
 });
