@@ -893,6 +893,61 @@ test('getBrandsDueForRefresh uses the latest run with usable responses', async (
   }
 });
 
+test('cron skips brands without active prompts in SQLite and D1', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'digestseo.sqlite'));
+  try {
+    await db.upsertUser('test-user', 'test@local');
+    for (const id of ['empty-brand', 'ready-brand']) {
+      await db.createBrand({
+        id,
+        user_id: 'test-user',
+        domain: `${id}.example`,
+        name: id,
+        category: null,
+        competitors: [],
+        aliases: [],
+        exclude_terms: [],
+        refresh_frequency: 'weekly',
+      });
+    }
+    seedPromptFixture(db, 'ready-brand', 'ready-p1', 'Which tools are available?');
+    const hosted = createD1Db({
+      prepare(sql: string) {
+        return {
+          bind(...params: unknown[]) {
+            return {
+              async all() {
+                const statement = db.raw.prepare(sql);
+                return { results: statement.all(...(params as Parameters<typeof statement.all>)) };
+              },
+            };
+          },
+        };
+      },
+    } as unknown as Parameters<typeof createD1Db>[0]);
+
+    const assertDue = async (emptyIsDue: boolean) => {
+      for (const adapter of [db, hosted]) {
+        for (const engines of [undefined, ['chatgpt']]) {
+          const due = new Set((await adapter.getBrandsDueForRefresh(engines)).map((b) => b.id));
+          assert.equal(due.has('empty-brand'), emptyIsDue);
+          assert.equal(due.has('ready-brand'), true);
+        }
+      }
+    };
+
+    await assertDue(false);
+    seedPromptFixture(db, 'empty-brand', 'empty-p1', 'A new active question');
+    await assertDue(true);
+    db.raw.prepare('UPDATE prompts SET active = 0 WHERE brand_id = ?').run('empty-brand');
+    await assertDue(false);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('partial prompt failures do not reset engine freshness and retry after a bounded cooldown', async () => {
   const root = tempRoot();
   const db = openSqliteDb(join(root, 'digestseo.sqlite'));
