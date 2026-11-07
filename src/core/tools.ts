@@ -295,9 +295,9 @@ const citationsOutputSchema = z.object({
 const citationCursorSchema = z.object({
   v: z.literal(1),
   brand_id: z.string(),
-  days: z.number().int(),
+  days: z.number().min(1).max(90),
   engine: z.string().nullable(),
-  since: z.number().int(),
+  since: z.number().finite(),
   until: z.number().int(),
   before: z.object({
     captured_at: z.number().int(),
@@ -317,7 +317,7 @@ function decodeCitationCursor(cursor: string, brandId: string, days: number, eng
     // one to expand a requested 1-90-day citation query into an unbounded scan
     // or to select an arbitrary older historical window.
     if (parsed.brand_id !== brandId || parsed.days !== days || parsed.engine !== engine ||
-      !Number.isSafeInteger(parsed.since) || !Number.isSafeInteger(parsed.until) ||
+      !Number.isFinite(parsed.since) || !Number.isSafeInteger(parsed.until) ||
       !Number.isSafeInteger(parsed.before.captured_at) ||
       parsed.until > now || parsed.until < now - CITATION_CURSOR_MAX_AGE_MS ||
       parsed.since !== parsed.until - days * CITATION_DAY_MS ||

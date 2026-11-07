@@ -24,7 +24,7 @@ export async function handleAdminSetPrompts(
   }
 
   const brandId = body?.brand_id;
-  if (!brandId) {
+  if (typeof brandId !== 'string' || !brandId) {
     return jsonResponse({ error: 'brand_id required' }, 400);
   }
   if (
