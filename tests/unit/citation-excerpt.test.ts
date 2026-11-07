@@ -51,3 +51,17 @@ test('citation excerpt can center an explicit alias when no domain is present', 
 
   assert.match(excerpt, /Example Pro is recommended/);
 });
+
+test('citation excerpts omit credential-bearing URLs without suppressing valid evidence', () => {
+  const brand = makeBrand({ domain: 'example.com', name: 'Example' });
+  const response =
+    'Example appears at https://alice:private-token@example.com/report and ' +
+    'https://account@other.example/report; the public source is https://example.com/docs.';
+
+  const excerpt = buildResponseExcerpt(response, brand);
+
+  assert.doesNotMatch(excerpt, /private-token|alice:|account@/);
+  assert.doesNotMatch(excerpt, /https:\/\/alice:|https:\/\/account@/);
+  assert.match(excerpt, /\[credential-bearing URL omitted\]/);
+  assert.match(excerpt, /https:\/\/example\.com\/docs/);
+});

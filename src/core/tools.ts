@@ -1811,16 +1811,26 @@ function buildTopSources(responses: PromptResponse[], brand: Brand) {
 export function buildResponseExcerpt(text: string, brand: Brand): string {
   if (!text) return '';
   if (text === '[NO_AI_OVERVIEW]') return text;
-  const idx = findTermSetMatchIndex(text, {
+  // Provider text is untrusted. Even a URL rejected as citation evidence can
+  // otherwise expose authority credentials in the user-facing excerpt.
+  const safeText = text.replace(/https?:\/\/[^\s<>"'`\])}]+/gi, (rawUrl) => {
+    try {
+      const parsed = new URL(rawUrl.replace(/[.,;!]+$/, ''));
+      return parsed.username || parsed.password ? '[credential-bearing URL omitted]' : rawUrl;
+    } catch {
+      return rawUrl;
+    }
+  });
+  const idx = findTermSetMatchIndex(safeText, {
     domain: brand.domain,
     name: brand.name,
     aliases: brand.aliases,
     excludeTerms: brand.exclude_terms,
   });
-  if (idx === -1) return text.slice(0, 250);
+  if (idx === -1) return safeText.slice(0, 250);
   const start = Math.max(0, idx - 100);
-  const end = Math.min(text.length, idx + 150);
-  return text.slice(start, end);
+  const end = Math.min(safeText.length, idx + 150);
+  return safeText.slice(start, end);
 }
 
 function pickBrandUrl(
