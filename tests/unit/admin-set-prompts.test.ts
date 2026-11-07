@@ -60,6 +60,26 @@ test('admin set-prompts rejects malformed prompt payloads before DB writes', asy
   assert.equal(replaceCalls, 0);
 });
 
+test('admin set-prompts rejects non-string brand IDs before DB reads', async () => {
+  let brandReads = 0;
+  const db = {
+    getBrand: async () => {
+      brandReads += 1;
+      return brand;
+    },
+  } as unknown as Db;
+
+  for (const invalidId of [123, true, ['acme'], { id: 'acme' }]) {
+    const response = await handleAdminSetPrompts(
+      request({ brand_id: invalidId, prompts: ['Which tool is best?'] }),
+      db,
+    );
+    assert.equal(response.status, 400, `brand_id ${JSON.stringify(invalidId)}`);
+    assert.deepEqual(await response.json(), { error: 'brand_id required' });
+  }
+  assert.equal(brandReads, 0, 'invalid IDs must not reach the persistence adapter');
+});
+
 test('admin set-prompts returns 404 for an unknown brand', async () => {
   const db = { getBrand: async () => null } as unknown as Db;
   const response = await handleAdminSetPrompts(

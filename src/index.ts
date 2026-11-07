@@ -16,8 +16,6 @@ import {
   getAvailableEngines,
   isEngineName,
   runEngineInProcess,
-  uniqueEngineNames,
-  type EngineName,
 } from './core/engines.js';
 import { registerTools } from './core/tools.js';
 import {
@@ -44,6 +42,7 @@ import {
 } from './engines.js';
 import { seedBrand, type SeedBrandInput } from './core/seed.js';
 import { DomainInputError } from './core/domain.js';
+import { hasRequiredIdentifier, selectAdminRunEngines } from './core/admin-run-input.js';
 import { handlePublicAudit } from './public-audit.js';
 import {
   hasExplicitClientApproval,
@@ -300,7 +299,7 @@ async function handleAdminRunLive(
     wait_for_completion?: boolean;
   }>(request);
   const brandId = body?.brand_id;
-  if (!brandId) {
+  if (!hasRequiredIdentifier(brandId)) {
     return jsonResponse({ error: 'brand_id required' }, 400);
   }
   const available = getAvailableEngines(env);
@@ -313,21 +312,9 @@ async function handleAdminRunLive(
       400,
     );
   }
-  let engineNames: EngineName[];
-  if (Array.isArray(body?.engines) && body!.engines!.length > 0) {
-    const unknown = body!.engines!.filter((e) => !isEngineName(e));
-    if (unknown.length > 0) {
-      return jsonResponse(
-        {
-          error: `Unknown engines: ${unknown.join(', ')}. Allowed: ${ALL_ENGINES.join(', ')}`,
-        },
-        400,
-      );
-    }
-    engineNames = uniqueEngineNames(body!.engines! as EngineName[]);
-  } else {
-    engineNames = available;
-  }
+  const selection = selectAdminRunEngines(body?.engines, available);
+  if (selection.error) return jsonResponse({ error: selection.error }, 400);
+  const engineNames = selection.engineNames;
   const brand = await db.getBrand(brandId);
   if (!brand) return jsonResponse({ error: 'brand not found' }, 404);
   const prompts = await db.getActivePrompts(brandId);
@@ -364,7 +351,7 @@ async function handleAdminGeneratePrompts(
     request,
   );
   const brandId = body?.brand_id;
-  if (!brandId) {
+  if (!hasRequiredIdentifier(brandId)) {
     return jsonResponse({ error: 'brand_id required' }, 400);
   }
   if (!env.ANTHROPIC_API_KEY) {
@@ -417,7 +404,7 @@ async function handleAdminRunBatchSubmit(
 ): Promise<Response> {
   const body = await readJsonBody<{ brand_id?: string }>(request);
   const brandId = body?.brand_id;
-  if (!brandId) {
+  if (!hasRequiredIdentifier(brandId)) {
     return jsonResponse({ error: 'brand_id required' }, 400);
   }
   if (!env.OPENAI_API_KEY) {
@@ -449,7 +436,7 @@ async function handleAdminRunBatchCollect(
 ): Promise<Response> {
   const body = await readJsonBody<{ run_id?: string }>(request);
   const runId = body?.run_id;
-  if (!runId) {
+  if (!hasRequiredIdentifier(runId)) {
     return jsonResponse({ error: 'run_id required' }, 400);
   }
   if (!env.OPENAI_API_KEY) {
@@ -507,8 +494,8 @@ async function handleAdminRunEngine(
   const engine = body?.engine;
   const promptIds = body?.prompt_ids;
   if (
-    !runId ||
-    !brandId ||
+    !hasRequiredIdentifier(runId) ||
+    !hasRequiredIdentifier(brandId) ||
     !engine ||
     !Array.isArray(promptIds) ||
     promptIds.length === 0 ||
@@ -618,6 +605,10 @@ async function handleAdminCleanupFailedRuns(
 ): Promise<Response> {
   const body = await readJsonBody<{ brand_id?: string }>(request);
   const brandId = body?.brand_id;
+  if (body != null && Object.prototype.hasOwnProperty.call(body, 'brand_id') &&
+      !hasRequiredIdentifier(brandId)) {
+    return jsonResponse({ error: 'brand_id must be a nonempty string when supplied' }, 400);
+  }
 
   const baseWhere =
     `(raw_response LIKE '%Too many subrequests%'
@@ -786,6 +777,7 @@ function renderConnectForm(query: string, error?: string): Response {
   // These labels are provided by the requesting client, not verified identities.
   const clientId = escapeHtml((params.get('client_id') ?? '').slice(0, 240));
   const requestedScope = escapeHtml((params.get('scope') ?? '').slice(0, 240));
+  const redirectTarget = escapeHtml((params.get('redirect_uri') ?? '').slice(0, 240));
   const errorHtml = error
     ? `<p class="err">${escapeHtml(error)}</p>`
     : '';
@@ -817,8 +809,10 @@ function renderConnectForm(query: string, error?: string): Response {
 <p>This server requires a connect secret before an MCP client can be
 authorized. Enter the <code>CONNECT_SECRET</code> you set during deploy.</p>
 <p>Requesting client ID (unverified): <code>${clientId}</code></p>
+${redirectTarget ? `<p>Redirect destination (unverified): <code>${redirectTarget}</code></p>` : ''}
 ${requestedScope ? `<p>Requested scope: <code>${requestedScope}</code></p>` : ''}
-<p>Approve only if you recognize the client. Authorized clients may access
+<p>Approve only if you recognize the client and its redirect destination. These
+request details are self-reported, not proof of client identity. Authorized clients may access
 your stored GEO data and trigger scans using your configured provider quotas.</p>
 ${errorHtml}
 <form method="post" action="${action}">
