@@ -27,6 +27,10 @@ type HistoryTool = {
         search_requested: { brand_mentions: number; usable_prompts: number; score: number } | null;
         model_only: { brand_mentions: number; usable_prompts: number; score: number } | null;
       }>;
+      by_bucket: Record<string, Record<string, {
+        search_requested: { brand_mentions: number; usable_prompts: number; score: number } | null;
+        model_only: { brand_mentions: number; usable_prompts: number; score: number } | null;
+      }>>;
       note: string;
     };
     google_search_sampling: null | {
@@ -117,7 +121,46 @@ test('history discloses batch/model-only evidence separately from live search re
       model_only: { brand_mentions: 3, usable_prompts: 4, score: 75 },
     },
   });
+  assert.deepEqual(result.measurement_scope.by_bucket, {
+    '2026-01-05': {
+      chatgpt: {
+        search_requested: { brand_mentions: 1, usable_prompts: 4, score: 25 },
+        model_only: { brand_mentions: 4, usable_prompts: 4, score: 100 },
+      },
+      claude: {
+        search_requested: null,
+        model_only: { brand_mentions: 3, usable_prompts: 4, score: 75 },
+      },
+    },
+  });
   assert.match(result.measurement_scope.note, /combined.*mode|mode.*combined/i);
+});
+
+test('history keeps model-only and search-requested evidence in their own weekly buckets', async () => {
+  const history = registerHistoryTool([
+    { run_id: 'week1-live', engine: 'chatgpt', mode: 'live', completed_at: Date.UTC(2026, 0, 5), total: 6, hits: 3 },
+    { run_id: 'week2-batch', engine: 'chatgpt', mode: 'batch', completed_at: Date.UTC(2026, 0, 12), total: 5, hits: 5 },
+    { run_id: 'week2-live', engine: 'chatgpt', mode: 'live', completed_at: Date.UTC(2026, 0, 13), total: 5, hits: 0 },
+  ]);
+  const { structuredContent: result } = await history.handler({
+    brand_id: 'acme', days: 30, granularity: 'weekly',
+  });
+  assert.deepEqual(result.measurement_scope.by_bucket, {
+    '2026-01-05': {
+      chatgpt: {
+        search_requested: { brand_mentions: 3, usable_prompts: 6, score: 50 },
+        model_only: null,
+      },
+    },
+    '2026-01-12': {
+      chatgpt: {
+        search_requested: { brand_mentions: 0, usable_prompts: 5, score: 0 },
+        model_only: { brand_mentions: 5, usable_prompts: 5, score: 100 },
+      },
+    },
+  });
+  assert.deepEqual(result.series.map(({ per_engine }) => per_engine.chatgpt), [50, 50],
+    'legacy combined bucket scores must remain stable');
 });
 
 test('visibility history discloses US-English scope when historical Google scans are present', async () => {
