@@ -6,6 +6,7 @@
 import { extractCitations, hasBrandInEngineCitations } from './openai.js';
 import type { Brand, Db, EnginePromptResult, Prompt } from '../db/types.js';
 import { fetchWithTimeout } from './fetch.js';
+import { redactSerpApiError } from './serpapi-error.js';
 import {
   flattenSerpApiAnswer,
   flattenSerpApiReferences,
@@ -120,8 +121,8 @@ function buildSkippedResult(prompt: Prompt, reason: string): EnginePromptResult 
   };
 }
 
-function buildFailedResult(prompt: Prompt, err: unknown): EnginePromptResult {
-  const message = err instanceof Error ? err.message : String(err);
+function buildFailedResult(prompt: Prompt, err: unknown, apiKey?: string): EnginePromptResult {
+  const message = redactSerpApiError(err, apiKey);
   console.error('runLive[ai_mode]: prompt failed', {
     prompt_id: prompt.id,
     message,
@@ -197,7 +198,7 @@ export async function runLive(
           const payload = await chatCompletion(requireSerpApiKey(env), prompt.text);
           results[idx] = buildResultFromPayload(brand, prompt, payload);
         } catch (err) {
-          results[idx] = buildFailedResult(prompt, err);
+          results[idx] = buildFailedResult(prompt, err, env.SERPAPI_API_KEY);
         }
       }),
     );
@@ -212,7 +213,7 @@ export async function runLive(
       results,
     );
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = redactSerpApiError(err, env.SERPAPI_API_KEY);
     console.error('runLive[ai_mode]: persistEngineRun failed', {
       run_id: runId,
       message,
