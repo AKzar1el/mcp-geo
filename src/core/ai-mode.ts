@@ -8,6 +8,7 @@ import type { Brand, Db, EnginePromptResult, Prompt } from '../db/types.js';
 import { fetchWithTimeout } from './fetch.js';
 import { redactSerpApiError } from './serpapi-error.js';
 import {
+  MAX_SERPAPI_ANSWER_TEXT_LENGTH,
   flattenSerpApiAnswer,
   flattenSerpApiReferences,
   type SerpApiAnswerBlock,
@@ -69,6 +70,9 @@ export async function chatCompletion(
   }
 
   const reconstructed = data.reconstructed_markdown?.trim() ?? '';
+  if (reconstructed.length > MAX_SERPAPI_ANSWER_TEXT_LENGTH) {
+    throw new Error('SerpAPI answer exceeds structured-text size limit');
+  }
   const text = reconstructed.length > 0
     ? reconstructed
     : flattenSerpApiAnswer(data.text_blocks);

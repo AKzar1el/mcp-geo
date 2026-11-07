@@ -32,7 +32,7 @@ export function flattenSerpApiReferences(
 
 const MAX_DEPTH = 24;
 const MAX_BLOCKS = 2048;
-const MAX_TEXT_LENGTH = 250_000;
+export const MAX_SERPAPI_ANSWER_TEXT_LENGTH = 250_000;
 
 function visibleText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
@@ -52,7 +52,7 @@ export function flattenSerpApiAnswer(
   const add = (value: string): void => {
     if (!value) return;
     length += value.length;
-    if (length > MAX_TEXT_LENGTH) {
+    if (length > MAX_SERPAPI_ANSWER_TEXT_LENGTH) {
       throw new Error('SerpAPI answer exceeds structured-text size limit');
     }
     parts.push(value);
