@@ -99,6 +99,11 @@ export async function seedBrand(
     };
   }
 
+  const name = input.name.trim();
+  if (!name) {
+    throw new DomainInputError('name must not be empty');
+  }
+
   if (
     input.refresh_frequency !== undefined &&
     input.refresh_frequency !== 'daily' &&
@@ -146,7 +151,7 @@ export async function seedBrand(
     id: input.brand_id,
     user_id: DEFAULT_USER_ID,
     domain,
-    name: input.name,
+    name,
     category,
     competitors,
     aliases: input.aliases ?? [],

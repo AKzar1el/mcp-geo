@@ -63,9 +63,12 @@ export function planScheduledDispatch(
     const target = ordered[(offset + i) % ordered.length];
     const take = Math.min(target.engines.length, remaining);
     if (take === 0) continue;
-    // Partial brand selections also rotate engine order to avoid starving a
-    // later engine when the last budget slot always lands on this brand.
-    const engineOffset = take < target.engines.length ? slot % target.engines.length : 0;
+    // Advance the engine rotation per full brand-roster sweep. Using the raw
+    // cron slot can starve engines when a brand is visited every N slots and
+    // N shares a factor with its due-engine count (e.g. 2 brands, 4 engines).
+    const engineOffset = take < target.engines.length
+      ? Math.floor(slot / ordered.length) % target.engines.length
+      : 0;
     const engines = Array.from({ length: take }, (_, j) =>
       target.engines[(engineOffset + j) % target.engines.length]);
     selected.push({ brand: target.brand, engines });

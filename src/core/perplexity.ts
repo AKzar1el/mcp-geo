@@ -92,7 +92,8 @@ function extractAgentCitations(data: PerplexityResponse): string[] {
       try {
         const parsed = new URL(result.url);
         // Only HTTP(S) search results are valid citation sources.
-        if ((parsed.protocol === 'http:' || parsed.protocol === 'https:') && parsed.hostname) {
+        if ((parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
+            parsed.hostname && !parsed.username && !parsed.password) {
           urls.push(result.url);
         }
       } catch {

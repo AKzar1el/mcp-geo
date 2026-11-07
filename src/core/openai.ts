@@ -246,6 +246,8 @@ function normalizeHost(rawUrl: string): string | null {
     const u = new URL(rawUrl);
     // Native source metadata is link evidence only when it points to a web URL.
     if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+    // Userinfo can disguise the actual destination and is not reliable source evidence.
+    if (u.username || u.password) return null;
     let host = u.hostname.toLowerCase();
     // Strip terminal prose punctuation from a bare URL's hostname.
     // DNS names cannot end in commas, semicolons or exclamation marks.
@@ -352,7 +354,7 @@ function buildSkippedResult(prompt: Prompt): EnginePromptResult {
 }
 
 function buildFailedResult(prompt: Prompt, err: unknown): EnginePromptResult {
-  const msg = (err as Error).message;
+  const msg = err instanceof Error ? err.message : String(err);
   console.error('runLive: prompt failed', {
     prompt_id: prompt.id,
     message: msg,
@@ -441,9 +443,10 @@ export async function runLive(
       results,
     );
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
     console.error('runLive: persistEngineRun failed', {
       run_id: runId,
-      message: (err as Error).message,
+      message,
     });
     // Best-effort: mark the run failed so it's not stuck in
     // 'in_progress' forever. If updateRun also throws (e.g. the
@@ -452,7 +455,7 @@ export async function runLive(
     // status='completed', so the data we wrote still surfaces.
     await env.db.updateRun(runId, {
       status: 'failed',
-      error: (err as Error).message,
+      error: message,
       completed_at: Date.now(),
     }).catch(() => {});
   }
@@ -509,34 +512,59 @@ export async function submitBatch(
     `geo-mcp-run-${runId}.jsonl`,
   );
 
-  const uploadResp = await fetchWithTimeout(`${OPENAI_BASE}/files`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${requireOpenAiKey(env)}` },
-    body: form,
-  });
-  if (!uploadResp.ok) {
-    const text = await uploadResp.text();
-    throw new Error(`OpenAI file upload failed: ${uploadResp.status} ${text}`);
-  }
-  const file = (await uploadResp.json()) as OpenAiFile;
+  let file: OpenAiFile;
+  let batch: OpenAiBatch;
+  try {
+    const uploadResp = await fetchWithTimeout(`${OPENAI_BASE}/files`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${requireOpenAiKey(env)}` },
+      body: form,
+    });
+    if (!uploadResp.ok) {
+      const text = await uploadResp.text();
+      throw new Error(`OpenAI file upload failed: ${uploadResp.status} ${text}`);
+    }
+    file = (await uploadResp.json()) as OpenAiFile;
+    if (typeof file?.id !== 'string' || !file.id.trim()) {
+      throw new Error('OpenAI file upload returned no file id');
+    }
 
-  const createResp = await fetchWithTimeout(`${OPENAI_BASE}/batches`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${requireOpenAiKey(env)}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      input_file_id: file.id,
-      endpoint: '/v1/chat/completions',
-      completion_window: '24h',
-    }),
-  });
-  if (!createResp.ok) {
-    const text = await createResp.text();
-    throw new Error(`OpenAI batch create failed: ${createResp.status} ${text}`);
+    const createResp = await fetchWithTimeout(`${OPENAI_BASE}/batches`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${requireOpenAiKey(env)}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        input_file_id: file.id,
+        endpoint: '/v1/chat/completions',
+        completion_window: '24h',
+      }),
+    });
+    if (!createResp.ok) {
+      const text = await createResp.text();
+      throw new Error(`OpenAI batch create failed: ${createResp.status} ${text}`);
+    }
+    batch = (await createResp.json()) as OpenAiBatch;
+    if (typeof batch?.id !== 'string' || !batch.id.trim()) {
+      throw new Error('OpenAI batch create returned no batch id');
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    try {
+      await env.db.updateRun(runId, {
+        status: 'failed',
+        error: message.slice(0, 500),
+        completed_at: Date.now(),
+      });
+    } catch (persistError) {
+      console.error('submitBatch: failed to mark rejected batch submission terminal', {
+        run_id: runId,
+        message: persistError instanceof Error ? persistError.message : String(persistError),
+      });
+    }
+    throw error;
   }
-  const batch = (await createResp.json()) as OpenAiBatch;
 
   await env.db.updateRun(runId, { batch_id: batch.id, status: 'in_progress' });
 
@@ -692,19 +720,34 @@ export async function collectBatch(
     throw new Error(error);
   }
 
-  const outputLines = batch.output_file_id
-    ? parseBatchOutputLines(
-      await downloadBatchFile(env, batch.output_file_id, 'output'),
-      'output',
-    )
-    : [];
-  const errorLines = batch.error_file_id
-    ? parseBatchOutputLines(
-      await downloadBatchFile(env, batch.error_file_id, 'error'),
-      'error',
-    )
-    : [];
-  assertUniqueBatchCustomIds(outputLines, errorLines);
+  let outputLines: BatchOutputLine[];
+  let errorLines: BatchOutputLine[];
+  try {
+    outputLines = batch.output_file_id
+      ? parseBatchOutputLines(
+        await downloadBatchFile(env, batch.output_file_id, 'output'),
+        'output',
+      )
+      : [];
+    errorLines = batch.error_file_id
+      ? parseBatchOutputLines(
+        await downloadBatchFile(env, batch.error_file_id, 'error'),
+        'error',
+      )
+      : [];
+    assertUniqueBatchCustomIds(outputLines, errorLines);
+  } catch (error) {
+    // Corrupt provider output is permanent; a failed download may be transient.
+    // Do not close the run for transport failures that a later poll can retry.
+    if (error instanceof Error && error.message.startsWith('OpenAI batch integrity error:')) {
+      await env.db.updateRun(run.id, {
+        status: 'failed',
+        error: truncateError(error.message),
+        completed_at: Date.now(),
+      });
+    }
+    throw error;
+  }
 
   const promptIds = [
     ...outputLines.map((line) => line.custom_id),
@@ -717,9 +760,13 @@ export async function collectBatch(
     return !prompt || prompt.brand_id !== brand.id;
   });
   if (unresolved.length > 0) {
-    throw new Error(
-      `OpenAI batch integrity error: batch custom_id(s) do not match stored prompts for brand ${brand.id}: ${unresolved.join(', ')}`,
-    );
+    const error = `OpenAI batch integrity error: batch custom_id(s) do not match stored prompts for brand ${brand.id}: ${unresolved.join(', ')}`;
+    await env.db.updateRun(run.id, {
+      status: 'failed',
+      error: truncateError(error),
+      completed_at: Date.now(),
+    });
+    throw new Error(error);
   }
 
   if (batch.status === 'completed') {

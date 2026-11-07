@@ -203,6 +203,28 @@ test('get_citations preserves an actual answer-authored brand URL when no native
   assert.equal(result.structuredContent.citations[0].url_source, 'answer_text');
 });
 
+test('credential-bearing source and answer URLs cannot become brand citation evidence', async () => {
+  const citation = registerCitationTool(citationRow({
+    raw_response: 'Acme appears at https://reporter:secret@acme.com/private',
+    engine_citations_json: JSON.stringify(['https://user:pass@acme.com/evidence']),
+  }));
+  const result = await citation.handler({ brand_id: brand.id });
+  assert.equal(result.structuredContent.citations[0].cited_url, null);
+  assert.equal(result.structuredContent.citations[0].url_source, null);
+});
+
+test('top source samples reject credential-bearing URLs without hiding safe citations', async () => {
+  const citation = registerCitationTool(citationRow(), [
+    promptResponse({ engine_citations: [
+      'https://reporter:secret@news.example/report',
+      'https://news.example/safe-report',
+      'https://user:token@elsewhere.example/article',
+    ] }),
+  ]);
+  const sources = (await citation.handler({ brand_id: brand.id })).structuredContent.top_sources;
+  assert.deepEqual(sources.map((source) => source.sample_url), ['https://news.example/safe-report']);
+});
+
 test('get_citations distinguishes provider-listed link-only evidence from textual brand mentions', async () => {
   const citation = registerCitationTool(
     citationRow({

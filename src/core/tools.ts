@@ -89,6 +89,8 @@ function visibilityMeasurementMode(
 const winningPromptOutputSchema = z.object({
   prompt: z.string(),
   engines_cited_in: z.array(z.string()),
+  engines_mentioned_in: z.array(z.string()),
+  engines_with_brand_link: z.array(z.string()),
 });
 
 const losingPromptOutputSchema = z.object({
@@ -120,6 +122,7 @@ const visibilityOutputSchema = z.object({
   }),
   refreshed_at: z.string(),
   overall_score: z.number(),
+  missing_requested_engines: z.array(z.string()),
   measurement_scope: z.object({
     search_requested: z.object({
       score: z.number().nullable(),
@@ -140,6 +143,12 @@ const visibilityOutputSchema = z.object({
     mixed_age_warning: z.boolean(),
     older_engines: z.array(z.string()),
   }),
+  prompt_set_comparability: z.object({
+    active_prompt_count: z.number(),
+    engines_with_retired_prompt_evidence: z.array(z.string()),
+    historical_prompt_warning: z.boolean(),
+    note: z.string(),
+  }),
   per_engine: z.array(
     z.object({
       engine: z.string(),
@@ -157,6 +166,7 @@ const visibilityOutputSchema = z.object({
     }),
   ),
   top_winning_prompts: z.array(winningPromptOutputSchema),
+  winning_prompt_evidence_note: z.string(),
   top_losing_prompts: z.array(losingPromptOutputSchema),
 });
 
@@ -165,6 +175,22 @@ const historyOutputSchema = z.object({
   days: z.number(),
   granularity: z.enum(['daily', 'weekly']),
   google_search_sampling: googleSearchSamplingSchema,
+  measurement_scope: z.object({
+    mixed_mode_engines: z.array(z.string()),
+    by_engine: z.record(z.string(), z.object({
+      search_requested: z.object({
+        brand_mentions: z.number(),
+        usable_prompts: z.number(),
+        score: z.number(),
+      }).nullable(),
+      model_only: z.object({
+        brand_mentions: z.number(),
+        usable_prompts: z.number(),
+        score: z.number(),
+      }).nullable(),
+    })),
+    note: z.string(),
+  }),
   prompt_set_comparability: z.object({
     changes_detected: z.boolean(),
     changed_engines: z.array(z.string()),
@@ -446,16 +472,17 @@ export function registerTools(
   const toolName = (legacyName: keyof typeof HOSTED_TOOL_NAMES) =>
     options.namespaced ? HOSTED_TOOL_NAMES[legacyName] : legacyName;
   const refreshIsAsync = deps.refreshExecution === 'async';
+  const refreshCostNote = ' Provider API requests may incur charges. Retries rerun every active prompt, including prior successes.';
   const refreshDescription = refreshIsAsync
-    ? "Start a fresh scan on selected configured engines using the brand's active prompts. Returns run IDs immediately; results usually populate in 30-60 seconds. Example: brand_id='acme', engines=['chatgpt','gemini']."
-    : "Run a fresh scan on selected configured engines using the brand's active prompts and return after completion. Example: brand_id='acme', engines=['chatgpt','gemini'].";
+    ? "Start fresh scans on selected engines; returns run IDs immediately." + refreshCostNote + " Example: brand_id='acme', engines=['chatgpt','gemini']."
+    : "Scan selected engines and return after completion." + refreshCostNote + " Example: brand_id='acme', engines=['chatgpt','gemini'].";
 
   server.registerTool(
     toolName('check_visibility'),
     {
       title: 'Check AI visibility',
       description:
-        "Read the latest stored visibility snapshot, including scores and winning/losing prompts; call refresh_brand first for fresh data. Example: brand_id='acme', engines=['chatgpt','perplexity'].",
+        "Read stored visibility scores and missing requested engines. Scores omit engines without usable scans; refresh_brand updates data. Example: brand_id='acme', engines=['chatgpt','gemini'].",
       inputSchema: {
         brand_id: z
           .string()
@@ -489,6 +516,7 @@ export function registerTools(
       const refreshedAtByEngine = new Map<string, string>();
       const refreshMsByEngine = new Map<string, number>();
       const expectedPromptsByEngine = new Map<string, number>();
+      const observedPromptIdsByEngine = new Map<string, Set<string>>();
       const measurementModeByEngine = new Map<string, 'search_requested' | 'model_only'>();
       let mostRecentTimestamp = 0;
       for (const engine of selectedEngines) {
@@ -497,6 +525,7 @@ export function registerTools(
         const responses = await deps.db.getResponsesForRun(run.id);
         if (responses.length === 0) continue;
         selectedResponses.push(...responses);
+        observedPromptIdsByEngine.set(engine, new Set(responses.map((response) => response.prompt_id)));
         measurementModeByEngine.set(engine, visibilityMeasurementMode(engine, run.mode));
         expectedPromptsByEngine.set(engine, run.prompts_total);
         const ts = run.completed_at ?? run.started_at;
@@ -511,6 +540,11 @@ export function registerTools(
             : 'No visibility data yet for this brand. Call refresh_brand to populate it.',
         );
       }
+      // An explicit multi-engine request can otherwise look complete even
+      // when only one engine has usable data and contributes to the score.
+      const missingRequestedEngines = engines && engines.length > 0
+        ? selectedEngines.filter((engine) => !refreshedAtByEngine.has(engine))
+        : [];
       const scored = computeOverallScore(brand, selectedResponses);
       const oldestTimestamp = Math.min(...refreshMsByEngine.values());
       const ageSpreadMs = mostRecentTimestamp - oldestTimestamp;
@@ -519,6 +553,14 @@ export function registerTools(
       const mixedAgeCutoffMs = 24 * 60 * 60 * 1000;
       const olderEngines = [...refreshMsByEngine.entries()]
         .filter(([, timestamp]) => mostRecentTimestamp - timestamp >= mixedAgeCutoffMs)
+        .map(([engine]) => engine)
+        .sort();
+      const activePrompts = await deps.db.getActivePrompts(brand_id);
+      const activePromptIds = new Set(activePrompts.map((prompt) => prompt.id));
+      // Successful rows can be a partial sample. Only *observed* retired IDs
+      // prove stale evidence; missing current IDs belong to coverage warnings.
+      const retiredPromptEngines = [...observedPromptIdsByEngine.entries()]
+        .filter(([, ids]) => [...ids].some((id) => !activePromptIds.has(id)))
         .map(([engine]) => engine)
         .sort();
       const perEngine = scored.per_engine.map((engine) => {
@@ -562,6 +604,7 @@ export function registerTools(
         },
         refreshed_at: new Date(mostRecentTimestamp).toISOString(),
         overall_score: scored.overall_score,
+        missing_requested_engines: missingRequestedEngines,
         measurement_scope: {
           search_requested: searchRequested,
           model_only: modelOnly,
@@ -576,8 +619,17 @@ export function registerTools(
           mixed_age_warning: olderEngines.length > 0,
           older_engines: olderEngines,
         },
+        prompt_set_comparability: {
+          active_prompt_count: activePromptIds.size,
+          engines_with_retired_prompt_evidence: retiredPromptEngines,
+          historical_prompt_warning: retiredPromptEngines.length > 0,
+          note: retiredPromptEngines.length > 0
+            ? 'Latest scored responses from the listed engines include prompts no longer in the active set. Their scores remain historical observations and should not be compared as measurements of the current prompt set. Partial scan coverage is reported separately.'
+            : 'No retired prompt IDs were observed in these scored responses. This does not prove complete coverage of the current prompt set; inspect per-engine coverage separately.',
+        },
         per_engine: perEngine,
         top_winning_prompts: scored.top_winning_prompts,
+        winning_prompt_evidence_note: 'engines_cited_in is a legacy field counting brand mentions in answers, not source citations. Use engines_mentioned_in for mention evidence and engines_with_brand_link for linked brand evidence. A link-only source without an answer mention is not a winning prompt.',
         top_losing_prompts: scored.top_losing_prompts,
       };
       return toolResult(payload);
@@ -589,7 +641,7 @@ export function registerTools(
     {
       title: 'Get AI visibility history',
       description:
-        "Return daily or weekly visibility history with per-engine evidence. Example: brand_id='acme', days=30, granularity='weekly'.",
+        "Return daily or weekly visibility history with per-engine evidence and model-only versus search-requested measurement scope. Example: brand_id='acme', days=30, granularity='weekly'.",
       inputSchema: {
         brand_id: z
           .string()
@@ -618,6 +670,42 @@ export function registerTools(
       }
       const since = Date.now() - days * 86_400_000;
       const results = await deps.db.getVisibilityHistoryRows(brand_id, since);
+
+      // Historical runs can contain both ungrounded OpenAI batches and
+      // search-requested ChatGPT samples. Preserve the legacy series while
+      // reporting their distinct evidence denominators for this time window.
+      type Counts = { brand_mentions: number; usable_prompts: number };
+      const scopeCounts = new Map<string, {
+        search_requested: Counts;
+        model_only: Counts;
+      }>();
+      for (const row of results) {
+        const counts = scopeCounts.get(row.engine) ?? {
+          search_requested: { brand_mentions: 0, usable_prompts: 0 },
+          model_only: { brand_mentions: 0, usable_prompts: 0 },
+        };
+        const mode = visibilityMeasurementMode(row.engine, row.mode ?? 'live');
+        counts[mode].brand_mentions += Number(row.hits ?? 0);
+        counts[mode].usable_prompts += Number(row.total ?? 0);
+        scopeCounts.set(row.engine, counts);
+      }
+      const scoredCounts = (counts: Counts) => counts.usable_prompts === 0 ? null : {
+        ...counts,
+        score: Math.round(100 * counts.brand_mentions / counts.usable_prompts),
+      };
+      const measurement_scope = {
+        mixed_mode_engines: [...scopeCounts.entries()]
+          .filter(([, counts]) =>
+            counts.search_requested.usable_prompts > 0 && counts.model_only.usable_prompts > 0,
+          )
+          .map(([engine]) => engine).sort(),
+        by_engine: Object.fromEntries([...scopeCounts.entries()].sort(([a], [b]) => a.localeCompare(b))
+          .map(([engine, counts]) => [engine, {
+            search_requested: scoredCounts(counts.search_requested),
+            model_only: scoredCounts(counts.model_only),
+          }])),
+        note: 'Combined legacy daily and weekly scores may mix model-only and search-requested run evidence in the same bucket. These window-wide, separately scored denominators identify mixed-mode engines; they do not prove that every search-requested response returned citations.',
+      };
 
       // Only compare complete recorded run rosters. Comparing successful
       // responses alone would falsely flag a change after a partial scan.
@@ -725,6 +813,7 @@ export function registerTools(
         days,
         granularity,
         google_search_sampling: googleSearchSampling(results.map(({ engine }) => engine)),
+        measurement_scope,
         prompt_set_comparability,
         series,
       };
@@ -1081,7 +1170,7 @@ export function registerTools(
         const payload = {
           brand_id,
           recommendations: [],
-          prompt_source: 'generated' as const,
+          prompt_source: 'fallback' as const,
           reason:
             'no losing prompts yet — collect more data first (run refresh_brand, then re-check competitors)',
         };
@@ -1090,7 +1179,7 @@ export function registerTools(
 
       let recommendations = buildFallbackRecommendations(losingPrompts, max_recommendations);
       let prompt_source: 'generated' | 'fallback' = 'fallback';
-      if (ai_analysis && deps.env.ANTHROPIC_API_KEY) {
+      if (ai_analysis && deps.env.ANTHROPIC_API_KEY?.trim()) {
         try {
           recommendations = await analyzeContentGaps(
             { ANTHROPIC_API_KEY: deps.env.ANTHROPIC_API_KEY },
@@ -1102,7 +1191,7 @@ export function registerTools(
         } catch (err) {
           console.warn('get_content_gaps: analyzer failed, returning fallback', {
             brand_id,
-            message: (err as Error).message,
+            message: err instanceof Error ? err.message : String(err),
           });
         }
       }
@@ -1173,9 +1262,13 @@ export function registerTools(
         prompts,
         filtered,
       );
+      const alreadyRunning = Object.keys(run_ids).length - kicked.length;
       const payload = {
         brand_id: brand.id,
-        message: `Refresh ${refreshIsAsync ? 'started' : 'completed'} for ${kicked.length} engine${kicked.length === 1 ? '' : 's'}`,
+        message: `Refresh ${refreshIsAsync ? 'started' : 'completed'} for ${kicked.length} engine${kicked.length === 1 ? '' : 's'}` +
+          (alreadyRunning > 0
+            ? `; ${alreadyRunning} engine${alreadyRunning === 1 ? '' : 's'} already in progress (existing run IDs reused)`
+            : ''),
         run_ids,
         estimated_completion_seconds: refreshIsAsync ? 30 : 0,
       };
@@ -1641,6 +1734,7 @@ function buildTopSources(responses: PromptResponse[], brand: Brand) {
       try {
         const parsed = new URL(rawUrl);
         if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') continue;
+        if (parsed.username || parsed.password) continue;
         let domain = parsed.hostname.toLowerCase();
         if (domain.startsWith('www.')) domain = domain.slice(4);
         if (!domain) continue;
@@ -1717,6 +1811,7 @@ function pickBrandUrl(
       try {
         const parsed = new URL(url);
         if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') continue;
+        if (parsed.username || parsed.password) continue;
         let host = parsed.hostname.toLowerCase();
         if (host.startsWith('www.')) host = host.slice(4);
         if (hostMatchesDomain(host, brand.domain)) return { url, source };

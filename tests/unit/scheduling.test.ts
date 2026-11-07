@@ -110,6 +110,26 @@ test('partially selected brands rotate their due engines across cron windows', (
   assert.deepEqual([...seen].sort(), [...targets[0].engines].sort());
 });
 
+test('cron does not starve engines when brand and engine rotations share a period', () => {
+  const engines = ['chatgpt', 'claude', 'gemini', 'perplexity'] as const;
+  const targets = ['a', 'b'].map((id) => ({ brand: brand(id), engines: [...engines] }));
+  const observed = new Map<string, Set<string>>();
+
+  for (let slot = 0; slot < 8; slot++) {
+    const plan = planScheduledDispatch(targets, slot * 6 * 60 * 60 * 1000, 1);
+    assert.equal(plan.scheduledInvocations, 1);
+    for (const target of plan.targets) {
+      const seen = observed.get(target.brand.id) ?? new Set<string>();
+      for (const engine of target.engines) seen.add(engine);
+      observed.set(target.brand.id, seen);
+    }
+  }
+
+  for (const id of ['a', 'b']) {
+    assert.deepEqual([...observed.get(id) ?? []].sort(), [...engines].sort(), id);
+  }
+});
+
 test('an empty due set dispatches nothing', () => {
   assert.deepEqual(planScheduledDispatch([], 0), {
     targets: [], requestedInvocations: 0, scheduledInvocations: 0, deferredInvocations: 0,

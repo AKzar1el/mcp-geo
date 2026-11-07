@@ -48,6 +48,15 @@ export interface Run {
   completed_at: number | null;
 }
 
+// Long enough for normal live dispatch to finish, bounded so a canceled
+// Worker invocation cannot block future refreshes indefinitely.
+export const LIVE_RUN_STALE_AFTER_MS = 15 * 60 * 1000;
+
+export interface LiveRunReservation {
+  run: Run;
+  started: boolean;
+}
+
 export type ResponseStatus = 'ok' | 'failed' | 'skipped';
 
 export interface PromptResponse {
@@ -171,6 +180,8 @@ export type UpdateRunFields = Partial<
 export interface VisibilityHistoryRow {
   run_id: string;
   engine: string;
+  // Production SQL selects runs.mode; optional for older in-memory test fixtures.
+  mode?: 'live' | 'batch';
   completed_at: number;
   total: number | null;
   hits: number | null;
@@ -225,6 +236,14 @@ export interface Db {
     mode: 'live' | 'batch',
     promptsTotal: number,
   ): Promise<Run>;
+  // Atomically reserve a live provider dispatch across concurrent requests.
+  // An existing active run is returned without dispatch ownership; null means
+  // it finished while the reservation was being read back.
+  reserveLiveRun(
+    brand: Brand,
+    engine: string,
+    promptsTotal: number,
+  ): Promise<LiveRunReservation | null>;
   updateRun(runId: string, fields: UpdateRunFields): Promise<void>;
   // Close transport-level dispatch failures only if the engine has not
   // already completed independently; leave any partial evidence intact.

@@ -35,6 +35,7 @@ test('visibility output schema describes winning and losing prompt records', () 
     brand: { id: 'acme', name: 'Acme', domain: 'acme.com', category: null },
     refreshed_at: '2026-09-19T00:00:00.000Z',
     overall_score: 50,
+    missing_requested_engines: [],
     measurement_scope: {
       search_requested: { score: null, engines: [] },
       model_only: { score: 50, engines: ['claude'] },
@@ -49,10 +50,22 @@ test('visibility output schema describes winning and losing prompt records', () 
       mixed_age_warning: true,
       older_engines: ['claude'],
     },
+    prompt_set_comparability: {
+      active_prompt_count: 2,
+      engines_with_retired_prompt_evidence: ['claude'],
+      historical_prompt_warning: true,
+      note: 'The Claude snapshot uses retired prompts.',
+    },
     per_engine: [],
     top_winning_prompts: [
-      { prompt: 'best project tools', engines_cited_in: ['chatgpt'] },
+      {
+        prompt: 'best project tools',
+        engines_cited_in: ['chatgpt'],
+        engines_mentioned_in: ['chatgpt'],
+        engines_with_brand_link: [],
+      },
     ],
+    winning_prompt_evidence_note: 'Legacy cited field is mention-only.',
     top_losing_prompts: [
       { prompt: 'project tools for agencies', competitors_cited: ['beta.com'] },
     ],

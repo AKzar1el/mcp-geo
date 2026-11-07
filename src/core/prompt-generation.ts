@@ -15,7 +15,7 @@ export interface PromptGenEnv {
 }
 
 function requireAnthropicKey(env: PromptGenEnv): string {
-  if (!env.ANTHROPIC_API_KEY) {
+  if (!env.ANTHROPIC_API_KEY?.trim()) {
     throw new Error('ANTHROPIC_API_KEY not set — prompt generation requires Claude Haiku');
   }
   return env.ANTHROPIC_API_KEY;
@@ -68,6 +68,8 @@ function extractJsonArrayText(text: string): string {
 }
 
 const VALID_STAGES = new Set(['awareness', 'comparison', 'decision']);
+
+class InvalidGeneratedPromptsResponse extends Error {}
 
 function validateAndShape(
   raw: unknown,
@@ -127,9 +129,16 @@ async function callGenerator(
     systemPrompt,
     4000,
   );
-  const jsonText = extractJsonArrayText(responseText);
-  const parsed = JSON.parse(jsonText);
-  return validateAndShape(parsed, count);
+  try {
+    const jsonText = extractJsonArrayText(responseText);
+    const parsed = JSON.parse(jsonText);
+    return validateAndShape(parsed, count);
+  } catch (error) {
+    throw new InvalidGeneratedPromptsResponse(
+      error instanceof Error ? error.message : String(error),
+      { cause: error },
+    );
+  }
 }
 
 export async function generatePrompts(
@@ -137,10 +146,16 @@ export async function generatePrompts(
   brand: Brand,
   count = 20,
 ): Promise<NewPromptInput[]> {
+  // Validate before either provider attempt: invalid counts cannot be fulfilled.
+  if (!Number.isInteger(count) || count < 1 || count > 50) {
+    throw new RangeError('count must be an integer between 1 and 50');
+  }
   let prompts: NewPromptInput[];
   try {
     prompts = await callGenerator(env, brand, count, false);
   } catch (firstErr) {
+    // A stricter JSON instruction cannot fix a provider or transport failure.
+    if (!(firstErr instanceof InvalidGeneratedPromptsResponse)) throw firstErr;
     console.warn('generatePrompts: first attempt failed, retrying strict', {
       brand_id: brand.id,
       message: (firstErr as Error).message,

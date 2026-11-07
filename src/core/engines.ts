@@ -70,16 +70,21 @@ export interface EngineKeys {
   SERPAPI_AI_MODE_ENABLED?: string;
 }
 
+function hasConfiguredKey(value: string | undefined): boolean {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
 export function getAvailableEngines(env: EngineKeys): EngineName[] {
   const engines: EngineName[] = [];
-  if (env.OPENAI_API_KEY) engines.push('chatgpt');
-  if (env.ANTHROPIC_API_KEY) engines.push('claude');
-  if (env.GEMINI_API_KEY) engines.push('gemini');
-  if (env.PERPLEXITY_API_KEY) engines.push('perplexity');
-  if (env.XAI_API_KEY) engines.push('grok');
-  if (env.SERPAPI_API_KEY) engines.push('ai_overviews');
+  if (hasConfiguredKey(env.OPENAI_API_KEY)) engines.push('chatgpt');
+  if (hasConfiguredKey(env.ANTHROPIC_API_KEY)) engines.push('claude');
+  if (hasConfiguredKey(env.GEMINI_API_KEY)) engines.push('gemini');
+  if (hasConfiguredKey(env.PERPLEXITY_API_KEY)) engines.push('perplexity');
+  if (hasConfiguredKey(env.XAI_API_KEY)) engines.push('grok');
+  const serpApiConfigured = hasConfiguredKey(env.SERPAPI_API_KEY);
+  if (serpApiConfigured) engines.push('ai_overviews');
   if (
-    env.SERPAPI_API_KEY &&
+    serpApiConfigured &&
     /^(1|true|yes|on)$/i.test(env.SERPAPI_AI_MODE_ENABLED?.trim() ?? '')
   ) {
     engines.push('ai_mode');
@@ -112,21 +117,33 @@ export async function runEngineInProcess(
   prompts: Prompt[],
   engineRun: EngineRun,
 ): Promise<void> {
+  // Explicit engine selections bypass getAvailableEngines. Normalize blank
+  // credentials here too, so adapters persist skipped evidence instead of
+  // making requests with unusable Authorization headers.
+  const providerEnv: CoreEnginesEnv = {
+    ...env,
+    OPENAI_API_KEY: hasConfiguredKey(env.OPENAI_API_KEY) ? env.OPENAI_API_KEY : undefined,
+    ANTHROPIC_API_KEY: hasConfiguredKey(env.ANTHROPIC_API_KEY) ? env.ANTHROPIC_API_KEY : undefined,
+    GEMINI_API_KEY: hasConfiguredKey(env.GEMINI_API_KEY) ? env.GEMINI_API_KEY : undefined,
+    PERPLEXITY_API_KEY: hasConfiguredKey(env.PERPLEXITY_API_KEY) ? env.PERPLEXITY_API_KEY : undefined,
+    XAI_API_KEY: hasConfiguredKey(env.XAI_API_KEY) ? env.XAI_API_KEY : undefined,
+    SERPAPI_API_KEY: hasConfiguredKey(env.SERPAPI_API_KEY) ? env.SERPAPI_API_KEY : undefined,
+  };
   switch (engineRun.engine) {
     case 'chatgpt':
-      return runLiveChatgpt(env, brand, prompts, engineRun.run_id);
+      return runLiveChatgpt(providerEnv, brand, prompts, engineRun.run_id);
     case 'claude':
-      return runLiveClaude(env, brand, prompts, engineRun.run_id);
+      return runLiveClaude(providerEnv, brand, prompts, engineRun.run_id);
     case 'perplexity':
-      return runLivePerplexity(env, brand, prompts, engineRun.run_id);
+      return runLivePerplexity(providerEnv, brand, prompts, engineRun.run_id);
     case 'gemini':
-      return runLiveGemini(env, brand, prompts, engineRun.run_id);
+      return runLiveGemini(providerEnv, brand, prompts, engineRun.run_id);
     case 'grok':
-      return runLiveGrok(env, brand, prompts, engineRun.run_id);
+      return runLiveGrok(providerEnv, brand, prompts, engineRun.run_id);
     case 'ai_overviews':
-      return runLiveAiOverviews(env, brand, prompts, engineRun.run_id);
+      return runLiveAiOverviews(providerEnv, brand, prompts, engineRun.run_id);
     case 'ai_mode':
-      return runLiveAiMode(env, brand, prompts, engineRun.run_id);
+      return runLiveAiMode(providerEnv, brand, prompts, engineRun.run_id);
   }
 }
 

@@ -61,3 +61,23 @@ test('domain normalization still rejects invalid host syntax and encoded URL tri
     assert.throws(() => normalizeRequiredDomain(input), DomainInputError, input);
   }
 });
+
+test('domain labels cannot exceed the DNS 63-octet limit after IDNA conversion', () => {
+  const validAscii = `${'a'.repeat(63)}.example`;
+  const tooLongAscii = `${'a'.repeat(64)}.example`;
+  const tooLongTld = `example.${'a'.repeat(64)}`;
+  const validIdn = `${'\u00fc'.repeat(57)}.de`;
+  const tooLongIdn = `${'\u00fc'.repeat(58)}.de`;
+
+  assert.equal(normalizeDomainInput(validAscii), validAscii);
+  assert.equal(normalizeDomainInput(validIdn)?.split('.')[0].length, 63);
+  for (const input of [tooLongAscii, tooLongTld, tooLongIdn]) {
+    assert.equal(normalizeDomainInput(input), null, input);
+    assert.throws(() => normalizeRequiredDomain(input), DomainInputError, input);
+    assert.throws(
+      () => normalizeCompetitorDomains([input], 'acme.com'),
+      DomainInputError,
+      input,
+    );
+  }
+});

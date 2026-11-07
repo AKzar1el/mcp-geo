@@ -4,6 +4,7 @@ import {
   handleAdminListBrands,
   handleAdminListPrompts,
   handleAdminSetPrompts,
+  handleAdminUpdateBrand,
 } from '../../src/core/admin-prompt-set.ts';
 import type { Brand, Db, NewPromptInput, Prompt } from '../../src/db/types.ts';
 
@@ -66,6 +67,36 @@ test('admin set-prompts returns 404 for an unknown brand', async () => {
     db,
   );
   assert.equal(response.status, 404);
+});
+
+test('admin set-prompts preserves primitive database failures in its JSON error response', async () => {
+  const db = {
+    getBrand: async () => brand,
+    getActivePrompts: async () => { throw 'offline prompt read failure'; },
+  } as unknown as Db;
+  const response = await handleAdminSetPrompts(
+    request({ brand_id: 'acme', prompts: ['Where is Acme?'] }),
+    db,
+  );
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: 'offline prompt read failure' });
+});
+
+test('admin update-brand preserves primitive database failures in its JSON error response', async () => {
+  const db = {
+    getBrand: async () => brand,
+    updateBrand: async () => { throw 'offline brand update failure'; },
+  } as unknown as Db;
+  const response = await handleAdminUpdateBrand(
+    new Request('https://example.test/admin/update-brand', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ brand_id: 'acme', name: 'Acme Updated' }),
+    }),
+    db,
+  );
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: 'offline brand update failure' });
 });
 
 test('admin set-prompts replaces and normalizes an exact measurement set', async () => {
