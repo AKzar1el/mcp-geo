@@ -29,6 +29,24 @@ test('Unicode and punycode duplicates resolve to one canonical competitor', () =
   );
 });
 
+test('IDNA-folded www prefixes canonicalize to the same domain identity', () => {
+  assert.equal(
+    normalizeDomainInput('https://\uff37\uff37\uff37.B\u00dcCHER.de/catalogue'),
+    'xn--bcher-kva.de',
+  );
+  assert.equal(
+    normalizeDomainInput('\uff57\uff57\uff57.example.com'),
+    'example.com',
+  );
+  assert.deepEqual(
+    normalizeCompetitorDomains(
+      ['\uff57\uff57\uff57.example.com', 'example.com'],
+      'example.com',
+    ),
+    [],
+  );
+});
+
 test('domain normalization still rejects invalid host syntax and encoded URL tricks', () => {
   for (const input of [
     'not a domain.com',
@@ -41,5 +59,25 @@ test('domain normalization still rejects invalid host syntax and encoded URL tri
   ]) {
     assert.equal(normalizeDomainInput(input), null, input);
     assert.throws(() => normalizeRequiredDomain(input), DomainInputError, input);
+  }
+});
+
+test('domain labels cannot exceed the DNS 63-octet limit after IDNA conversion', () => {
+  const validAscii = `${'a'.repeat(63)}.example`;
+  const tooLongAscii = `${'a'.repeat(64)}.example`;
+  const tooLongTld = `example.${'a'.repeat(64)}`;
+  const validIdn = `${'\u00fc'.repeat(57)}.de`;
+  const tooLongIdn = `${'\u00fc'.repeat(58)}.de`;
+
+  assert.equal(normalizeDomainInput(validAscii), validAscii);
+  assert.equal(normalizeDomainInput(validIdn)?.split('.')[0].length, 63);
+  for (const input of [tooLongAscii, tooLongTld, tooLongIdn]) {
+    assert.equal(normalizeDomainInput(input), null, input);
+    assert.throws(() => normalizeRequiredDomain(input), DomainInputError, input);
+    assert.throws(
+      () => normalizeCompetitorDomains([input], 'acme.com'),
+      DomainInputError,
+      input,
+    );
   }
 });

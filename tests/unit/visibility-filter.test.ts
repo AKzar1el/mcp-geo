@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerTools } from '../../src/core/tools.ts';
-import type { Brand, Db, PromptResponse, Run } from '../../src/db/types.ts';
+import type { Brand, Db, Prompt, PromptResponse, Run } from '../../src/db/types.ts';
 import type { EngineName } from '../../src/core/engines.ts';
 
 const brand: Brand = {
@@ -103,6 +103,18 @@ type VisibilitySnapshot = {
     mixed_age_warning: boolean;
     older_engines: string[];
   };
+  prompt_set_comparability: {
+    active_prompt_count: number;
+    engines_with_retired_prompt_evidence: string[];
+    historical_prompt_warning: boolean;
+    note: string;
+  };
+  configuration_comparability: {
+    brand_updated_at: string;
+    engines_scanned_before_update: string[];
+    historical_settings_warning: boolean;
+    note: string;
+  };
   per_engine: Array<{
     engine: string;
     measurement_mode: 'search_requested' | 'model_only';
@@ -135,10 +147,15 @@ type VisibilityTool = {
 function registerVisibilityTool(overrides?: {
   runs?: Partial<Record<EngineName, Run>>;
   responses?: Record<string, PromptResponse[]>;
+  activePromptIds?: string[];
+  brand?: Brand;
 }): VisibilityTool {
   let visibility: VisibilityTool | undefined;
   const runMap: Partial<Record<EngineName, Run>> = { ...runs, ...overrides?.runs };
   const responseMap: Record<string, PromptResponse[]> = { ...responses, ...overrides?.responses };
+  const activePromptIds = overrides?.activePromptIds ?? [
+    ...new Set(Object.values(responseMap).flat().map((row) => row.prompt_id)),
+  ];
   const server = {
     registerTool(name: string, _config: unknown, handler: unknown) {
       if (name === 'check_visibility') {
@@ -149,10 +166,14 @@ function registerVisibilityTool(overrides?: {
 
   registerTools(server, {
     db: {
-      getBrand: async () => brand,
+      getBrand: async () => overrides?.brand ?? brand,
       getLatestCompletedRun: async (_brandId, engine) =>
         runMap[engine as EngineName] ?? null,
       getResponsesForRun: async (runId) => responseMap[runId] ?? [],
+      getActivePrompts: async () => activePromptIds.map((id): Prompt => ({
+        id, brand_id: brand.id, text: id, intent_stage: null, shape: null,
+        active: 1, created_at: 0,
+      })),
     } as Db,
     env: {},
     refreshExecution: 'sync',
@@ -367,4 +388,60 @@ test('check_visibility labels a score based on partial successful prompt coverag
     percent: 20,
     partial: true,
   });
+});
+
+test('check_visibility flags historical prompt evidence after a prompt-set replacement', async () => {
+  const visibility = registerVisibilityTool({
+    activePromptIds: ['chatgpt-win', 'chatgpt-second-win'],
+  });
+  const mixed = (await visibility.handler({ brand_id: brand.id })).structuredContent;
+  assert.deepEqual(mixed.prompt_set_comparability, {
+    active_prompt_count: 2,
+    engines_with_retired_prompt_evidence: ['claude'],
+    historical_prompt_warning: true,
+    note: 'Latest scored responses from the listed engines include prompts no longer in the active set. Their scores remain historical observations and should not be compared as measurements of the current prompt set. Partial scan coverage is reported separately.',
+  });
+  const current = (await visibility.handler({
+    brand_id: brand.id, engines: ['chatgpt'],
+  })).structuredContent;
+  assert.equal(current.prompt_set_comparability.historical_prompt_warning, false);
+  assert.deepEqual(current.prompt_set_comparability.engines_with_retired_prompt_evidence, []);
+  assert.match(current.prompt_set_comparability.note, /No retired prompt IDs/);
+});
+
+test('missing successful responses do not count as retired prompts', async () => {
+  const partial = { ...runs.claude, prompts_total: 3, prompts_completed: 1 };
+  const visibility = registerVisibilityTool({
+    runs: { claude: partial },
+    responses: {
+      [partial.id]: [response('claude', 'still-active', 'Observed prompt', 1)],
+    },
+    activePromptIds: ['still-active', 'new-but-unobserved'],
+  });
+  const snapshot = (await visibility.handler({
+    brand_id: brand.id, engines: ['claude'],
+  })).structuredContent;
+  assert.equal(snapshot.per_engine[0].coverage.partial, true);
+  assert.equal(snapshot.prompt_set_comparability.historical_prompt_warning, false);
+});
+
+test('check_visibility identifies engines measured before a brand configuration update', async () => {
+  const updatedAt = Date.UTC(2026, 0, 2, 0);
+  const tool = registerVisibilityTool({ brand: { ...brand, updated_at: updatedAt } });
+  const snapshot = (await tool.handler({ brand_id: brand.id })).structuredContent;
+  assert.equal(snapshot.configuration_comparability.brand_updated_at, new Date(updatedAt).toISOString());
+  assert.deepEqual(snapshot.configuration_comparability.engines_scanned_before_update, ['claude']);
+  assert.equal(snapshot.configuration_comparability.historical_settings_warning, true);
+  assert.match(snapshot.configuration_comparability.note, /cannot establish which settings changed/);
+
+  const filtered = (await tool.handler({ brand_id: brand.id, engines: ['chatgpt'] })).structuredContent;
+  assert.deepEqual(filtered.configuration_comparability.engines_scanned_before_update, []);
+  assert.equal(filtered.configuration_comparability.historical_settings_warning, false);
+});
+
+test('check_visibility does not infer a configuration mismatch from older metadata', async () => {
+  const tool = registerVisibilityTool({ brand: { ...brand, updated_at: claudeTimestamp - 1 } });
+  const snapshot = (await tool.handler({ brand_id: brand.id })).structuredContent;
+  assert.deepEqual(snapshot.configuration_comparability.engines_scanned_before_update, []);
+  assert.equal(snapshot.configuration_comparability.historical_settings_warning, false);
 });

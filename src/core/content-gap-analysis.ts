@@ -12,7 +12,7 @@ export interface AnalysisEnv {
 }
 
 function requireAnthropicKey(env: AnalysisEnv): string {
-  if (!env.ANTHROPIC_API_KEY) {
+  if (!env.ANTHROPIC_API_KEY?.trim()) {
     throw new Error('ANTHROPIC_API_KEY not set');
   }
   return env.ANTHROPIC_API_KEY;

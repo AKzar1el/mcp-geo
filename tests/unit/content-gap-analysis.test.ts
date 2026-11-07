@@ -97,10 +97,13 @@ test('content gaps require an explicit opt-in before any paid Anthropic call', a
     error_message: null,
     captured_at: Date.now(),
   };
+  let includeResponses = true;
+  const env = { ANTHROPIC_API_KEY: 'fake-test-key' };
   type GapResult = {
     structuredContent: {
       prompt_source: 'generated' | 'fallback';
       recommendations: Array<{ topic: string }>;
+      reason?: string;
     };
   };
   let handler: ((input: {
@@ -126,9 +129,9 @@ test('content gaps require an explicit opt-in before any paid Anthropic call', a
       getBrand: async () => brand,
       getLatestCompletedRun: async (_id, engine) =>
         engine === 'chatgpt' ? { id: 'run-1' } : null,
-      getResponsesForRun: async () => [response],
+      getResponsesForRun: async () => includeResponses ? [response] : [],
     } as Db,
-    env: { ANTHROPIC_API_KEY: 'fake-test-key' },
+    env,
     refreshExecution: 'sync',
     runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
   });
@@ -139,9 +142,11 @@ test('content gaps require an explicit opt-in before any paid Anthropic call', a
 
   const originalFetch = globalThis.fetch;
   let calls = 0;
+  let rejectWithNull = false;
   globalThis.fetch = async (input) => {
     calls += 1;
     assert.match(String(input), /api\.anthropic\.com/);
+    if (rejectWithNull) throw null;
     return Response.json({
       stop_reason: 'end_turn',
       content: [{ type: 'text', text: JSON.stringify([{
@@ -156,6 +161,8 @@ test('content gaps require an explicit opt-in before any paid Anthropic call', a
     const defaultResult = await handler({ brand_id: 'acme', max_recommendations: 3 });
     assert.equal(defaultResult.structuredContent.prompt_source, 'fallback');
     assert.equal(defaultResult.structuredContent.recommendations.length, 1);
+    assert.equal(defaultResult.structuredContent.reason, undefined,
+      'provider-free default is expected behavior, not an analyzer failure');
     assert.equal(calls, 0, 'configured API key must not trigger a paid call without opt-in');
 
     const explicitResult = await handler({
@@ -164,7 +171,37 @@ test('content gaps require an explicit opt-in before any paid Anthropic call', a
       ai_analysis: true,
     });
     assert.equal(explicitResult.structuredContent.prompt_source, 'generated');
+    assert.equal(explicitResult.structuredContent.reason, undefined);
     assert.equal(calls, 1, 'explicit paid analysis should make one successful call');
+
+    rejectWithNull = true;
+    const failedResult = await handler({
+      brand_id: 'acme', max_recommendations: 3, ai_analysis: true,
+    });
+    assert.equal(failedResult.structuredContent.prompt_source, 'fallback');
+    assert.equal(failedResult.structuredContent.recommendations.length, 1);
+    assert.match(failedResult.structuredContent.reason ?? '', /requested.*failed.*provider-free/i);
+    assert.match(failedResult.structuredContent.reason ?? '', /bill/i,
+      'failed paid requests can still incur provider usage');
+    assert.equal(calls, 2, 'failed provider requests must not be retried for formatting');
+
+    env.ANTHROPIC_API_KEY = '  \t  ';
+    const blankKeyResult = await handler({
+      brand_id: 'acme', max_recommendations: 3, ai_analysis: true,
+    });
+    assert.equal(blankKeyResult.structuredContent.prompt_source, 'fallback');
+    assert.match(blankKeyResult.structuredContent.reason ?? '', /requested.*ANTHROPIC_API_KEY.*not configured/i);
+    assert.equal(calls, 2, 'whitespace-only credentials must never reach a provider');
+
+    includeResponses = false;
+    env.ANTHROPIC_API_KEY = 'fake-test-key';
+    const noEvidence = await handler({
+      brand_id: 'acme', max_recommendations: 3, ai_analysis: true,
+    });
+    assert.equal(noEvidence.structuredContent.prompt_source, 'fallback',
+      'no evidence must not be represented as generated recommendations');
+    assert.equal(noEvidence.structuredContent.recommendations.length, 0);
+    assert.equal(calls, 2);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -230,6 +267,29 @@ test('content-gap analyzer still retries malformed model output once', async () 
     );
     assert.equal(calls, 2);
     assert.equal(result[0]?.topic, 'Compare Acme with Asana');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('content-gap analyzer rejects whitespace-only Anthropic credentials before requests', async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = async () => {
+    fetchCalls++;
+    return new Response('invalid key', { status: 401 });
+  };
+  try {
+    await assert.rejects(
+      analyzeContentGaps(
+        { ANTHROPIC_API_KEY: ' \n ' },
+        { id: 'acme', name: 'Acme', domain: 'acme.com' } as Brand,
+        [{ prompt_text: 'Best agency tools', engines_lost_on: ['chatgpt'], competitors_winning: ['rival.com'] }],
+        1,
+      ),
+      /ANTHROPIC_API_KEY not set/,
+    );
+    assert.equal(fetchCalls, 0);
   } finally {
     globalThis.fetch = originalFetch;
   }

@@ -209,3 +209,26 @@ test('generatePrompts does not retry an incomplete provider response', async () 
     assert.equal(state.calls, 1);
   });
 });
+
+test('generatePrompts rejects whitespace-only Anthropic credentials before requests or prompt replacement', async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  let replaceCalls = 0;
+  globalThis.fetch = async () => {
+    fetchCalls++;
+    return new Response('invalid key', { status: 401 });
+  };
+  try {
+    await assert.rejects(
+      generatePrompts({
+        db: { replacePrompts: async () => { replaceCalls++; return 0; } } as unknown as Db,
+        ANTHROPIC_API_KEY: ' \t ',
+      }, brand, 1),
+      /ANTHROPIC_API_KEY not set/,
+    );
+    assert.equal(fetchCalls, 0);
+    assert.equal(replaceCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

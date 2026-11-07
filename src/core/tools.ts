@@ -143,6 +143,18 @@ const visibilityOutputSchema = z.object({
     mixed_age_warning: z.boolean(),
     older_engines: z.array(z.string()),
   }),
+  prompt_set_comparability: z.object({
+    active_prompt_count: z.number(),
+    engines_with_retired_prompt_evidence: z.array(z.string()),
+    historical_prompt_warning: z.boolean(),
+    note: z.string(),
+  }),
+  configuration_comparability: z.object({
+    brand_updated_at: z.string(),
+    engines_scanned_before_update: z.array(z.string()),
+    historical_settings_warning: z.boolean(),
+    note: z.string(),
+  }),
   per_engine: z.array(
     z.object({
       engine: z.string(),
@@ -509,7 +521,9 @@ export function registerTools(
       const selectedResponses: PromptResponse[] = [];
       const refreshedAtByEngine = new Map<string, string>();
       const refreshMsByEngine = new Map<string, number>();
+      const startedMsByEngine = new Map<string, number>();
       const expectedPromptsByEngine = new Map<string, number>();
+      const observedPromptIdsByEngine = new Map<string, Set<string>>();
       const measurementModeByEngine = new Map<string, 'search_requested' | 'model_only'>();
       let mostRecentTimestamp = 0;
       for (const engine of selectedEngines) {
@@ -518,11 +532,13 @@ export function registerTools(
         const responses = await deps.db.getResponsesForRun(run.id);
         if (responses.length === 0) continue;
         selectedResponses.push(...responses);
+        observedPromptIdsByEngine.set(engine, new Set(responses.map((response) => response.prompt_id)));
         measurementModeByEngine.set(engine, visibilityMeasurementMode(engine, run.mode));
         expectedPromptsByEngine.set(engine, run.prompts_total);
         const ts = run.completed_at ?? run.started_at;
         refreshedAtByEngine.set(engine, new Date(ts).toISOString());
         refreshMsByEngine.set(engine, ts);
+        startedMsByEngine.set(engine, run.started_at);
         if (ts > mostRecentTimestamp) mostRecentTimestamp = ts;
       }
       if (selectedResponses.length === 0) {
@@ -545,6 +561,21 @@ export function registerTools(
       const mixedAgeCutoffMs = 24 * 60 * 60 * 1000;
       const olderEngines = [...refreshMsByEngine.entries()]
         .filter(([, timestamp]) => mostRecentTimestamp - timestamp >= mixedAgeCutoffMs)
+        .map(([engine]) => engine)
+        .sort();
+      const activePrompts = await deps.db.getActivePrompts(brand_id);
+      const activePromptIds = new Set(activePrompts.map((prompt) => prompt.id));
+      // Successful rows can be a partial sample. Only *observed* retired IDs
+      // prove stale evidence; missing current IDs belong to coverage warnings.
+      const retiredPromptEngines = [...observedPromptIdsByEngine.entries()]
+        .filter(([, ids]) => [...ids].some((id) => !activePromptIds.has(id)))
+        .map(([engine]) => engine)
+        .sort();
+      // The database stores the latest settings timestamp, not a per-run
+      // identity snapshot. Report potentially older scoring evidence without
+      // claiming we know which metadata fields actually changed.
+      const enginesBeforeBrandUpdate = [...startedMsByEngine.entries()]
+        .filter(([, startedAt]) => startedAt < brand.updated_at)
         .map(([engine]) => engine)
         .sort();
       const perEngine = scored.per_engine.map((engine) => {
@@ -602,6 +633,20 @@ export function registerTools(
           age_spread_hours: Math.round((ageSpreadMs / 3600000) * 10) / 10,
           mixed_age_warning: olderEngines.length > 0,
           older_engines: olderEngines,
+        },
+        prompt_set_comparability: {
+          active_prompt_count: activePromptIds.size,
+          engines_with_retired_prompt_evidence: retiredPromptEngines,
+          historical_prompt_warning: retiredPromptEngines.length > 0,
+          note: retiredPromptEngines.length > 0
+            ? 'Latest scored responses from the listed engines include prompts no longer in the active set. Their scores remain historical observations and should not be compared as measurements of the current prompt set. Partial scan coverage is reported separately.'
+            : 'No retired prompt IDs were observed in these scored responses. This does not prove complete coverage of the current prompt set; inspect per-engine coverage separately.',
+        },
+        configuration_comparability: {
+          brand_updated_at: new Date(brand.updated_at).toISOString(),
+          engines_scanned_before_update: enginesBeforeBrandUpdate,
+          historical_settings_warning: enginesBeforeBrandUpdate.length > 0,
+          note: 'Brand settings were updated after the listed engines began their latest scans. Stored responses retain their original scoring and may reflect earlier brand identity, aliases, exclusions, or competitor tracking; the database cannot establish which settings changed. A cadence-only update may not affect the evidence. Review changes and refresh affected engines before relying on current-configuration comparisons.',
         },
         per_engine: perEngine,
         top_winning_prompts: scored.top_winning_prompts,
@@ -1146,7 +1191,7 @@ export function registerTools(
         const payload = {
           brand_id,
           recommendations: [],
-          prompt_source: 'generated' as const,
+          prompt_source: 'fallback' as const,
           reason:
             'no losing prompts yet — collect more data first (run refresh_brand, then re-check competitors)',
         };
@@ -1155,20 +1200,26 @@ export function registerTools(
 
       let recommendations = buildFallbackRecommendations(losingPrompts, max_recommendations);
       let prompt_source: 'generated' | 'fallback' = 'fallback';
-      if (ai_analysis && deps.env.ANTHROPIC_API_KEY) {
-        try {
-          recommendations = await analyzeContentGaps(
-            { ANTHROPIC_API_KEY: deps.env.ANTHROPIC_API_KEY },
-            brand,
-            losingPrompts,
-            max_recommendations,
-          );
-          prompt_source = 'generated';
-        } catch (err) {
-          console.warn('get_content_gaps: analyzer failed, returning fallback', {
-            brand_id,
-            message: (err as Error).message,
-          });
+      let fallbackReason: string | undefined;
+      if (ai_analysis) {
+        if (!deps.env.ANTHROPIC_API_KEY?.trim()) {
+          fallbackReason = 'AI analysis requested but ANTHROPIC_API_KEY is not configured; returning provider-free recommendations.';
+        } else {
+          try {
+            recommendations = await analyzeContentGaps(
+              { ANTHROPIC_API_KEY: deps.env.ANTHROPIC_API_KEY },
+              brand,
+              losingPrompts,
+              max_recommendations,
+            );
+            prompt_source = 'generated';
+          } catch (err) {
+            console.warn('get_content_gaps: analyzer failed, returning fallback', {
+              brand_id,
+              message: err instanceof Error ? err.message : String(err),
+            });
+            fallbackReason = 'AI analysis requested but failed; returning provider-free recommendations. Anthropic requests may still be billed.';
+          }
         }
       }
 
@@ -1176,6 +1227,7 @@ export function registerTools(
         brand_id,
         recommendations,
         prompt_source,
+        ...(fallbackReason ? { reason: fallbackReason } : {}),
       };
       return toolResult(payload);
     },
@@ -1238,9 +1290,13 @@ export function registerTools(
         prompts,
         filtered,
       );
+      const alreadyRunning = Object.keys(run_ids).length - kicked.length;
       const payload = {
         brand_id: brand.id,
-        message: `Refresh ${refreshIsAsync ? 'started' : 'completed'} for ${kicked.length} engine${kicked.length === 1 ? '' : 's'}`,
+        message: `Refresh ${refreshIsAsync ? 'started' : 'completed'} for ${kicked.length} engine${kicked.length === 1 ? '' : 's'}` +
+          (alreadyRunning > 0
+            ? `; ${alreadyRunning} engine${alreadyRunning === 1 ? '' : 's'} already in progress (existing run IDs reused)`
+            : ''),
         run_ids,
         estimated_completion_seconds: refreshIsAsync ? 30 : 0,
       };
@@ -1706,6 +1762,7 @@ function buildTopSources(responses: PromptResponse[], brand: Brand) {
       try {
         const parsed = new URL(rawUrl);
         if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') continue;
+        if (parsed.username || parsed.password) continue;
         let domain = parsed.hostname.toLowerCase();
         if (domain.startsWith('www.')) domain = domain.slice(4);
         if (!domain) continue;
@@ -1754,16 +1811,26 @@ function buildTopSources(responses: PromptResponse[], brand: Brand) {
 export function buildResponseExcerpt(text: string, brand: Brand): string {
   if (!text) return '';
   if (text === '[NO_AI_OVERVIEW]') return text;
-  const idx = findTermSetMatchIndex(text, {
+  // Provider text is untrusted. Even a URL rejected as citation evidence can
+  // otherwise expose authority credentials in the user-facing excerpt.
+  const safeText = text.replace(/https?:\/\/[^\s<>"'`\])}]+/gi, (rawUrl) => {
+    try {
+      const parsed = new URL(rawUrl.replace(/[.,;!]+$/, ''));
+      return parsed.username || parsed.password ? '[credential-bearing URL omitted]' : rawUrl;
+    } catch {
+      return rawUrl;
+    }
+  });
+  const idx = findTermSetMatchIndex(safeText, {
     domain: brand.domain,
     name: brand.name,
     aliases: brand.aliases,
     excludeTerms: brand.exclude_terms,
   });
-  if (idx === -1) return text.slice(0, 250);
+  if (idx === -1) return safeText.slice(0, 250);
   const start = Math.max(0, idx - 100);
-  const end = Math.min(text.length, idx + 150);
-  return text.slice(start, end);
+  const end = Math.min(safeText.length, idx + 150);
+  return safeText.slice(start, end);
 }
 
 function pickBrandUrl(
@@ -1782,6 +1849,7 @@ function pickBrandUrl(
       try {
         const parsed = new URL(url);
         if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') continue;
+        if (parsed.username || parsed.password) continue;
         let host = parsed.hostname.toLowerCase();
         if (host.startsWith('www.')) host = host.slice(4);
         if (hostMatchesDomain(host, brand.domain)) return { url, source };
