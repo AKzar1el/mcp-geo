@@ -1,5 +1,5 @@
 import type { Db } from '../db/types.js';
-import { applyExactPromptSet } from './prompt-set.js';
+import { applyExactPromptSet, normalizeExactPrompts } from './prompt-set.js';
 import {
   updateTrackedBrand,
   type UpdateTrackedBrandInput,
@@ -34,11 +34,19 @@ export async function handleAdminSetPrompts(
     return jsonResponse({ error: 'prompts must be an array of strings' }, 400);
   }
 
+  // Reject invalid measurements before consuming database reads or writes.
+  let prompts: string[];
+  try {
+    prompts = normalizeExactPrompts(body.prompts);
+  } catch (err) {
+    return jsonResponse({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
+
   const brand = await db.getBrand(brandId);
   if (!brand) return jsonResponse({ error: 'brand not found' }, 404);
 
   try {
-    const result = await applyExactPromptSet(db, brandId, body.prompts);
+    const result = await applyExactPromptSet(db, brandId, prompts);
     return jsonResponse({
       brand_id: brandId,
       ...result,
