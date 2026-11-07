@@ -274,6 +274,7 @@ test('check_visibility treats omitted and empty engine filters as all engines', 
     score: 50, engines: ['claude'],
   });
   assert.equal(omitted.structuredContent.measurement_scope.mixed_modes, true);
+  assert.match(omitted.structuredContent.measurement_scope.note, /latest usable observation per distinct prompt/);
   assert.match(omitted.structuredContent.measurement_scope.note, /not independently verified search citations/);
   assert.deepEqual(
     omitted.structuredContent.per_engine.map((engine) => engine.engine),
