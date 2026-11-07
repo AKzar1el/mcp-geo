@@ -196,6 +196,7 @@ export interface VisibilityHistoryRow {
 // Row shape behind the get_citations tool: every status='ok',
 // brand_mentioned=1 response joined to its run + prompt, newest first.
 export interface CitationRow {
+  response_id: string;
   engine: string;
   prompt: string;
   raw_response: string;
@@ -211,7 +212,11 @@ export interface CitationRow {
 export interface CitationPageOptions {
   limit?: number;
   until?: number;
-  before?: Pick<CitationRow, 'captured_at' | 'run_id' | 'prompt_id'>;
+  // response_id breaks ties between repeated observations of one run/prompt.
+  // Optional for cursors issued before response-level pagination existed.
+  before?: Pick<CitationRow, 'captured_at' | 'run_id' | 'prompt_id'> & {
+    response_id?: string;
+  };
 }
 
 // Every query helper the Worker and CLI need. Mirrors the helper

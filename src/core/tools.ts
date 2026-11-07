@@ -303,6 +303,7 @@ const citationCursorSchema = z.object({
     captured_at: z.number().int(),
     run_id: z.string(),
     prompt_id: z.string(),
+    response_id: z.string().min(1).max(128).optional(),
   }),
 });
 
@@ -1086,7 +1087,7 @@ export function registerTools(
         const engineHosts = parseStringArray(row.engine_citations_json);
         const brandUrl = pickBrandUrl(brand, engineHosts, row.raw_response);
         return {
-          id: citationId(row.run_id, row.prompt_id),
+          id: citationId(row.response_id),
           engine: row.engine,
           prompt: row.prompt,
           cited_at: new Date(row.captured_at).toISOString(),
@@ -1125,6 +1126,7 @@ export function registerTools(
                 captured_at: results[results.length - 1].captured_at,
                 run_id: results[results.length - 1].run_id,
                 prompt_id: results[results.length - 1].prompt_id,
+                response_id: results[results.length - 1].response_id,
               },
             }))
           : null,
@@ -1770,9 +1772,9 @@ function parseStringArray(raw: string | null): string[] {
   }
 }
 
-function citationId(runId: string, promptId: string): string {
-  // Length-prefix the full run ID so records with shared UUID prefixes remain distinct.
-  return `cit_${runId.length}_${runId}_${promptId}`;
+function citationId(responseId: string): string {
+  // A run can retain multiple observations for the same prompt.
+  return `cit_${responseId}`;
 }
 
 function buildTopSources(responses: PromptResponse[], brand: Brand) {
