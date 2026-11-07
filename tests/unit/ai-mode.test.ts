@@ -146,6 +146,28 @@ test('Google AI Mode rejects provider errors and empty payloads', async () => {
   );
 });
 
+test('AI Mode rejects oversized reconstructed markdown instead of scoring unbounded provider text', async () => {
+  const oversizedText = 'A'.repeat(250_001);
+  await withMockFetch(
+    [jsonResponse({ reconstructed_markdown: oversizedText })],
+    async (calls) => {
+      await assert.rejects(
+        chatCompletion('test-key', 'Acme'),
+        /structured-text size limit/,
+      );
+      assert.equal(calls.length, 1, 'input validation must not trigger another paid search');
+    },
+  );
+  await withMockFetch(
+    [jsonResponse({ reconstructed_markdown: 'A'.repeat(250_000) })],
+    async (calls) => {
+      const result = await chatCompletion('test-key', 'Acme');
+      assert.equal(result.text.length, 250_000, 'the existing answer cap remains inclusive');
+      assert.equal(calls.length, 1);
+    },
+  );
+});
+
 test('Google AI Mode rejects reference-only responses with no scoreable answer text', async () => {
   for (const payload of [
     { references: [{ link: 'https://acme.com/pricing' }] },
