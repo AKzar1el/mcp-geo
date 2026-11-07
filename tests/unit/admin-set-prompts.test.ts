@@ -60,6 +60,32 @@ test('admin set-prompts rejects malformed prompt payloads before DB writes', asy
   assert.equal(replaceCalls, 0);
 });
 
+test('admin set-prompts rejects invalid prompt sets before any brand lookup', async () => {
+  let brandReads = 0;
+  const db = {
+    getBrand: async () => {
+      brandReads += 1;
+      return brand;
+    },
+  } as unknown as Db;
+
+  const invalidSets = [
+    [],
+    Array.from({ length: 51 }, (_, i) => `question ${i}`),
+    ['x'.repeat(501)],
+    ['Which tool?', ' which   tool? '],
+    ['   '],
+  ];
+  for (const prompts of invalidSets) {
+    const response = await handleAdminSetPrompts(
+      request({ brand_id: 'acme', prompts }),
+      db,
+    );
+    assert.equal(response.status, 400);
+  }
+  assert.equal(brandReads, 0, 'invalid prompt sets must not query the database');
+});
+
 test('admin set-prompts rejects non-string brand IDs before DB reads', async () => {
   let brandReads = 0;
   const db = {
