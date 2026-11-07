@@ -22,6 +22,7 @@ import type {
   Prompt,
 } from '../db/types.js';
 import { fetchWithTimeout } from './fetch.js';
+import { redactSerpApiError } from './serpapi-error.js';
 import {
   flattenSerpApiAnswer,
   flattenSerpApiReferences,
@@ -189,8 +190,8 @@ function buildSkippedResult(prompt: Prompt): EnginePromptResult {
   };
 }
 
-function buildFailedResult(prompt: Prompt, err: unknown): EnginePromptResult {
-  const msg = err instanceof Error ? err.message : String(err);
+function buildFailedResult(prompt: Prompt, err: unknown, apiKey?: string): EnginePromptResult {
+  const msg = redactSerpApiError(err, apiKey);
   console.error('runLive[ai_overviews]: prompt failed', {
     prompt_id: prompt.id,
     message: msg,
@@ -283,7 +284,7 @@ export async function runLive(
           );
           results[idx] = buildResultFromPayload(brand, prompt, payload);
         } catch (err) {
-          results[idx] = buildFailedResult(prompt, err);
+          results[idx] = buildFailedResult(prompt, err, env.SERPAPI_API_KEY);
         }
       }),
     );
@@ -298,7 +299,7 @@ export async function runLive(
       results,
     );
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = redactSerpApiError(err, env.SERPAPI_API_KEY);
     console.error('runLive[ai_overviews]: persistEngineRun failed', {
       run_id: runId,
       message,
