@@ -49,3 +49,12 @@ test('the hosted /authorize path fails closed before issuing any OAuth grant', (
   assert.match(sourceForm, /'cache-control': 'no-store'/);
   assert.match(sourceForm, /'referrer-policy': 'no-referrer'/);
 });
+
+test('OAuth approval reveals the unverified redirect destination as escaped, non-clickable text', () => {
+  const source = readFileSync('src/index.ts', 'utf8');
+  const sourceForm = source.split('function renderConnectForm(')[1]?.split('async function handleAuthorize(')[0];
+  assert.ok(sourceForm);
+  assert.match(sourceForm, /const redirectTarget = escapeHtml\(\(params\.get\('redirect_uri'\) \?\? ''\)\.slice\(0, 240\)\)/);
+  assert.match(sourceForm, /Redirect destination \(unverified\): <code>\$\{redirectTarget\}<\/code>/);
+  assert.doesNotMatch(sourceForm, /href="\$\{redirectTarget\}"/);
+});

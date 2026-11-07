@@ -777,6 +777,7 @@ function renderConnectForm(query: string, error?: string): Response {
   // These labels are provided by the requesting client, not verified identities.
   const clientId = escapeHtml((params.get('client_id') ?? '').slice(0, 240));
   const requestedScope = escapeHtml((params.get('scope') ?? '').slice(0, 240));
+  const redirectTarget = escapeHtml((params.get('redirect_uri') ?? '').slice(0, 240));
   const errorHtml = error
     ? `<p class="err">${escapeHtml(error)}</p>`
     : '';
@@ -808,8 +809,10 @@ function renderConnectForm(query: string, error?: string): Response {
 <p>This server requires a connect secret before an MCP client can be
 authorized. Enter the <code>CONNECT_SECRET</code> you set during deploy.</p>
 <p>Requesting client ID (unverified): <code>${clientId}</code></p>
+${redirectTarget ? `<p>Redirect destination (unverified): <code>${redirectTarget}</code></p>` : ''}
 ${requestedScope ? `<p>Requested scope: <code>${requestedScope}</code></p>` : ''}
-<p>Approve only if you recognize the client. Authorized clients may access
+<p>Approve only if you recognize the client and its redirect destination. These
+request details are self-reported, not proof of client identity. Authorized clients may access
 your stored GEO data and trigger scans using your configured provider quotas.</p>
 ${errorHtml}
 <form method="post" action="${action}">
