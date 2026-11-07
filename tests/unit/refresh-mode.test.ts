@@ -109,6 +109,19 @@ test('refresh names an explicitly requested engine when its provider key is unav
   );
 });
 
+test('mixed engine selection discloses requested but unconfigured engines', async () => {
+  const refresh = registerRefreshTool('sync', false, {
+    OPENAI_API_KEY: 'test-openai-key',
+  });
+  const result = await refresh.handler({
+    brand_id: brand.id,
+    engines: ['chatgpt', 'claude', 'claude'],
+  });
+  assert.equal(result.structuredContent.message, 'Refresh completed for 1 engine; skipped unconfigured: claude');
+  assert.deepEqual(result.structuredContent.run_ids, { chatgpt: 'run-chatgpt' });
+  assert.deepEqual(result.structuredContent.skipped_unconfigured_engines, ['claude']);
+});
+
 test('refresh deduplicates explicitly requested engines before dispatch', async () => {
   const refresh = registerRefreshTool('sync');
 
