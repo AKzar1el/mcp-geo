@@ -62,6 +62,21 @@ test('domain normalization still rejects invalid host syntax and encoded URL tri
   }
 });
 
+test('non-web URL schemes are not silently accepted as a monitored web domain', () => {
+  for (const input of [
+    'ftp://example.com',
+    'file://example.com/local',
+    'javascript://example.com',
+    'mailto://example.com',
+  ]) {
+    assert.equal(normalizeDomainInput(input), null, input);
+    assert.throws(() => normalizeRequiredDomain(input), DomainInputError, input);
+    assert.throws(() => normalizeCompetitorDomains([input], 'acme.com'), DomainInputError, input);
+  }
+  assert.equal(normalizeDomainInput('https://www.EXAMPLE.COM/guide'), 'example.com');
+  assert.equal(normalizeDomainInput('http://example.com:8080/guide'), 'example.com');
+});
+
 test('IP addresses cannot be enrolled as a brand or competitor domain', () => {
   for (const input of [
     '127.0.0.1',
