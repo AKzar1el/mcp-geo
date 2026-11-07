@@ -964,7 +964,11 @@ export function registerTools(
           domain,
           share_of_voice_pct: pct(mentions),
           mentions,
-          prompts_won_against_you: [...wonPrompts.values()].slice(0, 5),
+          prompts_won_against_you: [...wonPrompts.entries()]
+            .sort(([idA, textA], [idB, textB]) =>
+              textA.localeCompare(textB) || idA.localeCompare(idB))
+            .slice(0, 5)
+            .map(([, text]) => text),
         };
       });
 
@@ -1002,10 +1006,13 @@ export function registerTools(
         // Keep legacy inclusive mentions while exposing unambiguous per-response cohorts.
         collectPrompt(mentioned.length > 0 ? coMentionedByPrompt : brandOnlyByPrompt, r, mentioned);
       }
-      const topPrompts = (map: Map<string, ComparedPrompt>) => [...map.values()]
-        .sort((a, b) => b.engines.size - a.engines.size)
+      const topPrompts = (map: Map<string, ComparedPrompt>) => [...map.entries()]
+        .sort(([idA, a], [idB, b]) =>
+          b.engines.size - a.engines.size ||
+          a.prompt.localeCompare(b.prompt) ||
+          idA.localeCompare(idB))
         .slice(0, 5)
-        .map((w) => ({
+        .map(([, w]) => ({
           prompt: w.prompt,
           you_cited_by: [...w.engines].sort(),
           competitors_cited: [...w.competitors].sort(),
