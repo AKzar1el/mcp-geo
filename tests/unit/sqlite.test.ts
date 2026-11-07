@@ -1257,6 +1257,62 @@ test('getCitationRows returns genuine link-only citations but excludes failed an
   }
 });
 
+test('citation row pagination preserves repeated observations of the same run and prompt', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'digestseo.sqlite'));
+  try {
+    seedBrandFixture(db, 'acme');
+    seedPromptFixture(db, 'acme', 'p1', 'best project management');
+    const brand = await db.getBrand('acme');
+    assert.ok(brand);
+    const run = await db.createRun(brand, 'chatgpt', 'live', 1);
+    const observation = {
+      prompt_id: 'p1',
+      raw_response: 'Acme is recommended.',
+      brand_mentioned: 1 as const,
+      brand_cited_with_link: 0 as const,
+      cited_urls: [],
+      competitors_mentioned: [],
+      status: 'ok' as const,
+    };
+    await db.persistEngineRun(run.id, 'chatgpt', 'test-model', 3600, [
+      observation,
+      { ...observation, raw_response: 'Acme is another recommendation.' },
+    ]);
+    const rows = await db.getCitationRows('acme', 0);
+    assert.equal(rows.length, 2);
+    assert.equal(rows[0].captured_at, rows[1].captured_at);
+    assert.equal(new Set(rows.map((row) => row.response_id)).size, 2);
+
+    const until = Date.now();
+    const first = await db.getCitationRows('acme', 0, undefined, { limit: 1, until });
+    assert.equal(first.length, 1);
+    const second = await db.getCitationRows('acme', 0, undefined, {
+      limit: 1, until,
+      before: {
+        captured_at: first[0].captured_at,
+        run_id: first[0].run_id,
+        prompt_id: first[0].prompt_id,
+        response_id: first[0].response_id,
+      },
+    });
+    assert.equal(second.length, 1);
+    assert.notEqual(first[0].response_id, second[0].response_id);
+    assert.equal((await db.getCitationRows('acme', 0, undefined, {
+      limit: 1, until,
+      before: {
+        captured_at: second[0].captured_at,
+        run_id: second[0].run_id,
+        prompt_id: second[0].prompt_id,
+        response_id: second[0].response_id,
+      },
+    })).length, 0);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('upsertUser + createBrand: insert-or-ignore semantics, getBrand round-trip', async () => {
   const root = tempRoot();
   const db = openSqliteDb(join(root, 'digestseo.sqlite'));

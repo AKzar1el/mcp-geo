@@ -827,7 +827,7 @@ export function createD1Db(d1: D1Database): Db {
       engine?: string,
       page?: CitationPageOptions,
     ): Promise<CitationRow[]> {
-      let sql = `SELECT r.engine AS engine, p.text AS prompt, pr.raw_response,
+      let sql = `SELECT pr.id AS response_id, r.engine AS engine, p.text AS prompt, pr.raw_response,
                   pr.brand_mentioned, pr.brand_cited_with_link,
                   pr.cited_urls_json, pr.engine_citations_json,
                   pr.captured_at, pr.run_id, pr.prompt_id
@@ -848,13 +848,21 @@ export function createD1Db(d1: D1Database): Db {
         params.push(page.until);
       }
       if (page?.before) {
-        const { captured_at, run_id, prompt_id } = page.before;
-        sql += ` AND (pr.captured_at < ? OR
-          (pr.captured_at = ? AND (pr.run_id < ? OR
-            (pr.run_id = ? AND pr.prompt_id < ?))))`;
-        params.push(captured_at, captured_at, run_id, run_id, prompt_id);
+        const { captured_at, run_id, prompt_id, response_id } = page.before;
+        if (response_id) {
+          sql += ` AND (pr.captured_at < ? OR
+            (pr.captured_at = ? AND (pr.run_id < ? OR
+              (pr.run_id = ? AND (pr.prompt_id < ? OR
+                (pr.prompt_id = ? AND pr.id < ?))))))`;
+          params.push(captured_at, captured_at, run_id, run_id, prompt_id, prompt_id, response_id);
+        } else {
+          sql += ` AND (pr.captured_at < ? OR
+            (pr.captured_at = ? AND (pr.run_id < ? OR
+              (pr.run_id = ? AND pr.prompt_id < ?))))`;
+          params.push(captured_at, captured_at, run_id, run_id, prompt_id);
+        }
       }
-      sql += ' ORDER BY pr.captured_at DESC, pr.run_id DESC, pr.prompt_id DESC LIMIT ?';
+      sql += ' ORDER BY pr.captured_at DESC, pr.run_id DESC, pr.prompt_id DESC, pr.id DESC LIMIT ?';
       params.push(page?.limit ?? 50);
       const { results } = await d1
         .prepare(sql)

@@ -83,9 +83,14 @@ function registerCitationTool(
             item.captured_at < page.before.captured_at ||
             (item.captured_at === page.before.captured_at &&
               (item.run_id < page.before.run_id ||
-                (item.run_id === page.before.run_id && item.prompt_id < page.before.prompt_id))))
+                (item.run_id === page.before.run_id &&
+                  (item.prompt_id < page.before.prompt_id ||
+                    (item.prompt_id === page.before.prompt_id &&
+                      page.before.response_id !== undefined &&
+                      item.response_id < page.before.response_id))))))
           .sort((a, b) => b.captured_at - a.captured_at ||
-            b.run_id.localeCompare(a.run_id) || b.prompt_id.localeCompare(a.prompt_id));
+            b.run_id.localeCompare(a.run_id) || b.prompt_id.localeCompare(a.prompt_id) ||
+            b.response_id.localeCompare(a.response_id));
         return rows.slice(0, page?.limit ?? 50);
       },
       getResponsesSince: async () => responses,
@@ -123,6 +128,7 @@ function promptResponse(
 
 function citationRow(overrides: Partial<CitationRow> = {}): CitationRow {
   return {
+    response_id: `response-${overrides.run_id ?? 'run-1234567890'}-${overrides.prompt_id ?? 'prompt-1234567890'}`,
     engine: 'chatgpt',
     prompt: 'best project management tools',
     raw_response: 'Acme is a useful option.',
@@ -176,6 +182,30 @@ test('get_citations produces distinct stable IDs for records sharing short UUID 
   assert.equal(ids.length, 2);
   assert.equal(new Set(ids).size, 2, 'two distinct observations must never share a citation ID');
   assert.deepEqual(ids, secondRead.structuredContent.citations.map((citation) => citation.id));
+});
+
+test('repeated observations for one run and prompt have unique IDs and complete cursor pages', async () => {
+  const captured_at = Date.now() - 1000;
+  const first = Object.assign(citationRow({ captured_at, raw_response: 'First Acme answer.' }), {
+    response_id: 'response-b',
+  });
+  const second = Object.assign(citationRow({ captured_at, raw_response: 'Second Acme answer.' }), {
+    response_id: 'response-a',
+  });
+  const tool = registerCitationTool([first, second]);
+  const all = await tool.handler({ brand_id: brand.id });
+  assert.equal(all.structuredContent.citations.length, 2);
+  assert.equal(new Set(all.structuredContent.citations.map((c) => c.id)).size, 2);
+
+  const firstPage = await tool.handler({ brand_id: brand.id, limit: 1 });
+  assert.equal(firstPage.structuredContent.has_more, true);
+  assert.ok(firstPage.structuredContent.next_cursor);
+  const secondPage = await tool.handler({
+    brand_id: brand.id, limit: 1, cursor: firstPage.structuredContent.next_cursor!,
+  });
+  assert.equal(secondPage.structuredContent.citations.length, 1);
+  assert.equal(secondPage.structuredContent.has_more, false);
+  assert.notEqual(firstPage.structuredContent.citations[0].id, secondPage.structuredContent.citations[0].id);
 });
 
 test('get_citations preserves the full engine-native brand citation URL', async () => {
