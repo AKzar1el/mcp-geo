@@ -245,3 +245,51 @@ test('comparison flags newly selected competitors whose historical capture canno
   assert.equal(result.competitors.find((c) => c.domain === 'new.example.com')?.mentions, 0);
   assert.match(result.historical_coverage_note, /not that it was absent/);
 });
+
+test('comparison prompt rankings remain stable when equal evidence arrives in another row order', async () => {
+  const rows = [
+    response('z', 'Zulu question', 1, []),
+    response('a', 'Alpha question', 1, []),
+    response('b', 'Beta question', 1, []),
+    response('c', 'Charlie competitor question', 0, ['asana.com']),
+    response('d', 'Bravo competitor question', 0, ['asana.com']),
+  ];
+  async function compare(source: PromptResponse[]): Promise<ComparisonResult> {
+    let comparison: ComparisonTool | undefined;
+    const server = {
+      registerTool(name: string, _config: unknown, handler: unknown) {
+        if (name === 'compare_competitors') {
+          comparison = { handler: handler as ComparisonTool['handler'] };
+        }
+      },
+    } as unknown as McpServer;
+    registerTools(server, {
+      db: {
+        getBrand: async () => brand,
+        getResponsesSince: async () => source,
+      } as Db,
+      env: {},
+      refreshExecution: 'sync',
+      runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+    });
+    assert.ok(comparison);
+    return (await comparison.handler({ brand_id: brand.id })).structuredContent;
+  }
+
+  const first = await compare(rows);
+  const reversed = await compare([...rows].reverse());
+  assert.deepEqual(first.prompts_brand_only, reversed.prompts_brand_only);
+  assert.deepEqual(first.prompts_you_win, reversed.prompts_you_win);
+  assert.deepEqual(
+    first.prompts_brand_only.map((item) => item.prompt),
+    ['Alpha question', 'Beta question', 'Zulu question'],
+  );
+  assert.deepEqual(
+    first.competitors[0].prompts_won_against_you,
+    reversed.competitors[0].prompts_won_against_you,
+  );
+  assert.deepEqual(first.competitors[0].prompts_won_against_you, [
+    'Bravo competitor question',
+    'Charlie competitor question',
+  ]);
+});
