@@ -1771,7 +1771,8 @@ function parseStringArray(raw: string | null): string[] {
 }
 
 function citationId(runId: string, promptId: string): string {
-  return `cit_${runId.slice(0, 8)}_${promptId.slice(0, 8)}`;
+  // Length-prefix the full run ID so records with shared UUID prefixes remain distinct.
+  return `cit_${runId.length}_${runId}_${promptId}`;
 }
 
 function buildTopSources(responses: PromptResponse[], brand: Brand) {

@@ -42,6 +42,7 @@ type CitationResult = {
     is_brand_domain: boolean;
   }>;
   citations: Array<{
+    id: string;
     cited_url: string | null;
     citation_type: string;
     url_source: 'provider_source' | 'answer_text' | null;
@@ -155,6 +156,26 @@ test('unfiltered citation evidence flags only the Google surfaces actually repre
   ]);
   const result = await tool.handler({ brand_id: brand.id });
   assert.deepEqual(result.structuredContent.google_search_sampling?.engines, ['ai_mode']);
+});
+
+test('get_citations produces distinct stable IDs for records sharing short UUID prefixes', async () => {
+  const first = citationRow({
+    run_id: '12345678-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    prompt_id: '87654321-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    captured_at: Date.now() - 1000,
+  });
+  const second = citationRow({
+    run_id: '12345678-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    prompt_id: '87654321-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    captured_at: Date.now() - 2000,
+  });
+  const tool = registerCitationTool([first, second]);
+  const firstRead = await tool.handler({ brand_id: brand.id });
+  const secondRead = await tool.handler({ brand_id: brand.id });
+  const ids = firstRead.structuredContent.citations.map((citation) => citation.id);
+  assert.equal(ids.length, 2);
+  assert.equal(new Set(ids).size, 2, 'two distinct observations must never share a citation ID');
+  assert.deepEqual(ids, secondRead.structuredContent.citations.map((citation) => citation.id));
 });
 
 test('get_citations preserves the full engine-native brand citation URL', async () => {
