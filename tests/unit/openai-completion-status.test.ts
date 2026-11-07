@@ -39,6 +39,33 @@ test('OpenAI accepts normal completed answer text and preserves citations', asyn
   }
 });
 
+test('OpenAI native citations exclude invalid, non-web and credentialed URLs', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    choices: [{
+      finish_reason: 'stop',
+      message: {
+        content: 'One trustworthy source is available.',
+        annotations: [
+          null,
+          { type: 'url_citation', url_citation: { url: 'file:///etc/passwd' } },
+          { type: 'url_citation', url_citation: { url: 'javascript:alert(1)' } },
+          { type: 'url_citation', url_citation: { url: 'https://user:secret@attacker.example/a' } },
+          { type: 'url_citation', url_citation: { url: 'bare.example' } },
+          { type: 'url_citation', url_citation: { url: 'HTTPS://valid.example/source' } },
+          { type: 'note', url_citation: { url: 'https://ignored.example/' } },
+        ],
+      },
+    }],
+  }), { status: 200 });
+  try {
+    const answer = await chatCompletion('test-key', 'Find sources');
+    assert.deepEqual(answer.citations, ['HTTPS://valid.example/source']);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('OpenAI live scan persists primitive provider rejections as failed prompt evidence', async () => {
   const originalFetch = globalThis.fetch;
   let persisted: EnginePromptResult[] | undefined;
