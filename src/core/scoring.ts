@@ -35,6 +35,10 @@ export interface ScoreResult {
   top_losing_prompts: LosingPrompt[];
 }
 
+function compareText(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 export function computeOverallScore(
   _brand: Brand,
   responses: PromptResponse[],
@@ -87,7 +91,7 @@ export function computeOverallScore(
   // separately so legacy "cited" labels cannot imply an actual source URL.
   const winsByPrompt = new Map<
     string,
-    { prompt: string; engines: Set<string>; linkedEngines: Set<string> }
+    { promptId: string; prompt: string; engines: Set<string>; linkedEngines: Set<string> }
   >();
   for (const r of okResponses) {
     if (r.brand_mentioned !== 1) continue;
@@ -97,6 +101,7 @@ export function computeOverallScore(
       if (r.brand_cited_with_link === 1) existing.linkedEngines.add(r.engine);
     } else {
       winsByPrompt.set(r.prompt_id, {
+        promptId: r.prompt_id,
         prompt: r.prompt_text,
         engines: new Set([r.engine]),
         linkedEngines: new Set(r.brand_cited_with_link === 1 ? [r.engine] : []),
@@ -104,7 +109,8 @@ export function computeOverallScore(
     }
   }
   const top_winning_prompts: WinningPrompt[] = [...winsByPrompt.values()]
-    .sort((a, b) => b.engines.size - a.engines.size)
+    .sort((a, b) => b.engines.size - a.engines.size ||
+      compareText(a.prompt, b.prompt) || compareText(a.promptId, b.promptId))
     .slice(0, 3)
     .map((w) => {
       const mentionedIn = [...w.engines].sort();
@@ -124,7 +130,7 @@ export function computeOverallScore(
   // (and may also appear in top_winning_prompts), which is informative.
   const lossByPrompt = new Map<
     string,
-    { prompt: string; competitors: Set<string> }
+    { promptId: string; prompt: string; competitors: Set<string> }
   >();
   for (const r of okResponses) {
     if (r.brand_mentioned !== 0) continue;
@@ -134,17 +140,20 @@ export function computeOverallScore(
       for (const c of r.competitors_mentioned) existing.competitors.add(c);
     } else {
       lossByPrompt.set(r.prompt_id, {
+        promptId: r.prompt_id,
         prompt: r.prompt_text,
         competitors: new Set(r.competitors_mentioned),
       });
     }
   }
-  const losing: LosingPrompt[] = [...lossByPrompt.values()].map((l) => ({
-    prompt: l.prompt,
-    competitors_cited: [...l.competitors].sort(),
-  }));
-  losing.sort((a, b) => b.competitors_cited.length - a.competitors_cited.length);
-  const top_losing_prompts = losing.slice(0, 3);
+  const top_losing_prompts: LosingPrompt[] = [...lossByPrompt.values()]
+    .sort((a, b) => b.competitors.size - a.competitors.size ||
+      compareText(a.prompt, b.prompt) || compareText(a.promptId, b.promptId))
+    .slice(0, 3)
+    .map((loss) => ({
+      prompt: loss.prompt,
+      competitors_cited: [...loss.competitors].sort(),
+    }));
 
   return {
     overall_score,

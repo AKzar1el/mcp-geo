@@ -172,3 +172,23 @@ test('same-timestamp repeated observations use a stable response-ID tiebreaker',
     assert.equal(result.per_engine[0].score, 0);
   }
 });
+
+test('tied winning and losing prompt rankings do not depend on response row order', () => {
+  const rows = [
+    ...['d', 'c', 'b', 'a'].map((id) => response('chatgpt', id, 1)),
+    ...['h', 'g', 'f', 'e'].map((id) =>
+      response('chatgpt', id, 0, { competitors: ['asana.com'] })),
+  ];
+
+  for (const ordered of [rows, [...rows].reverse()]) {
+    const result = computeOverallScore(brand, ordered);
+    assert.deepEqual(
+      result.top_winning_prompts.map((entry) => entry.prompt),
+      ['prompt text for a', 'prompt text for b', 'prompt text for c'],
+    );
+    assert.deepEqual(
+      result.top_losing_prompts.map((entry) => entry.prompt),
+      ['prompt text for e', 'prompt text for f', 'prompt text for g'],
+    );
+  }
+});
