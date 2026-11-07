@@ -176,6 +176,16 @@ const visibilityOutputSchema = z.object({
   top_losing_prompts: z.array(losingPromptOutputSchema),
 });
 
+const historyModeCountsSchema = z.object({
+  brand_mentions: z.number(),
+  usable_prompts: z.number(),
+  score: z.number(),
+});
+const historyModeScopeSchema = z.object({
+  search_requested: historyModeCountsSchema.nullable(),
+  model_only: historyModeCountsSchema.nullable(),
+});
+
 const historyOutputSchema = z.object({
   brand_id: z.string(),
   days: z.number(),
@@ -183,18 +193,8 @@ const historyOutputSchema = z.object({
   google_search_sampling: googleSearchSamplingSchema,
   measurement_scope: z.object({
     mixed_mode_engines: z.array(z.string()),
-    by_engine: z.record(z.string(), z.object({
-      search_requested: z.object({
-        brand_mentions: z.number(),
-        usable_prompts: z.number(),
-        score: z.number(),
-      }).nullable(),
-      model_only: z.object({
-        brand_mentions: z.number(),
-        usable_prompts: z.number(),
-        score: z.number(),
-      }).nullable(),
-    })),
+    by_engine: z.record(z.string(), historyModeScopeSchema),
+    by_bucket: z.record(z.string(), z.record(z.string(), historyModeScopeSchema)),
     note: z.string(),
   }),
   prompt_set_comparability: z.object({
@@ -663,7 +663,7 @@ export function registerTools(
     {
       title: 'Get AI visibility history',
       description:
-        "Return daily or weekly visibility history with per-engine evidence and model-only versus search-requested measurement scope. Example: brand_id='acme', days=30, granularity='weekly'.",
+        "Return daily or weekly visibility history with per-engine scores and per-bucket model-only versus search-requested evidence. Example: brand_id='acme', days=30, granularity='weekly'.",
       inputSchema: {
         brand_id: z
           .string()
@@ -726,7 +726,7 @@ export function registerTools(
             search_requested: scoredCounts(counts.search_requested),
             model_only: scoredCounts(counts.model_only),
           }])),
-        note: 'Combined legacy daily and weekly scores may mix model-only and search-requested run evidence in the same bucket. These window-wide, separately scored denominators identify mixed-mode engines; they do not prove that every search-requested response returned citations.',
+        note: 'Combined legacy daily and weekly scores may mix model-only and search-requested run evidence in the same bucket. by_engine summarizes the full requested window; by_bucket separates scored denominators in each daily or weekly period. Search-requested responses do not necessarily contain citations.',
       };
 
       // Only compare complete recorded run rosters. Comparing successful
@@ -765,6 +765,10 @@ export function registerTools(
         note: 'Changes are detected only when complete recorded prompt-ID rosters differ for the same engine. Different prompt sets make historical scores non-comparable; partial or missing rosters cannot establish stability.',
       };
 
+      const bucketModes = new Map<string, Map<string, {
+        search_requested: Counts;
+        model_only: Counts;
+      }>>();
       const buckets = new Map<
         string,
         Map<
@@ -781,6 +785,16 @@ export function registerTools(
         const date = bucketStart(row.completed_at, granularity);
         const total = Number(row.total ?? 0);
         const hits = Number(row.hits ?? 0);
+        const perEngineModes = bucketModes.get(date) ?? new Map();
+        const modeCounts = perEngineModes.get(row.engine) ?? {
+          search_requested: { brand_mentions: 0, usable_prompts: 0 },
+          model_only: { brand_mentions: 0, usable_prompts: 0 },
+        };
+        const mode = visibilityMeasurementMode(row.engine, row.mode ?? 'live');
+        modeCounts[mode].brand_mentions += hits;
+        modeCounts[mode].usable_prompts += total;
+        perEngineModes.set(row.engine, modeCounts);
+        bucketModes.set(date, perEngineModes);
         let perEngine = buckets.get(date);
         if (!perEngine) {
           perEngine = new Map();
@@ -830,12 +844,21 @@ export function registerTools(
           };
         });
 
+      const by_bucket = Object.fromEntries([...bucketModes.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([date, engines]) => [date, Object.fromEntries([...engines.entries()]
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([engine, counts]) => [engine, {
+            search_requested: scoredCounts(counts.search_requested),
+            model_only: scoredCounts(counts.model_only),
+          }]))]));
+
       const payload = {
         brand_id,
         days,
         granularity,
         google_search_sampling: googleSearchSampling(results.map(({ engine }) => engine)),
-        measurement_scope,
+        measurement_scope: { ...measurement_scope, by_bucket },
         prompt_set_comparability,
         series,
       };
