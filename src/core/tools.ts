@@ -1179,20 +1179,26 @@ export function registerTools(
 
       let recommendations = buildFallbackRecommendations(losingPrompts, max_recommendations);
       let prompt_source: 'generated' | 'fallback' = 'fallback';
-      if (ai_analysis && deps.env.ANTHROPIC_API_KEY?.trim()) {
-        try {
-          recommendations = await analyzeContentGaps(
-            { ANTHROPIC_API_KEY: deps.env.ANTHROPIC_API_KEY },
-            brand,
-            losingPrompts,
-            max_recommendations,
-          );
-          prompt_source = 'generated';
-        } catch (err) {
-          console.warn('get_content_gaps: analyzer failed, returning fallback', {
-            brand_id,
-            message: err instanceof Error ? err.message : String(err),
-          });
+      let fallbackReason: string | undefined;
+      if (ai_analysis) {
+        if (!deps.env.ANTHROPIC_API_KEY?.trim()) {
+          fallbackReason = 'AI analysis requested but ANTHROPIC_API_KEY is not configured; returning provider-free recommendations.';
+        } else {
+          try {
+            recommendations = await analyzeContentGaps(
+              { ANTHROPIC_API_KEY: deps.env.ANTHROPIC_API_KEY },
+              brand,
+              losingPrompts,
+              max_recommendations,
+            );
+            prompt_source = 'generated';
+          } catch (err) {
+            console.warn('get_content_gaps: analyzer failed, returning fallback', {
+              brand_id,
+              message: err instanceof Error ? err.message : String(err),
+            });
+            fallbackReason = 'AI analysis requested but failed; returning provider-free recommendations. Anthropic requests may still be billed.';
+          }
         }
       }
 
@@ -1200,6 +1206,7 @@ export function registerTools(
         brand_id,
         recommendations,
         prompt_source,
+        ...(fallbackReason ? { reason: fallbackReason } : {}),
       };
       return toolResult(payload);
     },
