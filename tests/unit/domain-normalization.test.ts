@@ -29,6 +29,24 @@ test('Unicode and punycode duplicates resolve to one canonical competitor', () =
   );
 });
 
+test('IDNA-folded www prefixes canonicalize to the same domain identity', () => {
+  assert.equal(
+    normalizeDomainInput('https://\uff37\uff37\uff37.B\u00dcCHER.de/catalogue'),
+    'xn--bcher-kva.de',
+  );
+  assert.equal(
+    normalizeDomainInput('\uff57\uff57\uff57.example.com'),
+    'example.com',
+  );
+  assert.deepEqual(
+    normalizeCompetitorDomains(
+      ['\uff57\uff57\uff57.example.com', 'example.com'],
+      'example.com',
+    ),
+    [],
+  );
+});
+
 test('domain normalization still rejects invalid host syntax and encoded URL tricks', () => {
   for (const input of [
     'not a domain.com',

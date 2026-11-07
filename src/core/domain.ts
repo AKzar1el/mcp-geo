@@ -13,7 +13,6 @@ export function normalizeDomainInput(raw: string): string | null {
   s = s.split('?')[0] ?? s; // query without a path
   s = s.split('#')[0] ?? s; // fragment without a path
   s = s.replace(/:\d+$/, ''); // port
-  if (s.startsWith('www.')) s = s.slice(4);
   // WHATWG URL applies IDNA normalization consistently in Node and Workers.
   // Check the original host first: URL parsing also accepts encoded or
   // authority-like syntax that should never be treated as a domain input.
@@ -23,6 +22,8 @@ export function normalizeDomainInput(raw: string): string | null {
   } catch {
     return null;
   }
+  // Remove www after IDNA folds Unicode compatibility equivalents of its letters.
+  if (s.startsWith('www.')) s = s.slice(4);
   if (s.length === 0 || s.length > 253) return null;
   // The whole hostname may fit while an individual ASCII/IDNA DNS label
   // exceeds the 63-octet wire limit. Validate after URL's IDNA conversion.
