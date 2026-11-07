@@ -19,7 +19,8 @@ export function flattenSerpApiReferences(
     try {
       const parsed = new URL(ref.link);
       // Provider metadata is evidence only when it points to a web source.
-      if ((parsed.protocol === 'http:' || parsed.protocol === 'https:') && parsed.hostname) {
+      if ((parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
+          parsed.hostname && !parsed.username && !parsed.password) {
         urls.push(ref.link);
       }
     } catch {

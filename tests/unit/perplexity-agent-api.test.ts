@@ -74,6 +74,8 @@ test('Perplexity excludes non-web search-result references from native citations
         { url: 'file://acme.example/private' },
         { url: 'mailto:owner@acme.example' },
         { url: 'acme.example' },
+        { url: 'https://acme.example@other.example/impersonation' },
+        { url: 'https://admin:password@acme.example/private' },
         { url: 'HTTPS://source.example/reference' },
         { url: 'https://valid.example/page' },
       ] },

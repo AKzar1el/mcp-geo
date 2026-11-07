@@ -65,14 +65,13 @@ test('runEngines dispatches the prompt IDs present when the run is created', asy
     completed_at: null,
   };
   const db = {
-    createRun: async (
+    reserveLiveRun: async (
       _brand: Brand,
       _engine: string,
-      _mode: 'live' | 'batch',
       promptsTotal: number,
     ) => {
       createdPromptsTotal = promptsTotal;
-      return run;
+      return { run, started: true };
     },
     getActivePrompts: async () => {
       activePromptLookupUsed = true;
@@ -116,6 +115,41 @@ test('runEngines dispatches the prompt IDs present when the run is created', asy
   assert.equal(activePromptLookupUsed, false);
 });
 
+test('runEngines dispatches each requested engine only once', async () => {
+  const created: string[] = [];
+  const dispatched: string[] = [];
+  const db = {
+    reserveLiveRun: async (_brand: Brand, engine: string) => {
+      created.push(engine);
+      return { run: { id: `run-${engine}` } as Run, started: true };
+    },
+  } as Db;
+  const env = {
+    db,
+    SEED_SECRET: 'test-secret',
+    SELF_URL: 'https://worker.example.test',
+    OPENAI_API_KEY: 'test-key',
+    ANTHROPIC_API_KEY: 'test-key',
+    SELF: {
+      fetch: async (request: Request) => {
+        const body = (await request.json()) as { engine: string };
+        dispatched.push(body.engine);
+        return new Response(null, { status: 204 });
+      },
+    },
+  };
+  const ctx = { waitUntil: () => { throw new Error('unexpected background dispatch'); } };
+
+  const result = await runEngines(
+    env, ctx, brand, oldPrompts,
+    ['chatgpt', 'claude', 'chatgpt', 'claude'], undefined, true,
+  );
+  assert.deepEqual(result.engines, ['chatgpt', 'claude']);
+  assert.deepEqual(result.run_ids, { chatgpt: 'run-chatgpt', claude: 'run-claude' });
+  assert.deepEqual(created, ['chatgpt', 'claude']);
+  assert.deepEqual(dispatched, ['chatgpt', 'claude']);
+});
+
 test('runEngines can keep HTTP admin dispatch attached until service-binding work completes', async () => {
   let releaseFetch!: () => void;
   const fetchGate = new Promise<void>((resolve) => {
@@ -137,7 +171,7 @@ test('runEngines can keep HTTP admin dispatch attached until service-binding wor
     completed_at: null,
   };
   const db = {
-    createRun: async () => run,
+    reserveLiveRun: async () => ({ run, started: true }),
   } as Db;
   const env = {
     db,
@@ -191,19 +225,22 @@ test('runEngines marks non-2xx and rejected service dispatches terminal without 
     let fetchCalls = 0;
     const failures: Array<{ runId: string; error: string }> = [];
     const db = {
-      createRun: async () => ({
-        id: 'transport-' + label,
-        brand_id: brand.id,
-        engine: 'chatgpt',
-        mode: 'live' as const,
-        status: 'in_progress' as const,
-        batch_id: null,
-        prompts_total: 1,
-        prompts_completed: 0,
-        cost_eur_estimate: null,
-        error: null,
-        started_at: 0,
-        completed_at: null,
+      reserveLiveRun: async () => ({
+        run: {
+          id: 'transport-' + label,
+          brand_id: brand.id,
+          engine: 'chatgpt',
+          mode: 'live' as const,
+          status: 'in_progress' as const,
+          batch_id: null,
+          prompts_total: 1,
+          prompts_completed: 0,
+          cost_eur_estimate: null,
+          error: null,
+          started_at: 0,
+          completed_at: null,
+        },
+        started: true,
       }),
       failRunIfInProgress: async (runId: string, error: string) => {
         failures.push({ runId, error });
@@ -228,4 +265,37 @@ test('runEngines marks non-2xx and rejected service dispatches terminal without 
     assert.deepEqual(failures, [{ runId: 'transport-' + label, error: expectedMessage }]);
     assert.equal(fetchCalls, 1, 'transport failure must not trigger another provider request');
   }
+});
+
+test('runEngines releases earlier reservations if a later engine cannot reserve', async () => {
+  const failed: string[] = [];
+  let dispatched = 0;
+  const db = {
+    reserveLiveRun: async (_brand: Brand, engine: string) => {
+      if (engine === 'claude') throw new Error('database unavailable');
+      return { run: { id: 'reserved-chatgpt' } as Run, started: true };
+    },
+    failRunIfInProgress: async (runId: string) => {
+      failed.push(runId);
+      return true;
+    },
+  } as Db;
+  const env = {
+    db,
+    SEED_SECRET: 'test-secret',
+    SELF_URL: 'https://worker.example.test',
+    OPENAI_API_KEY: 'test-key',
+    ANTHROPIC_API_KEY: 'test-key',
+    SELF: { fetch: async () => {
+      dispatched += 1;
+      return new Response(null, { status: 204 });
+    } },
+  };
+  const ctx = { waitUntil: () => { throw new Error('no dispatch should start'); } };
+  await assert.rejects(
+    runEngines(env, ctx, brand, oldPrompts, ['chatgpt', 'claude']),
+    /database unavailable/,
+  );
+  assert.deepEqual(failed, ['reserved-chatgpt']);
+  assert.equal(dispatched, 0);
 });

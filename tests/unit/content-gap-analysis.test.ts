@@ -97,6 +97,8 @@ test('content gaps require an explicit opt-in before any paid Anthropic call', a
     error_message: null,
     captured_at: Date.now(),
   };
+  let includeResponses = true;
+  const env = { ANTHROPIC_API_KEY: 'fake-test-key' };
   type GapResult = {
     structuredContent: {
       prompt_source: 'generated' | 'fallback';
@@ -126,9 +128,9 @@ test('content gaps require an explicit opt-in before any paid Anthropic call', a
       getBrand: async () => brand,
       getLatestCompletedRun: async (_id, engine) =>
         engine === 'chatgpt' ? { id: 'run-1' } : null,
-      getResponsesForRun: async () => [response],
+      getResponsesForRun: async () => includeResponses ? [response] : [],
     } as Db,
-    env: { ANTHROPIC_API_KEY: 'fake-test-key' },
+    env,
     refreshExecution: 'sync',
     runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
   });
@@ -139,9 +141,11 @@ test('content gaps require an explicit opt-in before any paid Anthropic call', a
 
   const originalFetch = globalThis.fetch;
   let calls = 0;
+  let rejectWithNull = false;
   globalThis.fetch = async (input) => {
     calls += 1;
     assert.match(String(input), /api\.anthropic\.com/);
+    if (rejectWithNull) throw null;
     return Response.json({
       stop_reason: 'end_turn',
       content: [{ type: 'text', text: JSON.stringify([{
@@ -165,6 +169,31 @@ test('content gaps require an explicit opt-in before any paid Anthropic call', a
     });
     assert.equal(explicitResult.structuredContent.prompt_source, 'generated');
     assert.equal(calls, 1, 'explicit paid analysis should make one successful call');
+
+    rejectWithNull = true;
+    const failedResult = await handler({
+      brand_id: 'acme', max_recommendations: 3, ai_analysis: true,
+    });
+    assert.equal(failedResult.structuredContent.prompt_source, 'fallback');
+    assert.equal(failedResult.structuredContent.recommendations.length, 1);
+    assert.equal(calls, 2, 'failed provider requests must not be retried for formatting');
+
+    env.ANTHROPIC_API_KEY = '  \t  ';
+    const blankKeyResult = await handler({
+      brand_id: 'acme', max_recommendations: 3, ai_analysis: true,
+    });
+    assert.equal(blankKeyResult.structuredContent.prompt_source, 'fallback');
+    assert.equal(calls, 2, 'whitespace-only credentials must never reach a provider');
+
+    includeResponses = false;
+    env.ANTHROPIC_API_KEY = 'fake-test-key';
+    const noEvidence = await handler({
+      brand_id: 'acme', max_recommendations: 3, ai_analysis: true,
+    });
+    assert.equal(noEvidence.structuredContent.prompt_source, 'fallback',
+      'no evidence must not be represented as generated recommendations');
+    assert.equal(noEvidence.structuredContent.recommendations.length, 0);
+    assert.equal(calls, 2);
   } finally {
     globalThis.fetch = originalFetch;
   }
