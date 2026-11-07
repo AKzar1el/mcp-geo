@@ -14,6 +14,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openSqliteDb, type SqliteDb } from '../../src/db/sqlite.ts';
 import { createD1Db } from '../../src/db/d1.ts';
+import { LIVE_RUN_STALE_AFTER_MS } from '../../src/db/types.ts';
+import { runEngines } from '../../src/engines.ts';
 import { seedBrand } from '../../src/core/seed.ts';
 import { collectBatch } from '../../src/core/openai.ts';
 
@@ -115,6 +117,111 @@ test('re-opening an existing database does not re-apply migrations', () => {
     assert.equal(applied.n, EXPECTED_MIGRATIONS.length);
   } finally {
     second.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('SQLite and D1 reserve one live scan atomically; completed, failed, and stale runs release the reservation', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'single-flight.sqlite'));
+  try {
+    await db.upsertUser('test-user', 'test@local');
+    await db.createBrand({
+      id: 'single-flight', user_id: 'test-user', domain: 'example.org',
+      name: 'Single Flight', category: null, competitors: [], aliases: [],
+      exclude_terms: [], refresh_frequency: 'weekly',
+    });
+    const brand = await db.getBrand('single-flight');
+    assert.ok(brand);
+    // Use real SQLite statement execution for the hosted adapter as well:
+    // the D1-style run/first wrapper exercises identical SQL, offline.
+    const hosted = createD1Db({
+      prepare(sql: string) {
+        return {
+          bind(...params: unknown[]) {
+            return {
+              async run() {
+                const stmt = db.raw.prepare(sql);
+                const result = stmt.run(...(params as Parameters<typeof stmt.run>));
+                return { meta: { changes: result.changes } };
+              },
+              async first() {
+                const stmt = db.raw.prepare(sql);
+                return stmt.get(...(params as Parameters<typeof stmt.get>)) ?? null;
+              },
+            };
+          },
+        };
+      },
+    } as unknown as Parameters<typeof createD1Db>[0]);
+
+    const [first, second] = await Promise.all([
+      db.reserveLiveRun(brand, 'chatgpt', 2),
+      hosted.reserveLiveRun(brand, 'chatgpt', 2),
+    ]);
+    assert.ok(first && second);
+    assert.equal([first.started, second.started].filter(Boolean).length, 1);
+    assert.equal(first.run.id, second.run.id);
+    const count = () => Number((db.raw.prepare(
+      "SELECT COUNT(*) AS n FROM runs WHERE brand_id='single-flight' AND engine='chatgpt'",
+    ).get() as { n: number }).n);
+    assert.equal(count(), 1);
+
+    await db.updateRun(first.run.id, { status: 'completed', completed_at: Date.now() });
+    const afterComplete = await hosted.reserveLiveRun(brand, 'chatgpt', 2);
+    assert.ok(afterComplete?.started);
+    assert.equal(count(), 2);
+    assert.equal(await hosted.failRunIfInProgress(afterComplete.run.id, 'transport failure'), true);
+    const afterFailure = await db.reserveLiveRun(brand, 'chatgpt', 2);
+    assert.ok(afterFailure?.started);
+    assert.equal(count(), 3);
+    db.raw.prepare('UPDATE runs SET started_at = ? WHERE id = ?')
+      .run(Date.now() - LIVE_RUN_STALE_AFTER_MS - 1000, afterFailure.run.id);
+    const afterStale = await hosted.reserveLiveRun(brand, 'chatgpt', 2);
+    assert.ok(afterStale?.started);
+    assert.equal(count(), 4);
+    // Batch mode retains its independent lifetime and does not block live runs.
+    await db.createRun(brand, 'gemini', 'batch', 2);
+    assert.equal((await hosted.reserveLiveRun(brand, 'gemini', 2))?.started, true);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('two overlapping Worker refreshes share one run ID and dispatch only once', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'overlap.sqlite'));
+  try {
+    await db.upsertUser('test-user', 'test@local');
+    await db.createBrand({
+      id: 'overlap', user_id: 'test-user', domain: 'example.org',
+      name: 'Overlap', category: null, competitors: [], aliases: [],
+      exclude_terms: [], refresh_frequency: 'weekly',
+    });
+    const brand = await db.getBrand('overlap');
+    assert.ok(brand);
+    seedPromptFixture(db, brand.id, 'overlap-prompt', 'Compare solutions');
+    const prompts = await db.getActivePrompts(brand.id);
+    let dispatches = 0;
+    const env = {
+      db, SEED_SECRET: 'test', SELF_URL: 'https://worker.example.test',
+      OPENAI_API_KEY: 'test',
+      SELF: { fetch: async () => {
+        dispatches++;
+        return new Response(null, { status: 204 });
+      } },
+    };
+    const ctx = { waitUntil: () => { throw new Error('unexpected background dispatch'); } };
+    const [a, b] = await Promise.all([
+      runEngines(env, ctx, brand, prompts, ['chatgpt'], undefined, true),
+      runEngines(env, ctx, brand, prompts, ['chatgpt'], undefined, true),
+    ]);
+    assert.equal(dispatches, 1);
+    assert.equal(a.run_ids.chatgpt, b.run_ids.chatgpt);
+    assert.deepEqual([a.engines.length, b.engines.length].sort(), [0, 1]);
+  } finally {
+    db.close();
     rmSync(root, { recursive: true, force: true });
   }
 });

@@ -45,7 +45,7 @@ export async function handleAdminSetPrompts(
       next_steps: `POST /admin/run-live with brand_id '${brandId}' to scan this prompt set.`,
     });
   } catch (err) {
-    return jsonResponse({ error: (err as Error).message }, 400);
+    return jsonResponse({ error: err instanceof Error ? err.message : String(err) }, 400);
   }
 }
 
@@ -163,7 +163,7 @@ export async function handleAdminUpdateBrand(
       ].join(' '),
     });
   } catch (err) {
-    const message = (err as Error).message;
+    const message = err instanceof Error ? err.message : String(err);
     return jsonResponse({ error: message }, message === 'brand not found' ? 404 : 400);
   }
 }
