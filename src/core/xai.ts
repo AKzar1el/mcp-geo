@@ -75,9 +75,19 @@ function extractResponseCitations(data: XAiResponse): string[] {
   const urls: string[] = [];
   const seen = new Set<string>();
   const add = (value: unknown) => {
-    if (typeof value !== 'string' || value.length === 0 || seen.has(value)) return;
-    seen.add(value);
-    urls.push(value);
+    if (typeof value !== 'string') return;
+    let url: URL;
+    try {
+      url = new URL(value);
+    } catch {
+      return;
+    }
+    // Model metadata is citation evidence only for navigable web URLs.
+    // Disallow userinfo, which can disguise a different destination host.
+    if ((url.protocol !== 'http:' && url.protocol !== 'https:') ||
+        !url.hostname || url.username || url.password || seen.has(url.href)) return;
+    seen.add(url.href);
+    urls.push(url.href);
   };
 
   for (const citation of data.citations ?? []) {
