@@ -95,10 +95,16 @@ export async function handleAdminUpdateBrand(
     return jsonResponse({ error: 'brand_id required' }, 400);
   }
 
-  const stringFields = ['name', 'domain'] as const;
-  for (const field of stringFields) {
-    if (body[field] !== undefined && typeof body[field] !== 'string') {
-      return jsonResponse({ error: `${field} must be a string` }, 400);
+  // The hosted endpoint must enforce the same limits as the local MCP
+  // update_brand schema, before any database lookup or persistent mutation.
+  for (const [field, min, max] of [
+    ['name', 1, 200],
+    ['domain', 3, 253],
+  ] as const) {
+    const value = body[field];
+    if (value !== undefined &&
+        (typeof value !== 'string' || value.length < min || value.length > max)) {
+      return jsonResponse({ error: `${field} must be a string of ${min}-${max} characters` }, 400);
     }
   }
   if (
@@ -108,13 +114,23 @@ export async function handleAdminUpdateBrand(
   ) {
     return jsonResponse({ error: 'category must be a string or null' }, 400);
   }
+  if (typeof body.category === 'string' &&
+      (body.category.length < 1 || body.category.length > 200)) {
+    return jsonResponse({ error: 'category must be between 1 and 200 characters' }, 400);
+  }
   for (const field of ['competitors', 'aliases', 'exclude_terms'] as const) {
-    if (
-      body[field] !== undefined &&
-      (!Array.isArray(body[field]) ||
-        !(body[field] as unknown[]).every((value) => typeof value === 'string'))
-    ) {
+    const values = body[field];
+    if (values === undefined) continue;
+    if (!Array.isArray(values) || !values.every((value) => typeof value === 'string')) {
       return jsonResponse({ error: `${field} must be an array of strings` }, 400);
+    }
+    if (values.length > 20) {
+      return jsonResponse({ error: `${field} must contain at most 20 entries` }, 400);
+    }
+    const min = field === 'competitors' ? 3 : 1;
+    const max = field === 'competitors' ? 253 : 100;
+    if (values.some((value: string) => value.length < min || value.length > max)) {
+      return jsonResponse({ error: `${field} entries must be between ${min} and ${max} characters` }, 400);
     }
   }
   if (
