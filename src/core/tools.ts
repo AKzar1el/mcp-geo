@@ -1797,6 +1797,8 @@ function buildTopSources(responses: PromptResponse[], brand: Brand) {
       prompts: Set<string>;
       engines: Set<string>;
       sample_url: string;
+      sample_captured_at: number;
+      sample_response_id: string;
     }
   >();
 
@@ -1823,12 +1825,25 @@ function buildTopSources(responses: PromptResponse[], brand: Brand) {
         existing.citation_count += 1;
         existing.prompts.add(response.prompt_id);
         existing.engines.add(response.engine);
+        // A source sample must not depend on database row ordering. Prefer
+        // the newest observation, then a stable ID for tied timestamps.
+        if (
+          response.captured_at > existing.sample_captured_at ||
+          (response.captured_at === existing.sample_captured_at &&
+            response.id < existing.sample_response_id)
+        ) {
+          existing.sample_url = sampleUrl;
+          existing.sample_captured_at = response.captured_at;
+          existing.sample_response_id = response.id;
+        }
       } else {
         sources.set(domain, {
           citation_count: 1,
           prompts: new Set([response.prompt_id]),
           engines: new Set([response.engine]),
           sample_url: sampleUrl,
+          sample_captured_at: response.captured_at,
+          sample_response_id: response.id,
         });
       }
     }
