@@ -90,7 +90,12 @@ export async function seedBrand(
   input: SeedBrandInput | null,
   promptCount = 20,
 ): Promise<SeedResult> {
-  if (!input || !input.brand_id || !input.name || !input.domain) {
+  // An omitted/empty required field preserves the documented no-op. A
+  // present but wrong-typed falsy value (0, false, null) is malformed input.
+  if (!input ||
+      input.brand_id === undefined || input.brand_id === '' ||
+      input.name === undefined || input.name === '' ||
+      input.domain === undefined || input.domain === '') {
     console.error('seedBrand: no brand to seed, exiting');
     return {
       seeded: false,
@@ -106,17 +111,37 @@ export async function seedBrand(
       throw new DomainInputError(`${field} must be a string`);
     }
   }
-  if (!input.brand_id.trim()) {
-    throw new DomainInputError('brand_id must not be empty');
+  // Match the bounds used by the local track_brand MCP schema so hosted
+  // enrollment cannot persist IDs or matching terms the local client rejects.
+  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/i.test(input.brand_id)) {
+    throw new DomainInputError('brand_id must be 1-64 letters, digits, hyphens or underscores');
+  }
+  if (input.name.length > 200) {
+    throw new DomainInputError('name must be at most 200 characters');
+  }
+  if (input.domain.length < 3 || input.domain.length > 253) {
+    throw new DomainInputError('domain must be between 3 and 253 characters');
   }
   if (input.category != null && typeof input.category !== 'string') {
     throw new DomainInputError('category must be a string');
   }
+  if (typeof input.category === 'string' &&
+      (input.category.length < 1 || input.category.length > 200)) {
+    throw new DomainInputError('category must be between 1 and 200 characters');
+  }
   for (const field of ['competitors', 'aliases', 'exclude_terms'] as const) {
     const values = input[field];
-    if (values != null &&
-        (!Array.isArray(values) || !values.every((value) => typeof value === 'string'))) {
+    if (values === undefined) continue;
+    if (!Array.isArray(values) || !values.every((value) => typeof value === 'string')) {
       throw new DomainInputError(`${field} must be an array of strings`);
+    }
+    if (values.length > 20) {
+      throw new DomainInputError(`${field} must contain at most 20 entries`);
+    }
+    const min = field === 'competitors' ? 3 : 1;
+    const max = field === 'competitors' ? 253 : 100;
+    if (values.some((value) => value.length < min || value.length > max)) {
+      throw new DomainInputError(`${field} entries must be between ${min} and ${max} characters`);
     }
   }
 
