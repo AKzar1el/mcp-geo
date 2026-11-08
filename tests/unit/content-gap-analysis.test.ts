@@ -137,6 +137,53 @@ test('content-gap candidate limit does not depend on database response order for
   );
 });
 
+test('content gaps exclude competitors removed from current brand tracking', async () => {
+  const brand: Brand = {
+    id: 'acme', user_id: 'test-user', domain: 'acme.com', name: 'Acme',
+    category: 'Project management', competitors: ['current.com'],
+    aliases: [], exclude_terms: [], refresh_frequency: 'weekly',
+    created_at: 0, updated_at: 0,
+  };
+  const response = (id: string, competitors: string[]): PromptResponse => ({
+    id, run_id: 'run-1', prompt_id: id, prompt_text: `Question ${id}`,
+    engine: 'chatgpt', raw_response: '', brand_mentioned: 0,
+    brand_cited_with_link: 0, cited_urls: [], competitors_mentioned: competitors,
+    engine_citations: [], status: 'ok', error_message: null, captured_at: 1000,
+  });
+  let responses = [
+    response('retired-only', ['removed.com']),
+    response('mixed', ['removed.com', 'current.com']),
+  ];
+  let handler: ((input: { brand_id: string; max_recommendations: number }) => Promise<{
+    structuredContent: { recommendations: Array<{ topic: string; rationale: string }> };
+  }>) | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, callback: unknown) {
+      if (name === 'get_content_gaps') handler = callback as typeof handler;
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getLatestCompletedRun: async (_id, engine) => engine === 'chatgpt' ? { id: 'run-1' } : null,
+      getResponsesForRun: async () => responses,
+    } as Db,
+    env: {}, refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(handler);
+
+  const result = (await handler({ brand_id: brand.id, max_recommendations: 5 })).structuredContent;
+  assert.equal(result.recommendations.length, 1);
+  assert.match(result.recommendations[0].topic, /Question mixed/);
+  assert.match(result.recommendations[0].rationale, /current\.com/);
+  assert.doesNotMatch(result.recommendations[0].rationale, /removed\.com/);
+
+  responses = [response('retired-only', ['removed.com'])];
+  assert.deepEqual((await handler({ brand_id: brand.id, max_recommendations: 5 }))
+    .structuredContent.recommendations, []);
+});
+
 test('content gaps require an explicit opt-in before any paid Anthropic call', async () => {
   const brand: Brand = {
     id: 'acme',

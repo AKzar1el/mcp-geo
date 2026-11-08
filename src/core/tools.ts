@@ -1183,6 +1183,9 @@ export function registerTools(
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
       }
 
+      // Earlier scans may retain competitors removed by update_brand. Content
+      // gaps must reflect the brand's currently configured comparison cohort.
+      const trackedCompetitors = new Set(brand.competitors);
       const losingByPrompt = new Map<
         string,
         {
@@ -1197,18 +1200,19 @@ export function registerTools(
         const responses = await deps.db.getResponsesForRun(run.id);
         for (const r of responses) {
           if (r.brand_mentioned !== 0) continue;
-          if (r.competitors_mentioned.length === 0) continue;
+          const currentMentions = r.competitors_mentioned.filter((c) => trackedCompetitors.has(c));
+          if (currentMentions.length === 0) continue;
           const existing = losingByPrompt.get(r.prompt_id);
           if (existing) {
             existing.engines.add(r.engine);
-            for (const c of r.competitors_mentioned) {
+            for (const c of currentMentions) {
               existing.competitors.add(c);
             }
           } else {
             losingByPrompt.set(r.prompt_id, {
               prompt_text: r.prompt_text,
               engines: new Set([r.engine]),
-              competitors: new Set(r.competitors_mentioned),
+              competitors: new Set(currentMentions),
             });
           }
         }
