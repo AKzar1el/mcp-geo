@@ -8,6 +8,7 @@
 
 import { chatCompletion as anthropicChat } from './anthropic.js';
 import type { Brand, Db, NewPromptInput } from '../db/types.js';
+import { normalizeExactPrompts } from './prompt-set.js';
 
 export interface PromptGenEnv {
   db: Db;
@@ -86,17 +87,21 @@ function validateAndShape(
     const text = obj.prompt;
     const intent_stage = obj.intent_stage;
     const shape = obj.shape;
-    if (typeof text !== 'string' || text.trim().length === 0) continue;
+    if (typeof text !== 'string') continue;
+    let normalizedText: string;
+    try {
+      // Generated questions must meet the same limits as manually supplied sets.
+      [normalizedText] = normalizeExactPrompts([text]);
+    } catch {
+      continue;
+    }
     const normalizedStage =
       typeof intent_stage === 'string' && VALID_STAGES.has(intent_stage)
         ? intent_stage
         : null;
     const normalizedShape =
       typeof shape === 'string' && shape.trim().length > 0 ? shape : null;
-    const normalizedText = text.trim();
-    const dedupeKey = normalizedText
-      .replace(/\s+/g, ' ')
-      .toLocaleLowerCase('en-US');
+    const dedupeKey = normalizedText.toLocaleLowerCase('en-US');
     if (seen.has(dedupeKey)) continue;
     seen.add(dedupeKey);
     out.push({
