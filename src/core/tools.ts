@@ -1222,8 +1222,19 @@ export function registerTools(
         const run = await deps.db.getLatestCompletedRun(brand_id, engine);
         if (!run) continue;
         const responses = await deps.db.getResponsesForRun(run.id);
-        for (const r of responses) {
-          if (r.status !== 'ok') continue;
+        // Retain history for evidence, but use only each prompt's latest
+        // successful result when determining current content-gap advice.
+        const latestOkByPrompt = new Map<string, PromptResponse>();
+        for (const response of responses) {
+          if (response.status !== 'ok') continue;
+          const previous = latestOkByPrompt.get(response.prompt_id);
+          if (!previous ||
+              response.captured_at > previous.captured_at ||
+              (response.captured_at === previous.captured_at && response.id > previous.id)) {
+            latestOkByPrompt.set(response.prompt_id, response);
+          }
+        }
+        for (const r of latestOkByPrompt.values()) {
           successfulResponses++;
           if (r.brand_mentioned !== 0) continue;
           if (r.competitors_mentioned.length === 0) continue;
