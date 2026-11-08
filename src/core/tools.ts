@@ -534,7 +534,9 @@ export function registerTools(
         const responses = await deps.db.getResponsesForRun(run.id);
         if (responses.length === 0) continue;
         selectedResponses.push(...responses);
-        observedPromptIdsByEngine.set(engine, new Set(responses.map((response) => response.prompt_id)));
+        observedPromptIdsByEngine.set(engine, new Set(
+          responses.filter((response) => response.status === 'ok').map((response) => response.prompt_id),
+        ));
         measurementModeByEngine.set(engine, visibilityMeasurementMode(engine, run.mode));
         expectedPromptsByEngine.set(engine, run.prompts_total);
         const ts = run.completed_at ?? run.started_at;
