@@ -676,6 +676,7 @@ export function registerTools(
           .describe('Tracked brand ID to inspect.'),
         days: z
           .number()
+          .int()
           .min(1)
           .max(365)
           .default(30)
@@ -888,6 +889,7 @@ export function registerTools(
           .describe("Competitor domains; omit to use the brand's configured list."),
         days: z
           .number()
+          .int()
           .min(1)
           .max(90)
           .default(7)
@@ -1057,6 +1059,7 @@ export function registerTools(
           .describe('Tracked brand ID to inspect.'),
         days: z
           .number()
+          .int()
           .min(1)
           .max(90)
           .default(14)
