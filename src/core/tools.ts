@@ -241,6 +241,11 @@ const COMPARISON_HISTORY_CAVEAT =
 const compareOutputSchema = z.object({
   brand_id: z.string(),
   days: z.number(),
+  observation_coverage: z.object({
+    status: z.enum(['not_compared', 'no_observations', 'observed']),
+    successful_responses: z.number().int().nonnegative(),
+    note: z.string(),
+  }),
   google_search_sampling: googleSearchSamplingSchema,
   comparison_semantics: z.string(),
   historical_coverage_note: z.string(),
@@ -878,7 +883,7 @@ export function registerTools(
     {
       title: 'Compare competitor AI visibility',
       description:
-        "Compare recorded brand/competitor mentions, co-mentions and share of voice. New competitors are not retroactively scored. Example: brand_id='acme', competitor_domains=['rival.com'], days=7.",
+        "Compare brand/competitor mentions, co-mentions and share of voice. Coverage separates unmeasured from observed zero; new competitors lack historical scoring. Example: brand_id='acme', competitor_domains=['rival.com'], days=7.",
       inputSchema: {
         brand_id: z
           .string()
@@ -918,6 +923,11 @@ export function registerTools(
         const payload = {
           brand_id,
           days,
+          observation_coverage: {
+            status: 'not_compared' as const,
+            successful_responses: 0,
+            note: 'No competitors are configured or selected; response evidence was not queried.',
+          },
           google_search_sampling: null,
           message:
             'No competitor list configured for this brand. Pass competitor_domains or set brand.competitors.',
@@ -937,6 +947,17 @@ export function registerTools(
 
       const since = Date.now() - days * 86_400_000;
       const allResponses = await deps.db.getResponsesSince(brand_id, since);
+      const observation_coverage = allResponses.length === 0
+        ? {
+            status: 'no_observations' as const,
+            successful_responses: 0,
+            note: 'No usable AI responses were recorded in this window; zero shares are not measured absence.',
+          }
+        : {
+            status: 'observed' as const,
+            successful_responses: allResponses.length,
+            note: 'Shares use successful responses only; this count does not establish complete prompt or engine coverage.',
+          };
 
       const brandMentions = allResponses.reduce(
         (s, r) => s + (r.brand_mentioned === 1 ? 1 : 0),
@@ -1031,6 +1052,7 @@ export function registerTools(
       const payload = {
         brand_id,
         days,
+        observation_coverage,
         google_search_sampling: googleSearchSampling(allResponses.map(({ engine }) => engine)),
         your_share_of_voice_pct: pct(brandMentions),
         your_mentions: brandMentions,
