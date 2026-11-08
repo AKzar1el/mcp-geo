@@ -365,6 +365,25 @@ test('get_citations ranks engine-native source domains across the requested wind
   ]);
 });
 
+test('top source sample links use the latest observation regardless of database row order', async () => {
+  const older = promptResponse({
+    id: 'older-source',
+    captured_at: Date.now() - 120_000,
+    engine_citations: ['https://research.example/old-report'],
+  });
+  const newer = promptResponse({
+    id: 'newer-source',
+    captured_at: Date.now() - 60_000,
+    engine_citations: ['https://research.example/new-report'],
+  });
+  for (const responses of [[older, newer], [newer, older]]) {
+    const tool = registerCitationTool(citationRow({ captured_at: Date.now() - 60_000 }), responses);
+    const result = await tool.handler({ brand_id: brand.id });
+    assert.equal(result.structuredContent.top_sources[0].citation_count, 2);
+    assert.equal(result.structuredContent.top_sources[0].sample_url, 'https://research.example/new-report');
+  }
+});
+
 test('get_citations source ranking honors the engine filter', async () => {
   const citation = registerCitationTool(citationRow(), [
     promptResponse({
