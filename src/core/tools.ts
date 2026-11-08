@@ -1195,11 +1195,14 @@ export function registerTools(
           competitors: Set<string>;
         }
       >();
+      let successfulResponses = 0;
       for (const engine of ALL_ENGINES) {
         const run = await deps.db.getLatestCompletedRun(brand_id, engine);
         if (!run) continue;
         const responses = await deps.db.getResponsesForRun(run.id);
         for (const r of responses) {
+          if (r.status !== 'ok') continue;
+          successfulResponses++;
           if (r.brand_mentioned !== 0) continue;
           if (r.competitors_mentioned.length === 0) continue;
           const existing = losingByPrompt.get(r.prompt_id);
@@ -1237,8 +1240,9 @@ export function registerTools(
           google_search_sampling: null,
           recommendations: [],
           prompt_source: 'fallback' as const,
-          reason:
-            'no losing prompts yet — collect more data first (run refresh_brand, then re-check competitors)',
+          reason: successfulResponses === 0
+            ? 'No usable scan responses in the latest completed runs. A refresh can collect evidence but may incur provider charges.'
+            : `No competitor-only wins observed in ${successfulResponses} usable responses. This does not prove complete prompt or engine coverage.`,
         };
         return toolResult(payload);
       }
