@@ -10,7 +10,7 @@
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import type { Brand, Db, Prompt, PromptResponse } from '../db/types.js';
+import type { Brand, CitationSourceRow, Db, Prompt, PromptResponse } from '../db/types.js';
 import { extractUrls, findTermSetMatchIndex, hostMatchesDomain } from './openai.js';
 import {
   ALL_ENGINES,
@@ -1089,9 +1089,7 @@ export function registerTools(
       });
       const hasMore = rows.length > limit;
       const results = rows.slice(0, limit);
-      const sourceResponses = (await deps.db.getResponsesSince(brand_id, since)).filter(
-        (response) => response.captured_at <= until && (!engine || response.engine === engine),
-      );
+      const sourceResponses = await deps.db.getCitationSourceRows(brand_id, since, until, engine);
 
       const citations = results.map((row) => {
         const engineHosts = parseStringArray(row.engine_citations_json);
@@ -1790,7 +1788,7 @@ function citationId(responseId: string): string {
   return `cit_${responseId}`;
 }
 
-function buildTopSources(responses: PromptResponse[], brand: Brand) {
+function buildTopSources(responses: CitationSourceRow[], brand: Brand) {
   const sources = new Map<
     string,
     {
