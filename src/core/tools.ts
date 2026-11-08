@@ -1219,7 +1219,9 @@ export function registerTools(
         }))
         .sort(
           (a, b) =>
-            b.competitors_winning.length - a.competitors_winning.length,
+            b.competitors_winning.length - a.competitors_winning.length ||
+            b.engines_lost_on.length - a.engines_lost_on.length ||
+            a.prompt_text.localeCompare(b.prompt_text),
         )
         .slice(0, 15);
 
