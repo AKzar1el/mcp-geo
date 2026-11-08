@@ -188,6 +188,61 @@ test('content-gap candidate limit does not depend on database response order for
   );
 });
 
+test('content gaps use only the latest successful observation per engine and prompt', async () => {
+  const brand = {
+    id: 'acme', name: 'Acme', domain: 'acme.com',
+    competitors: ['rival.com'], aliases: [], exclude_terms: [],
+  } as Brand;
+  const row = (overrides: Partial<PromptResponse>): PromptResponse => ({
+    id: 'observation-a', run_id: 'run-1', prompt_id: 'outdated-loss',
+    prompt_text: 'Best software for agencies', engine: 'chatgpt',
+    raw_response: '', brand_mentioned: 0, brand_cited_with_link: 0,
+    cited_urls: [], competitors_mentioned: ['rival.com'], engine_citations: [],
+    status: 'ok', error_message: null, captured_at: 1000,
+    ...overrides,
+  });
+  const responses: PromptResponse[] = [
+    row({ id: 'outdated-a', prompt_id: 'outdated-loss', captured_at: 1000 }),
+    row({ id: 'current-z', prompt_id: 'outdated-loss', captured_at: 2000,
+      brand_mentioned: 1, competitors_mentioned: [] }),
+    row({ id: 'old-win', prompt_id: 'current-loss', prompt_text: 'Best tools for designers',
+      captured_at: 1000, brand_mentioned: 1, competitors_mentioned: [] }),
+    row({ id: 'new-loss', prompt_id: 'current-loss', prompt_text: 'Best tools for designers',
+      captured_at: 2000 }),
+    row({ id: 'tie-a', prompt_id: 'tied', prompt_text: 'Best tools for founders',
+      captured_at: 3000 }),
+    row({ id: 'tie-z', prompt_id: 'tied', prompt_text: 'Best tools for founders',
+      captured_at: 3000, brand_mentioned: 1, competitors_mentioned: [] }),
+    row({ id: 'failed', prompt_id: 'failed', prompt_text: 'Best tools for teams',
+      status: 'failed', captured_at: 4000 }),
+  ];
+  let handler: ((input: {
+    brand_id: string; max_recommendations: number; ai_analysis: boolean;
+  }) => Promise<{ structuredContent: { recommendations: Array<{ topic: string }> } }>) | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, callback: unknown) {
+      if (name === 'get_content_gaps') handler = callback as typeof handler;
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getLatestCompletedRun: async (_id, engine) => engine === 'chatgpt' ? { id: 'run-1' } : null,
+      getResponsesForRun: async () => responses,
+    } as Db,
+    env: {}, refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(handler);
+  const result = await handler({ brand_id: 'acme', max_recommendations: 5, ai_analysis: false });
+  assert.deepEqual(
+    result.structuredContent.recommendations.map((recommendation) => recommendation.topic),
+    ['Address losing prompt: "Best tools for designers"'],
+    'resolved, tied and failed observations must not manufacture current losses',
+  );
+});
+
+
 test('content gaps require an explicit opt-in before any paid Anthropic call', async () => {
   const brand: Brand = {
     id: 'acme',
