@@ -93,7 +93,19 @@ function registerCitationTool(
             b.response_id.localeCompare(a.response_id));
         return rows.slice(0, page?.limit ?? 50);
       },
-      getResponsesSince: async () => responses,
+      getResponsesSince: async () => {
+        throw new Error('get_citations must not hydrate full responses');
+      },
+      getCitationSourceRows: async (_brandId, _since, until, engine) =>
+        responses
+          .filter((response) => response.captured_at <= until && (!engine || response.engine === engine))
+          .map(({ id, prompt_id, engine: responseEngine, captured_at, engine_citations }) => ({
+            id,
+            prompt_id,
+            engine: responseEngine,
+            captured_at,
+            engine_citations,
+          })),
     } as Db,
     env: {},
     refreshExecution: 'sync',
@@ -363,6 +375,50 @@ test('get_citations ranks engine-native source domains across the requested wind
       is_brand_domain: false,
     },
   ]);
+});
+
+test('get_citations aggregates sources without fetching full AI response bodies', async () => {
+  const citation = registerCitationTool(citationRow({ captured_at: Date.now() - 1000 }), [
+    promptResponse({
+      captured_at: Date.now() - 1000,
+      engine_citations: ['https://research.example/source'],
+      raw_response: 'Sensitive full AI answer not needed to aggregate sources',
+    }),
+  ]);
+  const result = await citation.handler({ brand_id: brand.id });
+  assert.equal(result.structuredContent.top_sources[0].domain, 'research.example');
+  assert.equal(result.structuredContent.top_sources[0].citation_count, 1);
+});
+
+test('top source evidence spans the complete window on every cursor page', async () => {
+  const observed = Date.now() - 1000;
+  const citation = registerCitationTool([
+    citationRow({ prompt_id: 'p1', captured_at: observed }),
+    citationRow({ prompt_id: 'p2', captured_at: observed - 100 }),
+  ], [
+    promptResponse({
+      id: 'first-source',
+      prompt_id: 'p1',
+      captured_at: observed,
+      engine_citations: ['https://research.example/first'],
+    }),
+    promptResponse({
+      id: 'second-source',
+      prompt_id: 'p2',
+      captured_at: observed - 100,
+      engine_citations: ['https://research.example/second'],
+    }),
+  ]);
+  const first = await citation.handler({ brand_id: brand.id, limit: 1 });
+  assert.ok(first.structuredContent.next_cursor);
+  const second = await citation.handler({
+    brand_id: brand.id, limit: 1, cursor: first.structuredContent.next_cursor!,
+  });
+  assert.equal(first.structuredContent.citations.length, 1);
+  assert.equal(second.structuredContent.citations.length, 1);
+  assert.deepEqual(first.structuredContent.top_sources, second.structuredContent.top_sources);
+  assert.equal(first.structuredContent.top_sources[0].citation_count, 2);
+  assert.equal(first.structuredContent.top_sources[0].prompt_count, 2);
 });
 
 test('top source sample links use the latest observation regardless of database row order', async () => {

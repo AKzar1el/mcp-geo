@@ -24,6 +24,7 @@ import type {
   CachedResponse,
   CitationPageOptions,
   CitationRow,
+  CitationSourceRow,
   CreateBrandInput,
   Db,
   EnginePromptResult,
@@ -737,6 +738,33 @@ export function openSqliteDb(path?: string): SqliteDb {
         status: (row.status as ResponseStatus) ?? 'ok',
         error_message: row.error_message,
         captured_at: row.captured_at,
+      }));
+    },
+
+    async getCitationSourceRows(
+      brandId: string,
+      since: number,
+      until: number,
+      engine?: string,
+    ): Promise<CitationSourceRow[]> {
+      const rows = sqlite
+        .prepare(
+          `SELECT pr.id, pr.prompt_id, pr.engine, pr.engine_citations_json, pr.captured_at
+             FROM prompt_responses pr
+             JOIN runs r ON r.id = pr.run_id
+            WHERE r.brand_id = ?
+              AND pr.captured_at >= ?
+              AND pr.captured_at <= ?
+              AND pr.status = 'ok'
+              ${engine ? 'AND pr.engine = ?' : ''}
+            ORDER BY pr.captured_at ASC, pr.id ASC`,
+        )
+        .all(...(engine ? [brandId, since, until, engine] : [brandId, since, until])) as Array<
+          Omit<CitationSourceRow, 'engine_citations'> & { engine_citations_json: string | null }
+        >;
+      return rows.map(({ engine_citations_json, ...row }) => ({
+        ...row,
+        engine_citations: parseJsonArray(engine_citations_json),
       }));
     },
 
