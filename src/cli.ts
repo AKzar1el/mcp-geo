@@ -15,15 +15,12 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
   getAvailableEngines,
-  runEngineInProcess,
   type EngineKeys,
-  type RunEnginesResult,
 } from './core/engines.js';
+import { runLocalRefresh } from './core/local-refresh.js';
 import { LOCAL_SERVER_INSTRUCTIONS } from './core/server-instructions.js';
 import { registerLocalManagementTools, registerTools } from './core/tools.js';
 import { defaultDbPath, openSqliteDb } from './db/sqlite.js';
-import type { Brand, Prompt } from './db/types.js';
-import type { EngineName } from './core/engines.js';
 
 const ENGINE_KEY_NAMES = [
   'OPENAI_API_KEY',
@@ -94,26 +91,8 @@ async function main(): Promise<void> {
     refreshExecution: 'sync',
     // No fan-out and no subrequest budget locally: run each engine
     // inline and sequentially, then return. Progress goes to stderr.
-    runEnginesInline: async (
-      brand: Brand,
-      prompts: Prompt[],
-      engines: EngineName[],
-    ): Promise<RunEnginesResult> => {
-      const run_ids: Record<string, string> = {};
-      for (const engine of engines) {
-        const run = await db.createRun(brand, engine, 'live', prompts.length);
-        run_ids[engine] = run.id;
-        log(
-          `refresh_brand: running ${engine} (${prompts.length} prompt${prompts.length === 1 ? '' : 's'})...`,
-        );
-        await runEngineInProcess({ db, ...env }, brand, prompts, {
-          engine,
-          run_id: run.id,
-        });
-        log(`refresh_brand: ${engine} finished`);
-      }
-      return { run_ids, engines };
-    },
+    runEnginesInline: (brand, prompts, engines) =>
+      runLocalRefresh(db, env, brand, prompts, engines, undefined, log),
   });
   // Local-only brand management (track_brand, list_brands, list_prompts,
   // generate_prompts). The Worker keeps these behind /admin/* instead.
