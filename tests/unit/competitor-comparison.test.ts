@@ -45,6 +45,12 @@ function response(
 type ComparisonResult = {
   brand_id: string;
   days: number;
+  google_search_sampling: {
+    engines: string[];
+    country: 'us';
+    language: 'en';
+    scope_note: string;
+  } | null;
   your_share_of_voice_pct: number;
   your_mentions: number;
   comparison_semantics: string;
@@ -107,6 +113,7 @@ test('compare_competitors uses the full response window and exposes raw mention 
   assert.ok(capturedSince >= before && capturedSince <= after);
   assert.equal(result.structuredContent.your_mentions, 1);
   assert.equal(result.structuredContent.your_share_of_voice_pct, 20);
+  assert.equal(result.structuredContent.google_search_sampling, null);
   assert.deepEqual(result.structuredContent.outside_current_tracking, []);
   assert.match(result.structuredContent.historical_coverage_note, /not re-evaluate historical responses/);
   assert.deepEqual(
@@ -120,6 +127,35 @@ test('compare_competitors uses the full response window and exposes raw mention 
       { domain: 'monday.com', mentions: 2, share_of_voice_pct: 40 },
     ],
   );
+});
+
+test('compare_competitors discloses US/en sampling for observed Google search surfaces', async () => {
+  let comparison: ComparisonTool | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, handler: unknown) {
+      if (name === 'compare_competitors') {
+        comparison = { handler: handler as ComparisonTool['handler'] };
+      }
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getResponsesSince: async () => [
+        { ...response('overview', 'compare tools', 1, ['asana.com']), engine: 'ai_overviews' },
+        { ...response('mode', 'alternatives', 0, ['monday.com']), engine: 'ai_mode' },
+      ],
+    } as Db,
+    env: {},
+    refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(comparison);
+  const result = (await comparison.handler({ brand_id: brand.id })).structuredContent;
+  assert.deepEqual(result.google_search_sampling?.engines, ['ai_overviews', 'ai_mode']);
+  assert.equal(result.google_search_sampling?.country, 'us');
+  assert.equal(result.google_search_sampling?.language, 'en');
+  assert.match(result.google_search_sampling?.scope_note ?? '', /other markets or languages/);
 });
 
 test('compare_competitors separates brand-only, co-mentioned and competitor-only evidence', async () => {

@@ -241,6 +241,7 @@ const COMPARISON_HISTORY_CAVEAT =
 const compareOutputSchema = z.object({
   brand_id: z.string(),
   days: z.number(),
+  google_search_sampling: googleSearchSamplingSchema,
   comparison_semantics: z.string(),
   historical_coverage_note: z.string(),
   outside_current_tracking: z.array(z.string()),
@@ -914,6 +915,7 @@ export function registerTools(
         const payload = {
           brand_id,
           days,
+          google_search_sampling: null,
           message:
             'No competitor list configured for this brand. Pass competitor_domains or set brand.competitors.',
           your_share_of_voice_pct: 0,
@@ -1026,6 +1028,7 @@ export function registerTools(
       const payload = {
         brand_id,
         days,
+        google_search_sampling: googleSearchSampling(allResponses.map(({ engine }) => engine)),
         your_share_of_voice_pct: pct(brandMentions),
         your_mentions: brandMentions,
         comparison_semantics: COMPARISON_SEMANTICS,
