@@ -110,6 +110,7 @@ test('content-gap output schema describes recommendation records', () => {
   assert.equal(
     schema.safeParse({
       brand_id: 'acme',
+      google_search_sampling: null,
       recommendations: [
         {
           priority: 1,
@@ -126,6 +127,7 @@ test('content-gap output schema describes recommendation records', () => {
   assert.equal(
     schema.safeParse({
       brand_id: 'acme',
+      google_search_sampling: null,
       recommendations: [
         {
           priority: 6,

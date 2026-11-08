@@ -335,6 +335,7 @@ function decodeCitationCursor(cursor: string, brandId: string, days: number, eng
 
 const contentGapsOutputSchema = z.object({
   brand_id: z.string(),
+  google_search_sampling: googleSearchSamplingSchema,
   recommendations: z.array(contentGapRecommendationOutputSchema),
   prompt_source: z.enum(['generated', 'fallback']),
   reason: z.string().optional(),
@@ -1230,6 +1231,7 @@ export function registerTools(
       if (losingPrompts.length === 0) {
         const payload = {
           brand_id,
+          google_search_sampling: null,
           recommendations: [],
           prompt_source: 'fallback' as const,
           reason:
@@ -1265,6 +1267,9 @@ export function registerTools(
 
       const payload = {
         brand_id,
+        google_search_sampling: googleSearchSampling(
+          losingPrompts.flatMap((prompt) => prompt.engines_lost_on),
+        ),
         recommendations,
         prompt_source,
         ...(fallbackReason ? { reason: fallbackReason } : {}),
