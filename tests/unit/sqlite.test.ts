@@ -373,7 +373,7 @@ test('record a run: createRun + persistEngineRun + getResponsesForRun', async ()
   }
 });
 
-test('getResponsesSince returns every usable response in the requested brand window', async () => {
+test('getResponsesSince projects usable competitor evidence across SQLite and D1', async () => {
   const root = tempRoot();
   const db = openSqliteDb(join(root, 'digestseo.sqlite'));
   try {
@@ -417,6 +417,34 @@ test('getResponsesSince returns every usable response in the requested brand win
       all.map((r) => r.run_id),
       [first.id, second.id],
     );
+    const hostedSql: string[] = [];
+    const hosted = createD1Db({
+      prepare(sql: string) {
+        hostedSql.push(sql);
+        return {
+          bind(...params: unknown[]) {
+            return {
+              async all() {
+                const statement = db.raw.prepare(sql);
+                return { results: statement.all(...(params as Parameters<typeof statement.all>)) };
+              },
+            };
+          },
+        };
+      },
+    } as unknown as Parameters<typeof createD1Db>[0]);
+    for (const adapter of [db, hosted]) {
+      const evidence = await adapter.getResponsesSince('acme', Date.now() - 60_000);
+      assert.deepEqual(evidence.map((r) => r.competitors_mentioned), [
+        ['asana.com'], ['asana.com', 'monday.com'],
+      ]);
+      assert.deepEqual(evidence.map((r) => r.prompt_text), [
+        'best project management tools', 'best project management tools',
+      ]);
+      assert.ok(evidence.every((r) => !Object.hasOwn(r, 'raw_response')));
+      assert.ok(evidence.every((r) => !Object.hasOwn(r, 'cited_urls')));
+    }
+    assert.ok(hostedSql.every((sql) => !sql.includes('raw_response')));
 
     db.raw
       .prepare('UPDATE prompt_responses SET captured_at = ? WHERE run_id = ?')

@@ -10,7 +10,7 @@
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import type { Brand, CitationSourceRow, Db, Prompt, PromptResponse } from '../db/types.js';
+import type { Brand, CitationSourceRow, ComparisonEvidenceRow, Db, Prompt, PromptResponse } from '../db/types.js';
 import { extractUrls, findTermSetMatchIndex, hostMatchesDomain } from './openai.js';
 import {
   ALL_ENGINES,
@@ -984,7 +984,7 @@ export function registerTools(
       const coMentionedByPrompt = new Map<string, ComparedPrompt>();
       const collectPrompt = (
         map: Map<string, ComparedPrompt>,
-        r: PromptResponse,
+        r: ComparisonEvidenceRow,
         mentionedCompetitors: string[],
       ) => {
         const existing = map.get(r.prompt_id);
