@@ -63,6 +63,8 @@ test('updateTrackedBrand updates mutable metadata and preserves active prompts',
     assert.deepEqual(result.brand.aliases, ['Acme Suite', 'AS']);
     assert.deepEqual(result.brand.exclude_terms, ['acme']);
     assert.equal(result.brand.refresh_frequency, 'daily');
+    assert.ok(typeof result.brand.identity_changed_at === 'number');
+    const identityBoundary = result.brand.identity_changed_at;
 
     const afterPrompts = await db.getActivePrompts('acme');
     assert.deepEqual(
@@ -79,6 +81,7 @@ test('updateTrackedBrand updates mutable metadata and preserves active prompts',
     assert.equal(paused.historical_attribution_review_recommended, false);
     assert.deepEqual(paused.changed_fields, ['refresh_frequency']);
     assert.equal(paused.brand.refresh_frequency, 'manual');
+    assert.equal(paused.brand.identity_changed_at, identityBoundary);
     assert.deepEqual(
       (await db.getActivePrompts('acme')).map((prompt) => [prompt.id, prompt.text]),
       beforePrompts.map((prompt) => [prompt.id, prompt.text]),
@@ -98,6 +101,7 @@ test('updateTrackedBrand updates mutable metadata and preserves active prompts',
     assert.equal(noOp.prompt_set_review_recommended, false);
     assert.equal(noOp.historical_attribution_review_recommended, false);
     assert.deepEqual(noOp.changed_fields, []);
+    assert.equal(noOp.brand.identity_changed_at, identityBoundary);
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });
@@ -110,8 +114,10 @@ test('identity-only edits flag historical comparability, while competitor-only e
     const identity = await updateTrackedBrand(db, { brand_id: 'acme', domain: 'new-acme.com' });
     assert.equal(identity.prompt_set_review_recommended, false);
     assert.equal(identity.historical_attribution_review_recommended, true);
+    assert.ok(typeof identity.brand.identity_changed_at === 'number');
     const competitors = await updateTrackedBrand(db, { brand_id: 'acme', competitors: ['linear.app'] });
     assert.equal(competitors.historical_attribution_review_recommended, false);
+    assert.equal(competitors.brand.identity_changed_at, identity.brand.identity_changed_at);
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });

@@ -115,6 +115,11 @@ type VisibilitySnapshot = {
     historical_settings_warning: boolean;
     note: string;
   };
+  identity_attribution: {
+    last_identity_change_at: string | null;
+    stale_engines: string[];
+    note: string;
+  };
   per_engine: Array<{
     engine: string;
     measurement_mode: 'search_requested' | 'model_only';
@@ -149,6 +154,7 @@ function registerVisibilityTool(overrides?: {
   responses?: Record<string, PromptResponse[]>;
   activePromptIds?: string[];
   brand?: Brand;
+  identityChangedAt?: number;
 }): VisibilityTool {
   let visibility: VisibilityTool | undefined;
   const runMap: Partial<Record<EngineName, Run>> = { ...runs, ...overrides?.runs };
@@ -166,7 +172,10 @@ function registerVisibilityTool(overrides?: {
 
   registerTools(server, {
     db: {
-      getBrand: async () => overrides?.brand ?? brand,
+      getBrand: async () => ({
+        ...(overrides?.brand ?? brand),
+        identity_changed_at: overrides?.identityChangedAt ?? overrides?.brand?.identity_changed_at ?? brand.identity_changed_at ?? null,
+      }),
       getLatestCompletedRun: async (_brandId, engine) =>
         runMap[engine as EngineName] ?? null,
       getResponsesForRun: async (runId) => responseMap[runId] ?? [],
@@ -183,6 +192,14 @@ function registerVisibilityTool(overrides?: {
   assert.ok(visibility, 'check_visibility tool registration missing');
   return visibility;
 }
+
+test('check_visibility flags older engine scores after brand matching identity changes', async () => {
+  const changedAt = Date.UTC(2026, 0, 2);
+  const visibility = registerVisibilityTool({ identityChangedAt: changedAt });
+  const result = await visibility.handler({ brand_id: 'acme' });
+  assert.equal(result.structuredContent.identity_attribution.last_identity_change_at, new Date(changedAt).toISOString());
+  assert.deepEqual(result.structuredContent.identity_attribution.stale_engines, ['claude']);
+});
 
 test('check_visibility scopes every snapshot field to the requested engine', async () => {
   const visibility = registerVisibilityTool();

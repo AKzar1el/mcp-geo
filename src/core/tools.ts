@@ -155,6 +155,11 @@ const visibilityOutputSchema = z.object({
     historical_settings_warning: z.boolean(),
     note: z.string(),
   }),
+  identity_attribution: z.object({
+    last_identity_change_at: z.string().nullable(),
+    stale_engines: z.array(z.string()),
+    note: z.string(),
+  }),
   per_engine: z.array(
     z.object({
       engine: z.string(),
@@ -201,6 +206,13 @@ const historyOutputSchema = z.object({
     changes_detected: z.boolean(),
     changed_engines: z.array(z.string()),
     insufficient_evidence_engines: z.array(z.string()),
+    note: z.string(),
+  }),
+  identity_comparability: z.object({
+    last_identity_change_at: z.string().nullable(),
+    pre_change_runs: z.number(),
+    post_change_runs: z.number(),
+    mixes_identity_versions: z.boolean(),
     note: z.string(),
   }),
   series: z.array(
@@ -533,6 +545,8 @@ export function registerTools(
       const startedMsByEngine = new Map<string, number>();
       const expectedPromptsByEngine = new Map<string, number>();
       const observedPromptIdsByEngine = new Map<string, Set<string>>();
+      const identityChangedAt = brand.identity_changed_at ?? null;
+      const staleIdentityEngines: string[] = [];
       const measurementModeByEngine = new Map<string, 'search_requested' | 'model_only'>();
       let mostRecentTimestamp = 0;
       for (const engine of selectedEngines) {
@@ -544,6 +558,9 @@ export function registerTools(
         observedPromptIdsByEngine.set(engine, new Set(
           responses.filter((response) => response.status === 'ok').map((response) => response.prompt_id),
         ));
+        if (identityChangedAt !== null && run.started_at < identityChangedAt) {
+          staleIdentityEngines.push(engine);
+        }
         measurementModeByEngine.set(engine, visibilityMeasurementMode(engine, run.mode));
         expectedPromptsByEngine.set(engine, run.prompts_total);
         const ts = run.completed_at ?? run.started_at;
@@ -660,6 +677,12 @@ export function registerTools(
           historical_settings_warning: enginesBeforeBrandUpdate.length > 0,
           note: 'Brand settings were updated after the listed engines began their latest scans. Stored responses retain their original scoring and may reflect earlier brand identity, aliases, exclusions, or competitor tracking; the database cannot establish which settings changed. A cadence-only update may not affect the evidence. Review changes and refresh affected engines before relying on current-configuration comparisons.',
         },
+        identity_attribution: {
+          last_identity_change_at: identityChangedAt === null
+            ? null : new Date(identityChangedAt).toISOString(),
+          stale_engines: staleIdentityEngines.sort(),
+          note: 'Scores for engines whose runs began before the last matching-identity change were measured against an older name/domain/alias/exclusion set. Refresh those engines before attributing results to the current brand identity. Older changes before the identity-boundary migration are unknown.',
+        },
         per_engine: perEngine,
         top_winning_prompts: scored.top_winning_prompts,
         winning_prompt_evidence_note: 'engines_cited_in is a legacy field counting brand mentions in answers, not source citations. Use engines_mentioned_in for mention evidence and engines_with_brand_link for linked brand evidence. A link-only source without an answer mention is not a winning prompt.',
@@ -699,11 +722,24 @@ export function registerTools(
       },
     },
     async ({ brand_id, days, granularity }) => {
-      if (!await deps.db.getBrand(brand_id)) {
+      const brand = await deps.db.getBrand(brand_id);
+      if (!brand) {
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
       }
       const since = Date.now() - days * 86_400_000;
       const results = await deps.db.getVisibilityHistoryRows(brand_id, since);
+      const identityChangedAt = brand.identity_changed_at ?? null;
+      const preChangeRuns = identityChangedAt === null ? 0
+        : results.filter((row) => row.completed_at < identityChangedAt).length;
+      const postChangeRuns = identityChangedAt === null ? 0 : results.length - preChangeRuns;
+      const identity_comparability = {
+        last_identity_change_at: identityChangedAt === null
+          ? null : new Date(identityChangedAt).toISOString(),
+        pre_change_runs: preChangeRuns,
+        post_change_runs: postChangeRuns,
+        mixes_identity_versions: preChangeRuns > 0 && postChangeRuns > 0,
+        note: 'Stored runs before the latest brand matching-identity edit may not be comparable with later runs. Historical scores are retained, not re-scored against the current name/domain/aliases/exclusions. The boundary is based on recorded run timestamps; older edits before this migration cannot be reconstructed.',
+      };
 
       // Historical runs can contain both ungrounded OpenAI batches and
       // search-requested ChatGPT samples. Preserve the legacy series while
@@ -872,6 +908,7 @@ export function registerTools(
         google_search_sampling: googleSearchSampling(results.map(({ engine }) => engine)),
         measurement_scope: { ...measurement_scope, by_bucket },
         prompt_set_comparability,
+        identity_comparability,
         series,
       };
       return toolResult(payload);

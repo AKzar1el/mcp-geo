@@ -62,6 +62,11 @@ test('visibility output schema describes winning and losing prompt records', () 
       historical_settings_warning: true,
       note: 'Brand settings may have changed since the scan.',
     },
+    identity_attribution: {
+      last_identity_change_at: null,
+      stale_engines: [],
+      note: 'No known identity change.',
+    },
     per_engine: [],
     top_winning_prompts: [
       {
