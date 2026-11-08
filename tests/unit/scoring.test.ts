@@ -139,6 +139,29 @@ test('losing prompts require a competitor mention and aggregate across engines',
   ]);
 });
 
+test('top winning and losing prompt ties are stable across response row order', () => {
+  const winners = ['p5', 'p4', 'p3', 'p2', 'p1'].map((id) =>
+    response('chatgpt', id, 1));
+  const losers = ['q5', 'q4', 'q3', 'q2', 'q1'].map((id) =>
+    response('gemini', id, 0, { competitors: ['asana.com'] }));
+
+  for (const rows of [
+    [...winners, ...losers],
+    [...losers, ...winners].reverse(),
+  ]) {
+    const result = computeOverallScore(brand, rows);
+    assert.deepEqual(
+      result.top_winning_prompts.map(({ prompt }) => prompt),
+      ['prompt text for p1', 'prompt text for p2', 'prompt text for p3'],
+    );
+    assert.deepEqual(
+      result.top_losing_prompts.map(({ prompt }) => prompt),
+      ['prompt text for q1', 'prompt text for q2', 'prompt text for q3'],
+    );
+    assert.equal(result.overall_score, 50);
+  }
+});
+
 test('visibility scoring counts each prompt once when a run has repeated successful observations', () => {
   const earlier = {
     ...response('chatgpt', 'p1', 1),
