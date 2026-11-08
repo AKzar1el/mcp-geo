@@ -466,7 +466,7 @@ function filterRequestedEngines(
   requested: EngineName[] | undefined,
 ): EngineName[] {
   const available = new Set(getAvailableEngines(env));
-  if (!requested || requested.length === 0) return [...available];
+  if (requested === undefined) return [...available];
   return uniqueEngineNames(requested).filter((e) => available.has(e));
 }
 
@@ -1289,8 +1289,9 @@ export function registerTools(
           .describe('Tracked brand ID to refresh.'),
         engines: z
           .array(engineSchema)
+          .min(1)
           .optional()
-          .describe('Engines to run; omit for every configured engine.'),
+          .describe('Engines to run (at least one); omit for every configured engine.'),
       },
       outputSchema: refreshOutputSchema,
       annotations: {
@@ -1311,6 +1312,9 @@ export function registerTools(
         );
       }
       const requested = engines as EngineName[] | undefined;
+      if (requested?.length === 0) {
+        throw new Error('Select at least one engine or omit engines to refresh every configured engine.');
+      }
       if (requested) {
         const unknown = requested.filter((e) => !isEngineName(e));
         if (unknown.length > 0) {
