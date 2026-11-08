@@ -238,6 +238,29 @@ test('get_citations preserves the full engine-native brand citation URL', async 
   assert.equal(result.structuredContent.citations[0].url_source, 'provider_source');
 });
 
+test('DNS root-dot source URLs retain brand provenance and share one canonical source host', async () => {
+  const citation = registerCitationTool(citationRow({
+    engine_citations_json: JSON.stringify(['https://docs.acme.com./root-dot-reference']),
+  }), [
+    promptResponse({
+      id: 'source-root-dot',
+      prompt_id: 'prompt-root-dot',
+      engine_citations: ['https://docs.acme.com./root-dot-reference'],
+    }),
+    promptResponse({
+      id: 'source-canonical',
+      prompt_id: 'prompt-canonical',
+      engine_citations: ['https://docs.acme.com/canonical-reference'],
+    }),
+  ]);
+  const result = await citation.handler({ brand_id: brand.id });
+  assert.equal(result.structuredContent.citations[0].cited_url, 'https://docs.acme.com./root-dot-reference');
+  assert.equal(result.structuredContent.citations[0].url_source, 'provider_source');
+  assert.deepEqual(result.structuredContent.top_sources.map(({ domain, citation_count, is_brand_domain }) => ({
+    domain, citation_count, is_brand_domain,
+  })), [{ domain: 'docs.acme.com', citation_count: 2, is_brand_domain: true }]);
+});
+
 test('get_citations never fabricates a URL from host-only evidence', async () => {
   const citation = registerCitationTool(
     citationRow({

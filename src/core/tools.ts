@@ -1862,6 +1862,9 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand) {
         if (parsed.username || parsed.password) continue;
         let domain = parsed.hostname.toLowerCase();
         if (domain.startsWith('www.')) domain = domain.slice(4);
+        // Group a fully qualified DNS hostname with its ordinary spelling.
+        // Keep the original URL as source evidence without rewriting it.
+        domain = domain.replace(/(?<!\.)\.$/, '');
         if (!domain) continue;
         if (!domainsForResponse.has(domain)) domainsForResponse.set(domain, rawUrl);
       } catch {

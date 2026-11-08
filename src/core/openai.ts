@@ -236,9 +236,12 @@ export function hostMatchesDomain(host: string, domain: string): boolean {
     .replace(/^https?:\/\//i, '')
     .replace(/^www\./i, '')
     .split('/')[0]
-    .toLowerCase();
+    .toLowerCase()
+    .replace(/(?<!\.)\.$/, '');
   if (d.length === 0) return false;
-  const h = host.toLowerCase();
+  // One DNS root dot is equivalent to the unqualified host. Do not collapse
+  // repeated dots or lookalike suffixes into apparent brand matches.
+  const h = host.toLowerCase().replace(/(?<!\.)\.$/, '');
   return h === d || h.endsWith(`.${d}`);
 }
 

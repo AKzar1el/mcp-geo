@@ -134,6 +134,9 @@ test('hostMatchesDomain: exact, subdomain, lookalike, unrelated', () => {
   assert.equal(hostMatchesDomain('asana.com', 'acme.com'), false);
   // domain stored with protocol/www noise still matches
   assert.equal(hostMatchesDomain('acme.com', 'https://www.acme.com'), true);
+  assert.equal(hostMatchesDomain('docs.acme.com.', 'acme.com'), true);
+  assert.equal(hostMatchesDomain('acme.com.evil.io.', 'acme.com'), false);
+  assert.equal(hostMatchesDomain('acme.com..', 'acme.com'), false);
 });
 
 
