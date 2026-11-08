@@ -181,7 +181,10 @@ test('content gaps require an explicit opt-in before any paid Anthropic call', a
     max_recommendations: number;
     ai_analysis?: boolean;
   }) => Promise<GapResult>) | undefined;
-  let schema: { ai_analysis: { parse: (value: unknown) => boolean } } | undefined;
+  let schema: {
+    ai_analysis: { parse: (value: unknown) => boolean };
+    max_recommendations: { parse: (value: unknown) => number };
+  } | undefined;
   const server = {
     registerTool(
       name: string,
@@ -209,6 +212,12 @@ test('content gaps require an explicit opt-in before any paid Anthropic call', a
   assert.ok(schema);
   assert.equal(schema.ai_analysis.parse(undefined), false);
   assert.equal(schema.ai_analysis.parse(true), true);
+  assert.equal(schema.max_recommendations.parse(undefined), 5);
+  assert.equal(schema.max_recommendations.parse(3), 3);
+  assert.throws(
+    () => schema.max_recommendations.parse(2.5),
+    'fractional limits must be rejected before a token-billed analysis',
+  );
 
   const originalFetch = globalThis.fetch;
   let calls = 0;

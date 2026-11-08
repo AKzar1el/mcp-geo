@@ -1159,10 +1159,11 @@ export function registerTools(
           .describe('Tracked brand ID to analyze.'),
         max_recommendations: z
           .number()
+          .int()
           .min(1)
           .max(10)
           .default(5)
-          .describe('Maximum recommendations to return.'),
+          .describe('Maximum recommendations to return (integer, 1-10).'),
         ai_analysis: z
           .boolean()
           .default(false)
