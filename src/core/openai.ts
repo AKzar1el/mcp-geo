@@ -138,6 +138,7 @@ const COMMON_TWO_LABEL_PUBLIC_SUFFIXES = new Set([
   'co.jp', 'or.jp', 'ne.jp',
   'com.br', 'com.mx', 'com.tr', 'com.sg', 'com.hk', 'com.tw',
   'co.kr', 'co.za', 'co.in', 'com.cn', 'com.ar',
+  'co.id', 'com.ph', 'com.my',
 ]);
 
 function rootTermFromDomain(domain: string): string {
