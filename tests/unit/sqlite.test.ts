@@ -25,6 +25,7 @@ const EXPECTED_MIGRATIONS = [
   '0003_perplexity_citations.sql',
   '0004_response_status.sql',
   '0005_brand_alias_exclude.sql',
+  '0006_brand_identity_boundary.sql',
 ];
 
 function tempRoot(): string {
@@ -96,6 +97,9 @@ test('open applies every migration in order, tracks them, and creates parent dir
     ]) {
       assert.ok(tables.has(t), `expected table '${t}' to exist`);
     }
+    const identityColumn = db.raw
+      .prepare('PRAGMA table_info(brands)').all() as Array<{ name: string }>;
+    assert.ok(identityColumn.some((column) => column.name === 'identity_changed_at'));
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });
@@ -107,7 +111,7 @@ test('re-opening an existing database does not re-apply migrations', () => {
   const dbPath = join(root, 'digestseo.sqlite');
   const first = openSqliteDb(dbPath);
   first.close();
-  // 0003/0005 are ALTER TABLE ADD COLUMN — re-applying them would throw
+  // 0003/0005/0006 are ALTER TABLE ADD COLUMN — re-applying them would throw
   // "duplicate column name", so a clean second open proves tracking works.
   const second = openSqliteDb(dbPath);
   try {
