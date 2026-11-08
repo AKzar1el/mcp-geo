@@ -95,6 +95,24 @@ test('competitors detected with word boundaries', () => {
   );
 });
 
+test('plain competitor names are recognized for common multi-label country suffixes', () => {
+  const regional = {
+    ...acme,
+    competitors: ['orbit.co.id', 'vireo.com.ph', 'kanji.com.my'],
+  };
+  const result = extractCitations(
+    regional,
+    'Orbit, Vireo and Kanji are popular options. Orbiter and Vireolabs are unrelated.',
+  );
+  assert.deepEqual(result.competitors_mentioned, regional.competitors);
+});
+
+test('multi-label country suffixes do not match unrelated longer names', () => {
+  const regional = { ...acme, competitors: ['orbit.co.id', 'vireo.com.ph'] };
+  const result = extractCitations(regional, 'Orbiter and Vireolabs are not those brands.');
+  assert.deepEqual(result.competitors_mentioned, []);
+});
+
 test('competitor not detected when absent', () => {
   const r = extractCitations(acme, 'Acme is the only tool worth using.');
   assert.deepEqual(r.competitors_mentioned, []);

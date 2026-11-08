@@ -430,6 +430,89 @@ test('getResponsesSince returns every usable response in the requested brand win
   }
 });
 
+test('citation source projections preserve complete window, engine and status parity in SQLite and D1', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'digestseo.sqlite'));
+  try {
+    seedBrandFixture(db, 'acme');
+    seedPromptFixture(db, 'acme', 'p1', 'Which tools cite Acme?');
+    seedBrandFixture(db, 'other');
+    seedPromptFixture(db, 'other', 'p2', 'Which tools cite Other?');
+    const brand = await db.getBrand('acme');
+    const other = await db.getBrand('other');
+    assert.ok(brand);
+    assert.ok(other);
+    const now = Date.now();
+    const insert = async (
+      target: typeof brand,
+      promptId: string,
+      engine: string,
+      status: 'ok' | 'failed',
+      citedUrl: string,
+      capturedAt: number,
+    ) => {
+      const run = await db.createRun(target, engine, 'live', 1);
+      await db.persistEngineRun(run.id, engine, 'offline-model', 3600, [{
+        prompt_id: promptId,
+        raw_response: 'This large AI answer is not needed for source aggregation. '.repeat(30),
+        brand_mentioned: 0,
+        brand_cited_with_link: 0,
+        cited_urls: [],
+        competitors_mentioned: [],
+        engine_citations: [citedUrl],
+        status,
+      }]);
+      db.raw.prepare('UPDATE prompt_responses SET captured_at = ? WHERE run_id = ?')
+        .run(capturedAt, run.id);
+    };
+    await insert(brand, 'p1', 'chatgpt', 'ok', 'https://research.example/old', now - 20_000);
+    await insert(brand, 'p1', 'perplexity', 'ok', 'https://research.example/new', now - 10_000);
+    await insert(brand, 'p1', 'gemini', 'failed', 'https://invalid.example/failed', now - 5_000);
+    await insert(other, 'p2', 'chatgpt', 'ok', 'https://other.example/citation', now - 5_000);
+
+    const selectedSql: string[] = [];
+    const hosted = createD1Db({
+      prepare(sql: string) {
+        selectedSql.push(sql);
+        return {
+          bind(...params: unknown[]) {
+            return {
+              async all() {
+                const statement = db.raw.prepare(sql);
+                return { results: statement.all(...(params as Parameters<typeof statement.all>)) };
+              },
+            };
+          },
+        };
+      },
+    } as unknown as Parameters<typeof createD1Db>[0]);
+
+    const expectedUrls = ['https://research.example/old', 'https://research.example/new'];
+    for (const adapter of [db, hosted]) {
+      const full = await adapter.getCitationSourceRows('acme', now - 30_000, now);
+      assert.deepEqual(full.map((row) => row.engine_citations[0]), expectedUrls);
+      assert.deepEqual(full.map((row) => row.engine), ['chatgpt', 'perplexity']);
+      assert.ok(full.every((row) => !Object.hasOwn(row, 'raw_response')));
+      assert.ok(full.every((row) => !Object.hasOwn(row, 'prompt_text')));
+      const filtered = await adapter.getCitationSourceRows(
+        'acme', now - 15_000, now - 8_000, 'perplexity',
+      );
+      assert.equal(filtered.length, 1);
+      assert.equal(filtered[0].engine_citations[0], expectedUrls[1]);
+      assert.deepEqual(
+        await adapter.getCitationSourceRows('acme', now - 9_000, now),
+        [],
+        'failed observations and other brands must not appear',
+      );
+    }
+    assert.ok(selectedSql.length >= 3);
+    assert.ok(selectedSql.every((sql) => !sql.includes('raw_response')));
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('getLatestCompletedRun skips runs whose rows all failed', async () => {
   const root = tempRoot();
   const db = openSqliteDb(join(root, 'digestseo.sqlite'));

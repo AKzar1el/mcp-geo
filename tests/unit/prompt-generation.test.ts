@@ -232,3 +232,49 @@ test('generatePrompts rejects whitespace-only Anthropic credentials before reque
     globalThis.fetch = originalFetch;
   }
 });
+
+test('generated prompts reject oversized questions before replacing an existing prompt set', async () => {
+  const originalFetch = globalThis.fetch;
+  const oversized = [prompt('x'.repeat(501))];
+  const responses = [anthropicResponse(oversized), anthropicResponse(oversized)];
+  let fetchCalls = 0;
+  let replaceCalls = 0;
+  const db = {
+    replacePrompts: async () => { replaceCalls++; return 0; },
+  } as unknown as Db;
+  globalThis.fetch = (async () => {
+    fetchCalls++;
+    const response = responses.shift();
+    if (!response) throw new Error('unexpected generator request');
+    return response;
+  }) as typeof fetch;
+
+  try {
+    await assert.rejects(
+      generatePrompts({ db, ANTHROPIC_API_KEY: 'offline-key' }, brand, 1),
+      /unique valid prompts; expected 1/,
+    );
+    assert.equal(fetchCalls, 2);
+    assert.equal(replaceCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('generated prompts use the same whitespace normalization as manually set prompts', async () => {
+  const originalFetch = globalThis.fetch;
+  let saved: NewPromptInput[] | undefined;
+  const db = {
+    replacePrompts: async (_brandId: string, prompts: NewPromptInput[]) => {
+      saved = prompts;
+      return prompts.length;
+    },
+  } as unknown as Db;
+  globalThis.fetch = (async () => anthropicResponse([prompt('  Best   tools\n for   agencies  ')])) as typeof fetch;
+  try {
+    await generatePrompts({ db, ANTHROPIC_API_KEY: 'offline-key' }, brand, 1);
+    assert.equal(saved?.[0]?.text, 'Best tools for agencies');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

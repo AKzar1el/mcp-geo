@@ -67,6 +67,76 @@ test('fallback recommendations rank stronger observed losses first and respect t
   assert.equal(recommendations[1].suggested_format, 'faq_page');
 });
 
+test('content-gap candidate limit does not depend on database response order for tied losses', async () => {
+  const brand: Brand = {
+    id: 'acme',
+    user_id: 'test-user',
+    domain: 'acme.com',
+    name: 'Acme',
+    category: 'Project management',
+    competitors: ['rival.com'],
+    aliases: [],
+    exclude_terms: [],
+    refresh_frequency: 'weekly',
+    created_at: 0,
+    updated_at: 0,
+  };
+  const responses: PromptResponse[] = Array.from({ length: 16 }, (_, index) => {
+    const id = String(index).padStart(2, '0');
+    return {
+      id: `response-${id}`,
+      run_id: 'run-1',
+      prompt_id: `prompt-${id}`,
+      prompt_text: `Buyer question ${id}`,
+      engine: 'chatgpt',
+      raw_response: '',
+      brand_mentioned: 0,
+      brand_cited_with_link: 0,
+      cited_urls: [],
+      competitors_mentioned: ['rival.com'],
+      engine_citations: [],
+      status: 'ok',
+      error_message: null,
+      captured_at: 1000,
+    };
+  });
+  let reversed = false;
+  let handler: ((input: {
+    brand_id: string;
+    max_recommendations: number;
+    ai_analysis?: boolean;
+  }) => Promise<{ structuredContent: {
+    recommendations: Array<{ topic: string }>;
+  } }>) | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, callback: unknown) {
+      if (name === 'get_content_gaps') handler = callback as typeof handler;
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getLatestCompletedRun: async (_id, engine) =>
+        engine === 'chatgpt' ? { id: 'run-1' } : null,
+      getResponsesForRun: async () => reversed ? [...responses].reverse() : responses,
+    } as Db,
+    env: {},
+    refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(handler);
+
+  const request = { brand_id: 'acme', max_recommendations: 5 };
+  const forward = (await handler(request)).structuredContent.recommendations.map((r) => r.topic);
+  reversed = true;
+  const backward = (await handler(request)).structuredContent.recommendations.map((r) => r.topic);
+  assert.deepEqual(backward, forward);
+  assert.deepEqual(
+    forward,
+    Array.from({ length: 5 }, (_, i) => `Address losing prompt: "Buyer question ${String(i).padStart(2, '0')}"`),
+  );
+});
+
 test('content gaps require an explicit opt-in before any paid Anthropic call', async () => {
   const brand: Brand = {
     id: 'acme',
@@ -111,7 +181,10 @@ test('content gaps require an explicit opt-in before any paid Anthropic call', a
     max_recommendations: number;
     ai_analysis?: boolean;
   }) => Promise<GapResult>) | undefined;
-  let schema: { ai_analysis: { parse: (value: unknown) => boolean } } | undefined;
+  let schema: {
+    ai_analysis: { parse: (value: unknown) => boolean };
+    max_recommendations: { parse: (value: unknown) => number };
+  } | undefined;
   const server = {
     registerTool(
       name: string,
@@ -139,6 +212,12 @@ test('content gaps require an explicit opt-in before any paid Anthropic call', a
   assert.ok(schema);
   assert.equal(schema.ai_analysis.parse(undefined), false);
   assert.equal(schema.ai_analysis.parse(true), true);
+  assert.equal(schema.max_recommendations.parse(undefined), 5);
+  assert.equal(schema.max_recommendations.parse(3), 3);
+  assert.throws(
+    () => schema.max_recommendations.parse(2.5),
+    'fractional limits must be rejected before a token-billed analysis',
+  );
 
   const originalFetch = globalThis.fetch;
   let calls = 0;
@@ -293,4 +372,52 @@ test('content-gap analyzer rejects whitespace-only Anthropic credentials before 
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test('content-gap advice discloses US/English Google sampling only for observed losing engines', async () => {
+  const brand: Brand = {
+    id: 'acme', user_id: 'test-user', name: 'Acme', domain: 'acme.com',
+    category: 'Software', competitors: ['rival.com'], aliases: [],
+    exclude_terms: [], refresh_frequency: 'weekly', created_at: 0, updated_at: 0,
+  };
+  const response = (engine: string): PromptResponse => ({
+    id: 'response-1', run_id: 'run-1', prompt_id: 'prompt-1',
+    prompt_text: 'Best software for agencies', engine,
+    raw_response: '', brand_mentioned: 0, brand_cited_with_link: 0,
+    cited_urls: [], competitors_mentioned: ['rival.com'], engine_citations: [],
+    status: 'ok', error_message: null, captured_at: 1000,
+  });
+  let observedEngine = 'ai_overviews';
+  let handler: ((input: { brand_id: string; max_recommendations: number }) => Promise<{
+    structuredContent: { google_search_sampling: null | {
+      engines: string[]; country: string; language: string; scope_note: string;
+    } };
+  }>) | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, callback: unknown) {
+      if (name === 'get_content_gaps') handler = callback as typeof handler;
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getLatestCompletedRun: async (_id, engine) =>
+        engine === observedEngine ? { id: 'run-1' } : null,
+      getResponsesForRun: async () => [response(observedEngine)],
+    } as Db,
+    env: {}, refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(handler);
+  const google = (await handler({ brand_id: 'acme', max_recommendations: 1 }))
+    .structuredContent.google_search_sampling;
+  assert.deepEqual(google?.engines, ['ai_overviews']);
+  assert.equal(google?.country, 'us');
+  assert.equal(google?.language, 'en');
+  assert.match(google?.scope_note ?? '', /US location/);
+
+  observedEngine = 'chatgpt';
+  const nonGoogle = (await handler({ brand_id: 'acme', max_recommendations: 1 }))
+    .structuredContent.google_search_sampling;
+  assert.equal(nonGoogle, null);
 });

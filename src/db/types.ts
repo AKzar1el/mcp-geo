@@ -209,6 +209,16 @@ export interface CitationRow {
   prompt_id: string;
 }
 
+// Full-window source aggregation needs the provider's native citation URLs,
+// not the potentially large AI answer body or prompt text.
+export interface CitationSourceRow {
+  id: string;
+  prompt_id: string;
+  engine: string;
+  engine_citations: string[];
+  captured_at: number;
+}
+
 export interface CitationPageOptions {
   limit?: number;
   until?: number;
@@ -280,6 +290,14 @@ export interface Db {
   // All usable responses captured for a brand at/after `since`, across runs
   // and engines. Used for bounded-window competitor/share-of-voice analysis.
   getResponsesSince(brandId: string, since: number): Promise<PromptResponse[]>;
+  // All successful observations in the fixed citation window, including
+  // unmentioned brand responses. Never restrict this to the current cursor page.
+  getCitationSourceRows(
+    brandId: string,
+    since: number,
+    until: number,
+    engine?: string,
+  ): Promise<CitationSourceRow[]>;
   replacePrompts(brandId: string, prompts: NewPromptInput[]): Promise<number>;
   cacheGet(
     promptHash: string,

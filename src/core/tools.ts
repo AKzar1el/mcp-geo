@@ -10,7 +10,7 @@
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import type { Brand, Db, Prompt, PromptResponse } from '../db/types.js';
+import type { Brand, CitationSourceRow, Db, Prompt, PromptResponse } from '../db/types.js';
 import { extractUrls, findTermSetMatchIndex, hostMatchesDomain } from './openai.js';
 import {
   ALL_ENGINES,
@@ -241,6 +241,7 @@ const COMPARISON_HISTORY_CAVEAT =
 const compareOutputSchema = z.object({
   brand_id: z.string(),
   days: z.number(),
+  google_search_sampling: googleSearchSamplingSchema,
   comparison_semantics: z.string(),
   historical_coverage_note: z.string(),
   outside_current_tracking: z.array(z.string()),
@@ -334,6 +335,7 @@ function decodeCitationCursor(cursor: string, brandId: string, days: number, eng
 
 const contentGapsOutputSchema = z.object({
   brand_id: z.string(),
+  google_search_sampling: googleSearchSamplingSchema,
   recommendations: z.array(contentGapRecommendationOutputSchema),
   prompt_source: z.enum(['generated', 'fallback']),
   reason: z.string().optional(),
@@ -464,7 +466,7 @@ function filterRequestedEngines(
   requested: EngineName[] | undefined,
 ): EngineName[] {
   const available = new Set(getAvailableEngines(env));
-  if (!requested || requested.length === 0) return [...available];
+  if (requested === undefined) return [...available];
   return uniqueEngineNames(requested).filter((e) => available.has(e));
 }
 
@@ -534,7 +536,9 @@ export function registerTools(
         const responses = await deps.db.getResponsesForRun(run.id);
         if (responses.length === 0) continue;
         selectedResponses.push(...responses);
-        observedPromptIdsByEngine.set(engine, new Set(responses.map((response) => response.prompt_id)));
+        observedPromptIdsByEngine.set(engine, new Set(
+          responses.filter((response) => response.status === 'ok').map((response) => response.prompt_id),
+        ));
         measurementModeByEngine.set(engine, visibilityMeasurementMode(engine, run.mode));
         expectedPromptsByEngine.set(engine, run.prompts_total);
         const ts = run.completed_at ?? run.started_at;
@@ -672,6 +676,7 @@ export function registerTools(
           .describe('Tracked brand ID to inspect.'),
         days: z
           .number()
+          .int()
           .min(1)
           .max(365)
           .default(30)
@@ -884,6 +889,7 @@ export function registerTools(
           .describe("Competitor domains; omit to use the brand's configured list."),
         days: z
           .number()
+          .int()
           .min(1)
           .max(90)
           .default(7)
@@ -912,6 +918,7 @@ export function registerTools(
         const payload = {
           brand_id,
           days,
+          google_search_sampling: null,
           message:
             'No competitor list configured for this brand. Pass competitor_domains or set brand.competitors.',
           your_share_of_voice_pct: 0,
@@ -1024,6 +1031,7 @@ export function registerTools(
       const payload = {
         brand_id,
         days,
+        google_search_sampling: googleSearchSampling(allResponses.map(({ engine }) => engine)),
         your_share_of_voice_pct: pct(brandMentions),
         your_mentions: brandMentions,
         comparison_semantics: COMPARISON_SEMANTICS,
@@ -1051,6 +1059,7 @@ export function registerTools(
           .describe('Tracked brand ID to inspect.'),
         days: z
           .number()
+          .int()
           .min(1)
           .max(90)
           .default(14)
@@ -1087,9 +1096,7 @@ export function registerTools(
       });
       const hasMore = rows.length > limit;
       const results = rows.slice(0, limit);
-      const sourceResponses = (await deps.db.getResponsesSince(brand_id, since)).filter(
-        (response) => response.captured_at <= until && (!engine || response.engine === engine),
-      );
+      const sourceResponses = await deps.db.getCitationSourceRows(brand_id, since, until, engine);
 
       const citations = results.map((row) => {
         const engineHosts = parseStringArray(row.engine_citations_json);
@@ -1157,10 +1164,11 @@ export function registerTools(
           .describe('Tracked brand ID to analyze.'),
         max_recommendations: z
           .number()
+          .int()
           .min(1)
           .max(10)
           .default(5)
-          .describe('Maximum recommendations to return.'),
+          .describe('Maximum recommendations to return (integer, 1-10).'),
         ai_analysis: z
           .boolean()
           .default(false)
@@ -1217,13 +1225,16 @@ export function registerTools(
         }))
         .sort(
           (a, b) =>
-            b.competitors_winning.length - a.competitors_winning.length,
+            b.competitors_winning.length - a.competitors_winning.length ||
+            b.engines_lost_on.length - a.engines_lost_on.length ||
+            a.prompt_text.localeCompare(b.prompt_text),
         )
         .slice(0, 15);
 
       if (losingPrompts.length === 0) {
         const payload = {
           brand_id,
+          google_search_sampling: null,
           recommendations: [],
           prompt_source: 'fallback' as const,
           reason:
@@ -1259,6 +1270,9 @@ export function registerTools(
 
       const payload = {
         brand_id,
+        google_search_sampling: googleSearchSampling(
+          losingPrompts.flatMap((prompt) => prompt.engines_lost_on),
+        ),
         recommendations,
         prompt_source,
         ...(fallbackReason ? { reason: fallbackReason } : {}),
@@ -1278,8 +1292,9 @@ export function registerTools(
           .describe('Tracked brand ID to refresh.'),
         engines: z
           .array(engineSchema)
+          .min(1)
           .optional()
-          .describe('Engines to run; omit for every configured engine.'),
+          .describe('Engines to run (at least one); omit for every configured engine.'),
       },
       outputSchema: refreshOutputSchema,
       annotations: {
@@ -1300,6 +1315,9 @@ export function registerTools(
         );
       }
       const requested = engines as EngineName[] | undefined;
+      if (requested?.length === 0) {
+        throw new Error('Select at least one engine or omit engines to refresh every configured engine.');
+      }
       if (requested) {
         const unknown = requested.filter((e) => !isEngineName(e));
         if (unknown.length > 0) {
@@ -1785,7 +1803,7 @@ function citationId(responseId: string): string {
   return `cit_${responseId}`;
 }
 
-function buildTopSources(responses: PromptResponse[], brand: Brand) {
+function buildTopSources(responses: CitationSourceRow[], brand: Brand) {
   const sources = new Map<
     string,
     {
@@ -1793,6 +1811,8 @@ function buildTopSources(responses: PromptResponse[], brand: Brand) {
       prompts: Set<string>;
       engines: Set<string>;
       sample_url: string;
+      sample_captured_at: number;
+      sample_response_id: string;
     }
   >();
 
@@ -1819,12 +1839,25 @@ function buildTopSources(responses: PromptResponse[], brand: Brand) {
         existing.citation_count += 1;
         existing.prompts.add(response.prompt_id);
         existing.engines.add(response.engine);
+        // A source sample must not depend on database row ordering. Prefer
+        // the newest observation, then a stable ID for tied timestamps.
+        if (
+          response.captured_at > existing.sample_captured_at ||
+          (response.captured_at === existing.sample_captured_at &&
+            response.id < existing.sample_response_id)
+        ) {
+          existing.sample_url = sampleUrl;
+          existing.sample_captured_at = response.captured_at;
+          existing.sample_response_id = response.id;
+        }
       } else {
         sources.set(domain, {
           citation_count: 1,
           prompts: new Set([response.prompt_id]),
           engines: new Set([response.engine]),
           sample_url: sampleUrl,
+          sample_captured_at: response.captured_at,
+          sample_response_id: response.id,
         });
       }
     }

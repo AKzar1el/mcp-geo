@@ -426,6 +426,27 @@ test('missing successful responses do not count as retired prompts', async () =>
   assert.equal(snapshot.prompt_set_comparability.historical_prompt_warning, false);
 });
 
+test('failed-only retired prompt rows do not claim stale scored evidence', async () => {
+  const failedRetired = {
+    ...response('claude', 'retired-but-failed', 'Retired prompt', 0),
+    status: 'failed' as const,
+    error_message: 'Provider request failed',
+  };
+  const tool = registerVisibilityTool({
+    responses: {
+      [runs.claude.id]: [
+        response('claude', 'still-active', 'Current successful prompt', 1),
+        failedRetired,
+      ],
+    },
+    activePromptIds: ['still-active'],
+  });
+  const snapshot = (await tool.handler({ brand_id: brand.id, engines: ['claude'] })).structuredContent;
+  assert.equal(snapshot.overall_score, 100);
+  assert.equal(snapshot.prompt_set_comparability.historical_prompt_warning, false);
+  assert.deepEqual(snapshot.prompt_set_comparability.engines_with_retired_prompt_evidence, []);
+});
+
 test('check_visibility identifies engines measured before a brand configuration update', async () => {
   const updatedAt = Date.UTC(2026, 0, 2, 0);
   const tool = registerVisibilityTool({ brand: { ...brand, updated_at: updatedAt } });
