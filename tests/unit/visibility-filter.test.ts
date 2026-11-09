@@ -146,11 +146,13 @@ type VisibilityTool = {
   handler: (args: {
     brand_id: string;
     engines?: EngineName[];
+    run_mode?: 'live' | 'batch';
   }) => Promise<{ structuredContent: VisibilitySnapshot }>;
 };
 
 function registerVisibilityTool(overrides?: {
   runs?: Partial<Record<EngineName, Run>>;
+  alternateRuns?: Partial<Record<EngineName, Run>>;
   responses?: Record<string, PromptResponse[]>;
   activePromptIds?: string[];
   brand?: Brand;
@@ -176,8 +178,11 @@ function registerVisibilityTool(overrides?: {
         ...(overrides?.brand ?? brand),
         identity_changed_at: overrides?.identityChangedAt ?? overrides?.brand?.identity_changed_at ?? brand.identity_changed_at ?? null,
       }),
-      getLatestCompletedRun: async (_brandId, engine) =>
-        runMap[engine as EngineName] ?? null,
+      getLatestCompletedRun: async (_brandId, engine, mode) => {
+        const candidates = [runMap[engine as EngineName], overrides?.alternateRuns?.[engine as EngineName]]
+          .filter((run): run is Run => !!run && (!mode || run.mode === mode));
+        return candidates.sort((a, b) => b.started_at - a.started_at)[0] ?? null;
+      },
       getResponsesForRun: async (runId) => responseMap[runId] ?? [],
       getActivePrompts: async () => activePromptIds.map((id): Prompt => ({
         id, brand_id: brand.id, text: id, intent_stage: null, shape: null,
@@ -483,4 +488,30 @@ test('check_visibility does not infer a configuration mismatch from older metada
   const snapshot = (await tool.handler({ brand_id: brand.id })).structuredContent;
   assert.deepEqual(snapshot.configuration_comparability.engines_scanned_before_update, []);
   assert.equal(snapshot.configuration_comparability.historical_settings_warning, false);
+});
+
+test('check_visibility can select older live evidence without changing the default latest batch snapshot', async () => {
+  const live = { ...run('chatgpt', chatgptTimestamp, 'live'), id: 'chatgpt-live' };
+  const batch = { ...run('chatgpt', chatgptTimestamp + 1000, 'batch'), id: 'chatgpt-batch' };
+  const tool = registerVisibilityTool({
+    runs: { chatgpt: batch },
+    alternateRuns: { chatgpt: live },
+    responses: {
+      [live.id]: [{ ...response('chatgpt', 'live-win', 'Live winner', 1), run_id: live.id }],
+      [batch.id]: [{ ...response('chatgpt', 'batch-loss', 'Batch loss', 0), run_id: batch.id }],
+    },
+  });
+
+  const latest = (await tool.handler({ brand_id: brand.id, engines: ['chatgpt'] })).structuredContent;
+  assert.equal(latest.overall_score, 0);
+  assert.equal(latest.per_engine[0].measurement_mode, 'model_only');
+
+  const liveOnly = (await tool.handler({ brand_id: brand.id, engines: ['chatgpt'], run_mode: 'live' })).structuredContent;
+  assert.equal(liveOnly.overall_score, 100);
+  assert.equal(liveOnly.per_engine[0].measurement_mode, 'search_requested');
+  assert.deepEqual(liveOnly.top_winning_prompts.map((p) => p.prompt), ['Live winner']);
+
+  const batchOnly = (await tool.handler({ brand_id: brand.id, engines: ['chatgpt'], run_mode: 'batch' })).structuredContent;
+  assert.equal(batchOnly.overall_score, 0);
+  assert.equal(batchOnly.per_engine[0].measurement_mode, 'model_only');
 });

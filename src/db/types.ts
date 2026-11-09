@@ -272,7 +272,9 @@ export interface Db {
   // "Latest run that produced any usable data for this (brand, engine)"
   // — anchors on EXISTS(ok rows), NOT run.status='completed', so
   // partially-finished runs still surface their data.
-  getLatestCompletedRun(brandId: string, engine: string): Promise<Run | null>;
+  // Optional stored dispatch mode; omitted retains the latest usable run
+  // regardless of whether it came from live requests or a batch.
+  getLatestCompletedRun(brandId: string, engine: string, mode?: Run['mode']): Promise<Run | null>;
   getRunById(runId: string): Promise<Run | null>;
   getBrandsDueForRefresh(engines?: string[]): Promise<Brand[]>;
   insertPromptResponse(input: InsertPromptResponseInput): Promise<void>;

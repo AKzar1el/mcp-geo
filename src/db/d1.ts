@@ -367,14 +367,16 @@ export function createD1Db(d1: D1Database): Db {
     async getLatestCompletedRun(
       brandId: string,
       engine: string,
+      mode?: Run['mode'],
     ): Promise<Run | null> {
+      const modeClause = mode ? ' AND r.mode = ?' : '';
       const row = await d1
         .prepare(
           `SELECT r.id, r.brand_id, r.engine, r.mode, r.status, r.batch_id,
                   r.prompts_total, r.prompts_completed, r.cost_eur_estimate,
                   r.error, r.started_at, r.completed_at
              FROM runs r
-            WHERE r.brand_id = ? AND r.engine = ?
+            WHERE r.brand_id = ? AND r.engine = ?${modeClause}
               AND EXISTS (
                 SELECT 1 FROM prompt_responses pr
                  WHERE pr.run_id = r.id AND pr.status = 'ok'
@@ -382,7 +384,7 @@ export function createD1Db(d1: D1Database): Db {
             ORDER BY COALESCE(r.completed_at, r.started_at) DESC
             LIMIT 1`,
         )
-        .bind(brandId, engine)
+        .bind(...(mode ? [brandId, engine, mode] : [brandId, engine]))
         .first<Run>();
       return row ?? null;
     },

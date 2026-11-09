@@ -563,6 +563,59 @@ test('getLatestCompletedRun skips runs whose rows all failed', async () => {
   }
 });
 
+test('SQLite and D1 can select live or batch evidence independently while preserving latest default', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'mode-query.sqlite'));
+  try {
+    seedBrandFixture(db, 'acme');
+    seedPromptFixture(db, 'acme', 'p1', 'Best project management tools');
+    const brand = await db.getBrand('acme');
+    assert.ok(brand);
+
+    const live = await db.createRun(brand, 'chatgpt', 'live', 2);
+    await db.persistEngineRun(live.id, 'chatgpt', 'offline', 3600, [{
+      prompt_id: 'p1', raw_response: 'Acme', brand_mentioned: 1,
+      brand_cited_with_link: 0, cited_urls: [], competitors_mentioned: [], status: 'ok',
+    }]);
+    // Retain one successfully measured prompt despite a partial run.
+    db.raw.prepare("UPDATE runs SET started_at = 1000, completed_at = NULL, status = 'in_progress' WHERE id = ?")
+      .run(live.id);
+
+    const batch = await db.createRun(brand, 'chatgpt', 'batch', 1);
+    await db.persistEngineRun(batch.id, 'chatgpt', 'offline', 3600, [{
+      prompt_id: 'p1', raw_response: 'No brand', brand_mentioned: 0,
+      brand_cited_with_link: 0, cited_urls: [], competitors_mentioned: [], status: 'ok',
+    }]);
+    db.raw.prepare('UPDATE runs SET started_at = 2000, completed_at = 3000 WHERE id = ?')
+      .run(batch.id);
+
+    const hosted = createD1Db({
+      prepare(sql: string) {
+        return {
+          bind(...params: unknown[]) {
+            return {
+              async first() {
+                const statement = db.raw.prepare(sql);
+                return statement.get(...(params as Parameters<typeof statement.get>)) ?? null;
+              },
+            };
+          },
+        };
+      },
+    } as unknown as Parameters<typeof createD1Db>[0]);
+
+    for (const adapter of [db, hosted]) {
+      assert.equal((await adapter.getLatestCompletedRun('acme', 'chatgpt'))?.id, batch.id);
+      assert.equal((await adapter.getLatestCompletedRun('acme', 'chatgpt', 'live'))?.id, live.id);
+      assert.equal((await adapter.getLatestCompletedRun('acme', 'chatgpt', 'batch'))?.id, batch.id);
+      assert.equal(await adapter.getLatestCompletedRun('acme', 'claude', 'batch'), null);
+    }
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('collectBatch resolves submitted prompts after they are deactivated', async () => {
   const root = tempRoot();
   const db = openSqliteDb(join(root, 'digestseo.sqlite'));
