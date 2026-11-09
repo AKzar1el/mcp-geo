@@ -26,6 +26,19 @@ test('normalizeExactPrompts normalizes whitespace and rejects case-insensitive d
   );
 });
 
+test('normalizeExactPrompts treats canonically equivalent Unicode questions as duplicates', () => {
+  assert.throws(
+    () => normalizeExactPrompts([
+      'Best caf\u00e9 services?',
+      ' Best cafe\u0301 services? ',
+    ]),
+    /must be unique/,
+  );
+  assert.deepEqual(normalizeExactPrompts([' Best cafe\u0301 services? ']), [
+    'Best caf\u00e9 services?',
+  ]);
+});
+
 test('applyExactPromptSet is a no-op when the active set already matches', async () => {
   let replaceCalls = 0;
   const db = {
@@ -45,6 +58,20 @@ test('applyExactPromptSet is a no-op when the active set already matches', async
   ]);
   assert.equal(result.changed, false);
   assert.equal(result.prompts_inserted, 0);
+  assert.equal(replaceCalls, 0);
+});
+
+test('applyExactPromptSet preserves existing prompts with canonically equivalent Unicode', async () => {
+  let replaceCalls = 0;
+  const db = {
+    getActivePrompts: async () => [activePrompt('Best cafe\u0301 services?', 1)],
+    replacePrompts: async () => {
+      replaceCalls++;
+      return 0;
+    },
+  } as Pick<Db, 'getActivePrompts' | 'replacePrompts'>;
+  const result = await applyExactPromptSet(db, 'acme', ['Best caf\u00e9 services?']);
+  assert.equal(result.changed, false);
   assert.equal(replaceCalls, 0);
 });
 
