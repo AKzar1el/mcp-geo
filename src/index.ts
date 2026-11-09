@@ -552,21 +552,28 @@ async function handleAdminRunEngine(
         : 'Prompt snapshot resolution error';
     return jsonResponse({ error: `${prefix}: ${message}` }, 409);
   }
-  // FK guard: prompt_responses.run_id REFERENCES runs(id). This handler
-  // runs in an independently dispatched Worker invocation, so INSERT OR
-  // IGNORE ensures the parent row exists before persistEngineRun's batched
-  // INSERT. It is idempotent: an existing run is left untouched; otherwise
-  // this creates the same live-run shape that runEngines creates.
+  // FK guard: a direct invocation without a reservation gets a pending parent
+  // row, but only one invocation can claim it for billable provider dispatch.
+  // Concurrent replays must not erase rows or call providers a second time.
   await env.DIGESTSEO_DB.prepare(
     `INSERT OR IGNORE INTO runs
        (id, brand_id, engine, mode, status, prompts_total,
         prompts_completed, started_at)
-     VALUES (?, ?, ?, 'live', 'in_progress', ?, 0, ?)`,
+     VALUES (?, ?, ?, 'live', 'pending', ?, 0, ?)`,
   )
     .bind(runId, brandId, engine, promptIds.length, Date.now())
     .run();
-  // Idempotency: clear any prior rows for this run_id so a retry
-  // produces exactly one row per prompt instead of duplicating them.
+  // Another invocation could have created this ID first with a different
+  // identity, or completed it since the earlier read. Check the stored row
+  // before atomically taking ownership of provider dispatch.
+  const currentRunError = validateExistingEngineRun(
+    await db.getRunById(runId), brandId, engine, promptIds.length,
+  );
+  if (currentRunError) return jsonResponse({ error: currentRunError }, 409);
+  if (!(await db.claimPendingLiveRun(runId))) {
+    return jsonResponse({ error: 'run_id dispatch already claimed or no longer pending' }, 409);
+  }
+  // Clear stale rows only for the unique invocation that owns this run.
   await db.deleteResponsesForRun(runId);
   await runEngineInProcess(
     {

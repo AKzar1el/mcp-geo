@@ -264,9 +264,12 @@ export interface Db {
     engine: string,
     promptsTotal: number,
   ): Promise<LiveRunReservation | null>;
+  // Only the first service-binding invocation can transition an assigned
+  // pending run into active provider dispatch. A retry cannot claim it twice.
+  claimPendingLiveRun(runId: string): Promise<boolean>;
   updateRun(runId: string, fields: UpdateRunFields): Promise<void>;
-  // Close transport-level dispatch failures only if the engine has not
-  // already completed independently; leave any partial evidence intact.
+  // Close transport-level failures on pending/active runs only; preserve
+  // completed runs and any partial response evidence.
   failRunIfInProgress(runId: string, error: string): Promise<boolean>;
   getLatestRun(brandId: string, engine: string): Promise<Run | null>;
   // "Latest run that produced any usable data for this (brand, engine)"

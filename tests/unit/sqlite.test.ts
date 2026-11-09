@@ -166,6 +166,16 @@ test('SQLite and D1 reserve one live scan atomically; completed, failed, and sta
     assert.ok(first && second);
     assert.equal([first.started, second.started].filter(Boolean).length, 1);
     assert.equal(first.run.id, second.run.id);
+    assert.equal((await db.getRunById(first.run.id))?.status, 'pending');
+    // Competing service-binding invocations must claim a run at most once,
+    // even across the SQLite and hosted/D1 implementations.
+    const claims = await Promise.all([
+      db.claimPendingLiveRun(first.run.id),
+      hosted.claimPendingLiveRun(first.run.id),
+    ]);
+    assert.deepEqual(claims.sort(), [false, true]);
+    assert.equal((await db.getRunById(first.run.id))?.status, 'in_progress');
+    assert.equal(await db.claimPendingLiveRun(first.run.id), false);
     const count = () => Number((db.raw.prepare(
       "SELECT COUNT(*) AS n FROM runs WHERE brand_id='single-flight' AND engine='chatgpt'",
     ).get() as { n: number }).n);
@@ -174,6 +184,7 @@ test('SQLite and D1 reserve one live scan atomically; completed, failed, and sta
     await db.updateRun(first.run.id, { status: 'completed', completed_at: Date.now() });
     const afterComplete = await hosted.reserveLiveRun(brand, 'chatgpt', 2);
     assert.ok(afterComplete?.started);
+    assert.equal((await db.getRunById(afterComplete.run.id))?.status, 'pending');
     assert.equal(count(), 2);
     assert.equal(await hosted.failRunIfInProgress(afterComplete.run.id, 'transport failure'), true);
     const afterFailure = await db.reserveLiveRun(brand, 'chatgpt', 2);
