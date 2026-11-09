@@ -155,6 +155,11 @@ const visibilityOutputSchema = z.object({
     historical_settings_warning: z.boolean(),
     note: z.string(),
   }),
+  identity_attribution: z.object({
+    last_identity_change_at: z.string().nullable(),
+    stale_engines: z.array(z.string()),
+    note: z.string(),
+  }),
   per_engine: z.array(
     z.object({
       engine: z.string(),
@@ -203,6 +208,13 @@ const historyOutputSchema = z.object({
     insufficient_evidence_engines: z.array(z.string()),
     note: z.string(),
   }),
+  identity_comparability: z.object({
+    last_identity_change_at: z.string().nullable(),
+    pre_change_runs: z.number(),
+    post_change_runs: z.number(),
+    mixes_identity_versions: z.boolean(),
+    note: z.string(),
+  }),
   series: z.array(
     z.object({
       date: z.string(),
@@ -230,7 +242,8 @@ const COMPARISON_SEMANTICS =
   'Legacy prompts_you_win includes all brand-mentioned prompts, including co-mentions. ' +
   'prompts_brand_only and prompts_co_mentioned classify individual engine responses; ' +
   'a prompt can occur in both when engines differ. ' +
-  'prompts_won_against_you lists competitor mentions where the tracked brand is absent.';
+  'prompts_won_against_you lists competitor mentions where the tracked brand is absent. ' +
+  'Counts use the latest successful observation per run, engine and prompt so retries do not inflate shares.';
 
 const COMPARISON_HISTORY_CAVEAT =
   'Competitor mentions were captured using the competitor list configured at scan time. ' +
@@ -241,6 +254,11 @@ const COMPARISON_HISTORY_CAVEAT =
 const compareOutputSchema = z.object({
   brand_id: z.string(),
   days: z.number(),
+  observation_coverage: z.object({
+    status: z.enum(['not_compared', 'no_observations', 'observed']),
+    successful_responses: z.number().int().nonnegative(),
+    note: z.string(),
+  }),
   google_search_sampling: googleSearchSamplingSchema,
   comparison_semantics: z.string(),
   historical_coverage_note: z.string(),
@@ -492,7 +510,7 @@ export function registerTools(
     {
       title: 'Check AI visibility',
       description:
-        "Read stored visibility scores and missing requested engines. Scores omit engines without usable scans; refresh_brand updates data. Example: brand_id='acme', engines=['chatgpt','gemini'].",
+        "Read stored visibility scores. run_mode='live' or 'batch' selects stored scans; omit for latest across modes. Live does not guarantee citations. Example: brand_id='acme', engines=['chatgpt'].",
       inputSchema: {
         brand_id: z
           .string()
@@ -501,6 +519,10 @@ export function registerTools(
           .array(engineSchema)
           .optional()
           .describe('Engines to include; omit or pass [] for all stored engines.'),
+        run_mode: z
+          .enum(['live', 'batch'])
+          .optional()
+          .describe('Filter by live or batch scans; omit for latest across modes. Live may still be model-only.'),
       },
       outputSchema: visibilityOutputSchema,
       annotations: {
@@ -509,7 +531,7 @@ export function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ brand_id, engines }) => {
+    async ({ brand_id, engines, run_mode }) => {
       const brand = await deps.db.getBrand(brand_id);
       if (!brand) {
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
@@ -528,10 +550,12 @@ export function registerTools(
       const startedMsByEngine = new Map<string, number>();
       const expectedPromptsByEngine = new Map<string, number>();
       const observedPromptIdsByEngine = new Map<string, Set<string>>();
+      const identityChangedAt = brand.identity_changed_at ?? null;
+      const staleIdentityEngines: string[] = [];
       const measurementModeByEngine = new Map<string, 'search_requested' | 'model_only'>();
       let mostRecentTimestamp = 0;
       for (const engine of selectedEngines) {
-        const run = await deps.db.getLatestCompletedRun(brand_id, engine);
+        const run = await deps.db.getLatestCompletedRun(brand_id, engine, run_mode);
         if (!run) continue;
         const responses = await deps.db.getResponsesForRun(run.id);
         if (responses.length === 0) continue;
@@ -539,6 +563,9 @@ export function registerTools(
         observedPromptIdsByEngine.set(engine, new Set(
           responses.filter((response) => response.status === 'ok').map((response) => response.prompt_id),
         ));
+        if (identityChangedAt !== null && run.started_at < identityChangedAt) {
+          staleIdentityEngines.push(engine);
+        }
         measurementModeByEngine.set(engine, visibilityMeasurementMode(engine, run.mode));
         expectedPromptsByEngine.set(engine, run.prompts_total);
         const ts = run.completed_at ?? run.started_at;
@@ -655,6 +682,12 @@ export function registerTools(
           historical_settings_warning: enginesBeforeBrandUpdate.length > 0,
           note: 'Brand settings were updated after the listed engines began their latest scans. Stored responses retain their original scoring and may reflect earlier brand identity, aliases, exclusions, or competitor tracking; the database cannot establish which settings changed. A cadence-only update may not affect the evidence. Review changes and refresh affected engines before relying on current-configuration comparisons.',
         },
+        identity_attribution: {
+          last_identity_change_at: identityChangedAt === null
+            ? null : new Date(identityChangedAt).toISOString(),
+          stale_engines: staleIdentityEngines.sort(),
+          note: 'Scores for engines whose runs began before the last matching-identity change were measured against an older name/domain/alias/exclusion set. Refresh those engines before attributing results to the current brand identity. Older changes before the identity-boundary migration are unknown.',
+        },
         per_engine: perEngine,
         top_winning_prompts: scored.top_winning_prompts,
         winning_prompt_evidence_note: 'engines_cited_in is a legacy field counting brand mentions in answers, not source citations. Use engines_mentioned_in for mention evidence and engines_with_brand_link for linked brand evidence. A link-only source without an answer mention is not a winning prompt.',
@@ -694,11 +727,24 @@ export function registerTools(
       },
     },
     async ({ brand_id, days, granularity }) => {
-      if (!await deps.db.getBrand(brand_id)) {
+      const brand = await deps.db.getBrand(brand_id);
+      if (!brand) {
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
       }
       const since = Date.now() - days * 86_400_000;
       const results = await deps.db.getVisibilityHistoryRows(brand_id, since);
+      const identityChangedAt = brand.identity_changed_at ?? null;
+      const preChangeRuns = identityChangedAt === null ? 0
+        : results.filter((row) => row.completed_at < identityChangedAt).length;
+      const postChangeRuns = identityChangedAt === null ? 0 : results.length - preChangeRuns;
+      const identity_comparability = {
+        last_identity_change_at: identityChangedAt === null
+          ? null : new Date(identityChangedAt).toISOString(),
+        pre_change_runs: preChangeRuns,
+        post_change_runs: postChangeRuns,
+        mixes_identity_versions: preChangeRuns > 0 && postChangeRuns > 0,
+        note: 'Stored runs before the latest brand matching-identity edit may not be comparable with later runs. Historical scores are retained, not re-scored against the current name/domain/aliases/exclusions. The boundary is based on recorded run timestamps; older edits before this migration cannot be reconstructed.',
+      };
 
       // Historical runs can contain both ungrounded OpenAI batches and
       // search-requested ChatGPT samples. Preserve the legacy series while
@@ -867,6 +913,7 @@ export function registerTools(
         google_search_sampling: googleSearchSampling(results.map(({ engine }) => engine)),
         measurement_scope: { ...measurement_scope, by_bucket },
         prompt_set_comparability,
+        identity_comparability,
         series,
       };
       return toolResult(payload);
@@ -878,7 +925,7 @@ export function registerTools(
     {
       title: 'Compare competitor AI visibility',
       description:
-        "Compare recorded brand/competitor mentions, co-mentions and share of voice. New competitors are not retroactively scored. Example: brand_id='acme', competitor_domains=['rival.com'], days=7.",
+        "Compare brand/competitor mentions, co-mentions and share of voice. Coverage separates unmeasured from observed zero; new competitors lack historical scoring. Example: brand_id='acme', competitor_domains=['rival.com'], days=7.",
       inputSchema: {
         brand_id: z
           .string()
@@ -918,6 +965,11 @@ export function registerTools(
         const payload = {
           brand_id,
           days,
+          observation_coverage: {
+            status: 'not_compared' as const,
+            successful_responses: 0,
+            note: 'No competitors are configured or selected; response evidence was not queried.',
+          },
           google_search_sampling: null,
           message:
             'No competitor list configured for this brand. Pass competitor_domains or set brand.competitors.',
@@ -936,7 +988,31 @@ export function registerTools(
       }
 
       const since = Date.now() - days * 86_400_000;
-      const allResponses = await deps.db.getResponsesSince(brand_id, since);
+      const fetchedResponses = await deps.db.getResponsesSince(brand_id, since);
+      // Preserve every distinct scan in the selected window, but do not
+      // count repeated successful attempts for the same scan/prompt twice.
+      const latestByRunPrompt = new Map<string, PromptResponse>();
+      for (const row of fetchedResponses) {
+        if (row.status !== 'ok') continue;
+        const key = JSON.stringify([row.run_id, row.engine, row.prompt_id]);
+        const previous = latestByRunPrompt.get(key);
+        if (!previous || row.captured_at > previous.captured_at ||
+            (row.captured_at === previous.captured_at && row.id > previous.id)) {
+          latestByRunPrompt.set(key, row);
+        }
+      }
+      const allResponses = [...latestByRunPrompt.values()];
+      const observation_coverage = allResponses.length === 0
+        ? {
+            status: 'no_observations' as const,
+            successful_responses: 0,
+            note: 'No usable AI responses were recorded in this window; zero shares are not measured absence.',
+          }
+        : {
+            status: 'observed' as const,
+            successful_responses: allResponses.length,
+            note: 'Shares use the latest successful response per run, engine and prompt; this count does not establish complete prompt or engine coverage.',
+          };
 
       const brandMentions = allResponses.reduce(
         (s, r) => s + (r.brand_mentioned === 1 ? 1 : 0),
@@ -1031,6 +1107,7 @@ export function registerTools(
       const payload = {
         brand_id,
         days,
+        observation_coverage,
         google_search_sampling: googleSearchSampling(allResponses.map(({ engine }) => engine)),
         your_share_of_voice_pct: pct(brandMentions),
         your_mentions: brandMentions,
@@ -1187,6 +1264,9 @@ export function registerTools(
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
       }
 
+      // Earlier scans may retain competitors removed by update_brand. Content
+      // gaps must reflect the brand's currently configured comparison cohort.
+      const trackedCompetitors = new Set(brand.competitors);
       const losingByPrompt = new Map<
         string,
         {
@@ -1195,24 +1275,39 @@ export function registerTools(
           competitors: Set<string>;
         }
       >();
+      let successfulResponses = 0;
       for (const engine of ALL_ENGINES) {
         const run = await deps.db.getLatestCompletedRun(brand_id, engine);
         if (!run) continue;
         const responses = await deps.db.getResponsesForRun(run.id);
-        for (const r of responses) {
+        // Retain history for evidence, but use only each prompt's latest
+        // successful result when determining current content-gap advice.
+        const latestOkByPrompt = new Map<string, PromptResponse>();
+        for (const response of responses) {
+          if (response.status !== 'ok') continue;
+          const previous = latestOkByPrompt.get(response.prompt_id);
+          if (!previous ||
+              response.captured_at > previous.captured_at ||
+              (response.captured_at === previous.captured_at && response.id > previous.id)) {
+            latestOkByPrompt.set(response.prompt_id, response);
+          }
+        }
+        for (const r of latestOkByPrompt.values()) {
+          successfulResponses++;
           if (r.brand_mentioned !== 0) continue;
-          if (r.competitors_mentioned.length === 0) continue;
+          const currentMentions = r.competitors_mentioned.filter((c) => trackedCompetitors.has(c));
+          if (currentMentions.length === 0) continue;
           const existing = losingByPrompt.get(r.prompt_id);
           if (existing) {
             existing.engines.add(r.engine);
-            for (const c of r.competitors_mentioned) {
+            for (const c of currentMentions) {
               existing.competitors.add(c);
             }
           } else {
             losingByPrompt.set(r.prompt_id, {
               prompt_text: r.prompt_text,
               engines: new Set([r.engine]),
-              competitors: new Set(r.competitors_mentioned),
+              competitors: new Set(currentMentions),
             });
           }
         }
@@ -1237,8 +1332,9 @@ export function registerTools(
           google_search_sampling: null,
           recommendations: [],
           prompt_source: 'fallback' as const,
-          reason:
-            'no losing prompts yet — collect more data first (run refresh_brand, then re-check competitors)',
+          reason: successfulResponses === 0
+            ? 'No usable scan responses in the latest completed runs. A refresh can collect evidence but may incur provider charges.'
+            : `No competitor-only wins observed in ${successfulResponses} usable responses. This does not prove complete prompt or engine coverage.`,
         };
         return toolResult(payload);
       }

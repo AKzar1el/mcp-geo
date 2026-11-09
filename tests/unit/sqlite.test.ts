@@ -25,6 +25,7 @@ const EXPECTED_MIGRATIONS = [
   '0003_perplexity_citations.sql',
   '0004_response_status.sql',
   '0005_brand_alias_exclude.sql',
+  '0006_brand_identity_boundary.sql',
 ];
 
 function tempRoot(): string {
@@ -96,6 +97,9 @@ test('open applies every migration in order, tracks them, and creates parent dir
     ]) {
       assert.ok(tables.has(t), `expected table '${t}' to exist`);
     }
+    const identityColumn = db.raw
+      .prepare('PRAGMA table_info(brands)').all() as Array<{ name: string }>;
+    assert.ok(identityColumn.some((column) => column.name === 'identity_changed_at'));
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });
@@ -107,7 +111,7 @@ test('re-opening an existing database does not re-apply migrations', () => {
   const dbPath = join(root, 'digestseo.sqlite');
   const first = openSqliteDb(dbPath);
   first.close();
-  // 0003/0005 are ALTER TABLE ADD COLUMN — re-applying them would throw
+  // 0003/0005/0006 are ALTER TABLE ADD COLUMN — re-applying them would throw
   // "duplicate column name", so a clean second open proves tracking works.
   const second = openSqliteDb(dbPath);
   try {
@@ -162,6 +166,16 @@ test('SQLite and D1 reserve one live scan atomically; completed, failed, and sta
     assert.ok(first && second);
     assert.equal([first.started, second.started].filter(Boolean).length, 1);
     assert.equal(first.run.id, second.run.id);
+    assert.equal((await db.getRunById(first.run.id))?.status, 'pending');
+    // Competing service-binding invocations must claim a run at most once,
+    // even across the SQLite and hosted/D1 implementations.
+    const claims = await Promise.all([
+      db.claimPendingLiveRun(first.run.id),
+      hosted.claimPendingLiveRun(first.run.id),
+    ]);
+    assert.deepEqual(claims.sort(), [false, true]);
+    assert.equal((await db.getRunById(first.run.id))?.status, 'in_progress');
+    assert.equal(await db.claimPendingLiveRun(first.run.id), false);
     const count = () => Number((db.raw.prepare(
       "SELECT COUNT(*) AS n FROM runs WHERE brand_id='single-flight' AND engine='chatgpt'",
     ).get() as { n: number }).n);
@@ -170,6 +184,7 @@ test('SQLite and D1 reserve one live scan atomically; completed, failed, and sta
     await db.updateRun(first.run.id, { status: 'completed', completed_at: Date.now() });
     const afterComplete = await hosted.reserveLiveRun(brand, 'chatgpt', 2);
     assert.ok(afterComplete?.started);
+    assert.equal((await db.getRunById(afterComplete.run.id))?.status, 'pending');
     assert.equal(count(), 2);
     assert.equal(await hosted.failRunIfInProgress(afterComplete.run.id, 'transport failure'), true);
     const afterFailure = await db.reserveLiveRun(brand, 'chatgpt', 2);
@@ -553,6 +568,59 @@ test('getLatestCompletedRun skips runs whose rows all failed', async () => {
     const latest = await db.getLatestCompletedRun('acme', 'chatgpt');
     assert.ok(latest);
     assert.equal(latest.id, goodRun.id);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('SQLite and D1 can select live or batch evidence independently while preserving latest default', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'mode-query.sqlite'));
+  try {
+    seedBrandFixture(db, 'acme');
+    seedPromptFixture(db, 'acme', 'p1', 'Best project management tools');
+    const brand = await db.getBrand('acme');
+    assert.ok(brand);
+
+    const live = await db.createRun(brand, 'chatgpt', 'live', 2);
+    await db.persistEngineRun(live.id, 'chatgpt', 'offline', 3600, [{
+      prompt_id: 'p1', raw_response: 'Acme', brand_mentioned: 1,
+      brand_cited_with_link: 0, cited_urls: [], competitors_mentioned: [], status: 'ok',
+    }]);
+    // Retain one successfully measured prompt despite a partial run.
+    db.raw.prepare("UPDATE runs SET started_at = 1000, completed_at = NULL, status = 'in_progress' WHERE id = ?")
+      .run(live.id);
+
+    const batch = await db.createRun(brand, 'chatgpt', 'batch', 1);
+    await db.persistEngineRun(batch.id, 'chatgpt', 'offline', 3600, [{
+      prompt_id: 'p1', raw_response: 'No brand', brand_mentioned: 0,
+      brand_cited_with_link: 0, cited_urls: [], competitors_mentioned: [], status: 'ok',
+    }]);
+    db.raw.prepare('UPDATE runs SET started_at = 2000, completed_at = 3000 WHERE id = ?')
+      .run(batch.id);
+
+    const hosted = createD1Db({
+      prepare(sql: string) {
+        return {
+          bind(...params: unknown[]) {
+            return {
+              async first() {
+                const statement = db.raw.prepare(sql);
+                return statement.get(...(params as Parameters<typeof statement.get>)) ?? null;
+              },
+            };
+          },
+        };
+      },
+    } as unknown as Parameters<typeof createD1Db>[0]);
+
+    for (const adapter of [db, hosted]) {
+      assert.equal((await adapter.getLatestCompletedRun('acme', 'chatgpt'))?.id, batch.id);
+      assert.equal((await adapter.getLatestCompletedRun('acme', 'chatgpt', 'live'))?.id, live.id);
+      assert.equal((await adapter.getLatestCompletedRun('acme', 'chatgpt', 'batch'))?.id, batch.id);
+      assert.equal(await adapter.getLatestCompletedRun('acme', 'claude', 'batch'), null);
+    }
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });
@@ -1031,6 +1099,74 @@ test('cron skips brands without active prompts in SQLite and D1', async () => {
   }
 });
 
+test('cron live freshness ignores completed model-only batches in SQLite and D1', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'digestseo.sqlite'));
+  try {
+    await db.upsertUser('test-user', 'test@local');
+    await db.createBrand({
+      id: 'batch-only-cron',
+      user_id: 'test-user',
+      domain: 'batch-only-cron.com',
+      name: 'Batch Only Cron',
+      category: null,
+      competitors: [],
+      aliases: [],
+      exclude_terms: [],
+      refresh_frequency: 'weekly',
+    });
+    seedPromptFixture(db, 'batch-only-cron', 'batch-prompt', 'Which products are available?');
+    const brand = await db.getBrand('batch-only-cron');
+    assert.ok(brand);
+    const hosted = createD1Db({
+      prepare(sql: string) {
+        return {
+          bind(...params: unknown[]) {
+            return {
+              async all() {
+                const statement = db.raw.prepare(sql);
+                return { results: statement.all(...(params as Parameters<typeof statement.all>)) };
+              },
+            };
+          },
+        };
+      },
+    } as unknown as Parameters<typeof createD1Db>[0]);
+    const persistSuccessfulRun = async (mode: 'live' | 'batch') => {
+      const run = await db.createRun(brand, 'chatgpt', mode, 1);
+      await db.persistEngineRun(run.id, 'chatgpt', 'test-model', 3600, [{
+        prompt_id: 'batch-prompt',
+        raw_response: 'Batch Only Cron is mentioned.',
+        brand_mentioned: 1,
+        brand_cited_with_link: 0,
+        cited_urls: [],
+        competitors_mentioned: [],
+        status: 'ok',
+      }]);
+    };
+    const assertCronDue = async (expected: boolean) => {
+      for (const adapter of [db, hosted]) {
+        for (const engines of [undefined, ['chatgpt']]) {
+          const due = await adapter.getBrandsDueForRefresh(engines);
+          assert.equal(due.some((item) => item.id === brand.id), expected);
+        }
+      }
+    };
+
+    // Batch evidence is valuable for model-only visibility, but cannot make
+    // a live-search cron scan fresh or consume its weekly retry allowance.
+    await persistSuccessfulRun('batch');
+    await assertCronDue(true);
+    await persistSuccessfulRun('batch');
+    await assertCronDue(true);
+    await persistSuccessfulRun('live');
+    await assertCronDue(false);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('partial prompt failures do not reset engine freshness and retry after a bounded cooldown', async () => {
   const root = tempRoot();
   const db = openSqliteDb(join(root, 'digestseo.sqlite'));
@@ -1231,6 +1367,58 @@ test('read history: getVisibilityHistoryRows aggregates ok rows per run', async 
     assert.equal(Number(rows[0].roster_expected), 2);
     assert.equal(Number(rows[0].roster_observed), 2);
     assert.deepEqual(rows[0].roster_ids_csv?.split(',').sort(), ['p1', 'p2']);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('SQLite and D1 history count only the latest successful observation per run and prompt', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'history-observation.sqlite'));
+  try {
+    seedBrandFixture(db, 'acme');
+    seedPromptFixture(db, 'acme', 'p1', 'best project management tools');
+    seedPromptFixture(db, 'acme', 'p2', 'asana alternatives');
+    const brand = await db.getBrand('acme');
+    assert.ok(brand);
+    const run = await db.createRun(brand, 'chatgpt', 'live', 2);
+    const insert = db.raw.prepare(
+      `INSERT INTO prompt_responses
+         (id, run_id, prompt_id, engine, raw_response, brand_mentioned,
+          brand_cited_with_link, cited_urls_json, competitors_mentioned_json,
+          status, captured_at)
+       VALUES (?, ?, ?, 'chatgpt', '', ?, 0, '[]', '[]', ?, ?)`,
+    );
+    insert.run('old-no-mention', run.id, 'p1', 0, 'ok', 1000);
+    insert.run('new-mention', run.id, 'p1', 1, 'ok', 2000);
+    insert.run('later-failed', run.id, 'p1', 0, 'failed', 3000);
+    // Match computeOverallScore's deterministic id tie-breaker.
+    insert.run('a-old-tie', run.id, 'p2', 0, 'ok', 2000);
+    insert.run('b-new-tie', run.id, 'p2', 1, 'ok', 2000);
+
+    const hosted = createD1Db({
+      prepare(sql: string) {
+        return {
+          bind(...params: unknown[]) {
+            return {
+              async all() {
+                const statement = db.raw.prepare(sql);
+                return { results: statement.all(...(params as Parameters<typeof statement.all>)) };
+              },
+            };
+          },
+        };
+      },
+    } as unknown as Parameters<typeof createD1Db>[0]);
+
+    for (const adapter of [db, hosted]) {
+      const rows = await adapter.getVisibilityHistoryRows('acme', 0);
+      assert.equal(rows.length, 1);
+      assert.equal(Number(rows[0].total), 2, 'retries must not inflate prompt denominator');
+      assert.equal(Number(rows[0].hits), 2, 'latest successful response determines the hit');
+      assert.equal(Number(rows[0].roster_observed), 2);
+    }
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });

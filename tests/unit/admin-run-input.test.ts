@@ -22,11 +22,28 @@ test('malformed explicit engine selection cannot silently fan out to every provi
   }
 });
 
-test('valid admin engine selections keep legacy defaults and remove duplicates', () => {
+test('valid admin engine selections keep omitted defaults and remove duplicates', () => {
   const available = ['chatgpt', 'gemini'] as const;
   assert.deepEqual(selectAdminRunEngines(undefined, available).engineNames, [...available]);
-  assert.deepEqual(selectAdminRunEngines([], available).engineNames, [...available]);
   assert.deepEqual(selectAdminRunEngines(['gemini', 'gemini'], available).engineNames, ['gemini']);
   assert.match(selectAdminRunEngines(['unknown'], available).error ?? '', /Unknown engines/);
   assert.match(selectAdminRunEngines([null], available).error ?? '', /Unknown engines/);
+});
+
+test('explicit empty admin engine selection never silently triggers billable provider fanout', () => {
+  const available = ['chatgpt', 'gemini'] as const;
+  const selection = selectAdminRunEngines([], available);
+  assert.match(selection.error ?? '', /at least one engine|omit engines/i);
+  assert.equal(selection.engineNames, undefined);
+  assert.deepEqual(selectAdminRunEngines(undefined, available).engineNames, [...available]);
+});
+
+test('explicitly requested unconfigured engines fail before a misleading no-op scan', () => {
+  const available = ['chatgpt'] as const;
+  for (const requested of [['gemini'], ['chatgpt', 'gemini']]) {
+    const selection = selectAdminRunEngines(requested, available);
+    assert.match(selection.error ?? '', /not configured: gemini/i);
+    assert.equal(selection.engineNames, undefined);
+  }
+  assert.deepEqual(selectAdminRunEngines(['chatgpt'], available).engineNames, ['chatgpt']);
 });

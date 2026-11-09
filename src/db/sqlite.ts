@@ -116,6 +116,7 @@ interface BrandRow {
   refresh_frequency: string;
   created_at: number;
   updated_at: number;
+  identity_changed_at: number | null;
 }
 
 function rowToBrand(row: BrandRow): Brand {
@@ -142,6 +143,7 @@ function rowToBrand(row: BrandRow): Brand {
     refresh_frequency: row.refresh_frequency,
     created_at: row.created_at,
     updated_at: row.updated_at,
+    identity_changed_at: row.identity_changed_at,
   };
 }
 
@@ -192,7 +194,7 @@ export function openSqliteDb(path?: string): SqliteDb {
     async getBrand(brandId: string): Promise<Brand | null> {
       const row = sqlite
         .prepare(
-          'SELECT id, user_id, domain, name, category, competitors_json, aliases_json, exclude_terms_json, refresh_frequency, created_at, updated_at FROM brands WHERE id = ?',
+          'SELECT id, user_id, domain, name, category, competitors_json, aliases_json, exclude_terms_json, refresh_frequency, created_at, updated_at, identity_changed_at FROM brands WHERE id = ?',
         )
         .get(brandId) as BrandRow | undefined;
       if (!row) return null;
@@ -260,12 +262,14 @@ export function openSqliteDb(path?: string): SqliteDb {
     },
 
     async updateBrand(brandId: string, fields: UpdateBrandFields): Promise<void> {
+      const now = Date.now();
       sqlite
         .prepare(
           `UPDATE brands
               SET domain = ?, name = ?, category = ?, competitors_json = ?,
                   aliases_json = ?, exclude_terms_json = ?, refresh_frequency = ?,
-                  updated_at = ?
+                  updated_at = ?,
+                  identity_changed_at = CASE WHEN ? = 1 THEN ? ELSE identity_changed_at END
             WHERE id = ?`,
         )
         .run(
@@ -276,7 +280,9 @@ export function openSqliteDb(path?: string): SqliteDb {
           JSON.stringify(fields.aliases),
           JSON.stringify(fields.exclude_terms),
           fields.refresh_frequency,
-          Date.now(),
+          now,
+          fields.identity_changed ? 1 : 0,
+          now,
           brandId,
         );
     },
@@ -286,7 +292,7 @@ export function openSqliteDb(path?: string): SqliteDb {
         .prepare(
           `SELECT b.id, b.user_id, b.domain, b.name, b.category,
                   b.competitors_json, b.aliases_json, b.exclude_terms_json,
-                  b.refresh_frequency, b.created_at, b.updated_at,
+                  b.refresh_frequency, b.created_at, b.updated_at, b.identity_changed_at,
                   COUNT(p.id) AS active_prompts
              FROM brands b
              LEFT JOIN prompts p ON p.brand_id = b.id AND p.active = 1
@@ -353,7 +359,7 @@ export function openSqliteDb(path?: string): SqliteDb {
         brand_id: brand.id,
         engine,
         mode: 'live',
-        status: 'in_progress',
+        status: 'pending',
         batch_id: null,
         prompts_total: promptsTotal,
         prompts_completed: 0,
@@ -369,7 +375,7 @@ export function openSqliteDb(path?: string): SqliteDb {
           `INSERT INTO runs
            (id, brand_id, engine, mode, status, batch_id, prompts_total,
             prompts_completed, cost_eur_estimate, error, started_at, completed_at)
-         SELECT ?, ?, ?, 'live', 'in_progress', NULL, ?, 0, NULL, NULL, ?, NULL
+         SELECT ?, ?, ?, 'live', 'pending', NULL, ?, 0, NULL, NULL, ?, NULL
           WHERE NOT EXISTS (
             SELECT 1 FROM runs WHERE brand_id = ? AND engine = ?
               AND mode = 'live' AND status IN ('pending', 'in_progress')
@@ -386,6 +392,13 @@ export function openSqliteDb(path?: string): SqliteDb {
         )
         .get(brand.id, engine, cutoff) as Run | undefined;
       return active ? { run: active, started: false } : null;
+    },
+
+    async claimPendingLiveRun(runId: string): Promise<boolean> {
+      const result = sqlite.prepare(
+        "UPDATE runs SET status = 'in_progress' WHERE id = ? AND mode = 'live' AND status = 'pending'",
+      ).run(runId);
+      return result.changes > 0;
     },
 
     async updateRun(runId: string, fields: UpdateRunFields): Promise<void> {
@@ -407,7 +420,7 @@ export function openSqliteDb(path?: string): SqliteDb {
         .prepare(
           `UPDATE runs
               SET status = 'failed', error = ?, completed_at = ?
-            WHERE id = ? AND status = 'in_progress'`,
+             WHERE id = ? AND status IN ('pending', 'in_progress')`,
         )
         .run(error.slice(0, 500), Date.now(), runId);
       return result.changes > 0;
@@ -432,14 +445,16 @@ export function openSqliteDb(path?: string): SqliteDb {
     async getLatestCompletedRun(
       brandId: string,
       engine: string,
+      mode?: Run['mode'],
     ): Promise<Run | null> {
+      const modeClause = mode ? ' AND r.mode = ?' : '';
       const row = sqlite
         .prepare(
           `SELECT r.id, r.brand_id, r.engine, r.mode, r.status, r.batch_id,
                   r.prompts_total, r.prompts_completed, r.cost_eur_estimate,
                   r.error, r.started_at, r.completed_at
              FROM runs r
-            WHERE r.brand_id = ? AND r.engine = ?
+            WHERE r.brand_id = ? AND r.engine = ?${modeClause}
               AND EXISTS (
                 SELECT 1 FROM prompt_responses pr
                  WHERE pr.run_id = r.id AND pr.status = 'ok'
@@ -447,7 +462,7 @@ export function openSqliteDb(path?: string): SqliteDb {
             ORDER BY COALESCE(r.completed_at, r.started_at) DESC
             LIMIT 1`,
         )
-        .get(brandId, engine) as Run | undefined;
+        .get(...(mode ? [brandId, engine, mode] : [brandId, engine])) as Run | undefined;
       return row ?? null;
     },
 
@@ -481,7 +496,8 @@ export function openSqliteDb(path?: string): SqliteDb {
                     SELECT r.brand_id, r.engine,
                            MAX(COALESCE(r.completed_at, r.started_at)) AS last_complete_run
                       FROM runs r
-                     WHERE EXISTS (SELECT 1 FROM prompts p WHERE p.brand_id = r.brand_id AND p.active = 1)
+                     WHERE r.mode = 'live'
+                       AND EXISTS (SELECT 1 FROM prompts p WHERE p.brand_id = r.brand_id AND p.active = 1)
                        AND NOT EXISTS (
                          SELECT 1 FROM prompts p
                           WHERE p.brand_id = r.brand_id AND p.active = 1
@@ -495,7 +511,7 @@ export function openSqliteDb(path?: string): SqliteDb {
                   latest_attempt AS (
                     SELECT brand_id, engine, MAX(started_at) AS last_attempt,
                            SUM(CASE WHEN started_at >= ? THEN 1 ELSE 0 END) AS attempts_week
-                      FROM runs GROUP BY brand_id, engine
+                      FROM runs WHERE mode = 'live' GROUP BY brand_id, engine
                   )
              SELECT b.id, b.user_id, b.domain, b.name, b.category, b.competitors_json,
                     b.aliases_json, b.exclude_terms_json,
@@ -539,7 +555,7 @@ export function openSqliteDb(path?: string): SqliteDb {
                   MAX(r.started_at) AS last_attempt,
                   SUM(CASE WHEN r.started_at >= ? THEN 1 ELSE 0 END) AS attempts_week
              FROM brands b
-             LEFT JOIN runs r ON r.brand_id = b.id
+             LEFT JOIN runs r ON r.brand_id = b.id AND r.mode = 'live'
             WHERE EXISTS (SELECT 1 FROM prompts p WHERE p.brand_id = b.id AND p.active = 1)
             GROUP BY b.id
            HAVING b.refresh_frequency <> 'manual'
@@ -859,8 +875,9 @@ export function openSqliteDb(path?: string): SqliteDb {
       brandId: string,
       since: number,
     ): Promise<VisibilityHistoryRow[]> {
-      // status='ok' filter on the join keeps failed/skipped rows
-      // out of COUNT and SUM. The INNER JOIN also drops runs with
+      // Score the newest successful observation per run/prompt, as current
+      // visibility scoring does; retries must not inflate the denominator.
+      // The INNER JOIN also drops runs with
       // zero ok rows entirely — a fully-failed run is "no data",
       // not a real score of 0. COALESCE on the timestamp matches
       // getLatestCompletedRun's stance: partially-finished runs
@@ -879,6 +896,14 @@ export function openSqliteDb(path?: string): SqliteDb {
              FROM runs r
              JOIN prompt_responses pr
                ON pr.run_id = r.id AND pr.status = 'ok'
+              AND NOT EXISTS (
+                SELECT 1 FROM prompt_responses newer
+                 WHERE newer.run_id = pr.run_id
+                   AND newer.prompt_id = pr.prompt_id
+                   AND newer.status = 'ok'
+                   AND (newer.captured_at > pr.captured_at
+                     OR (newer.captured_at = pr.captured_at AND newer.id > pr.id))
+              )
             WHERE r.brand_id = ?
               AND COALESCE(r.completed_at, r.started_at) >= ?
             GROUP BY r.id, r.engine

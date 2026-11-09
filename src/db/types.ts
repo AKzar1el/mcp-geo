@@ -21,6 +21,9 @@ export interface Brand {
   refresh_frequency: string;
   created_at: number;
   updated_at: number;
+  // NULL for unchanged brands and for pre-migration changes, which are unknown.
+  // Set only on name/domain/aliases/exclusion edits, never cadence edits.
+  identity_changed_at?: number | null;
 }
 
 export interface Prompt {
@@ -151,6 +154,8 @@ export interface UpdateBrandFields {
   aliases: string[];
   exclude_terms: string[];
   refresh_frequency: string;
+  // Internal update signal, not user input or a directly stored field.
+  identity_changed?: boolean;
 }
 
 // Row shape behind the list_brands tool: every brand plus how many
@@ -173,8 +178,9 @@ export type UpdateRunFields = Partial<
 
 // Row shape behind the get_visibility_history tool: one row per run
 // that produced status='ok' prompt_responses, with COUNT/SUM aggregates
-// over those rows. completed_at is COALESCE(completed_at, started_at)
-// so partially-finished runs (stuck at in_progress) still count toward
+// over the latest successful observation per run/prompt. completed_at
+// uses COALESCE(completed_at, started_at) so partially-finished runs
+// (stuck at in_progress) still count toward
 // history; runs with zero ok rows are excluded entirely rather than
 // charting as a fake score of 0.
 export interface VisibilityHistoryRow {
@@ -259,15 +265,20 @@ export interface Db {
     engine: string,
     promptsTotal: number,
   ): Promise<LiveRunReservation | null>;
+  // Only the first service-binding invocation can transition an assigned
+  // pending run into active provider dispatch. A retry cannot claim it twice.
+  claimPendingLiveRun(runId: string): Promise<boolean>;
   updateRun(runId: string, fields: UpdateRunFields): Promise<void>;
-  // Close transport-level dispatch failures only if the engine has not
-  // already completed independently; leave any partial evidence intact.
+  // Close transport-level failures on pending/active runs only; preserve
+  // completed runs and any partial response evidence.
   failRunIfInProgress(runId: string, error: string): Promise<boolean>;
   getLatestRun(brandId: string, engine: string): Promise<Run | null>;
   // "Latest run that produced any usable data for this (brand, engine)"
   // — anchors on EXISTS(ok rows), NOT run.status='completed', so
   // partially-finished runs still surface their data.
-  getLatestCompletedRun(brandId: string, engine: string): Promise<Run | null>;
+  // Optional stored dispatch mode; omitted retains the latest usable run
+  // regardless of whether it came from live requests or a batch.
+  getLatestCompletedRun(brandId: string, engine: string, mode?: Run['mode']): Promise<Run | null>;
   getRunById(runId: string): Promise<Run | null>;
   getBrandsDueForRefresh(engines?: string[]): Promise<Brand[]>;
   insertPromptResponse(input: InsertPromptResponseInput): Promise<void>;

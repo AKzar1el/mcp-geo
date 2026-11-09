@@ -105,6 +105,25 @@ test('plain-text competitor names match the registrable label of common multi-pa
   assert.deepEqual(competitors_mentioned, ['acme.co.uk', 'zen.com.au', 'kumo.co.jp']);
 });
 
+test('Australian government-domain competitor names match visible prose without a URL', () => {
+  const brand = makeBrand({
+    domain: 'example.com',
+    competitors: ['services.gov.au'],
+  });
+  assert.deepEqual(
+    extractCitations(brand, 'Services provides the official guidance.').competitors_mentioned,
+    ['services.gov.au'],
+  );
+  assert.deepEqual(
+    extractCitations(brand, 'Our team uses ServicesHub instead.').competitors_mentioned,
+    [],
+  );
+  assert.deepEqual(
+    extractCitations(brand, 'Read https://fake-services.gov.au for details.').competitors_mentioned,
+    [],
+  );
+});
+
 test('plain-text competitor names also match Colombian, Israeli and Vietnamese second-level domains', () => {
   const brand = makeBrand({
     domain: 'example.com',

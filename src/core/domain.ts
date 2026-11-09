@@ -22,12 +22,15 @@ export function normalizeDomainInput(raw: string): string | null {
   // WHATWG URL applies IDNA normalization consistently in Node and Workers.
   // Check the original host first: URL parsing also accepts encoded or
   // authority-like syntax that should never be treated as a domain input.
-  if (!/^[\p{L}\p{M}\p{N}.-]+$/u.test(s)) return null;
+  // IDNA also treats the ideographic, fullwidth, and halfwidth full stop as dots.
+  if (!/^[\p{L}\p{M}\p{N}.\-\u3002\uFF0E\uFF61]+$/u.test(s)) return null;
   try {
     s = new URL(`http://${s}`).hostname;
   } catch {
     return null;
   }
+  // A single DNS root dot is a valid fully qualified spelling of the host.
+  if (s.endsWith('.')) s = s.slice(0, -1);
   // WHATWG URL also canonicalizes hex/octal IPv4 spellings. These are hosts,
   // not brand domains, and would waste paid visibility scans.
   if (/^(?:\d{1,3}\.){3}\d{1,3}$/.test(s)) return null;

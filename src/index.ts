@@ -43,6 +43,7 @@ import {
 import { seedBrand, type SeedBrandInput } from './core/seed.js';
 import { DomainInputError } from './core/domain.js';
 import { hasRequiredIdentifier, selectAdminRunEngines } from './core/admin-run-input.js';
+import { validateExistingEngineRun } from './core/run-engine-replay.js';
 import { handlePublicAudit } from './public-audit.js';
 import {
   hasExplicitClientApproval,
@@ -462,17 +463,9 @@ async function handleAdminTriggerCronTest(env: Env, db: Db): Promise<Response> {
   return jsonResponse({ brands_due_count: brandsDue.length });
 }
 
-// Single-engine execution. Called by runEngines() via env.SELF.fetch so
-// each engine gets its own worker invocation and its own 50-subrequest
-// budget. Idempotent: INSERT OR IGNOREs the runs row as a defensive
-// parent-row/FK guard before persistEngineRun's batched insert, then
-// deletes any prior prompt_responses for the run_id before re-inserting,
-// then dispatches the engine.
-//
-// Trust-the-body model: this route is X-Seed-Secret-gated and only
-// ever called by the worker calling itself, so we deliberately do NOT
-// re-query the runs row by id here. The brand row, by contrast, is
-// stable and safe to read.
+// Single-engine execution. The X-Seed-Secret-gated self-fetch runs with
+// its own 50-subrequest budget. Refuse terminal or mismatched run IDs
+// before deleting response evidence or making another provider request.
 async function handleAdminRunEngine(
   request: Request,
   env: Env,
@@ -528,6 +521,13 @@ async function handleAdminRunEngine(
     console.log('/admin/run-engine returning 404', { reason: 'brand not found' });
     return jsonResponse({ error: 'brand not found' }, 404);
   }
+  const replayError = validateExistingEngineRun(
+    await db.getRunById(runId),
+    brandId,
+    engine,
+    promptIds.length,
+  );
+  if (replayError) return jsonResponse({ error: replayError }, 409);
   let prompts: Prompt[];
   try {
     prompts = await resolveRunPromptSnapshot(db, brandId, promptIds);
@@ -552,21 +552,28 @@ async function handleAdminRunEngine(
         : 'Prompt snapshot resolution error';
     return jsonResponse({ error: `${prefix}: ${message}` }, 409);
   }
-  // FK guard: prompt_responses.run_id REFERENCES runs(id). This handler
-  // runs in an independently dispatched Worker invocation, so INSERT OR
-  // IGNORE ensures the parent row exists before persistEngineRun's batched
-  // INSERT. It is idempotent: an existing run is left untouched; otherwise
-  // this creates the same live-run shape that runEngines creates.
+  // FK guard: a direct invocation without a reservation gets a pending parent
+  // row, but only one invocation can claim it for billable provider dispatch.
+  // Concurrent replays must not erase rows or call providers a second time.
   await env.DIGESTSEO_DB.prepare(
     `INSERT OR IGNORE INTO runs
        (id, brand_id, engine, mode, status, prompts_total,
         prompts_completed, started_at)
-     VALUES (?, ?, ?, 'live', 'in_progress', ?, 0, ?)`,
+     VALUES (?, ?, ?, 'live', 'pending', ?, 0, ?)`,
   )
     .bind(runId, brandId, engine, promptIds.length, Date.now())
     .run();
-  // Idempotency: clear any prior rows for this run_id so a retry
-  // produces exactly one row per prompt instead of duplicating them.
+  // Another invocation could have created this ID first with a different
+  // identity, or completed it since the earlier read. Check the stored row
+  // before atomically taking ownership of provider dispatch.
+  const currentRunError = validateExistingEngineRun(
+    await db.getRunById(runId), brandId, engine, promptIds.length,
+  );
+  if (currentRunError) return jsonResponse({ error: currentRunError }, 409);
+  if (!(await db.claimPendingLiveRun(runId))) {
+    return jsonResponse({ error: 'run_id dispatch already claimed or no longer pending' }, 409);
+  }
+  // Clear stale rows only for the unique invocation that owns this run.
   await db.deleteResponsesForRun(runId);
   await runEngineInProcess(
     {
