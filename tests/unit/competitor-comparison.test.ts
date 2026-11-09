@@ -80,6 +80,43 @@ type ComparisonTool = {
   }) => Promise<{ structuredContent: ComparisonResult }>;
 };
 
+test('compare_competitors counts one latest successful retry per run, engine and prompt', async () => {
+  let comparison: ComparisonTool | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, handler: unknown) {
+      if (name === 'compare_competitors') {
+        comparison = { handler: handler as ComparisonTool['handler'] };
+      }
+    },
+  } as unknown as McpServer;
+
+  const sameRun = { run_id: 'run-retry', prompt_id: 'prompt-same' };
+  const rows: PromptResponse[] = [
+    { ...response('retry-old', 'compare project tools', 1, []), ...sameRun, captured_at: 1000 },
+    { ...response('retry-z', 'compare project tools', 0, ['asana.com']), ...sameRun, captured_at: 2000 },
+    { ...response('retry-mid', 'compare project tools', 1, []), ...sameRun, captured_at: 2000 },
+    { ...response('later-scan', 'compare project tools', 1, []), run_id: 'run-later', prompt_id: 'prompt-same', captured_at: 3000 },
+    { ...response('other-engine', 'compare project tools', 1, ['monday.com']), ...sameRun, engine: 'claude', captured_at: 4000 },
+  ];
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getResponsesSince: async () => rows,
+    } as Db,
+    env: {},
+    refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+
+  assert.ok(comparison);
+  const result = (await comparison.handler({ brand_id: brand.id })).structuredContent;
+  assert.equal(result.observation_coverage.successful_responses, 3);
+  assert.equal(result.your_mentions, 2);
+  assert.equal(result.your_share_of_voice_pct, 50);
+  assert.equal(result.competitors.find((c) => c.domain === 'asana.com')?.mentions, 1);
+  assert.equal(result.competitors.find((c) => c.domain === 'monday.com')?.mentions, 1);
+});
+
 test('compare_competitors uses the full response window and exposes raw mention counts', async () => {
   let comparison: ComparisonTool | undefined;
   let capturedSince = 0;

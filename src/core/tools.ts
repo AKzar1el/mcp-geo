@@ -242,7 +242,8 @@ const COMPARISON_SEMANTICS =
   'Legacy prompts_you_win includes all brand-mentioned prompts, including co-mentions. ' +
   'prompts_brand_only and prompts_co_mentioned classify individual engine responses; ' +
   'a prompt can occur in both when engines differ. ' +
-  'prompts_won_against_you lists competitor mentions where the tracked brand is absent.';
+  'prompts_won_against_you lists competitor mentions where the tracked brand is absent. ' +
+  'Counts use the latest successful observation per run, engine and prompt so retries do not inflate shares.';
 
 const COMPARISON_HISTORY_CAVEAT =
   'Competitor mentions were captured using the competitor list configured at scan time. ' +
@@ -987,7 +988,20 @@ export function registerTools(
       }
 
       const since = Date.now() - days * 86_400_000;
-      const allResponses = await deps.db.getResponsesSince(brand_id, since);
+      const fetchedResponses = await deps.db.getResponsesSince(brand_id, since);
+      // Preserve every distinct scan in the selected window, but do not
+      // count repeated successful attempts for the same scan/prompt twice.
+      const latestByRunPrompt = new Map<string, PromptResponse>();
+      for (const row of fetchedResponses) {
+        if (row.status !== 'ok') continue;
+        const key = JSON.stringify([row.run_id, row.engine, row.prompt_id]);
+        const previous = latestByRunPrompt.get(key);
+        if (!previous || row.captured_at > previous.captured_at ||
+            (row.captured_at === previous.captured_at && row.id > previous.id)) {
+          latestByRunPrompt.set(key, row);
+        }
+      }
+      const allResponses = [...latestByRunPrompt.values()];
       const observation_coverage = allResponses.length === 0
         ? {
             status: 'no_observations' as const,
@@ -997,7 +1011,7 @@ export function registerTools(
         : {
             status: 'observed' as const,
             successful_responses: allResponses.length,
-            note: 'Shares use successful responses only; this count does not establish complete prompt or engine coverage.',
+            note: 'Shares use the latest successful response per run, engine and prompt; this count does not establish complete prompt or engine coverage.',
           };
 
       const brandMentions = allResponses.reduce(
