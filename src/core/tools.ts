@@ -509,7 +509,7 @@ export function registerTools(
     {
       title: 'Check AI visibility',
       description:
-        "Read stored visibility scores and missing requested engines. Scores omit engines without usable scans; refresh_brand updates data. Example: brand_id='acme', engines=['chatgpt','gemini'].",
+        "Read stored visibility scores. run_mode='live' or 'batch' selects stored scans; omit for latest across modes. Live does not guarantee citations. Example: brand_id='acme', engines=['chatgpt'].",
       inputSchema: {
         brand_id: z
           .string()
@@ -518,6 +518,10 @@ export function registerTools(
           .array(engineSchema)
           .optional()
           .describe('Engines to include; omit or pass [] for all stored engines.'),
+        run_mode: z
+          .enum(['live', 'batch'])
+          .optional()
+          .describe('Filter by live or batch scans; omit for latest across modes. Live may still be model-only.'),
       },
       outputSchema: visibilityOutputSchema,
       annotations: {
@@ -526,7 +530,7 @@ export function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ brand_id, engines }) => {
+    async ({ brand_id, engines, run_mode }) => {
       const brand = await deps.db.getBrand(brand_id);
       if (!brand) {
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
@@ -550,7 +554,7 @@ export function registerTools(
       const measurementModeByEngine = new Map<string, 'search_requested' | 'model_only'>();
       let mostRecentTimestamp = 0;
       for (const engine of selectedEngines) {
-        const run = await deps.db.getLatestCompletedRun(brand_id, engine);
+        const run = await deps.db.getLatestCompletedRun(brand_id, engine, run_mode);
         if (!run) continue;
         const responses = await deps.db.getResponsesForRun(run.id);
         if (responses.length === 0) continue;
