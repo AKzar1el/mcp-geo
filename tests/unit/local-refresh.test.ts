@@ -54,3 +54,47 @@ test('overlapping CLI refreshes share a live reservation and do not run duplicat
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('local executor failure closes its reservation without exposing provider details and allows retry', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'mcp-geo-cli-failed-reservation-'));
+  const db = openSqliteDb(join(root, 'test.sqlite'));
+  try {
+    await db.upsertUser('test-user', 'test@example.test');
+    await db.createBrand({
+      id: 'retry-brand', user_id: 'test-user', name: 'Acme', domain: 'acme.com',
+      category: null, competitors: [], aliases: [], exclude_terms: [],
+      refresh_frequency: 'manual',
+    });
+    const brand = await db.getBrand('retry-brand');
+    assert.ok(brand);
+    const prompts: Prompt[] = [{
+      id: 'retry-prompt', brand_id: brand.id, text: 'Independent category query',
+      intent_stage: null, shape: null, active: 1, created_at: 0,
+    }];
+
+    await assert.rejects(
+      runLocalRefresh(db, {}, brand, prompts, ['chatgpt'], async () => {
+        throw new Error('sensitive provider diagnostic');
+      }),
+      /sensitive provider diagnostic/,
+    );
+    const failedRun = await db.getLatestRun(brand.id, 'chatgpt');
+    assert.ok(failedRun);
+    assert.equal(failedRun.status, 'failed');
+    assert.ok(failedRun.completed_at);
+    assert.match(failedRun.error ?? '', /Local engine execution failed/);
+    assert.doesNotMatch(failedRun.error ?? '', /sensitive provider diagnostic/);
+
+    let retryCalls = 0;
+    const retried = await runLocalRefresh(db, {}, brand, prompts, ['chatgpt'], async (_env, _brand, _prompts, run) => {
+      retryCalls += 1;
+      await db.updateRun(run.run_id, { status: 'completed', completed_at: Date.now() });
+    });
+    assert.deepEqual(retried.engines, ['chatgpt']);
+    assert.notEqual(retried.run_ids.chatgpt, failedRun.id);
+    assert.equal(retryCalls, 1);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
