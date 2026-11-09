@@ -740,7 +740,13 @@ export function registerTools(
       if (!brand) {
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
       }
-      const since = Date.now() - days * 86_400_000;
+      // History is bucketed by UTC calendar day/week. A rolling 24-hour
+      // cutoff would omit early scans from the first requested day and can
+      // return one more daily bucket than the requested day count.
+      const now = new Date(Date.now());
+      const since = Date.UTC(
+        now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - days + 1,
+      );
       const results = await deps.db.getVisibilityHistoryRows(brand_id, since);
       const identityChangedAt = brand.identity_changed_at ?? null;
       const preChangeRuns = identityChangedAt === null ? 0

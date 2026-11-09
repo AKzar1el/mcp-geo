@@ -57,7 +57,12 @@ type HistoryTool = {
 
 function registerHistoryTool(
   rows: VisibilityHistoryRow[],
-  options: { brandExists?: boolean; identityChangedAt?: number; onHistoryQuery?: () => void } = {},
+  options: {
+    brandExists?: boolean;
+    identityChangedAt?: number;
+    onHistoryQuery?: (since: number) => void;
+    filterBySince?: boolean;
+  } = {},
 ): HistoryTool {
   let history: HistoryTool | undefined;
   const server = {
@@ -73,9 +78,11 @@ function registerHistoryTool(
       getBrand: async () => (options.brandExists === false ? null : {
         id: 'acme', identity_changed_at: options.identityChangedAt ?? null,
       }),
-      getVisibilityHistoryRows: async () => {
-        options.onHistoryQuery?.();
-        return rows;
+      getVisibilityHistoryRows: async (_brandId, since) => {
+        options.onHistoryQuery?.(since);
+        return options.filterBySince
+          ? rows.filter((row) => row.completed_at >= since)
+          : rows;
       },
     } as Db,
     env: {},
@@ -106,6 +113,30 @@ test('visibility history preserves an empty series for an existing unscanned bra
   assert.deepEqual(result.structuredContent.series, []);
   assert.equal(result.structuredContent.google_search_sampling, null);
   assert.deepEqual(result.structuredContent.measurement_scope.mixed_mode_engines, []);
+});
+
+test('daily history includes the entire requested UTC calendar-day window', async (t) => {
+  const today = Date.UTC(2026, 10, 9);
+  t.mock.method(Date, 'now', () => today + 21 * 60 * 60 * 1000);
+  const requestedSince: number[] = [];
+  const history = registerHistoryTool([
+    { run_id: 'yesterday', engine: 'chatgpt', completed_at: today - 10 * 60 * 1000, total: 2, hits: 0 },
+    { run_id: 'today-morning', engine: 'chatgpt', completed_at: today + 10 * 60 * 1000, total: 2, hits: 2 },
+  ], {
+    filterBySince: true,
+    onHistoryQuery: (since) => requestedSince.push(since),
+  });
+
+  const todayOnly = await history.handler({ brand_id: 'acme', days: 1, granularity: 'daily' });
+  assert.equal(requestedSince[0], today, 'one calendar day starts at midnight UTC, not 24 hours ago');
+  assert.deepEqual(todayOnly.structuredContent.series.map((row) => row.date), ['2026-11-09']);
+  assert.equal(todayOnly.structuredContent.series[0]?.overall_score, 100);
+
+  const bothDays = await history.handler({ brand_id: 'acme', days: 2, granularity: 'daily' });
+  assert.equal(requestedSince[1], today - 86_400_000);
+  assert.deepEqual(bothDays.structuredContent.series.map((row) => row.date), [
+    '2026-11-08', '2026-11-09',
+  ]);
 });
 
 test('history discloses batch/model-only evidence separately from live search requests', async () => {
