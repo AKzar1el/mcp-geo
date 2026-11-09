@@ -39,6 +39,13 @@ type HistoryTool = {
       language: 'en';
       scope_note: string;
     };
+    identity_comparability: {
+      last_identity_change_at: string | null;
+      pre_change_runs: number;
+      post_change_runs: number;
+      mixes_identity_versions: boolean;
+      note: string;
+    };
     prompt_set_comparability: {
       changes_detected: boolean;
       changed_engines: string[];
@@ -50,7 +57,7 @@ type HistoryTool = {
 
 function registerHistoryTool(
   rows: VisibilityHistoryRow[],
-  options: { brandExists?: boolean; onHistoryQuery?: () => void } = {},
+  options: { brandExists?: boolean; identityChangedAt?: number; onHistoryQuery?: () => void } = {},
 ): HistoryTool {
   let history: HistoryTool | undefined;
   const server = {
@@ -63,7 +70,9 @@ function registerHistoryTool(
 
   registerTools(server, {
     db: {
-      getBrand: async () => (options.brandExists === false ? null : { id: 'acme' }),
+      getBrand: async () => (options.brandExists === false ? null : {
+        id: 'acme', identity_changed_at: options.identityChangedAt ?? null,
+      }),
       getVisibilityHistoryRows: async () => {
         options.onHistoryQuery?.();
         return rows;
@@ -174,6 +183,19 @@ test('visibility history discloses US-English scope when historical Google scans
   assert.equal(result.structuredContent.google_search_sampling?.country, 'us');
   assert.equal(result.structuredContent.google_search_sampling?.language, 'en');
   assert.match(result.structuredContent.google_search_sampling?.scope_note ?? '', /other markets or languages/);
+});
+
+test('visibility history discloses stored observations spanning an identity edit', async () => {
+  const changedAt = Date.UTC(2026, 0, 8);
+  const history = registerHistoryTool([
+    { run_id: 'old', engine: 'chatgpt', completed_at: changedAt - 86_400_000, total: 2, hits: 2 },
+    { run_id: 'new', engine: 'chatgpt', completed_at: changedAt + 86_400_000, total: 2, hits: 0 },
+  ], { identityChangedAt: changedAt });
+  const result = await history.handler({ brand_id: 'acme', days: 30, granularity: 'weekly' });
+  assert.equal(result.structuredContent.identity_comparability.last_identity_change_at, new Date(changedAt).toISOString());
+  assert.equal(result.structuredContent.identity_comparability.pre_change_runs, 1);
+  assert.equal(result.structuredContent.identity_comparability.post_change_runs, 1);
+  assert.equal(result.structuredContent.identity_comparability.mixes_identity_versions, true);
 });
 
 test('visibility history exposes the evidence denominator behind each engine score', async () => {

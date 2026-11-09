@@ -45,6 +45,11 @@ function response(
 type ComparisonResult = {
   brand_id: string;
   days: number;
+  observation_coverage: {
+    status: 'not_compared' | 'no_observations' | 'observed';
+    successful_responses: number;
+    note: string;
+  };
   google_search_sampling: {
     engines: string[];
     country: 'us';
@@ -328,4 +333,60 @@ test('comparison prompt rankings remain stable when equal evidence arrives in an
     'Bravo competitor question',
     'Charlie competitor question',
   ]);
+});
+
+test('comparison distinguishes no successful observations from observed zero mentions', async () => {
+  let comparison: ComparisonTool | undefined;
+  let rows: PromptResponse[] = [];
+  const server = {
+    registerTool(name: string, _config: unknown, handler: unknown) {
+      if (name === 'compare_competitors') comparison = { handler: handler as ComparisonTool['handler'] };
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getResponsesSince: async () => rows,
+    } as Db,
+    env: {},
+    refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(comparison);
+
+  const missing = (await comparison.handler({ brand_id: brand.id })).structuredContent;
+  assert.equal(missing.your_share_of_voice_pct, 0);
+  assert.equal(missing.observation_coverage.status, 'no_observations');
+  assert.equal(missing.observation_coverage.successful_responses, 0);
+  assert.match(missing.observation_coverage.note, /not measured|no usable/i);
+
+  rows = [response('no-mentions', 'independent buyer question', 0, [])];
+  const observed = (await comparison.handler({ brand_id: brand.id })).structuredContent;
+  assert.equal(observed.your_share_of_voice_pct, 0);
+  assert.equal(observed.observation_coverage.status, 'observed');
+  assert.equal(observed.observation_coverage.successful_responses, 1);
+  assert.match(observed.observation_coverage.note, /successful response/i);
+});
+
+test('comparison with no configured competitors does not pretend observations were queried', async () => {
+  let comparison: ComparisonTool | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, handler: unknown) {
+      if (name === 'compare_competitors') comparison = { handler: handler as ComparisonTool['handler'] };
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => ({ ...brand, competitors: [] }),
+      getResponsesSince: async () => { throw new Error('Must not query responses without comparison targets'); },
+    } as Db,
+    env: {},
+    refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(comparison);
+  const result = (await comparison.handler({ brand_id: brand.id })).structuredContent;
+  assert.equal(result.observation_coverage.status, 'not_compared');
+  assert.equal(result.observation_coverage.successful_responses, 0);
+  assert.match(result.observation_coverage.note, /competitor/i);
 });

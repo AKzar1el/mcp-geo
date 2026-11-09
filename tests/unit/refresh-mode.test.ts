@@ -98,6 +98,21 @@ test('sync refresh metadata and result report completed scans', async () => {
   assert.equal(result.structuredContent.estimated_completion_seconds, 0);
 });
 
+test('explicit empty refresh engine selection fails closed instead of spending on all providers', async () => {
+  const refresh = registerRefreshTool('sync');
+
+  await assert.rejects(
+    refresh.handler({ brand_id: brand.id, engines: [] }),
+    /at least one engine|omit engines/i,
+  );
+
+  const omitted = await refresh.handler({ brand_id: brand.id });
+  assert.deepEqual(omitted.structuredContent.run_ids, {
+    chatgpt: 'run-chatgpt',
+    claude: 'run-claude',
+  });
+});
+
 test('refresh names an explicitly requested engine when its provider key is unavailable', async () => {
   const refresh = registerRefreshTool('sync', false, {
     OPENAI_API_KEY: 'test-openai-key',

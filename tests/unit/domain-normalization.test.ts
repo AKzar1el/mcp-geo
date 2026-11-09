@@ -19,6 +19,23 @@ test('Unicode internationalized domains normalize to canonical ASCII IDNs', () =
   );
 });
 
+test('IDNA dot separators and a single DNS root dot preserve canonical domain identity', () => {
+  const idn = 'xn--fsqu00a.xn--0zwm56d';
+  for (const separator of ['\u3002', '\uff0e', '\uff61']) {
+    assert.equal(normalizeDomainInput(`\u4f8b\u5b50${separator}\u6d4b\u8bd5`), idn);
+    assert.equal(normalizeRequiredDomain(`https://www.\u4f8b\u5b50${separator}\u6d4b\u8bd5/`), idn);
+  }
+  assert.equal(normalizeDomainInput('example.com.'), 'example.com');
+  assert.equal(normalizeDomainInput('https://www.example.com./help'), 'example.com');
+  assert.deepEqual(
+    normalizeCompetitorDomains(['example.com.', 'example.com'], 'acme.com'),
+    ['example.com'],
+  );
+  for (const invalid of ['example.com..', 'example..com', '.example.com', '.', 'example.com@evil.com']) {
+    assert.equal(normalizeDomainInput(invalid), null, invalid);
+  }
+});
+
 test('Unicode and punycode duplicates resolve to one canonical competitor', () => {
   assert.deepEqual(
     normalizeCompetitorDomains(

@@ -16,6 +16,7 @@ Current set:
 | `0003_perplexity_citations.sql` | Adds `engine_citations_json` (engine-native citation URLs). |
 | `0004_response_status.sql` | Adds `status` (`ok`/`failed`/`skipped`) + `error_message` to prompt_responses. |
 | `0005_brand_alias_exclude.sql` | Adds per-brand `aliases_json` + `exclude_terms_json` for mention matching. |
+| `0006_brand_identity_boundary.sql` | Records the latest matching-identity change without treating cadence/category edits as identity changes. Pre-migration changes remain unknown. |
 
 **Do not renumber or rename applied files.** Wrangler tracks applied migrations
 by filename in the `d1_migrations` table; renaming a file makes existing
