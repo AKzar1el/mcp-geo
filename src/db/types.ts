@@ -178,8 +178,9 @@ export type UpdateRunFields = Partial<
 
 // Row shape behind the get_visibility_history tool: one row per run
 // that produced status='ok' prompt_responses, with COUNT/SUM aggregates
-// over those rows. completed_at is COALESCE(completed_at, started_at)
-// so partially-finished runs (stuck at in_progress) still count toward
+// over the latest successful observation per run/prompt. completed_at
+// uses COALESCE(completed_at, started_at) so partially-finished runs
+// (stuck at in_progress) still count toward
 // history; runs with zero ok rows are excluded entirely rather than
 // charting as a fake score of 0.
 export interface VisibilityHistoryRow {
