@@ -96,6 +96,8 @@ const winningPromptOutputSchema = z.object({
 const losingPromptOutputSchema = z.object({
   prompt: z.string(),
   competitors_cited: z.array(z.string()),
+  currently_tracked_competitors: z.array(z.string()),
+  not_currently_tracked_competitors: z.array(z.string()),
 });
 
 const contentGapRecommendationOutputSchema = z.object({
@@ -179,6 +181,7 @@ const visibilityOutputSchema = z.object({
   top_winning_prompts: z.array(winningPromptOutputSchema),
   winning_prompt_evidence_note: z.string(),
   top_losing_prompts: z.array(losingPromptOutputSchema),
+  losing_prompt_evidence_note: z.string(),
 });
 
 const historyModeCountsSchema = z.object({
@@ -692,6 +695,7 @@ export function registerTools(
         top_winning_prompts: scored.top_winning_prompts,
         winning_prompt_evidence_note: 'engines_cited_in is a legacy field counting brand mentions in answers, not source citations. Use engines_mentioned_in for mention evidence and engines_with_brand_link for linked brand evidence. A link-only source without an answer mention is not a winning prompt.',
         top_losing_prompts: scored.top_losing_prompts,
+        losing_prompt_evidence_note: 'competitors_cited retains historical answer mentions, not verified source links. The tracked and not-currently-tracked lists describe the present competitor roster, not the roster at observation time; historical scores and observations are not rewritten. Refresh scans before interpreting current competitors.',
       };
       return toolResult(payload);
     },

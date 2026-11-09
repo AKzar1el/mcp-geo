@@ -78,8 +78,14 @@ test('visibility output schema describes winning and losing prompt records', () 
     ],
     winning_prompt_evidence_note: 'Legacy cited field is mention-only.',
     top_losing_prompts: [
-      { prompt: 'project tools for agencies', competitors_cited: ['beta.com'] },
+      {
+        prompt: 'project tools for agencies',
+        competitors_cited: ['beta.com'],
+        currently_tracked_competitors: ['beta.com'],
+        not_currently_tracked_competitors: [],
+      },
     ],
+    losing_prompt_evidence_note: 'Historical mentions only.',
   });
   assert.equal(valid.success, true);
 

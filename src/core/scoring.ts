@@ -25,7 +25,10 @@ export interface WinningPrompt {
 
 export interface LosingPrompt {
   prompt: string;
+  // Legacy historical answer-mention evidence; not a source-link guarantee.
   competitors_cited: string[];
+  currently_tracked_competitors: string[];
+  not_currently_tracked_competitors: string[];
 }
 
 export interface ScoreResult {
@@ -36,7 +39,7 @@ export interface ScoreResult {
 }
 
 export function computeOverallScore(
-  _brand: Brand,
+  brand: Brand,
   responses: PromptResponse[],
 ): ScoreResult {
   // A run may retain repeated successful observations of the same prompt.
@@ -142,13 +145,19 @@ export function computeOverallScore(
       });
     }
   }
+  const currentlyTracked = new Set(brand.competitors);
   const losing: LosingPrompt[] = [...lossByPrompt.values()]
     .sort((a, b) => b.competitors.size - a.competitors.size ||
       a.prompt.localeCompare(b.prompt) || a.promptId.localeCompare(b.promptId))
-    .map((l) => ({
-      prompt: l.prompt,
-      competitors_cited: [...l.competitors].sort(),
-    }));
+    .map((l) => {
+      const historical = [...l.competitors].sort();
+      return {
+        prompt: l.prompt,
+        competitors_cited: historical,
+        currently_tracked_competitors: historical.filter((c) => currentlyTracked.has(c)),
+        not_currently_tracked_competitors: historical.filter((c) => !currentlyTracked.has(c)),
+      };
+    });
   const top_losing_prompts = losing.slice(0, 3);
 
   return {

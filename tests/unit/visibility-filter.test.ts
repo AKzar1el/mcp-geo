@@ -139,7 +139,13 @@ type VisibilitySnapshot = {
     engines_with_brand_link: string[];
   }>;
   winning_prompt_evidence_note: string;
-  top_losing_prompts: Array<{ prompt: string; competitors_cited: string[] }>;
+  top_losing_prompts: Array<{
+    prompt: string;
+    competitors_cited: string[];
+    currently_tracked_competitors: string[];
+    not_currently_tracked_competitors: string[];
+  }>;
+  losing_prompt_evidence_note: string;
 };
 
 type VisibilityTool = {
@@ -237,8 +243,14 @@ test('check_visibility scopes every snapshot field to the requested engine', asy
   ]);
   assert.match(result.structuredContent.winning_prompt_evidence_note, /not source citations/);
   assert.deepEqual(result.structuredContent.top_losing_prompts, [
-    { prompt: 'Claude loss', competitors_cited: ['beta.com'] },
+    {
+      prompt: 'Claude loss',
+      competitors_cited: ['beta.com'],
+      currently_tracked_competitors: [],
+      not_currently_tracked_competitors: ['beta.com'],
+    },
   ]);
+  assert.match(result.structuredContent.losing_prompt_evidence_note, /historical answer mentions/);
   assert.equal(
     result.structuredContent.refreshed_at,
     new Date(claudeTimestamp).toISOString(),
