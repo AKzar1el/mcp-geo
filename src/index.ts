@@ -43,6 +43,7 @@ import {
 import { seedBrand, type SeedBrandInput } from './core/seed.js';
 import { DomainInputError } from './core/domain.js';
 import { hasRequiredIdentifier, selectAdminRunEngines } from './core/admin-run-input.js';
+import { validateExistingEngineRun } from './core/run-engine-replay.js';
 import { handlePublicAudit } from './public-audit.js';
 import {
   hasExplicitClientApproval,
@@ -462,17 +463,9 @@ async function handleAdminTriggerCronTest(env: Env, db: Db): Promise<Response> {
   return jsonResponse({ brands_due_count: brandsDue.length });
 }
 
-// Single-engine execution. Called by runEngines() via env.SELF.fetch so
-// each engine gets its own worker invocation and its own 50-subrequest
-// budget. Idempotent: INSERT OR IGNOREs the runs row as a defensive
-// parent-row/FK guard before persistEngineRun's batched insert, then
-// deletes any prior prompt_responses for the run_id before re-inserting,
-// then dispatches the engine.
-//
-// Trust-the-body model: this route is X-Seed-Secret-gated and only
-// ever called by the worker calling itself, so we deliberately do NOT
-// re-query the runs row by id here. The brand row, by contrast, is
-// stable and safe to read.
+// Single-engine execution. The X-Seed-Secret-gated self-fetch runs with
+// its own 50-subrequest budget. Refuse terminal or mismatched run IDs
+// before deleting response evidence or making another provider request.
 async function handleAdminRunEngine(
   request: Request,
   env: Env,
@@ -528,6 +521,13 @@ async function handleAdminRunEngine(
     console.log('/admin/run-engine returning 404', { reason: 'brand not found' });
     return jsonResponse({ error: 'brand not found' }, 404);
   }
+  const replayError = validateExistingEngineRun(
+    await db.getRunById(runId),
+    brandId,
+    engine,
+    promptIds.length,
+  );
+  if (replayError) return jsonResponse({ error: replayError }, 409);
   let prompts: Prompt[];
   try {
     prompts = await resolveRunPromptSnapshot(db, brandId, promptIds);
