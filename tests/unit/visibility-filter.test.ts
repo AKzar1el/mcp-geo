@@ -84,6 +84,8 @@ type VisibilitySnapshot = {
   refreshed_at: string;
   overall_score: number;
   missing_requested_engines: string[];
+  unmeasured_engines: string[];
+  unmeasured_engines_note: string;
   measurement_scope: {
     search_requested: { score: number | null; engines: string[] };
     model_only: { score: number | null; engines: string[] };
@@ -301,6 +303,11 @@ test('check_visibility treats omitted and empty engine filters as all engines', 
   const empty = await visibility.handler({ brand_id: brand.id, engines: [] });
 
   assert.equal(omitted.structuredContent.overall_score, 75);
+  assert.deepEqual(omitted.structuredContent.unmeasured_engines, [
+    'perplexity', 'gemini', 'grok', 'ai_overviews', 'ai_mode',
+  ]);
+  assert.match(omitted.structuredContent.unmeasured_engines_note, /excluded from overall_score/);
+  assert.match(omitted.structuredContent.unmeasured_engines_note, /not establish.*configured/);
   assert.deepEqual(omitted.structuredContent.measurement_scope.search_requested, {
     score: 100, engines: ['chatgpt'],
   });
@@ -397,10 +404,14 @@ test('check_visibility identifies explicitly requested engines missing usable sc
   });
   assert.equal(result.structuredContent.overall_score, 75);
   assert.deepEqual(result.structuredContent.missing_requested_engines, ['gemini']);
+  assert.deepEqual(result.structuredContent.unmeasured_engines, ['gemini']);
   assert.deepEqual(result.structuredContent.per_engine.map(({ engine }) => engine), ['chatgpt', 'claude']);
 
   const implicit = await visibility.handler({ brand_id: brand.id });
   assert.deepEqual(implicit.structuredContent.missing_requested_engines, []);
+  assert.deepEqual(implicit.structuredContent.unmeasured_engines, [
+    'perplexity', 'gemini', 'grok', 'ai_overviews', 'ai_mode',
+  ]);
 });
 
 test('check_visibility labels a score based on partial successful prompt coverage', async () => {
