@@ -136,6 +136,27 @@ test('hostMatchesDomain: exact, subdomain, lookalike, unrelated', () => {
   assert.equal(hostMatchesDomain('acme.com', 'https://www.acme.com'), true);
 });
 
+test('citation hosts accept one DNS root dot but reject repeated dots and lookalikes', () => {
+  assert.equal(hostMatchesDomain('docs.acme.com.', 'acme.com'), true);
+  assert.equal(hostMatchesDomain('docs.acme.com.', 'acme.com.'), true);
+  assert.equal(hostMatchesDomain('docs.acme.com..', 'acme.com'), false);
+  assert.equal(hostMatchesDomain('docs.acme.com.', 'acme.com..'), false);
+  assert.equal(hostMatchesDomain('acme.com.evil.example.', 'acme.com'), false);
+
+  const rootDotUrl = 'https://www.acme.com./source';
+  assert.equal(hasBrandInEngineCitations('acme.com', [rootDotUrl]), true);
+  for (const invalid of [
+    'https://acme.com../source',
+    'https://docs.acme.com../source',
+    'https://acme.com..,',
+    'https://acme.com.evil.example./source',
+  ]) {
+    assert.equal(hasBrandInEngineCitations('acme.com', [invalid]), false, invalid);
+  }
+  assert.equal(extractCitations(acme, 'See https://acme.com..').brand_cited_with_link, 0);
+  assert.equal(extractCitations(acme, 'See https://acme.com.').brand_cited_with_link, 1);
+});
+
 
 test('sentence-final plain brand URL counts as one normalized linked citation', () => {
   const r = extractCitations(acme, 'Useful reference: https://acme.com.');
