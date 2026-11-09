@@ -195,3 +195,26 @@ test('same-timestamp repeated observations use a stable response-ID tiebreaker',
     assert.equal(result.per_engine[0].score, 0);
   }
 });
+
+test('historical losing-prompt evidence distinguishes currently tracked competitors', () => {
+  const result = computeOverallScore(brand, [
+    response('chatgpt', 'p1', 0, { competitors: ['retired.example', 'asana.com'] }),
+    response('claude', 'p1', 0, { competitors: ['retired.example'] }),
+    response('chatgpt', 'p2', 0, { competitors: ['retired.example'] }),
+  ]);
+  assert.equal(result.overall_score, 0);
+  assert.deepEqual(result.top_losing_prompts, [
+    {
+      prompt: 'prompt text for p1',
+      competitors_cited: ['asana.com', 'retired.example'],
+      currently_tracked_competitors: ['asana.com'],
+      not_currently_tracked_competitors: ['retired.example'],
+    },
+    {
+      prompt: 'prompt text for p2',
+      competitors_cited: ['retired.example'],
+      currently_tracked_competitors: [],
+      not_currently_tracked_competitors: ['retired.example'],
+    },
+  ]);
+});
