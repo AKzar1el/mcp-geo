@@ -125,6 +125,8 @@ const visibilityOutputSchema = z.object({
   refreshed_at: z.string(),
   overall_score: z.number(),
   missing_requested_engines: z.array(z.string()),
+  unmeasured_engines: z.array(z.string()),
+  unmeasured_engines_note: z.string(),
   measurement_scope: z.object({
     search_requested: z.object({
       score: z.number().nullable(),
@@ -586,8 +588,9 @@ export function registerTools(
       }
       // An explicit multi-engine request can otherwise look complete even
       // when only one engine has usable data and contributes to the score.
+      const unmeasuredEngines = selectedEngines.filter((engine) => !refreshedAtByEngine.has(engine));
       const missingRequestedEngines = engines && engines.length > 0
-        ? selectedEngines.filter((engine) => !refreshedAtByEngine.has(engine))
+        ? unmeasuredEngines
         : [];
       const scored = computeOverallScore(brand, selectedResponses);
       const oldestTimestamp = Math.min(...refreshMsByEngine.values());
@@ -657,6 +660,8 @@ export function registerTools(
         refreshed_at: new Date(mostRecentTimestamp).toISOString(),
         overall_score: scored.overall_score,
         missing_requested_engines: missingRequestedEngines,
+        unmeasured_engines: unmeasuredEngines,
+        unmeasured_engines_note: 'These known or requested engines have no usable stored observations for the selected run mode and are excluded from overall_score. Their absence does not establish whether an engine was configured, attempted, or failed.',
         measurement_scope: {
           search_requested: searchRequested,
           model_only: modelOnly,
