@@ -49,6 +49,9 @@ test('visibility output schema describes winning and losing prompt records', () 
       age_spread_hours: 24,
       mixed_age_warning: true,
       older_engines: ['claude'],
+      cadence_overdue_warning: true,
+      cadence_overdue_engines: ['claude'],
+      cadence_note: 'Old evidence exceeds the weekly cadence.',
     },
     prompt_set_comparability: {
       active_prompt_count: 2,

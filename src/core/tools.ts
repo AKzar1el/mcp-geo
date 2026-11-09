@@ -142,6 +142,9 @@ const visibilityOutputSchema = z.object({
     age_spread_hours: z.number(),
     mixed_age_warning: z.boolean(),
     older_engines: z.array(z.string()),
+    cadence_overdue_warning: z.boolean(),
+    cadence_overdue_engines: z.array(z.string()),
+    cadence_note: z.string(),
   }),
   prompt_set_comparability: z.object({
     active_prompt_count: z.number(),
@@ -596,6 +599,18 @@ export function registerTools(
         .filter(([, timestamp]) => mostRecentTimestamp - timestamp >= mixedAgeCutoffMs)
         .map(([engine]) => engine)
         .sort();
+      // Relative engine age cannot detect a uniformly outdated snapshot.
+      // Mirror the configured daily/weekly observation window, but never
+      // call manual refreshes overdue or mistake this for cron health.
+      const cadenceMs = brand.refresh_frequency === 'daily'
+        ? 24 * 60 * 60 * 1000
+        : brand.refresh_frequency === 'weekly'
+          ? 7 * 24 * 60 * 60 * 1000
+          : null;
+      const cadenceOverdueEngines = cadenceMs === null ? [] : [...refreshMsByEngine.entries()]
+        .filter(([, timestamp]) => timestamp < Date.now() - cadenceMs)
+        .map(([engine]) => engine)
+        .sort();
       const activePrompts = await deps.db.getActivePrompts(brand_id);
       const activePromptIds = new Set(activePrompts.map((prompt) => prompt.id));
       // Successful rows can be a partial sample. Only *observed* retired IDs
@@ -667,6 +682,11 @@ export function registerTools(
           age_spread_hours: Math.round((ageSpreadMs / 3600000) * 10) / 10,
           mixed_age_warning: olderEngines.length > 0,
           older_engines: olderEngines,
+          cadence_overdue_warning: cadenceOverdueEngines.length > 0,
+          cadence_overdue_engines: cadenceOverdueEngines,
+          cadence_note: cadenceMs === null
+            ? 'Manual refresh has no scheduled cadence; stored observation age is not classified as overdue.'
+            : 'Overdue means the selected stored observation age exceeds the daily or weekly brand cadence, not that cron failed or prompt coverage was complete.',
         },
         prompt_set_comparability: {
           active_prompt_count: activePromptIds.size,
