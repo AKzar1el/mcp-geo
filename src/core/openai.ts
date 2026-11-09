@@ -133,7 +133,7 @@ export interface CitationExtraction {
 // avoids guessing that every two-letter TLD has the same registry structure.
 const COMMON_TWO_LABEL_PUBLIC_SUFFIXES = new Set([
   'co.uk', 'org.uk', 'net.uk', 'ac.uk', 'gov.uk',
-  'com.au', 'net.au', 'org.au', 'edu.au',
+  'com.au', 'net.au', 'org.au', 'edu.au', 'gov.au',
   'co.nz', 'org.nz', 'govt.nz',
   'co.jp', 'or.jp', 'ne.jp',
   'com.br', 'com.mx', 'com.tr', 'com.sg', 'com.hk', 'com.tw',
