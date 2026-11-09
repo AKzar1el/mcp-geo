@@ -422,6 +422,18 @@ test('getResponsesSince returns every usable response in the requested brand win
       },
     ]);
 
+    await db.insertPromptResponse({
+      run_id: first.id,
+      prompt_id: 'p1',
+      engine: 'chatgpt',
+      raw_response: 'Provider failed before usable scoring evidence.',
+      brand_mentioned: 0,
+      brand_cited_with_link: 0,
+      cited_urls: [],
+      competitors_mentioned: [],
+      status: 'failed',
+    });
+
     const all = await db.getResponsesSince('acme', Date.now() - 60_000);
     assert.equal(
       all.length,
@@ -432,6 +444,36 @@ test('getResponsesSince returns every usable response in the requested brand win
       all.map((r) => r.run_id),
       [first.id, second.id],
     );
+
+    const hostedSql: string[] = [];
+    const hosted = createD1Db({
+      prepare(sql: string) {
+        hostedSql.push(sql);
+        return {
+          bind(...params: unknown[]) {
+            return {
+              async all() {
+                const statement = db.raw.prepare(sql);
+                return { results: statement.all(...(params as Parameters<typeof statement.all>)) };
+              },
+            };
+          },
+        };
+      },
+    } as unknown as Parameters<typeof createD1Db>[0]);
+    const hostedRows = await hosted.getResponsesSince('acme', Date.now() - 60_000);
+    assert.deepEqual(hostedRows, all, 'D1 and SQLite must return identical deduplication evidence');
+    for (const row of all) {
+      assert.ok(row.id && row.run_id && row.prompt_id && row.engine);
+      assert.equal(row.status, 'ok');
+      assert.ok(Number.isSafeInteger(row.captured_at));
+      assert.equal(typeof row.prompt_text, 'string');
+      assert.ok(Array.isArray(row.competitors_mentioned));
+      for (const unused of ['raw_response', 'cited_urls', 'engine_citations', 'error_message']) {
+        assert.equal(Object.hasOwn(row, unused), false, `${unused} must not be materialized for comparisons`);
+      }
+    }
+    assert.ok(hostedSql.every((sql) => !sql.includes('raw_response')));
 
     db.raw
       .prepare('UPDATE prompt_responses SET captured_at = ? WHERE run_id = ?')

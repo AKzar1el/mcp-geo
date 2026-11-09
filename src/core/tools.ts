@@ -10,7 +10,7 @@
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import type { Brand, CitationSourceRow, Db, Prompt, PromptResponse } from '../db/types.js';
+import type { Brand, CitationSourceRow, ComparisonEvidenceRow, Db, Prompt, PromptResponse } from '../db/types.js';
 import { extractUrls, findTermSetMatchIndex, hostMatchesDomain } from './openai.js';
 import {
   ALL_ENGINES,
@@ -1006,7 +1006,7 @@ export function registerTools(
       const fetchedResponses = await deps.db.getResponsesSince(brand_id, since);
       // Preserve every distinct scan in the selected window, but do not
       // count repeated successful attempts for the same scan/prompt twice.
-      const latestByRunPrompt = new Map<string, PromptResponse>();
+      const latestByRunPrompt = new Map<string, ComparisonEvidenceRow>();
       for (const row of fetchedResponses) {
         if (row.status !== 'ok') continue;
         const key = JSON.stringify([row.run_id, row.engine, row.prompt_id]);
@@ -1080,7 +1080,7 @@ export function registerTools(
       const coMentionedByPrompt = new Map<string, ComparedPrompt>();
       const collectPrompt = (
         map: Map<string, ComparedPrompt>,
-        r: PromptResponse,
+        r: ComparisonEvidenceRow,
         mentionedCompetitors: string[],
       ) => {
         const existing = map.get(r.prompt_id);
