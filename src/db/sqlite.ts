@@ -359,7 +359,7 @@ export function openSqliteDb(path?: string): SqliteDb {
         brand_id: brand.id,
         engine,
         mode: 'live',
-        status: 'in_progress',
+        status: 'pending',
         batch_id: null,
         prompts_total: promptsTotal,
         prompts_completed: 0,
@@ -375,7 +375,7 @@ export function openSqliteDb(path?: string): SqliteDb {
           `INSERT INTO runs
            (id, brand_id, engine, mode, status, batch_id, prompts_total,
             prompts_completed, cost_eur_estimate, error, started_at, completed_at)
-         SELECT ?, ?, ?, 'live', 'in_progress', NULL, ?, 0, NULL, NULL, ?, NULL
+         SELECT ?, ?, ?, 'live', 'pending', NULL, ?, 0, NULL, NULL, ?, NULL
           WHERE NOT EXISTS (
             SELECT 1 FROM runs WHERE brand_id = ? AND engine = ?
               AND mode = 'live' AND status IN ('pending', 'in_progress')
@@ -392,6 +392,13 @@ export function openSqliteDb(path?: string): SqliteDb {
         )
         .get(brand.id, engine, cutoff) as Run | undefined;
       return active ? { run: active, started: false } : null;
+    },
+
+    async claimPendingLiveRun(runId: string): Promise<boolean> {
+      const result = sqlite.prepare(
+        "UPDATE runs SET status = 'in_progress' WHERE id = ? AND mode = 'live' AND status = 'pending'",
+      ).run(runId);
+      return result.changes > 0;
     },
 
     async updateRun(runId: string, fields: UpdateRunFields): Promise<void> {
@@ -413,7 +420,7 @@ export function openSqliteDb(path?: string): SqliteDb {
         .prepare(
           `UPDATE runs
               SET status = 'failed', error = ?, completed_at = ?
-            WHERE id = ? AND status = 'in_progress'`,
+             WHERE id = ? AND status IN ('pending', 'in_progress')`,
         )
         .run(error.slice(0, 500), Date.now(), runId);
       return result.changes > 0;

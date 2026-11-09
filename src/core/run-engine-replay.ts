@@ -20,5 +20,8 @@ export function validateExistingEngineRun(
   if (run.status === 'completed' || run.status === 'failed') {
     return `run_id is already ${run.status}; start a new refresh instead of replaying a finished run`;
   }
+  if (run.status === 'in_progress') {
+    return 'run_id already has a claimed dispatch; start a new refresh instead of replaying it';
+  }
   return null;
 }

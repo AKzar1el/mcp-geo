@@ -18,10 +18,10 @@ const liveRun: Run = {
   completed_at: null,
 };
 
-test('initial and active live dispatches retain existing first-dispatch behavior', () => {
+test('only an unclaimed live run may start a provider dispatch', () => {
   assert.equal(validateExistingEngineRun(null, 'acme', 'chatgpt', 2), null);
-  assert.equal(validateExistingEngineRun(liveRun, 'acme', 'chatgpt', 2), null);
   assert.equal(validateExistingEngineRun({ ...liveRun, status: 'pending' }, 'acme', 'chatgpt', 2), null);
+  assert.match(validateExistingEngineRun(liveRun, 'acme', 'chatgpt', 2) ?? '', /already.*dispatch/i);
 });
 
 test('completed or failed run IDs cannot be replayed over saved evidence', () => {
