@@ -14,12 +14,16 @@ export function normalizeExactPrompts(prompts: readonly string[]): string[] {
     throw new Error('Each prompt must be at most 500 characters.');
   }
 
-  const normalized = prompts.map((prompt) => prompt.trim().replace(/\s+/g, ' '));
+  // Canonically equivalent Unicode questions must not be billed and scored
+  // as separate prompts solely because their accents use different encoding.
+  const normalized = prompts.map((prompt) =>
+    prompt.trim().replace(/\s+/g, ' ').normalize('NFC'),
+  );
   if (normalized.some((prompt) => prompt.length === 0)) {
     throw new Error('Prompts must contain non-whitespace text.');
   }
 
-  const normalizedKeys = normalized.map((prompt) => prompt.toLowerCase());
+  const normalizedKeys = normalized.map((prompt) => prompt.toLowerCase().normalize('NFC'));
   if (new Set(normalizedKeys).size !== normalizedKeys.length) {
     throw new Error(
       'Prompts must be unique after trimming whitespace and ignoring case.',
@@ -37,7 +41,7 @@ export async function applyExactPromptSet(
   const current = await db.getActivePrompts(brandId);
   const unchanged =
     current.length === normalized.length &&
-    current.every((prompt, index) => prompt.text === normalized[index]);
+    current.every((prompt, index) => prompt.text.normalize('NFC') === normalized[index]);
 
   if (!unchanged) {
     await db.replacePrompts(
