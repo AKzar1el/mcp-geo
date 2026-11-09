@@ -124,6 +124,25 @@ test('Australian government-domain competitor names match visible prose without 
   );
 });
 
+test('plain-text competitor names also match Colombian, Israeli and Vietnamese second-level domains', () => {
+  const brand = makeBrand({
+    domain: 'example.com',
+    name: 'Example',
+    competitors: ['andes.com.co', 'shahar.co.il', 'lotus.com.vn'],
+  });
+  const mentioned = extractCitations(
+    brand,
+    'Compare Andes with Shahar and Lotus for the next purchase.',
+  );
+  assert.deepEqual(mentioned.competitors_mentioned, brand.competitors);
+
+  const unrelated = extractCitations(
+    brand,
+    'Andesbank is unrelated; fakeandes.com.co and shahar.co.il.evil.test are not those competitors.',
+  );
+  assert.deepEqual(unrelated.competitors_mentioned, []);
+});
+
 test('multi-part public suffix matching does not count embedded words or lookalike hosts', () => {
   const brand = makeBrand({
     domain: 'example.com',
