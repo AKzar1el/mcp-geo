@@ -496,7 +496,8 @@ export function openSqliteDb(path?: string): SqliteDb {
                     SELECT r.brand_id, r.engine,
                            MAX(COALESCE(r.completed_at, r.started_at)) AS last_complete_run
                       FROM runs r
-                     WHERE EXISTS (SELECT 1 FROM prompts p WHERE p.brand_id = r.brand_id AND p.active = 1)
+                     WHERE r.mode = 'live'
+                       AND EXISTS (SELECT 1 FROM prompts p WHERE p.brand_id = r.brand_id AND p.active = 1)
                        AND NOT EXISTS (
                          SELECT 1 FROM prompts p
                           WHERE p.brand_id = r.brand_id AND p.active = 1
@@ -510,7 +511,7 @@ export function openSqliteDb(path?: string): SqliteDb {
                   latest_attempt AS (
                     SELECT brand_id, engine, MAX(started_at) AS last_attempt,
                            SUM(CASE WHEN started_at >= ? THEN 1 ELSE 0 END) AS attempts_week
-                      FROM runs GROUP BY brand_id, engine
+                      FROM runs WHERE mode = 'live' GROUP BY brand_id, engine
                   )
              SELECT b.id, b.user_id, b.domain, b.name, b.category, b.competitors_json,
                     b.aliases_json, b.exclude_terms_json,
@@ -554,7 +555,7 @@ export function openSqliteDb(path?: string): SqliteDb {
                   MAX(r.started_at) AS last_attempt,
                   SUM(CASE WHEN r.started_at >= ? THEN 1 ELSE 0 END) AS attempts_week
              FROM brands b
-             LEFT JOIN runs r ON r.brand_id = b.id
+             LEFT JOIN runs r ON r.brand_id = b.id AND r.mode = 'live'
             WHERE EXISTS (SELECT 1 FROM prompts p WHERE p.brand_id = b.id AND p.active = 1)
             GROUP BY b.id
            HAVING b.refresh_frequency <> 'manual'

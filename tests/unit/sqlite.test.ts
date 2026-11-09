@@ -1099,6 +1099,74 @@ test('cron skips brands without active prompts in SQLite and D1', async () => {
   }
 });
 
+test('cron live freshness ignores completed model-only batches in SQLite and D1', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'digestseo.sqlite'));
+  try {
+    await db.upsertUser('test-user', 'test@local');
+    await db.createBrand({
+      id: 'batch-only-cron',
+      user_id: 'test-user',
+      domain: 'batch-only-cron.com',
+      name: 'Batch Only Cron',
+      category: null,
+      competitors: [],
+      aliases: [],
+      exclude_terms: [],
+      refresh_frequency: 'weekly',
+    });
+    seedPromptFixture(db, 'batch-only-cron', 'batch-prompt', 'Which products are available?');
+    const brand = await db.getBrand('batch-only-cron');
+    assert.ok(brand);
+    const hosted = createD1Db({
+      prepare(sql: string) {
+        return {
+          bind(...params: unknown[]) {
+            return {
+              async all() {
+                const statement = db.raw.prepare(sql);
+                return { results: statement.all(...(params as Parameters<typeof statement.all>)) };
+              },
+            };
+          },
+        };
+      },
+    } as unknown as Parameters<typeof createD1Db>[0]);
+    const persistSuccessfulRun = async (mode: 'live' | 'batch') => {
+      const run = await db.createRun(brand, 'chatgpt', mode, 1);
+      await db.persistEngineRun(run.id, 'chatgpt', 'test-model', 3600, [{
+        prompt_id: 'batch-prompt',
+        raw_response: 'Batch Only Cron is mentioned.',
+        brand_mentioned: 1,
+        brand_cited_with_link: 0,
+        cited_urls: [],
+        competitors_mentioned: [],
+        status: 'ok',
+      }]);
+    };
+    const assertCronDue = async (expected: boolean) => {
+      for (const adapter of [db, hosted]) {
+        for (const engines of [undefined, ['chatgpt']]) {
+          const due = await adapter.getBrandsDueForRefresh(engines);
+          assert.equal(due.some((item) => item.id === brand.id), expected);
+        }
+      }
+    };
+
+    // Batch evidence is valuable for model-only visibility, but cannot make
+    // a live-search cron scan fresh or consume its weekly retry allowance.
+    await persistSuccessfulRun('batch');
+    await assertCronDue(true);
+    await persistSuccessfulRun('batch');
+    await assertCronDue(true);
+    await persistSuccessfulRun('live');
+    await assertCronDue(false);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('partial prompt failures do not reset engine freshness and retry after a bounded cooldown', async () => {
   const root = tempRoot();
   const db = openSqliteDb(join(root, 'digestseo.sqlite'));
