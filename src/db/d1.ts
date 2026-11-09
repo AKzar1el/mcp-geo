@@ -11,6 +11,7 @@ import type {
   CitationPageOptions,
   CitationRow,
   CitationSourceRow,
+  ComparisonEvidenceRow,
   CreateBrandInput,
   Db,
   EnginePromptResult,
@@ -675,13 +676,12 @@ export function createD1Db(d1: D1Database): Db {
     async getResponsesSince(
       brandId: string,
       since: number,
-    ): Promise<PromptResponse[]> {
+    ): Promise<ComparisonEvidenceRow[]> {
       const { results } = await d1
         .prepare(
           `SELECT pr.id, pr.run_id, pr.prompt_id, p.text AS prompt_text, pr.engine,
-                  pr.raw_response, pr.brand_mentioned, pr.brand_cited_with_link,
-                  pr.cited_urls_json, pr.competitors_mentioned_json,
-                  pr.engine_citations_json, pr.status, pr.error_message, pr.captured_at
+                  pr.brand_mentioned, pr.competitors_mentioned_json,
+                  pr.status, pr.captured_at
              FROM prompt_responses pr
              JOIN runs r ON r.id = pr.run_id
              JOIN prompts p ON p.id = pr.prompt_id
@@ -691,21 +691,18 @@ export function createD1Db(d1: D1Database): Db {
             ORDER BY pr.captured_at ASC`,
         )
         .bind(brandId, since)
-        .all<ResponseJoinRow>();
+        .all<Pick<ResponseJoinRow,
+          'id' | 'run_id' | 'prompt_id' | 'prompt_text' | 'engine' |
+          'brand_mentioned' | 'competitors_mentioned_json' | 'status' | 'captured_at'>>();
       return (results ?? []).map((row) => ({
         id: row.id,
         run_id: row.run_id,
         prompt_id: row.prompt_id,
         prompt_text: row.prompt_text,
         engine: row.engine,
-        raw_response: row.raw_response,
         brand_mentioned: row.brand_mentioned,
-        brand_cited_with_link: row.brand_cited_with_link,
-        cited_urls: parseJsonArray(row.cited_urls_json),
         competitors_mentioned: parseJsonArray(row.competitors_mentioned_json),
-        engine_citations: parseJsonArray(row.engine_citations_json),
         status: (row.status as ResponseStatus) ?? 'ok',
-        error_message: row.error_message,
         captured_at: row.captured_at,
       }));
     },

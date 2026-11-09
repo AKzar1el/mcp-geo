@@ -225,6 +225,11 @@ export interface CitationSourceRow {
   captured_at: number;
 }
 
+// Comparison needs stable retry identity and timing, not full AI answer bodies.
+export type ComparisonEvidenceRow = Pick<PromptResponse,
+  'id' | 'run_id' | 'prompt_id' | 'prompt_text' | 'engine' |
+  'brand_mentioned' | 'competitors_mentioned' | 'status' | 'captured_at'>;
+
 export interface CitationPageOptions {
   limit?: number;
   until?: number;
@@ -298,9 +303,9 @@ export interface Db {
   // Only returns status='ok' rows — failed/skipped rows must never
   // reach scoring.
   getResponsesForRun(runId: string): Promise<PromptResponse[]>;
-  // All usable responses captured for a brand at/after `since`, across runs
-  // and engines. Used for bounded-window competitor/share-of-voice analysis.
-  getResponsesSince(brandId: string, since: number): Promise<PromptResponse[]>;
+  // All usable responses for comparison; preserve retry identity/timestamps,
+  // but avoid materializing full provider answer bodies and citation payloads.
+  getResponsesSince(brandId: string, since: number): Promise<ComparisonEvidenceRow[]>;
   // All successful observations in the fixed citation window, including
   // unmentioned brand responses. Never restrict this to the current cursor page.
   getCitationSourceRows(
