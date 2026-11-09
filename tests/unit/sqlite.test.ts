@@ -1305,6 +1305,58 @@ test('read history: getVisibilityHistoryRows aggregates ok rows per run', async 
   }
 });
 
+test('SQLite and D1 history count only the latest successful observation per run and prompt', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'history-observation.sqlite'));
+  try {
+    seedBrandFixture(db, 'acme');
+    seedPromptFixture(db, 'acme', 'p1', 'best project management tools');
+    seedPromptFixture(db, 'acme', 'p2', 'asana alternatives');
+    const brand = await db.getBrand('acme');
+    assert.ok(brand);
+    const run = await db.createRun(brand, 'chatgpt', 'live', 2);
+    const insert = db.raw.prepare(
+      `INSERT INTO prompt_responses
+         (id, run_id, prompt_id, engine, raw_response, brand_mentioned,
+          brand_cited_with_link, cited_urls_json, competitors_mentioned_json,
+          status, captured_at)
+       VALUES (?, ?, ?, 'chatgpt', '', ?, 0, '[]', '[]', ?, ?)`,
+    );
+    insert.run('old-no-mention', run.id, 'p1', 0, 'ok', 1000);
+    insert.run('new-mention', run.id, 'p1', 1, 'ok', 2000);
+    insert.run('later-failed', run.id, 'p1', 0, 'failed', 3000);
+    // Match computeOverallScore's deterministic id tie-breaker.
+    insert.run('a-old-tie', run.id, 'p2', 0, 'ok', 2000);
+    insert.run('b-new-tie', run.id, 'p2', 1, 'ok', 2000);
+
+    const hosted = createD1Db({
+      prepare(sql: string) {
+        return {
+          bind(...params: unknown[]) {
+            return {
+              async all() {
+                const statement = db.raw.prepare(sql);
+                return { results: statement.all(...(params as Parameters<typeof statement.all>)) };
+              },
+            };
+          },
+        };
+      },
+    } as unknown as Parameters<typeof createD1Db>[0]);
+
+    for (const adapter of [db, hosted]) {
+      const rows = await adapter.getVisibilityHistoryRows('acme', 0);
+      assert.equal(rows.length, 1);
+      assert.equal(Number(rows[0].total), 2, 'retries must not inflate prompt denominator');
+      assert.equal(Number(rows[0].hits), 2, 'latest successful response determines the hit');
+      assert.equal(Number(rows[0].roster_observed), 2);
+    }
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('replacePrompts soft-deletes old prompts and getCitationRows filters by engine', async () => {
   const root = tempRoot();
   const db = openSqliteDb(join(root, 'digestseo.sqlite'));

@@ -833,8 +833,9 @@ export function createD1Db(d1: D1Database): Db {
       brandId: string,
       since: number,
     ): Promise<VisibilityHistoryRow[]> {
-      // status='ok' filter on the join keeps failed/skipped rows
-      // out of COUNT and SUM. The INNER JOIN also drops runs with
+      // Score the newest successful observation per run/prompt, as current
+      // visibility scoring does; retries must not inflate the denominator.
+      // The INNER JOIN also drops runs with
       // zero ok rows entirely — a fully-failed run is "no data",
       // not a real score of 0. COALESCE on the timestamp matches
       // getLatestCompletedRun's stance: partially-finished runs
@@ -853,6 +854,14 @@ export function createD1Db(d1: D1Database): Db {
              FROM runs r
              JOIN prompt_responses pr
                ON pr.run_id = r.id AND pr.status = 'ok'
+              AND NOT EXISTS (
+                SELECT 1 FROM prompt_responses newer
+                 WHERE newer.run_id = pr.run_id
+                   AND newer.prompt_id = pr.prompt_id
+                   AND newer.status = 'ok'
+                   AND (newer.captured_at > pr.captured_at
+                     OR (newer.captured_at = pr.captured_at AND newer.id > pr.id))
+              )
             WHERE r.brand_id = ?
               AND COALESCE(r.completed_at, r.started_at) >= ?
             GROUP BY r.id, r.engine
