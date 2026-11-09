@@ -98,3 +98,38 @@ test('local executor failure closes its reservation without exposing provider de
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('a failed local engine does not prevent independent requested engines from completing', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'mcp-geo-cli-independent-engines-'));
+  const db = openSqliteDb(join(root, 'test.sqlite'));
+  try {
+    await db.upsertUser('test-user', 'test@example.test');
+    await db.createBrand({
+      id: 'independent-engines', user_id: 'test-user', name: 'Acme', domain: 'acme.com',
+      category: null, competitors: [], aliases: [], exclude_terms: [],
+      refresh_frequency: 'manual',
+    });
+    const brand = await db.getBrand('independent-engines');
+    assert.ok(brand);
+    const prompts: Prompt[] = [{
+      id: 'prompt-1', brand_id: brand.id, text: 'Independent category query',
+      intent_stage: null, shape: null, active: 1, created_at: 0,
+    }];
+
+    const called: string[] = [];
+    await assert.rejects(
+      runLocalRefresh(db, {}, brand, prompts, ['chatgpt', 'claude'], async (_env, _brand, _prompts, run) => {
+        called.push(run.engine);
+        if (run.engine === 'chatgpt') throw new Error('first provider failed');
+        await db.updateRun(run.run_id, { status: 'completed', completed_at: Date.now() });
+      }),
+      /first provider failed/,
+    );
+    assert.deepEqual(called, ['chatgpt', 'claude']);
+    assert.equal((await db.getLatestRun(brand.id, 'chatgpt'))?.status, 'failed');
+    assert.equal((await db.getLatestRun(brand.id, 'claude'))?.status, 'completed');
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});

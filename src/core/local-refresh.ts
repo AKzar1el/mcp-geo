@@ -20,6 +20,8 @@ export async function runLocalRefresh(
 ): Promise<RunEnginesResult> {
   const run_ids: Record<string, string> = {};
   const started: EngineName[] = [];
+  const failures: unknown[] = [];
+  const failedEngines: EngineName[] = [];
   for (const engine of uniqueEngineNames(engines)) {
     // Atomically reuse an active reservation across concurrent MCP requests
     // or independent CLI processes sharing this SQLite database.
@@ -42,9 +44,18 @@ export async function runLocalRefresh(
           'Local engine execution failed and its reservation could not be closed',
         );
       }
-      throw error;
+      // Each engine has its own reservation. A failed provider should not
+      // prevent other explicitly requested engines from completing their scans.
+      failures.push(error);
+      failedEngines.push(engine);
+      log(`refresh_brand: ${engine} failed; continuing other engines`);
+      continue;
     }
     log(`refresh_brand: ${engine} finished`);
+  }
+  if (failures.length > 0) {
+    if (failures.length === 1) throw failures[0];
+    throw new AggregateError(failures, `Local refresh failed for ${failedEngines.join(', ')}; other requested engines were attempted`);
   }
   return { run_ids, engines: started };
 }
