@@ -401,6 +401,14 @@ test('check_visibility discloses absolute scan age for scheduled brands without 
   assert.equal(daily.freshness.cadence_overdue_warning, true);
   assert.deepEqual(daily.freshness.cadence_overdue_engines, ['chatgpt']);
 
+  // 30-hour-old evidence is overdue for daily brands, but still fresh for weekly.
+  const weeklyWithinWindow = (await registerVisibilityTool({
+    brand: { ...brand, refresh_frequency: 'weekly' },
+    runs: { chatgpt: run('chatgpt', oldDaily), claude: run('claude', oldDaily) },
+  }).handler({ brand_id: brand.id })).structuredContent;
+  assert.equal(weeklyWithinWindow.freshness.cadence_overdue_warning, false);
+  assert.deepEqual(weeklyWithinWindow.freshness.cadence_overdue_engines, []);
+
   const freshWeekly = (await registerVisibilityTool({
     runs: { chatgpt: run('chatgpt', recent), claude: run('claude', recent) },
   }).handler({ brand_id: brand.id })).structuredContent;
