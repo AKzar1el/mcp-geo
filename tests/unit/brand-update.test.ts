@@ -124,6 +124,38 @@ test('identity-only edits flag historical comparability, while competitor-only e
   }
 });
 
+test('reordering unchanged brand term sets does not invalidate historical attribution', async () => {
+  const { root, db } = await seededDb();
+  try {
+    const seeded = await updateTrackedBrand(db, {
+      brand_id: 'acme',
+      aliases: ['Acme PM', 'Acme Suite'],
+      exclude_terms: ['acme', 'demo'],
+    });
+    const promptsBefore = await db.getActivePrompts('acme');
+    const reordered = await updateTrackedBrand(db, {
+      brand_id: 'acme',
+      competitors: ['monday.com', 'asana.com'],
+      aliases: ['Acme Suite', 'Acme PM'],
+      exclude_terms: ['demo', 'acme'],
+    });
+
+    assert.equal(reordered.updated, false);
+    assert.deepEqual(reordered.changed_fields, []);
+    assert.equal(reordered.historical_attribution_review_recommended, false);
+    assert.equal(reordered.prompt_set_review_recommended, false);
+    assert.equal(reordered.brand.updated_at, seeded.brand.updated_at);
+    assert.equal(reordered.brand.identity_changed_at, seeded.brand.identity_changed_at);
+    assert.deepEqual(reordered.brand.competitors, ['asana.com', 'monday.com']);
+    assert.deepEqual(reordered.brand.aliases, ['Acme PM', 'Acme Suite']);
+    assert.deepEqual(reordered.brand.exclude_terms, ['acme', 'demo']);
+    assert.deepEqual(await db.getActivePrompts('acme'), promptsBefore);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('updateTrackedBrand rejects malformed input and missing brands without mutation', async () => {
   const { root, db } = await seededDb();
   try {
