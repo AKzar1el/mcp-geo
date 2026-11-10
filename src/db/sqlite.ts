@@ -772,6 +772,8 @@ export function openSqliteDb(path?: string): SqliteDb {
       until: number,
       engine?: string,
     ): Promise<CitationSourceRow[]> {
+      // Count the latest successful source observation per run/prompt, but only
+      // within this window so a later retry cannot rewrite a frozen cursor page.
       const rows = sqlite
         .prepare(
           `SELECT pr.id, pr.prompt_id, pr.engine, pr.engine_citations_json, pr.captured_at
@@ -781,10 +783,19 @@ export function openSqliteDb(path?: string): SqliteDb {
               AND pr.captured_at >= ?
               AND pr.captured_at <= ?
               AND pr.status = 'ok'
+              AND NOT EXISTS (
+                SELECT 1 FROM prompt_responses newer
+                 WHERE newer.run_id = pr.run_id
+                   AND newer.prompt_id = pr.prompt_id
+                   AND newer.status = 'ok'
+                   AND newer.captured_at <= ?
+                   AND (newer.captured_at > pr.captured_at
+                     OR (newer.captured_at = pr.captured_at AND newer.id > pr.id))
+              )
               ${engine ? 'AND pr.engine = ?' : ''}
             ORDER BY pr.captured_at ASC, pr.id ASC`,
         )
-        .all(...(engine ? [brandId, since, until, engine] : [brandId, since, until])) as Array<
+        .all(...(engine ? [brandId, since, until, until, engine] : [brandId, since, until, until])) as Array<
           Omit<CitationSourceRow, 'engine_citations'> & { engine_citations_json: string | null }
         >;
       return rows.map(({ engine_citations_json, ...row }) => ({
