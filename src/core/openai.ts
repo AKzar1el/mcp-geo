@@ -233,13 +233,19 @@ function mentionsTermSet(text: string, terms: MatchTerms): boolean {
 // would also match lookalike domains that merely end with the brand
 // domain — "notacme.com".includes("acme.com") is true.
 export function hostMatchesDomain(host: string, domain: string): boolean {
-  const d = domain
+  let d = domain
     .replace(/^https?:\/\//i, '')
     .replace(/^www\./i, '')
     .split('/')[0]
     .toLowerCase();
-  if (d.length === 0) return false;
-  const h = host.toLowerCase();
+  let h = host.toLowerCase();
+  // A single terminal DNS root dot is valid; repeated dots are not.
+  if (d.endsWith('.')) d = d.slice(0, -1);
+  if (h.endsWith('.')) h = h.slice(0, -1);
+  if (!d || !h) return false;
+  if ([d, h].some((value) => value.startsWith('.') || value.includes('..') || value.endsWith('.'))) {
+    return false;
+  }
   return h === d || h.endsWith(`.${d}`);
 }
 
@@ -253,7 +259,9 @@ function normalizeHost(rawUrl: string): string | null {
     let host = u.hostname.toLowerCase();
     // Strip terminal prose punctuation from a bare URL's hostname.
     // DNS names cannot end in commas, semicolons or exclamation marks.
-    host = host.replace(/[.,;!]+$/, '');
+    host = host.replace(/[;,!]+$/, '');
+    if (host.endsWith('.')) host = host.slice(0, -1);
+    if (host.endsWith('.')) return null; // Do not turn repeated root dots into brand evidence.
     if (host.startsWith('www.')) host = host.slice(4);
     return host || null;
   } catch {
