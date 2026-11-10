@@ -988,10 +988,9 @@ export function registerTools(
       if (!brand) {
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
       }
-      const targets =
-        competitor_domains && competitor_domains.length > 0
-          ? normalizeCompetitorDomains(competitor_domains, brand.domain)
-          : brand.competitors;
+      const targets = competitor_domains === undefined
+        ? brand.competitors
+        : normalizeCompetitorDomains(competitor_domains, brand.domain);
       const outsideCurrentTracking = targets.filter(
         (domain) => !brand.competitors.includes(domain),
       );
@@ -1005,8 +1004,9 @@ export function registerTools(
             note: 'No competitors are configured or selected; response evidence was not queried.',
           },
           google_search_sampling: null,
-          message:
-            'No competitor list configured for this brand. Pass competitor_domains or set brand.competitors.',
+          message: competitor_domains === undefined
+            ? 'No competitor list configured for this brand. Pass competitor_domains or set brand.competitors.'
+            : 'No competitor domains selected. Pass one or more competitor_domains to compare.',
           your_share_of_voice_pct: 0,
           your_mentions: 0,
           comparison_semantics: COMPARISON_SEMANTICS,
