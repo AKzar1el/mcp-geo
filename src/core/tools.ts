@@ -10,7 +10,7 @@
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import type { Brand, CitationSourceRow, Db, Prompt, PromptResponse } from '../db/types.js';
+import type { Brand, CitationSourceRow, ComparisonEvidenceRow, Db, Prompt, PromptResponse } from '../db/types.js';
 import { extractUrls, findTermSetMatchIndex, hostMatchesDomain } from './openai.js';
 import {
   ALL_ENGINES,
@@ -33,6 +33,7 @@ import { seedBrand } from './seed.js';
 import { updateTrackedBrand } from './update-brand.js';
 import {
   normalizeCompetitorDomains,
+  normalizeDomainInput,
   normalizeRequiredDomain,
 } from './domain.js';
 
@@ -146,6 +147,9 @@ const visibilityOutputSchema = z.object({
     age_spread_hours: z.number(),
     mixed_age_warning: z.boolean(),
     older_engines: z.array(z.string()),
+    cadence_overdue_warning: z.boolean(),
+    cadence_overdue_engines: z.array(z.string()),
+    cadence_note: z.string(),
   }),
   prompt_set_comparability: z.object({
     active_prompt_count: z.number(),
@@ -602,6 +606,17 @@ export function registerTools(
         .filter(([, timestamp]) => mostRecentTimestamp - timestamp >= mixedAgeCutoffMs)
         .map(([engine]) => engine)
         .sort();
+      // Relative scan age misses uniformly old snapshots. Flag absolute age
+      // against configured cadence without implying that cron or billing failed.
+      const cadenceMs = brand.refresh_frequency === 'daily'
+        ? 24 * 60 * 60 * 1000
+        : brand.refresh_frequency === 'weekly'
+          ? 7 * 24 * 60 * 60 * 1000
+          : null;
+      const cadenceOverdueEngines = cadenceMs === null ? [] : [...refreshMsByEngine.entries()]
+        .filter(([, timestamp]) => Date.now() - timestamp > cadenceMs)
+        .map(([engine]) => engine)
+        .sort();
       const activePrompts = await deps.db.getActivePrompts(brand_id);
       const activePromptIds = new Set(activePrompts.map((prompt) => prompt.id));
       // Successful rows can be a partial sample. Only *observed* retired IDs
@@ -675,6 +690,11 @@ export function registerTools(
           age_spread_hours: Math.round((ageSpreadMs / 3600000) * 10) / 10,
           mixed_age_warning: olderEngines.length > 0,
           older_engines: olderEngines,
+          cadence_overdue_warning: cadenceOverdueEngines.length > 0,
+          cadence_overdue_engines: cadenceOverdueEngines,
+          cadence_note: cadenceMs === null
+            ? 'Manual refresh has no scheduled cadence; stored observation age is not classified as overdue.'
+            : 'Overdue means the selected stored observation age exceeds the daily or weekly brand cadence, not that cron failed or prompt coverage was complete.',
         },
         prompt_set_comparability: {
           active_prompt_count: activePromptIds.size,
@@ -969,10 +989,9 @@ export function registerTools(
       if (!brand) {
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
       }
-      const targets =
-        competitor_domains && competitor_domains.length > 0
-          ? normalizeCompetitorDomains(competitor_domains, brand.domain)
-          : brand.competitors;
+      const targets = competitor_domains === undefined
+        ? brand.competitors
+        : normalizeCompetitorDomains(competitor_domains, brand.domain);
       const outsideCurrentTracking = targets.filter(
         (domain) => !brand.competitors.includes(domain),
       );
@@ -986,8 +1005,9 @@ export function registerTools(
             note: 'No competitors are configured or selected; response evidence was not queried.',
           },
           google_search_sampling: null,
-          message:
-            'No competitor list configured for this brand. Pass competitor_domains or set brand.competitors.',
+          message: competitor_domains === undefined
+            ? 'No competitor list configured for this brand. Pass competitor_domains or set brand.competitors.'
+            : 'No competitor domains selected. Pass one or more competitor_domains to compare.',
           your_share_of_voice_pct: 0,
           your_mentions: 0,
           comparison_semantics: COMPARISON_SEMANTICS,
@@ -1006,7 +1026,7 @@ export function registerTools(
       const fetchedResponses = await deps.db.getResponsesSince(brand_id, since);
       // Preserve every distinct scan in the selected window, but do not
       // count repeated successful attempts for the same scan/prompt twice.
-      const latestByRunPrompt = new Map<string, PromptResponse>();
+      const latestByRunPrompt = new Map<string, ComparisonEvidenceRow>();
       for (const row of fetchedResponses) {
         if (row.status !== 'ok') continue;
         const key = JSON.stringify([row.run_id, row.engine, row.prompt_id]);
@@ -1080,7 +1100,7 @@ export function registerTools(
       const coMentionedByPrompt = new Map<string, ComparedPrompt>();
       const collectPrompt = (
         map: Map<string, ComparedPrompt>,
-        r: PromptResponse,
+        r: ComparisonEvidenceRow,
         mentionedCompetitors: string[],
       ) => {
         const existing = map.get(r.prompt_id);
@@ -1279,6 +1299,11 @@ export function registerTools(
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
       }
 
+      // Retired prompt observations remain in history, but must not become
+      // current buyer-intent advice after the active prompt set is replaced.
+      const activePromptIds = new Set(
+        (await deps.db.getActivePrompts(brand_id)).map((prompt) => prompt.id),
+      );
       // Earlier scans may retain competitors removed by update_brand. Content
       // gaps must reflect the brand's currently configured comparison cohort.
       const trackedCompetitors = new Set(brand.competitors);
@@ -1299,7 +1324,7 @@ export function registerTools(
         // successful result when determining current content-gap advice.
         const latestOkByPrompt = new Map<string, PromptResponse>();
         for (const response of responses) {
-          if (response.status !== 'ok') continue;
+          if (response.status !== 'ok' || !activePromptIds.has(response.prompt_id)) continue;
           const previous = latestOkByPrompt.get(response.prompt_id);
           if (!previous ||
               response.captured_at > previous.captured_at ||
@@ -1348,7 +1373,7 @@ export function registerTools(
           recommendations: [],
           prompt_source: 'fallback' as const,
           reason: successfulResponses === 0
-            ? 'No usable scan responses in the latest completed runs. A refresh can collect evidence but may incur provider charges.'
+            ? 'No usable scan responses for currently active prompts in the latest completed runs. A refresh can collect evidence but may incur provider charges.'
             : `No competitor-only wins observed in ${successfulResponses} usable responses. This does not prove complete prompt or engine coverage.`,
         };
         return toolResult(payload);
@@ -1934,8 +1959,9 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand) {
         const parsed = new URL(rawUrl);
         if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') continue;
         if (parsed.username || parsed.password) continue;
-        let domain = parsed.hostname.toLowerCase();
-        if (domain.startsWith('www.')) domain = domain.slice(4);
+        // A provider URL can name localhost, an IP or an invalid DNS host.
+        // Only rank domain-shaped sources using the same host rules as brands.
+        const domain = normalizeDomainInput(parsed.hostname);
         if (!domain) continue;
         if (!domainsForResponse.has(domain)) domainsForResponse.set(domain, rawUrl);
       } catch {

@@ -61,6 +61,7 @@ type ComparisonResult = {
   comparison_semantics: string;
   historical_coverage_note: string;
   outside_current_tracking: string[];
+  requested_competitor_domains: string[] | null;
   prompts_you_win: Array<{ prompt: string; you_cited_by: string[]; competitors_cited: string[] }>;
   prompts_brand_only: Array<{ prompt: string; you_cited_by: string[]; competitors_cited: string[] }>;
   prompts_co_mentioned: Array<{ prompt: string; you_cited_by: string[]; competitors_cited: string[] }>;
@@ -426,4 +427,29 @@ test('comparison with no configured competitors does not pretend observations we
   assert.equal(result.observation_coverage.status, 'not_compared');
   assert.equal(result.observation_coverage.successful_responses, 0);
   assert.match(result.observation_coverage.note, /competitor/i);
+});
+
+test('comparison respects an explicitly empty competitor selection', async () => {
+  let comparison: ComparisonTool | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, handler: unknown) {
+      if (name === 'compare_competitors') comparison = { handler: handler as ComparisonTool['handler'] };
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getResponsesSince: async () => { throw new Error('Explicitly empty selection must not query response evidence'); },
+    } as Db,
+    env: {},
+    refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(comparison);
+
+  const result = (await comparison.handler({ brand_id: brand.id, competitor_domains: [] })).structuredContent;
+  assert.equal(result.observation_coverage.status, 'not_compared');
+  assert.equal(result.observation_coverage.successful_responses, 0);
+  assert.deepEqual(result.competitors, []);
+  assert.deepEqual(result.requested_competitor_domains, []);
 });

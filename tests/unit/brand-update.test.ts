@@ -124,6 +124,38 @@ test('identity-only edits flag historical comparability, while competitor-only e
   }
 });
 
+test('reordering unchanged brand term sets does not invalidate historical attribution', async () => {
+  const { root, db } = await seededDb();
+  try {
+    const seeded = await updateTrackedBrand(db, {
+      brand_id: 'acme',
+      aliases: ['Acme PM', 'Acme Suite'],
+      exclude_terms: ['acme', 'demo'],
+    });
+    const promptsBefore = await db.getActivePrompts('acme');
+    const reordered = await updateTrackedBrand(db, {
+      brand_id: 'acme',
+      competitors: ['monday.com', 'asana.com'],
+      aliases: ['Acme Suite', 'Acme PM'],
+      exclude_terms: ['demo', 'acme'],
+    });
+
+    assert.equal(reordered.updated, false);
+    assert.deepEqual(reordered.changed_fields, []);
+    assert.equal(reordered.historical_attribution_review_recommended, false);
+    assert.equal(reordered.prompt_set_review_recommended, false);
+    assert.equal(reordered.brand.updated_at, seeded.brand.updated_at);
+    assert.equal(reordered.brand.identity_changed_at, seeded.brand.identity_changed_at);
+    assert.deepEqual(reordered.brand.competitors, ['asana.com', 'monday.com']);
+    assert.deepEqual(reordered.brand.aliases, ['Acme PM', 'Acme Suite']);
+    assert.deepEqual(reordered.brand.exclude_terms, ['acme', 'demo']);
+    assert.deepEqual(await db.getActivePrompts('acme'), promptsBefore);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('updateTrackedBrand rejects malformed input and missing brands without mutation', async () => {
   const { root, db } = await seededDb();
   try {
@@ -192,4 +224,39 @@ test('admin update-brand exposes the same safe partial update contract', async (
     db.close();
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('hosted update-brand rejects out-of-bounds metadata before database access', async () => {
+  let reads = 0;
+  const db = {
+    getBrand: async () => {
+      reads += 1;
+      return null;
+    },
+  } as unknown as Parameters<typeof updateTrackedBrand>[0];
+  const invalid: Array<[string, Record<string, unknown>, RegExp]> = [
+    ['name', { name: 'n'.repeat(201) }, /name.*200/i],
+    ['domain', { domain: 'd'.repeat(254) }, /domain.*253/i],
+    ['category', { category: 'c'.repeat(201) }, /category.*200/i],
+    ['competitor count', { competitors: Array(21).fill('example.com') }, /competitors.*20/i],
+    ['competitor length', { competitors: ['x'.repeat(254)] }, /competitors.*253/i],
+    ['empty competitor', { competitors: [''] }, /competitors.*3/i],
+    ['alias count', { aliases: Array(21).fill('Alias') }, /aliases.*20/i],
+    ['alias length', { aliases: ['a'.repeat(101)] }, /aliases.*100/i],
+    ['empty alias', { aliases: [''] }, /aliases.*1/i],
+    ['exclude count', { exclude_terms: Array(21).fill('ignore') }, /exclude_terms.*20/i],
+    ['exclude length', { exclude_terms: ['e'.repeat(101)] }, /exclude_terms.*100/i],
+  ];
+  for (const [label, fields, expectedError] of invalid) {
+    const response = await handleAdminUpdateBrand(
+      new Request('https://example.test/admin/update-brand', {
+        method: 'POST',
+        body: JSON.stringify({ brand_id: 'acme', ...fields }),
+      }),
+      db,
+    );
+    assert.equal(response.status, 400, label);
+    assert.match((await response.json() as { error: string }).error, expectedError, label);
+  }
+  assert.equal(reads, 0, 'invalid metadata must not trigger database reads');
 });

@@ -40,7 +40,12 @@ function normalizeTerms(values: string[]): string[] {
 }
 
 function arraysEqual(a: string[], b: string[]): boolean {
-  return a.length === b.length && a.every((value, index) => value === b[index]);
+  // Matching treats competitors, aliases and exclusion terms as sets. An
+  // order-only settings edit must not invalidate stored scoring attribution.
+  if (a.length !== b.length) return false;
+  const left = [...a].sort();
+  const right = [...b].sort();
+  return left.every((value, index) => value === right[index]);
 }
 
 export async function updateTrackedBrand(

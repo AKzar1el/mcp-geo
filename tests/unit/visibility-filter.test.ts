@@ -104,6 +104,9 @@ type VisibilitySnapshot = {
     age_spread_hours: number;
     mixed_age_warning: boolean;
     older_engines: string[];
+    cadence_overdue_warning: boolean;
+    cadence_overdue_engines: string[];
+    cadence_note: string;
   };
   prompt_set_comparability: {
     active_prompt_count: number;
@@ -348,6 +351,9 @@ test('check_visibility treats omitted and empty engine filters as all engines', 
     age_spread_hours: 24,
     mixed_age_warning: true,
     older_engines: ['claude'],
+    cadence_overdue_warning: true,
+    cadence_overdue_engines: ['chatgpt', 'claude'],
+    cadence_note: 'Overdue means the selected stored observation age exceeds the daily or weekly brand cadence, not that cron failed or prompt coverage was complete.',
   });
 });
 
@@ -360,7 +366,54 @@ test('check_visibility excludes unselected engines from age warnings', async () 
     age_spread_hours: 0,
     mixed_age_warning: false,
     older_engines: [],
+    cadence_overdue_warning: true,
+    cadence_overdue_engines: ['claude'],
+    cadence_note: 'Overdue means the selected stored observation age exceeds the daily or weekly brand cadence, not that cron failed or prompt coverage was complete.',
   });
+});
+
+test('check_visibility discloses absolute scan age for scheduled brands without mislabeling manual refresh', async () => {
+  const oldWeekly = Date.now() - 9 * 24 * 60 * 60 * 1000;
+  const oldRuns = { chatgpt: run('chatgpt', oldWeekly), claude: run('claude', oldWeekly) };
+  const weekly = (await registerVisibilityTool({ runs: oldRuns }).handler({ brand_id: brand.id })).structuredContent;
+  assert.equal(weekly.freshness.mixed_age_warning, false);
+  assert.equal(weekly.freshness.cadence_overdue_warning, true);
+  assert.deepEqual(weekly.freshness.cadence_overdue_engines, ['chatgpt', 'claude']);
+  assert.match(weekly.freshness.cadence_note, /observation age/i);
+
+  const selected = (await registerVisibilityTool({ runs: oldRuns }).handler({
+    brand_id: brand.id, engines: ['claude'],
+  })).structuredContent;
+  assert.deepEqual(selected.freshness.cadence_overdue_engines, ['claude']);
+
+  const manual = (await registerVisibilityTool({
+    runs: oldRuns, brand: { ...brand, refresh_frequency: 'manual' },
+  }).handler({ brand_id: brand.id })).structuredContent;
+  assert.equal(manual.freshness.cadence_overdue_warning, false);
+  assert.deepEqual(manual.freshness.cadence_overdue_engines, []);
+
+  const recent = Date.now() - 2 * 60 * 60 * 1000;
+  const oldDaily = Date.now() - 30 * 60 * 60 * 1000;
+  const daily = (await registerVisibilityTool({
+    brand: { ...brand, refresh_frequency: 'daily' },
+    runs: { chatgpt: run('chatgpt', oldDaily), claude: run('claude', recent) },
+  }).handler({ brand_id: brand.id })).structuredContent;
+  assert.equal(daily.freshness.cadence_overdue_warning, true);
+  assert.deepEqual(daily.freshness.cadence_overdue_engines, ['chatgpt']);
+
+  // 30-hour-old evidence is overdue for daily brands, but still fresh for weekly.
+  const weeklyWithinWindow = (await registerVisibilityTool({
+    brand: { ...brand, refresh_frequency: 'weekly' },
+    runs: { chatgpt: run('chatgpt', oldDaily), claude: run('claude', oldDaily) },
+  }).handler({ brand_id: brand.id })).structuredContent;
+  assert.equal(weeklyWithinWindow.freshness.cadence_overdue_warning, false);
+  assert.deepEqual(weeklyWithinWindow.freshness.cadence_overdue_engines, []);
+
+  const freshWeekly = (await registerVisibilityTool({
+    runs: { chatgpt: run('chatgpt', recent), claude: run('claude', recent) },
+  }).handler({ brand_id: brand.id })).structuredContent;
+  assert.equal(freshWeekly.freshness.cadence_overdue_warning, false);
+  assert.deepEqual(freshWeekly.freshness.cadence_overdue_engines, []);
 });
 
 test('batch ChatGPT results are not falsely classified as live-search observations', async () => {

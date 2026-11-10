@@ -25,6 +25,7 @@ import type {
   CitationPageOptions,
   CitationRow,
   CitationSourceRow,
+  ComparisonEvidenceRow,
   CreateBrandInput,
   Db,
   EnginePromptResult,
@@ -723,36 +724,44 @@ export function openSqliteDb(path?: string): SqliteDb {
     async getResponsesSince(
       brandId: string,
       since: number,
-    ): Promise<PromptResponse[]> {
+    ): Promise<ComparisonEvidenceRow[]> {
       const rows = sqlite
         .prepare(
-          `SELECT pr.id, pr.run_id, pr.prompt_id, p.text AS prompt_text, pr.engine,
-                  pr.raw_response, pr.brand_mentioned, pr.brand_cited_with_link,
-                  pr.cited_urls_json, pr.competitors_mentioned_json,
-                  pr.engine_citations_json, pr.status, pr.error_message, pr.captured_at
-             FROM prompt_responses pr
-             JOIN runs r ON r.id = pr.run_id
-             JOIN prompts p ON p.id = pr.prompt_id
-            WHERE r.brand_id = ?
-              AND pr.captured_at >= ?
-              AND pr.status = 'ok'
-            ORDER BY pr.captured_at ASC`,
+          `WITH ranked AS (
+             SELECT pr.id, pr.run_id, pr.prompt_id, pr.engine,
+                    pr.brand_mentioned, pr.competitors_mentioned_json,
+                    pr.status, pr.captured_at,
+                    ROW_NUMBER() OVER (
+                      PARTITION BY pr.run_id, pr.engine, pr.prompt_id
+                      ORDER BY pr.captured_at DESC, pr.id DESC
+                    ) AS retry_rank
+               FROM prompt_responses pr
+               JOIN runs r ON r.id = pr.run_id
+              WHERE r.brand_id = ?
+                AND pr.captured_at >= ?
+                AND pr.status = 'ok'
+           )
+           SELECT ranked.id, ranked.run_id, ranked.prompt_id,
+                  p.text AS prompt_text, ranked.engine,
+                  ranked.brand_mentioned, ranked.competitors_mentioned_json,
+                  ranked.status, ranked.captured_at
+             FROM ranked
+             JOIN prompts p ON p.id = ranked.prompt_id
+            WHERE ranked.retry_rank = 1
+            ORDER BY ranked.captured_at ASC, ranked.id ASC`,
         )
-        .all(brandId, since) as unknown as ResponseJoinRow[];
+        .all(brandId, since) as Array<Pick<ResponseJoinRow,
+          'id' | 'run_id' | 'prompt_id' | 'prompt_text' | 'engine' |
+          'brand_mentioned' | 'competitors_mentioned_json' | 'status' | 'captured_at'>>;
       return rows.map((row) => ({
         id: row.id,
         run_id: row.run_id,
         prompt_id: row.prompt_id,
         prompt_text: row.prompt_text,
         engine: row.engine,
-        raw_response: row.raw_response,
         brand_mentioned: row.brand_mentioned,
-        brand_cited_with_link: row.brand_cited_with_link,
-        cited_urls: parseJsonArray(row.cited_urls_json),
         competitors_mentioned: parseJsonArray(row.competitors_mentioned_json),
-        engine_citations: parseJsonArray(row.engine_citations_json),
         status: (row.status as ResponseStatus) ?? 'ok',
-        error_message: row.error_message,
         captured_at: row.captured_at,
       }));
     },
