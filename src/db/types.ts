@@ -188,6 +188,10 @@ export interface VisibilityHistoryRow {
   engine: string;
   // Production SQL selects runs.mode; optional for older in-memory test fixtures.
   mode?: 'live' | 'batch';
+  // The scan's actual identity boundary. A scan finishing after a metadata
+  // edit can still contain observations made under the previous identity.
+  // Optional only for legacy in-memory fixtures.
+  started_at?: number;
   completed_at: number;
   total: number | null;
   hits: number | null;

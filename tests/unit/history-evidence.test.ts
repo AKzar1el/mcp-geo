@@ -229,6 +229,26 @@ test('visibility history discloses stored observations spanning an identity edit
   assert.equal(result.structuredContent.identity_comparability.mixes_identity_versions, true);
 });
 
+test('history attributes a scan to the identity in effect when it started, not when it finished', async () => {
+  const changedAt = Date.UTC(2026, 0, 8, 12);
+  const history = registerHistoryTool([
+    {
+      run_id: 'crosses-edit', engine: 'chatgpt',
+      started_at: changedAt - 60_000, completed_at: changedAt + 60_000,
+      total: 2, hits: 1,
+    },
+    {
+      run_id: 'new-identity', engine: 'chatgpt',
+      started_at: changedAt + 120_000, completed_at: changedAt + 180_000,
+      total: 2, hits: 0,
+    },
+  ], { identityChangedAt: changedAt });
+  const result = await history.handler({ brand_id: 'acme', days: 30, granularity: 'daily' });
+  assert.equal(result.structuredContent.identity_comparability.pre_change_runs, 1);
+  assert.equal(result.structuredContent.identity_comparability.post_change_runs, 1);
+  assert.equal(result.structuredContent.identity_comparability.mixes_identity_versions, true);
+});
+
 test('visibility history exposes the evidence denominator behind each engine score', async () => {
   const chatgptEarly = Date.UTC(2026, 0, 5, 10);
   const claude = Date.UTC(2026, 0, 5, 11);
