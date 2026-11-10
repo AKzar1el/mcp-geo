@@ -770,7 +770,7 @@ export function registerTools(
       const results = await deps.db.getVisibilityHistoryRows(brand_id, since);
       const identityChangedAt = brand.identity_changed_at ?? null;
       const preChangeRuns = identityChangedAt === null ? 0
-        : results.filter((row) => row.completed_at < identityChangedAt).length;
+        : results.filter((row) => (row.started_at ?? row.completed_at) < identityChangedAt).length;
       const postChangeRuns = identityChangedAt === null ? 0 : results.length - preChangeRuns;
       const identity_comparability = {
         last_identity_change_at: identityChangedAt === null
@@ -778,7 +778,7 @@ export function registerTools(
         pre_change_runs: preChangeRuns,
         post_change_runs: postChangeRuns,
         mixes_identity_versions: preChangeRuns > 0 && postChangeRuns > 0,
-        note: 'Stored runs before the latest brand matching-identity edit may not be comparable with later runs. Historical scores are retained, not re-scored against the current name/domain/aliases/exclusions. The boundary is based on recorded run timestamps; older edits before this migration cannot be reconstructed.',
+        note: 'Stored runs started before the latest brand matching-identity edit may not be comparable with later runs, even when a scan completed after the edit. Historical scores are retained, not re-scored against the current name/domain/aliases/exclusions. The boundary uses recorded run start times; older edits before this migration cannot be reconstructed.',
       };
 
       // Historical runs can contain both ungrounded OpenAI batches and

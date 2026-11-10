@@ -1435,6 +1435,7 @@ test('read history: getVisibilityHistoryRows aggregates ok rows per run', async 
     assert.equal(rows.length, 1);
     assert.equal(rows[0].run_id, run.id);
     assert.equal(rows[0].engine, 'claude');
+    assert.equal(rows[0].started_at, run.started_at);
     assert.equal(Number(rows[0].total), 2);
     assert.equal(Number(rows[0].hits), 1);
     assert.equal(Number(rows[0].roster_expected), 2);
@@ -1488,6 +1489,8 @@ test('SQLite and D1 history count only the latest successful observation per run
     for (const adapter of [db, hosted]) {
       const rows = await adapter.getVisibilityHistoryRows('acme', 0);
       assert.equal(rows.length, 1);
+      assert.equal(rows[0].started_at, run.started_at,
+        'both adapters must expose the real scan start for historical identity attribution');
       assert.equal(Number(rows[0].total), 2, 'retries must not inflate prompt denominator');
       assert.equal(Number(rows[0].hits), 2, 'latest successful response determines the hit');
       assert.equal(Number(rows[0].roster_observed), 2);

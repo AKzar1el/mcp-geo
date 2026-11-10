@@ -893,7 +893,7 @@ export function openSqliteDb(path?: string): SqliteDb {
       // (stuck at in_progress) still count toward history.
       return sqlite
         .prepare(
-          `SELECT r.id AS run_id, r.engine, r.mode,
+          `SELECT r.id AS run_id, r.engine, r.mode, r.started_at,
                   COALESCE(r.completed_at, r.started_at) AS completed_at,
                   COUNT(pr.id) AS total,
                   SUM(pr.brand_mentioned) AS hits,
