@@ -403,6 +403,15 @@ test('check_visibility flags uniformly old scheduled evidence without treating m
   }).handler({ brand_id: brand.id });
   assert.equal(due.structuredContent.freshness.cadence_overdue_warning, true);
   assert.deepEqual(due.structuredContent.freshness.cadence_overdue_engines, ['chatgpt']);
+
+  // The same 30-hour-old observation is still within a weekly cadence.
+  // It must not inherit the daily warning merely because the evidence is old.
+  const weeklyWithinWindow = await registerVisibilityTool({
+    brand: { ...brand, refresh_frequency: 'weekly' },
+    runs: { chatgpt: run('chatgpt', oldDaily), claude: run('claude', oldDaily) },
+  }).handler({ brand_id: brand.id });
+  assert.equal(weeklyWithinWindow.structuredContent.freshness.cadence_overdue_warning, false);
+  assert.deepEqual(weeklyWithinWindow.structuredContent.freshness.cadence_overdue_engines, []);
 });
 
 test('batch ChatGPT results are not falsely classified as live-search observations', async () => {
