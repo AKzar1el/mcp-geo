@@ -288,6 +288,21 @@ test('top source samples reject credential-bearing URLs without hiding safe cita
   assert.deepEqual(sources.map((source) => source.sample_url), ['https://news.example/safe-report']);
 });
 
+test('top source rankings exclude localhost, IP addresses and malformed DNS hosts', async () => {
+  const citation = registerCitationTool(citationRow(), [
+    promptResponse({ engine_citations: [
+      'http://localhost/private',
+      'https://127.0.0.1/admin',
+      'https://[::1]/internal',
+      'https://news..example/bad',
+      'https://research.example/report',
+    ] }),
+  ]);
+  const sources = (await citation.handler({ brand_id: brand.id })).structuredContent.top_sources;
+  assert.deepEqual(sources.map((source) => source.domain), ['research.example']);
+  assert.deepEqual(sources.map((source) => source.sample_url), ['https://research.example/report']);
+});
+
 test('get_citations distinguishes provider-listed link-only evidence from textual brand mentions', async () => {
   const citation = registerCitationTool(
     citationRow({
