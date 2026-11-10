@@ -33,6 +33,7 @@ import { seedBrand } from './seed.js';
 import { updateTrackedBrand } from './update-brand.js';
 import {
   normalizeCompetitorDomains,
+  normalizeDomainInput,
   normalizeRequiredDomain,
 } from './domain.js';
 
@@ -1958,8 +1959,9 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand) {
         const parsed = new URL(rawUrl);
         if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') continue;
         if (parsed.username || parsed.password) continue;
-        let domain = parsed.hostname.toLowerCase();
-        if (domain.startsWith('www.')) domain = domain.slice(4);
+        // A provider URL can name localhost, an IP or an invalid DNS host.
+        // Only rank domain-shaped sources using the same host rules as brands.
+        const domain = normalizeDomainInput(parsed.hostname);
         if (!domain) continue;
         if (!domainsForResponse.has(domain)) domainsForResponse.set(domain, rawUrl);
       } catch {
