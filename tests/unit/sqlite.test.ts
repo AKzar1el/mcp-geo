@@ -552,11 +552,28 @@ test('citation source projections preserve complete window, engine and status pa
       }]);
       db.raw.prepare('UPDATE prompt_responses SET captured_at = ? WHERE run_id = ?')
         .run(capturedAt, run.id);
+      return run.id;
     };
-    await insert(brand, 'p1', 'chatgpt', 'ok', 'https://research.example/old', now - 20_000);
+    const firstRunId = await insert(brand, 'p1', 'chatgpt', 'ok', 'https://research.example/old', now - 20_000);
     await insert(brand, 'p1', 'perplexity', 'ok', 'https://research.example/new', now - 10_000);
     await insert(brand, 'p1', 'gemini', 'failed', 'https://invalid.example/failed', now - 5_000);
     await insert(other, 'p2', 'chatgpt', 'ok', 'https://other.example/citation', now - 5_000);
+    // A successful retry supersedes an older observation of the same run and
+    // prompt. It must not double-count source evidence or preserve stale URLs.
+    await db.insertPromptResponse({
+      run_id: firstRunId,
+      prompt_id: 'p1',
+      engine: 'chatgpt',
+      raw_response: 'Latest source-only retry',
+      brand_mentioned: 0,
+      brand_cited_with_link: 0,
+      cited_urls: [],
+      competitors_mentioned: [],
+      engine_citations: ['https://research.example/retried'],
+      status: 'ok',
+    });
+    db.raw.prepare('UPDATE prompt_responses SET captured_at = ? WHERE run_id = ? AND raw_response = ?')
+      .run(now - 15_000, firstRunId, 'Latest source-only retry');
 
     const selectedSql: string[] = [];
     const hosted = createD1Db({
@@ -575,11 +592,15 @@ test('citation source projections preserve complete window, engine and status pa
       },
     } as unknown as Parameters<typeof createD1Db>[0]);
 
-    const expectedUrls = ['https://research.example/old', 'https://research.example/new'];
+    const expectedUrls = ['https://research.example/retried', 'https://research.example/new'];
     for (const adapter of [db, hosted]) {
       const full = await adapter.getCitationSourceRows('acme', now - 30_000, now);
       assert.deepEqual(full.map((row) => row.engine_citations[0]), expectedUrls);
       assert.deepEqual(full.map((row) => row.engine), ['chatgpt', 'perplexity']);
+      const frozenWindow = await adapter.getCitationSourceRows('acme', now - 30_000, now - 18_000);
+      assert.deepEqual(frozenWindow.map((row) => row.engine_citations[0]),
+        ['https://research.example/old'],
+        'a retry after the frozen window must not erase its earlier source evidence');
       assert.ok(full.every((row) => !Object.hasOwn(row, 'raw_response')));
       assert.ok(full.every((row) => !Object.hasOwn(row, 'prompt_text')));
       const filtered = await adapter.getCitationSourceRows(
@@ -592,6 +613,31 @@ test('citation source projections preserve complete window, engine and status pa
         [],
         'failed observations and other brands must not appear',
       );
+    }
+    // Equal capture times must choose the highest response ID consistently,
+    // including through D1's SQL projection.
+    await db.insertPromptResponse({
+      run_id: firstRunId,
+      prompt_id: 'p1',
+      engine: 'chatgpt',
+      raw_response: 'Tied successful source retry',
+      brand_mentioned: 0,
+      brand_cited_with_link: 0,
+      cited_urls: [],
+      competitors_mentioned: [],
+      engine_citations: ['https://research.example/tied'],
+      status: 'ok',
+    });
+    db.raw.prepare('UPDATE prompt_responses SET captured_at = ? WHERE run_id = ? AND raw_response = ?')
+      .run(now - 15_000, firstRunId, 'Tied successful source retry');
+    const winner = db.raw.prepare(
+      'SELECT engine_citations_json FROM prompt_responses WHERE run_id = ? AND captured_at = ? ORDER BY id DESC LIMIT 1',
+    ).get(firstRunId, now - 15_000) as { engine_citations_json: string };
+    const winningUrl = JSON.parse(winner.engine_citations_json)[0];
+    for (const adapter of [db, hosted]) {
+      const rows = await adapter.getCitationSourceRows('acme', now - 30_000, now);
+      assert.deepEqual(rows.map((row) => row.engine_citations[0]),
+        [winningUrl, 'https://research.example/new']);
     }
     assert.ok(selectedSql.length >= 3);
     assert.ok(selectedSql.every((sql) => !sql.includes('raw_response')));

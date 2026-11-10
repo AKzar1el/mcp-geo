@@ -725,6 +725,7 @@ export function createD1Db(d1: D1Database): Db {
       until: number,
       engine?: string,
     ): Promise<CitationSourceRow[]> {
+      // Match SQLite's per-run/prompt retry deduplication and frozen window.
       const { results } = await d1
         .prepare(
           `SELECT pr.id, pr.prompt_id, pr.engine, pr.engine_citations_json, pr.captured_at
@@ -734,10 +735,19 @@ export function createD1Db(d1: D1Database): Db {
               AND pr.captured_at >= ?
               AND pr.captured_at <= ?
               AND pr.status = 'ok'
+              AND NOT EXISTS (
+                SELECT 1 FROM prompt_responses newer
+                 WHERE newer.run_id = pr.run_id
+                   AND newer.prompt_id = pr.prompt_id
+                   AND newer.status = 'ok'
+                   AND newer.captured_at <= ?
+                   AND (newer.captured_at > pr.captured_at
+                     OR (newer.captured_at = pr.captured_at AND newer.id > pr.id))
+              )
               ${engine ? 'AND pr.engine = ?' : ''}
             ORDER BY pr.captured_at ASC, pr.id ASC`,
         )
-        .bind(...(engine ? [brandId, since, until, engine] : [brandId, since, until]))
+        .bind(...(engine ? [brandId, since, until, until, engine] : [brandId, since, until, until]))
         .all<Omit<CitationSourceRow, 'engine_citations'> & { engine_citations_json: string | null }>();
       return (results ?? []).map(({ engine_citations_json, ...row }) => ({
         ...row,
