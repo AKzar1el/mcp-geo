@@ -193,3 +193,38 @@ test('admin update-brand exposes the same safe partial update contract', async (
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('hosted update-brand rejects out-of-bounds metadata before database access', async () => {
+  let reads = 0;
+  const db = {
+    getBrand: async () => {
+      reads += 1;
+      return null;
+    },
+  } as unknown as Parameters<typeof updateTrackedBrand>[0];
+  const invalid: Array<[string, Record<string, unknown>, RegExp]> = [
+    ['name', { name: 'n'.repeat(201) }, /name.*200/i],
+    ['domain', { domain: 'd'.repeat(254) }, /domain.*253/i],
+    ['category', { category: 'c'.repeat(201) }, /category.*200/i],
+    ['competitor count', { competitors: Array(21).fill('example.com') }, /competitors.*20/i],
+    ['competitor length', { competitors: ['x'.repeat(254)] }, /competitors.*253/i],
+    ['empty competitor', { competitors: [''] }, /competitors.*3/i],
+    ['alias count', { aliases: Array(21).fill('Alias') }, /aliases.*20/i],
+    ['alias length', { aliases: ['a'.repeat(101)] }, /aliases.*100/i],
+    ['empty alias', { aliases: [''] }, /aliases.*1/i],
+    ['exclude count', { exclude_terms: Array(21).fill('ignore') }, /exclude_terms.*20/i],
+    ['exclude length', { exclude_terms: ['e'.repeat(101)] }, /exclude_terms.*100/i],
+  ];
+  for (const [label, fields, expectedError] of invalid) {
+    const response = await handleAdminUpdateBrand(
+      new Request('https://example.test/admin/update-brand', {
+        method: 'POST',
+        body: JSON.stringify({ brand_id: 'acme', ...fields }),
+      }),
+      db,
+    );
+    assert.equal(response.status, 400, label);
+    assert.match((await response.json() as { error: string }).error, expectedError, label);
+  }
+  assert.equal(reads, 0, 'invalid metadata must not trigger database reads');
+});
