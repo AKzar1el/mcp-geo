@@ -1298,6 +1298,11 @@ export function registerTools(
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
       }
 
+      // Retired prompt observations remain in history, but must not become
+      // current buyer-intent advice after the active prompt set is replaced.
+      const activePromptIds = new Set(
+        (await deps.db.getActivePrompts(brand_id)).map((prompt) => prompt.id),
+      );
       // Earlier scans may retain competitors removed by update_brand. Content
       // gaps must reflect the brand's currently configured comparison cohort.
       const trackedCompetitors = new Set(brand.competitors);
@@ -1318,7 +1323,7 @@ export function registerTools(
         // successful result when determining current content-gap advice.
         const latestOkByPrompt = new Map<string, PromptResponse>();
         for (const response of responses) {
-          if (response.status !== 'ok') continue;
+          if (response.status !== 'ok' || !activePromptIds.has(response.prompt_id)) continue;
           const previous = latestOkByPrompt.get(response.prompt_id);
           if (!previous ||
               response.captured_at > previous.captured_at ||
@@ -1367,7 +1372,7 @@ export function registerTools(
           recommendations: [],
           prompt_source: 'fallback' as const,
           reason: successfulResponses === 0
-            ? 'No usable scan responses in the latest completed runs. A refresh can collect evidence but may incur provider charges.'
+            ? 'No usable scan responses for currently active prompts in the latest completed runs. A refresh can collect evidence but may incur provider charges.'
             : `No competitor-only wins observed in ${successfulResponses} usable responses. This does not prove complete prompt or engine coverage.`,
         };
         return toolResult(payload);

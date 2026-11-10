@@ -86,6 +86,7 @@ test('content gaps distinguishes missing scan evidence from observed absence of 
   registerTools(server, {
     db: {
       getBrand: async () => trackedBrand,
+      getActivePrompts: async () => [{ id: 'prompt-1' }],
       getLatestCompletedRun: async (_id, engine) =>
         haveRun && engine === 'chatgpt' ? { id: 'run-1' } : null,
       getResponsesForRun: async () => [{
@@ -167,6 +168,7 @@ test('content-gap candidate limit does not depend on database response order for
   registerTools(server, {
     db: {
       getBrand: async () => brand,
+      getActivePrompts: async () => responses.map((r) => ({ id: r.prompt_id })),
       getLatestCompletedRun: async (_id, engine) =>
         engine === 'chatgpt' ? { id: 'run-1' } : null,
       getResponsesForRun: async () => reversed ? [...responses].reverse() : responses,
@@ -227,6 +229,7 @@ test('content gaps use only the latest successful observation per engine and pro
   registerTools(server, {
     db: {
       getBrand: async () => brand,
+      getActivePrompts: async () => responses.map((r) => ({ id: r.prompt_id })),
       getLatestCompletedRun: async (_id, engine) => engine === 'chatgpt' ? { id: 'run-1' } : null,
       getResponsesForRun: async () => responses,
     } as Db,
@@ -271,6 +274,7 @@ test('content gaps exclude competitors removed from current brand tracking', asy
   registerTools(server, {
     db: {
       getBrand: async () => brand,
+      getActivePrompts: async () => responses.map((r) => ({ id: r.prompt_id })),
       getLatestCompletedRun: async (_id, engine) => engine === 'chatgpt' ? { id: 'run-1' } : null,
       getResponsesForRun: async () => responses,
     } as Db,
@@ -353,6 +357,7 @@ test('content gaps require an explicit opt-in before any paid Anthropic call', a
   registerTools(server, {
     db: {
       getBrand: async () => brand,
+      getActivePrompts: async () => [{ id: response.prompt_id }],
       getLatestCompletedRun: async (_id, engine) =>
         engine === 'chatgpt' ? { id: 'run-1' } : null,
       getResponsesForRun: async () => includeResponses ? [response] : [],
@@ -554,6 +559,7 @@ test('content-gap advice discloses US/English Google sampling only for observed 
   registerTools(server, {
     db: {
       getBrand: async () => brand,
+      getActivePrompts: async () => [{ id: 'prompt-1' }],
       getLatestCompletedRun: async (_id, engine) =>
         engine === observedEngine ? { id: 'run-1' } : null,
       getResponsesForRun: async () => [response(observedEngine)],
@@ -573,4 +579,48 @@ test('content-gap advice discloses US/English Google sampling only for observed 
   const nonGoogle = (await handler({ brand_id: 'acme', max_recommendations: 1 }))
     .structuredContent.google_search_sampling;
   assert.equal(nonGoogle, null);
+});
+
+test('content gaps never recommend prompts retired from the active buyer-intent set', async () => {
+  const brand = {
+    id: 'acme', name: 'Acme', domain: 'acme.com', competitors: ['rival.com'],
+    aliases: [], exclude_terms: [],
+  } as Brand;
+  const response = (promptId: string): PromptResponse => ({
+    id: `response-${promptId}`, run_id: 'run-1', prompt_id: promptId,
+    prompt_text: `Question for ${promptId}`, engine: 'chatgpt', raw_response: '',
+    brand_mentioned: 0, brand_cited_with_link: 0, cited_urls: [],
+    competitors_mentioned: ['rival.com'], engine_citations: [], status: 'ok',
+    error_message: null, captured_at: 1000,
+  });
+  let responses = [response('retired')];
+  let handler: ((input: { brand_id: string; max_recommendations: number }) => Promise<{
+    structuredContent: { recommendations: Array<{ topic: string }>; reason?: string };
+  }>) | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, callback: unknown) {
+      if (name === 'get_content_gaps') handler = callback as typeof handler;
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getActivePrompts: async () => [{ id: 'active' }],
+      getLatestCompletedRun: async (_id, engine) => engine === 'chatgpt' ? { id: 'run-1' } : null,
+      getResponsesForRun: async () => responses,
+    } as Db,
+    env: {}, refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(handler);
+
+  const retiredOnly = (await handler({ brand_id: 'acme', max_recommendations: 5 })).structuredContent;
+  assert.deepEqual(retiredOnly.recommendations, []);
+  assert.match(retiredOnly.reason ?? '', /current(ly)? active prompts/i);
+
+  responses = [response('retired'), response('active')];
+  const mixed = (await handler({ brand_id: 'acme', max_recommendations: 5 })).structuredContent;
+  assert.deepEqual(mixed.recommendations.map((item) => item.topic), [
+    'Address losing prompt: "Question for active"',
+  ]);
 });
