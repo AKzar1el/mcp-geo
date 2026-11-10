@@ -434,6 +434,25 @@ test('getResponsesSince returns every usable response in the requested brand win
       status: 'failed',
     });
 
+    // Repeated successful attempts inside one run/prompt must not increase
+    // comparison evidence rows; the newest usable attempt is authoritative.
+    await db.insertPromptResponse({
+      run_id: first.id,
+      prompt_id: 'p1',
+      engine: 'chatgpt',
+      raw_response: 'Asana is popular without Acme.',
+      brand_mentioned: 0,
+      brand_cited_with_link: 0,
+      cited_urls: [],
+      competitors_mentioned: ['asana.com'],
+      status: 'ok',
+    });
+    const now = Date.now();
+    db.raw.prepare('UPDATE prompt_responses SET captured_at = ? WHERE raw_response = ?')
+      .run(now - 5_000, 'Acme and Asana are popular.');
+    db.raw.prepare('UPDATE prompt_responses SET captured_at = ? WHERE raw_response = ?')
+      .run(now - 1_000, 'Asana is popular without Acme.');
+
     const all = await db.getResponsesSince('acme', Date.now() - 60_000);
     assert.equal(
       all.length,
@@ -444,6 +463,7 @@ test('getResponsesSince returns every usable response in the requested brand win
       all.map((r) => r.run_id),
       [first.id, second.id],
     );
+    assert.equal(all[0].brand_mentioned, 0, 'latest successful retry must win');
 
     const hostedSql: string[] = [];
     const hosted = createD1Db({
@@ -474,6 +494,17 @@ test('getResponsesSince returns every usable response in the requested brand win
       }
     }
     assert.ok(hostedSql.every((sql) => !sql.includes('raw_response')));
+
+    db.raw.prepare('UPDATE prompt_responses SET captured_at = ? WHERE run_id = ? AND status = ?')
+      .run(now - 1_000, first.id, 'ok');
+    const tiedIds = db.raw
+      .prepare('SELECT id FROM prompt_responses WHERE run_id = ? AND status = ? ORDER BY id DESC')
+      .all(first.id, 'ok') as Array<{ id: string }>;
+    const tied = await db.getResponsesSince('acme', Date.now() - 60_000);
+    assert.equal(tied.find((row) => row.run_id === first.id)?.id, tiedIds[0].id,
+      'equal-timestamp successful retries must break ties by highest response ID');
+    assert.deepEqual(await hosted.getResponsesSince('acme', Date.now() - 60_000), tied,
+      'D1 and SQLite must agree on same-timestamp tie-breaking');
 
     db.raw
       .prepare('UPDATE prompt_responses SET captured_at = ? WHERE run_id = ?')

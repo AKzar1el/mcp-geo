@@ -303,8 +303,8 @@ export interface Db {
   // Only returns status='ok' rows — failed/skipped rows must never
   // reach scoring.
   getResponsesForRun(runId: string): Promise<PromptResponse[]>;
-  // All usable responses for comparison; preserve retry identity/timestamps,
-  // but avoid materializing full provider answer bodies and citation payloads.
+  // Latest successful response per run/engine/prompt in the comparison window;
+  // preserve tie-break identity/timestamps without fetching provider bodies.
   getResponsesSince(brandId: string, since: number): Promise<ComparisonEvidenceRow[]>;
   // All successful observations in the fixed citation window, including
   // unmentioned brand responses. Never restrict this to the current cursor page.

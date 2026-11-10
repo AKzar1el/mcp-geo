@@ -727,16 +727,28 @@ export function openSqliteDb(path?: string): SqliteDb {
     ): Promise<ComparisonEvidenceRow[]> {
       const rows = sqlite
         .prepare(
-          `SELECT pr.id, pr.run_id, pr.prompt_id, p.text AS prompt_text, pr.engine,
-                  pr.brand_mentioned, pr.competitors_mentioned_json,
-                  pr.status, pr.captured_at
-             FROM prompt_responses pr
-             JOIN runs r ON r.id = pr.run_id
-             JOIN prompts p ON p.id = pr.prompt_id
-            WHERE r.brand_id = ?
-              AND pr.captured_at >= ?
-              AND pr.status = 'ok'
-            ORDER BY pr.captured_at ASC`,
+          `WITH ranked AS (
+             SELECT pr.id, pr.run_id, pr.prompt_id, pr.engine,
+                    pr.brand_mentioned, pr.competitors_mentioned_json,
+                    pr.status, pr.captured_at,
+                    ROW_NUMBER() OVER (
+                      PARTITION BY pr.run_id, pr.engine, pr.prompt_id
+                      ORDER BY pr.captured_at DESC, pr.id DESC
+                    ) AS retry_rank
+               FROM prompt_responses pr
+               JOIN runs r ON r.id = pr.run_id
+              WHERE r.brand_id = ?
+                AND pr.captured_at >= ?
+                AND pr.status = 'ok'
+           )
+           SELECT ranked.id, ranked.run_id, ranked.prompt_id,
+                  p.text AS prompt_text, ranked.engine,
+                  ranked.brand_mentioned, ranked.competitors_mentioned_json,
+                  ranked.status, ranked.captured_at
+             FROM ranked
+             JOIN prompts p ON p.id = ranked.prompt_id
+            WHERE ranked.retry_rank = 1
+            ORDER BY ranked.captured_at ASC, ranked.id ASC`,
         )
         .all(brandId, since) as Array<Pick<ResponseJoinRow,
           'id' | 'run_id' | 'prompt_id' | 'prompt_text' | 'engine' |
