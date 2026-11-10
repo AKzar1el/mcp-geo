@@ -158,6 +158,22 @@ test('citation hosts accept one DNS root dot but reject repeated dots and lookal
 });
 
 
+test('encoded root dots cannot turn repeated-dot citation hosts into brand evidence', () => {
+  // URL.hostname decodes %2e in host labels; validate the decoded root-dot count.
+  for (const url of [
+    'https://docs.acme.com%2e%2e/source',
+    'https://docs.acme.com%2E%2E/source',
+    'https://docs.acme.com.../source',
+  ]) {
+    assert.equal(hasBrandInEngineCitations('acme.com', [url]), false, url);
+  }
+  assert.equal(
+    hasBrandInEngineCitations('acme.com', ['https://docs.acme.com%2e/source']),
+    true,
+  );
+});
+
+
 test('sentence-final plain brand URL counts as one normalized linked citation', () => {
   const r = extractCitations(acme, 'Useful reference: https://acme.com.');
   assert.equal(r.brand_mentioned, 1);
