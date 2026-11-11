@@ -79,6 +79,23 @@ test('AI Overview preserves provider table cells without promoting references to
   );
 });
 
+test('AI Overview preserves comparison-only answer evidence separate from reference titles', async () => {
+  await withMockFetch(
+    [jsonResponse({ ai_overview: {
+      text_blocks: [{ type: 'comparison', product_labels: ['Acme', 'Beta'],
+        comparison: [{ feature: 'Audit output', values: ['Citation proof', 'Quick summary'] }] }],
+      references: [{ title: 'Reference-only brand Gamma', link: 'https://example.org/article' }],
+    } })],
+    async (calls) => {
+      const result = await chatCompletion('test-key', 'compare audit vendors');
+      assert.equal(result.text, 'Acme | Beta\n\nAudit output | Citation proof | Quick summary');
+      assert.deepEqual(result.citations, ['https://example.org/article']);
+      assert.doesNotMatch(result.text, /Gamma/);
+      assert.equal(calls.length, 1);
+    },
+  );
+});
+
 test('AI Overview counts only HTTP(S) provider references as source evidence', async () => {
   await withMockFetch(
     [jsonResponse({
