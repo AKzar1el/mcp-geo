@@ -122,6 +122,23 @@ test('AI Mode fallback keeps comparison-table cells as scoreable answer text', a
   );
 });
 
+test('AI Mode fallback preserves comparison-only product evidence without extra search', async () => {
+  await withMockFetch(
+    [jsonResponse({
+      text_blocks: [{ type: 'comparison', product_labels: ['Acme', 'Beta'],
+        comparison: [{ feature: 'Sources', values: ['Linked evidence', 'No references'] }] }],
+      references: [{ title: 'Gamma is a citation only', link: 'https://example.org/source' }],
+    })],
+    async (calls) => {
+      const result = await chatCompletion('test-key', 'compare platforms');
+      assert.equal(result.text, 'Acme | Beta\n\nSources | Linked evidence | No references');
+      assert.deepEqual(result.citations, ['https://example.org/source']);
+      assert.doesNotMatch(result.text, /Gamma/);
+      assert.equal(calls.length, 1);
+    },
+  );
+});
+
 test('AI Mode fallback retains nested titles without treating citations as answer text', async () => {
   await withMockFetch(
     [

@@ -6,6 +6,8 @@ export interface SerpApiAnswerBlock {
   snippet?: string;
   text?: string;
   table?: unknown;
+  product_labels?: unknown;
+  comparison?: unknown;
   list?: SerpApiAnswerBlock[];
   text_blocks?: SerpApiAnswerBlock[];
 }
@@ -77,28 +79,47 @@ export function flattenSerpApiAnswer(
       add(body);
     }
 
-    // SerpAPI places visible comparison text in table rows, not snippet.
-    // Ignore detailed/formatted metadata to avoid double-counting cells.
+    // Count visible cells before joining; provider metadata never becomes answer text.
+    const addRow = (rawCells: unknown[], leadingCell?: unknown): void => {
+      const cells: string[] = [];
+      let rowLength = 0;
+      const addCell = (cell: unknown): void => {
+        count += 1;
+        if (count > MAX_BLOCKS) {
+          throw new Error('SerpAPI answer exceeds structured-text nesting limit');
+        }
+        const value = visibleText(cell);
+        if (!value) return;
+        rowLength += value.length + (cells.length ? 3 : 0);
+        if (length + rowLength > MAX_SERPAPI_ANSWER_TEXT_LENGTH) {
+          throw new Error('SerpAPI answer exceeds structured-text size limit');
+        }
+        cells.push(value);
+      };
+      if (leadingCell !== undefined) addCell(leadingCell);
+      for (const cell of rawCells) addCell(cell);
+      if (cells.length > 0) add(cells.join(' | '));
+    };
+
     if (Array.isArray(block.table)) {
       for (const row of block.table) {
-        if (!Array.isArray(row)) continue;
-        const cells: string[] = [];
-        let rowLength = 0;
-        for (const cell of row) {
+        if (Array.isArray(row)) addRow(row);
+      }
+    }
+
+    // SerpAPI comparison blocks expose product labels and feature/value rows.
+    if (block.type === 'comparison') {
+      if (Array.isArray(block.product_labels)) addRow(block.product_labels);
+      if (Array.isArray(block.comparison)) {
+        for (const entry of block.comparison) {
           count += 1;
           if (count > MAX_BLOCKS) {
             throw new Error('SerpAPI answer exceeds structured-text nesting limit');
           }
-          const value = visibleText(cell);
-          if (value) {
-            rowLength += value.length + (cells.length ? 3 : 0);
-            if (length + rowLength > MAX_SERPAPI_ANSWER_TEXT_LENGTH) {
-              throw new Error('SerpAPI answer exceeds structured-text size limit');
-            }
-            cells.push(value);
-          }
+          if (!entry || typeof entry !== 'object') continue;
+          const row = entry as { feature?: unknown; values?: unknown };
+          addRow(Array.isArray(row.values) ? row.values : [], row.feature);
         }
-        if (cells.length > 0) add(cells.join(' | '));
       }
     }
 
