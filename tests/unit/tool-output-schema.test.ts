@@ -127,6 +127,12 @@ test('content-gap output schema describes recommendation records', () => {
     schema.safeParse({
       brand_id: 'acme',
       google_search_sampling: null,
+      measurement_scope: {
+        search_requested_engines: ['chatgpt'],
+        model_only_engines: [],
+        mixed_modes: false,
+        note: 'Search requested does not certify citation evidence.',
+      },
       recommendations: [
         {
           priority: 1,
@@ -144,6 +150,12 @@ test('content-gap output schema describes recommendation records', () => {
     schema.safeParse({
       brand_id: 'acme',
       google_search_sampling: null,
+      measurement_scope: {
+        search_requested_engines: [],
+        model_only_engines: ['claude'],
+        mixed_modes: false,
+        note: 'Model-only observations are not live search evidence.',
+      },
       recommendations: [
         {
           priority: 6,
