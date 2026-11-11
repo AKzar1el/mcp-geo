@@ -437,6 +437,12 @@ const listPromptsOutputSchema = z.object({
     }),
   ),
   count: z.number(),
+  prompt_review: z.object({
+    category_missing: z.boolean(),
+    prompts_naming_brand: z.number().int(),
+    review_recommended: z.boolean(),
+    note: z.string(),
+  }),
 });
 
 const setPromptsOutputSchema = z.object({
@@ -1802,6 +1808,16 @@ export function registerLocalManagementTools(
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
       }
       const prompts = await deps.db.getActivePrompts(brand_id);
+      const category_missing = !brand.category?.trim();
+      const prompts_naming_brand = prompts.filter((prompt) =>
+        findTermSetMatchIndex(prompt.text, {
+          domain: brand.domain,
+          name: brand.name,
+          aliases: [],
+          excludeTerms: [],
+        }) !== -1,
+      ).length;
+      const review_recommended = category_missing || prompts_naming_brand > 0;
       const payload = {
         brand_id,
         prompts: prompts.map((prompt) => ({
@@ -1812,6 +1828,14 @@ export function registerLocalManagementTools(
           created_at: new Date(prompt.created_at).toISOString(),
         })),
         count: prompts.length,
+        prompt_review: {
+          category_missing,
+          prompts_naming_brand,
+          review_recommended,
+          note: review_recommended
+            ? 'Review active prompts before provider-backed scans: a missing category or questions naming the tracked brand can bias an unprompted visibility baseline. Brand-specific questions may be intentional; this is advisory, not a rejection.'
+            : 'No missing-category or brand-name warning detected. Prompt representativeness and buyer intent have not been independently validated; review before provider-backed scans.',
+        },
       };
       return toolResult(payload);
     },

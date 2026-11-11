@@ -22,7 +22,7 @@
 
 **Your first local scan, after connecting the stdio MCP server:**
 
-1. **Track:** ask your MCP client to run `track_brand` with your own `brand_id`, name, domain, and ideally a precise `category`. By default it creates three provider-free category-anchored starter questions, not a validated measurement sample. Without a category, its brand-name placeholders can bias scores: replace those prompts before scanning.
+1. **Track:** ask your MCP client to run `track_brand` with your own `brand_id`, name, domain, and ideally a precise `category`. By default it creates three provider-free category-anchored starter questions, not a validated measurement sample. Without a category, its brand-name placeholders can bias scores: replace those prompts before scanning. The read-only `list_prompts.prompt_review` advisory flags missing categories and prompts naming the tracked brand; it does not certify that other questions are representative.
 2. **Measure:** after reviewing and, when needed, replacing the starter questions with representative independent buyer prompts, run `refresh_brand` with that `brand_id`. **Live scans use your provider API keys and may incur charges.** Engines without keys are skipped; Google AI Mode requires a separate explicit opt-in. Retrying after a partial scan makes fresh provider requests for **all active prompts** on the selected engines, including ones that previously succeeded; old successful answers are not reused as new evidence. Review partial coverage with `check_visibility` before choosing whether and when to retry.
 3. **Inspect:** run `check_visibility` with the same `brand_id` to view available per-engine scores and evidence. Use `get_citations` to inspect citation records where providers supply sources.
 
