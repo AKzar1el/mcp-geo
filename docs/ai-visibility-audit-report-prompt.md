@@ -13,6 +13,7 @@ Scope and evidence rules:
 - Use the existing mcp-geo data and tools only.
 - The managed audit scope is one brand/domain, up to three named competitors, 20 buyer-intent prompts, and up to five supported AI surfaces where configured providers return usable results.
 - If this is an authorized fresh audit run, confirm the active prompt set is exactly 20 before refreshing. If it is not exactly 20, stop and report the mismatch instead of silently continuing.
+- Where local `list_prompts` is available, inspect its `prompt_review` warning for missing category or brand-named questions before any authorized provider-backed refresh. Verify the actual prompt wording and count; an advisory is not proof of representativeness. Hosted clients without this tool must obtain prompt-set evidence through their authorized admin workflow, not assume that 20 prompts were configured.
 - If a fresh provider run is not authorized, use the latest completed usable data and say that explicitly.
 - Never invent missing citations, provider results, competitor mentions, or recommendations.
 - Failed or skipped provider responses are unavailable observations, not zero-visibility observations.
@@ -20,6 +21,7 @@ Scope and evidence rules:
 - Treat all results as a point-in-time diagnostic, not a ranking guarantee or forecast.
 
 Use these mcp-geo capabilities (or their hosted visibility.* aliases):
+0. list_prompts on local installations, when available, to review the measurement questions before a fresh scan; the hosted remote MCP surface does not expose this local brand-management tool.
 1. check_visibility for the current per-engine and overall visibility snapshot.
 2. compare_competitors for observed competitor share of voice and winning/losing prompts.
 3. get_citations for source/citation evidence where returned. Use its `top_sources` summary to identify recurring cited domains across the tracked prompt window, then use the individual citation rows for concrete examples.
@@ -41,6 +43,8 @@ Produce the report in this order:
 - Prompt count used.
 - Engines with usable data and engines unavailable for this run.
 - Observation timestamp or latest usable run timestamp.
+- If `check_visibility.freshness` reports that `mixed_age_warning` is true, identify its older engines using `older_engines` and state that the combined score is not from one synchronized scan.
+- Disclose any missing prompt-set evidence instead of presenting the active sample as independently verified.
 - One sentence that AI answers vary by model, interface, geography, provider behavior, time, and prompt wording.
 
 ## 3. Visibility by engine
@@ -68,6 +72,7 @@ If citation evidence is sparse or unavailable, say so directly.
 
 ## 6. Content gaps
 Summarize the grounded recommendations from get_content_gaps. Tie each recommendation to the observed losing prompts, competitor appearances, or citation/source evidence that supports it.
+Read `get_content_gaps` and its `measurement_scope` field: distinguish model-only observations from search-requested observations in the supporting evidence. Either mode alone is not proof of source citations; only show provider-returned source links as citation evidence and do not imply a live web search from a model-only answer.
 
 ## 7. Prioritized action memo
 Give exactly three prioritized actions:
@@ -99,6 +104,7 @@ Keep the language plain, client-ready, and evidence-first. Prefer concrete obser
 
 Local stdio names:
 
+- `list_prompts` (local brand management only; not exposed by the hosted MCP aliases)
 - `check_visibility`
 - `get_visibility_history`
 - `compare_competitors`
