@@ -61,6 +61,24 @@ test('AI Overview direct content uses one normal Google request', async () => {
   );
 });
 
+test('AI Overview preserves provider table cells without promoting references to mentions', async () => {
+  await withMockFetch(
+    [jsonResponse({ ai_overview: {
+      text_blocks: [{ type: 'table', table: [
+        ['Vendor', 'Strength'],
+        ['Acme', 'Clear citation evidence'],
+      ] }],
+      references: [{ title: 'Outside answer metadata', link: 'https://example.com/evidence' }],
+    } })],
+    async (calls) => {
+      const result = await chatCompletion('test-key', 'compare vendors');
+      assert.equal(result.text, 'Vendor | Strength\n\nAcme | Clear citation evidence');
+      assert.deepEqual(result.citations, ['https://example.com/evidence']);
+      assert.equal(calls.length, 1);
+    },
+  );
+});
+
 test('AI Overview counts only HTTP(S) provider references as source evidence', async () => {
   await withMockFetch(
     [jsonResponse({
