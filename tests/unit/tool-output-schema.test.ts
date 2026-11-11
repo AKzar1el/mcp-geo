@@ -127,6 +127,12 @@ test('content-gap output schema describes recommendation records', () => {
     schema.safeParse({
       brand_id: 'acme',
       google_search_sampling: null,
+      configuration_comparability: {
+        brand_updated_at: '2026-11-11T00:00:00.000Z',
+        engines_scanned_before_update: [],
+        historical_settings_warning: false,
+        note: 'No settings-age divergence observed.',
+      },
       measurement_scope: {
         search_requested_engines: ['chatgpt'],
         model_only_engines: [],
@@ -150,6 +156,12 @@ test('content-gap output schema describes recommendation records', () => {
     schema.safeParse({
       brand_id: 'acme',
       google_search_sampling: null,
+      configuration_comparability: {
+        brand_updated_at: '2026-11-11T00:00:00.000Z',
+        engines_scanned_before_update: [],
+        historical_settings_warning: false,
+        note: 'No settings-age divergence observed.',
+      },
       measurement_scope: {
         search_requested_engines: [],
         model_only_engines: ['claude'],

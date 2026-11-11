@@ -363,6 +363,12 @@ function decodeCitationCursor(cursor: string, brandId: string, days: number, eng
 const contentGapsOutputSchema = z.object({
   brand_id: z.string(),
   google_search_sampling: googleSearchSamplingSchema,
+  configuration_comparability: z.object({
+    brand_updated_at: z.string().nullable(),
+    engines_scanned_before_update: z.array(z.string()),
+    historical_settings_warning: z.boolean(),
+    note: z.string(),
+  }),
   measurement_scope: z.object({
     search_requested_engines: z.array(z.string()),
     model_only_engines: z.array(z.string()),
@@ -1319,6 +1325,7 @@ export function registerTools(
       // Earlier scans may retain competitors removed by update_brand. Content
       // gaps must reflect the brand's currently configured comparison cohort.
       const trackedCompetitors = new Set(brand.competitors);
+      const staleSettingsEngines = new Set<string>();
       const lossModeByEngine = new Map<string, 'search_requested' | 'model_only'>();
       const losingByPrompt = new Map<
         string,
@@ -1344,6 +1351,12 @@ export function registerTools(
               (response.captured_at === previous.captured_at && response.id > previous.id)) {
             latestOkByPrompt.set(response.prompt_id, response);
           }
+        }
+        // A settings edit cannot retroactively change an earlier scan. Warn
+        // only for engines with usable active-prompt evidence in this analysis.
+        if (latestOkByPrompt.size > 0 && Number.isFinite(run.started_at) &&
+            Number.isFinite(brand.updated_at) && run.started_at < brand.updated_at) {
+          staleSettingsEngines.add(engine);
         }
         for (const r of latestOkByPrompt.values()) {
           successfulResponses++;
@@ -1393,11 +1406,20 @@ export function registerTools(
         mixed_modes: searchRequestedEngines.length > 0 && modelOnlyEngines.length > 0,
         note: 'Engines contributing competitor-only losses are grouped by request path. Search-requested does not prove a source citation was returned; model-only observations are not live AI-search evidence. Review the stored answers before using recommendations in a client audit.',
       };
+      const enginesScannedBeforeUpdate = [...staleSettingsEngines].sort();
+      const configuration_comparability = {
+        brand_updated_at: Number.isFinite(brand.updated_at)
+          ? new Date(brand.updated_at).toISOString() : null,
+        engines_scanned_before_update: enginesScannedBeforeUpdate,
+        historical_settings_warning: enginesScannedBeforeUpdate.length > 0,
+        note: 'The listed engines have usable observations from runs started before the latest brand settings update. Recommendations can therefore reflect earlier brand identity, category, aliases, exclusions or competitors. The database cannot determine which field changed; a cadence-only edit may not affect the evidence. Review the change and refresh affected engines before treating recommendations as current-configuration findings; refresh may incur provider charges.',
+      };
 
       if (losingPrompts.length === 0) {
         const payload = {
           brand_id,
           google_search_sampling: null,
+          configuration_comparability,
           measurement_scope,
           recommendations: [],
           prompt_source: 'fallback' as const,
@@ -1435,6 +1457,7 @@ export function registerTools(
 
       const payload = {
         brand_id,
+        configuration_comparability,
         measurement_scope,
         google_search_sampling: googleSearchSampling(
           losingPrompts.flatMap((prompt) => prompt.engines_lost_on),
