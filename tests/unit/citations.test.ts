@@ -55,10 +55,32 @@ test('markdown link to brand domain counts as linked citation', () => {
   assert.ok(r.cited_urls.includes('asana.com'));
 });
 
-test('subdomain link counts as brand mention and linked citation', () => {
+test('subdomain link without brand prose counts only as linked citation', () => {
   const r = extractCitations(acme, 'See https://docs.acme.com/setup for the guide.');
-  assert.equal(r.brand_mentioned, 1);
+  assert.equal(r.brand_mentioned, 0);
   assert.equal(r.brand_cited_with_link, 1);
+});
+
+test('a source-only brand URL is not a brand mention in answer prose', () => {
+  for (const answer of [
+    'Reference: https://docs.acme.com/setup',
+    'Reference: [source](https://acme.com/research)',
+  ]) {
+    const result = extractCitations(acme, answer);
+    assert.equal(result.brand_mentioned, 0, answer);
+    assert.equal(result.brand_cited_with_link, 1, answer);
+  }
+  const named = extractCitations(acme, 'Reference: [Acme](https://acme.com/research)');
+  assert.equal(named.brand_mentioned, 1);
+  assert.equal(named.brand_cited_with_link, 1);
+});
+
+test('a source-only competitor URL is not a competitor mention in answer prose', () => {
+  const linked = extractCitations(acme, 'Reference: https://asana.com/pricing');
+  assert.deepEqual(linked.competitors_mentioned, []);
+  assert.ok(linked.cited_urls.includes('asana.com'));
+  const named = extractCitations(acme, 'Reference: [Asana](https://asana.com/pricing)');
+  assert.deepEqual(named.competitors_mentioned, ['asana.com']);
 });
 
 test('www link counts as linked citation', () => {
@@ -176,14 +198,14 @@ test('encoded root dots cannot turn repeated-dot citation hosts into brand evide
 
 test('sentence-final plain brand URL counts as one normalized linked citation', () => {
   const r = extractCitations(acme, 'Useful reference: https://acme.com.');
-  assert.equal(r.brand_mentioned, 1);
+  assert.equal(r.brand_mentioned, 0);
   assert.equal(r.brand_cited_with_link, 1);
   assert.deepEqual(r.cited_urls, ['acme.com']);
 });
 
 test('sentence-final subdomain citation remains distinct from lookalikes', () => {
   const r = extractCitations(acme, 'See https://docs.acme.com. Avoid https://acme.com.evil.io.');
-  assert.equal(r.brand_mentioned, 1);
+  assert.equal(r.brand_mentioned, 0);
   assert.equal(r.brand_cited_with_link, 1);
   assert.deepEqual(r.cited_urls, ['docs.acme.com', 'acme.com.evil.io']);
 });
