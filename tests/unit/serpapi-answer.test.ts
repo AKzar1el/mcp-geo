@@ -39,6 +39,34 @@ test('SerpAPI table parsing ignores non-string metadata and keeps visible cells'
   }]), 'Product | Benefit\n\nAcme | Cited only if listed as a source');
 });
 
+test('SerpAPI detailed-only table preserves visible snippets without promoting citation metadata', () => {
+  assert.equal(flattenSerpApiAnswer([{
+    type: 'table',
+    detailed: [
+      [{ snippet: 'Product', link: 'https://metadata.example' }, { snippet: 'AI evidence' }],
+      [{ snippet: 'Acme' }, { snippet: 'Cited sources', reference_indexes: [4] }],
+      [{ snippet: ' ' }, { link: 'https://not-answer.example' }],
+    ],
+  }]), 'Product | AI evidence\n\nAcme | Cited sources');
+});
+
+test('SerpAPI detailed table is a fallback rather than duplicate of visible table text', () => {
+  assert.equal(flattenSerpApiAnswer([{
+    type: 'table',
+    table: [['Product', 'AI evidence']],
+    detailed: [[{ snippet: 'Product' }, { snippet: 'AI evidence' }]],
+  }]), 'Product | AI evidence');
+});
+
+test('SerpAPI detailed table enforces existing row and rendered size budgets', () => {
+  assert.throws(() => flattenSerpApiAnswer([{
+    type: 'table', detailed: Array.from({ length: 2049 }, () => []),
+  }]), /structured-text nesting limit/);
+  assert.throws(() => flattenSerpApiAnswer([{
+    type: 'table', detailed: [[{ snippet: 'x'.repeat(250_001) }]],
+  }]), /structured-text size limit/);
+});
+
 test('SerpAPI table parsing preserves existing text and block-count safety limits', () => {
   assert.throws(() => flattenSerpApiAnswer([{
     type: 'table', table: [['a'.repeat(250_001)]],
