@@ -54,10 +54,11 @@ export function flattenSerpApiAnswer(
 
   const add = (value: string): void => {
     if (!value) return;
-    length += value.length;
-    if (length > MAX_SERPAPI_ANSWER_TEXT_LENGTH) {
+    const nextLength = length + value.length + (parts.length > 0 ? 2 : 0);
+    if (nextLength > MAX_SERPAPI_ANSWER_TEXT_LENGTH) {
       throw new Error('SerpAPI answer exceeds structured-text size limit');
     }
+    length = nextLength;
     parts.push(value);
   };
 
@@ -103,6 +104,11 @@ export function flattenSerpApiAnswer(
 
     if (Array.isArray(block.table)) {
       for (const row of block.table) {
+        // Empty and malformed rows must also consume the structured block budget.
+        count += 1;
+        if (count > MAX_BLOCKS) {
+          throw new Error('SerpAPI answer exceeds structured-text nesting limit');
+        }
         if (Array.isArray(row)) addRow(row);
       }
     }
