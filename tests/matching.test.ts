@@ -105,6 +105,21 @@ test('plain-text competitor names match the registrable label of common multi-pa
   assert.deepEqual(competitors_mentioned, ['acme.co.uk', 'zen.com.au', 'kumo.co.jp']);
 });
 
+test('Pakistani and Thai public suffixes keep competitor names visible in prose', () => {
+  const brand = makeBrand({
+    domain: 'example.com',
+    competitors: ['paktech.com.pk', 'siam.co.th'],
+  });
+  assert.deepEqual(
+    extractCitations(brand, 'Compare Paktech with Siam for your team.').competitors_mentioned,
+    ['paktech.com.pk', 'siam.co.th'],
+  );
+  assert.deepEqual(
+    extractCitations(brand, 'PaktechPlus and Siamese are different businesses.').competitors_mentioned,
+    [],
+  );
+});
+
 test('Australian government-domain competitor names match visible prose without a URL', () => {
   const brand = makeBrand({
     domain: 'example.com',
