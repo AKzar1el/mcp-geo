@@ -83,6 +83,22 @@ test('a source-only competitor URL is not a competitor mention in answer prose',
   assert.deepEqual(named.competitors_mentioned, ['asana.com']);
 });
 
+test('parenthesized URL path fragments are not answer-prose brand or competitor mentions', () => {
+  const r = extractCitations(
+    acme,
+    'Sources: https://neutral.example/reviews/(other)Acme https://neutral.example/notes/(other)Asana',
+  );
+  assert.equal(r.brand_mentioned, 0);
+  assert.deepEqual(r.competitors_mentioned, []);
+  assert.equal(r.brand_cited_with_link, 0);
+  assert.ok(r.cited_urls.includes('neutral.example'));
+  const visibleAfterLink = extractCitations(
+    acme,
+    '[source](https://neutral.example)Acme Project Tool is recommended.',
+  );
+  assert.equal(visibleAfterLink.brand_mentioned, 1);
+});
+
 test('www link counts as linked citation', () => {
   const r = extractCitations(acme, 'Acme lives at https://www.acme.com/.');
   assert.equal(r.brand_cited_with_link, 1);
