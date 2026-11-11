@@ -5,6 +5,7 @@ export interface SerpApiAnswerBlock {
   title?: string;
   snippet?: string;
   text?: string;
+  table?: unknown;
   list?: SerpApiAnswerBlock[];
   text_blocks?: SerpApiAnswerBlock[];
 }
@@ -74,6 +75,31 @@ export function flattenSerpApiAnswer(
     } else {
       if (title && title !== body) add(title);
       add(body);
+    }
+
+    // SerpAPI places visible comparison text in table rows, not snippet.
+    // Ignore detailed/formatted metadata to avoid double-counting cells.
+    if (Array.isArray(block.table)) {
+      for (const row of block.table) {
+        if (!Array.isArray(row)) continue;
+        const cells: string[] = [];
+        let rowLength = 0;
+        for (const cell of row) {
+          count += 1;
+          if (count > MAX_BLOCKS) {
+            throw new Error('SerpAPI answer exceeds structured-text nesting limit');
+          }
+          const value = visibleText(cell);
+          if (value) {
+            rowLength += value.length + (cells.length ? 3 : 0);
+            if (length + rowLength > MAX_SERPAPI_ANSWER_TEXT_LENGTH) {
+              throw new Error('SerpAPI answer exceeds structured-text size limit');
+            }
+            cells.push(value);
+          }
+        }
+        if (cells.length > 0) add(cells.join(' | '));
+      }
     }
 
     if (Array.isArray(block.text_blocks)) {

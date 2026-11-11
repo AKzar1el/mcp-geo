@@ -104,6 +104,24 @@ test('Google AI Mode falls back to text blocks when reconstructed markdown is ab
   );
 });
 
+test('AI Mode fallback keeps comparison-table cells as scoreable answer text', async () => {
+  await withMockFetch(
+    [jsonResponse({
+      text_blocks: [{ type: 'table', table: [
+        ['Brand', 'Buyer benefit'],
+        ['Acme', 'Auditable evidence'],
+      ] }],
+      references: [{ title: 'Unrelated source metadata', link: 'https://example.com/source' }],
+    })],
+    async (calls) => {
+      const result = await chatCompletion('test-key', 'compare audit tools');
+      assert.equal(result.text, 'Brand | Buyer benefit\n\nAcme | Auditable evidence');
+      assert.deepEqual(result.citations, ['https://example.com/source']);
+      assert.equal(calls.length, 1, 'table parsing must not issue another provider request');
+    },
+  );
+});
+
 test('AI Mode fallback retains nested titles without treating citations as answer text', async () => {
   await withMockFetch(
     [

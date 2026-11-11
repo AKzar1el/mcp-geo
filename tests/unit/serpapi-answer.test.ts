@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { flattenSerpApiReferences } from '../../src/core/serpapi-answer.js';
+import { flattenSerpApiAnswer, flattenSerpApiReferences } from '../../src/core/serpapi-answer.js';
 
 test('SerpAPI citation evidence excludes credential-bearing and non-web reference links', () => {
   const links = flattenSerpApiReferences([
@@ -17,4 +17,24 @@ test('SerpAPI citation evidence excludes credential-bearing and non-web referenc
     'http://www.example.org/story',
     'https://example.net/another',
   ]);
+});
+
+test('SerpAPI table parsing ignores non-string metadata and keeps visible cells', () => {
+  assert.equal(flattenSerpApiAnswer([{
+    type: 'table',
+    table: [
+      ['Product', 'Benefit'],
+      ['Acme', { snippet: 'Not visible table text' }, 'Cited only if listed as a source'],
+      [' ', null, ''],
+    ],
+  }]), 'Product | Benefit\n\nAcme | Cited only if listed as a source');
+});
+
+test('SerpAPI table parsing preserves existing text and block-count safety limits', () => {
+  assert.throws(() => flattenSerpApiAnswer([{
+    type: 'table', table: [['a'.repeat(250_001)]],
+  }]), /structured-text size limit/);
+  assert.throws(() => flattenSerpApiAnswer([{
+    type: 'table', table: [Array.from({ length: 2049 }, () => '')],
+  }]), /structured-text nesting limit/);
 });
