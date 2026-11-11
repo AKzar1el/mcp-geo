@@ -119,6 +119,58 @@ test('content gaps distinguishes missing scan evidence from observed absence of 
   assert.match(failed.reason ?? '', /no usable scan responses/i);
 });
 
+test('content-gap recommendations disclose model-only and search-requested loss evidence', async () => {
+  const brand = {
+    id: 'acme', domain: 'acme.com', name: 'Acme', competitors: ['rival.com'],
+    aliases: [], exclude_terms: [],
+  } as Brand;
+  const runByEngine = {
+    chatgpt: { id: 'batch-chatgpt', mode: 'batch' },
+    claude: { id: 'live-claude', mode: 'live' },
+    perplexity: { id: 'live-perplexity', mode: 'live' },
+  } as const;
+  let handler: ((input: { brand_id: string; max_recommendations: number }) => Promise<{
+    structuredContent: {
+      recommendations: unknown[];
+      measurement_scope: {
+        model_only_engines: string[];
+        search_requested_engines: string[];
+        mixed_modes: boolean;
+        note: string;
+      };
+    };
+  }>) | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, callback: unknown) {
+      if (name === 'get_content_gaps') handler = callback as typeof handler;
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getActivePrompts: async () => [{ id: 'prompt-1' }],
+      getLatestCompletedRun: async (_id, engine) =>
+        runByEngine[engine as keyof typeof runByEngine] ?? null,
+      getResponsesForRun: async (runId) => [{
+        id: `response-${runId}`, run_id: runId, prompt_id: 'prompt-1',
+        prompt_text: 'Best project management tools',
+        engine: runId.split('-')[1], raw_response: '', brand_mentioned: 0,
+        brand_cited_with_link: 0, cited_urls: [], competitors_mentioned: ['rival.com'],
+        engine_citations: [], status: 'ok', error_message: null, captured_at: 1000,
+      } satisfies PromptResponse],
+    } as Db,
+    env: {}, refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(handler);
+  const result = (await handler({ brand_id: brand.id, max_recommendations: 3 })).structuredContent;
+  assert.ok(result.recommendations.length > 0);
+  assert.deepEqual(result.measurement_scope.model_only_engines, ['chatgpt', 'claude']);
+  assert.deepEqual(result.measurement_scope.search_requested_engines, ['perplexity']);
+  assert.equal(result.measurement_scope.mixed_modes, true);
+  assert.match(result.measurement_scope.note, /not.*(citation|proof)|do not.*citation/i);
+});
+
 test('content-gap candidate limit does not depend on database response order for tied losses', async () => {
   const brand: Brand = {
     id: 'acme',

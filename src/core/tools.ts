@@ -363,6 +363,12 @@ function decodeCitationCursor(cursor: string, brandId: string, days: number, eng
 const contentGapsOutputSchema = z.object({
   brand_id: z.string(),
   google_search_sampling: googleSearchSamplingSchema,
+  measurement_scope: z.object({
+    search_requested_engines: z.array(z.string()),
+    model_only_engines: z.array(z.string()),
+    mixed_modes: z.boolean(),
+    note: z.string(),
+  }),
   recommendations: z.array(contentGapRecommendationOutputSchema),
   prompt_source: z.enum(['generated', 'fallback']),
   reason: z.string().optional(),
@@ -1313,6 +1319,7 @@ export function registerTools(
       // Earlier scans may retain competitors removed by update_brand. Content
       // gaps must reflect the brand's currently configured comparison cohort.
       const trackedCompetitors = new Set(brand.competitors);
+      const lossModeByEngine = new Map<string, 'search_requested' | 'model_only'>();
       const losingByPrompt = new Map<
         string,
         {
@@ -1343,6 +1350,7 @@ export function registerTools(
           if (r.brand_mentioned !== 0) continue;
           const currentMentions = r.competitors_mentioned.filter((c) => trackedCompetitors.has(c));
           if (currentMentions.length === 0) continue;
+          lossModeByEngine.set(engine, visibilityMeasurementMode(engine, run.mode ?? 'live'));
           const existing = losingByPrompt.get(r.prompt_id);
           if (existing) {
             existing.engines.add(r.engine);
@@ -1372,10 +1380,25 @@ export function registerTools(
         )
         .slice(0, 15);
 
+      const losingEngines = [...new Set(losingPrompts.flatMap((p) => p.engines_lost_on))];
+      const searchRequestedEngines = losingEngines.filter(
+        (engine) => lossModeByEngine.get(engine) === 'search_requested',
+      ).sort();
+      const modelOnlyEngines = losingEngines.filter(
+        (engine) => lossModeByEngine.get(engine) === 'model_only',
+      ).sort();
+      const measurement_scope = {
+        search_requested_engines: searchRequestedEngines,
+        model_only_engines: modelOnlyEngines,
+        mixed_modes: searchRequestedEngines.length > 0 && modelOnlyEngines.length > 0,
+        note: 'Engines contributing competitor-only losses are grouped by request path. Search-requested does not prove a source citation was returned; model-only observations are not live AI-search evidence. Review the stored answers before using recommendations in a client audit.',
+      };
+
       if (losingPrompts.length === 0) {
         const payload = {
           brand_id,
           google_search_sampling: null,
+          measurement_scope,
           recommendations: [],
           prompt_source: 'fallback' as const,
           reason: successfulResponses === 0
@@ -1412,6 +1435,7 @@ export function registerTools(
 
       const payload = {
         brand_id,
+        measurement_scope,
         google_search_sampling: googleSearchSampling(
           losingPrompts.flatMap((prompt) => prompt.engines_lost_on),
         ),
