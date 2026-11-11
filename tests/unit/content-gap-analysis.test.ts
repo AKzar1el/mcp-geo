@@ -676,3 +676,58 @@ test('content gaps never recommend prompts retired from the active buyer-intent 
     'Address losing prompt: "Question for active"',
   ]);
 });
+
+test('content gaps disclose whether recommendation evidence predates brand settings', async () => {
+  const brand: Brand = {
+    id: 'acme', user_id: 'test-user', domain: 'acme.com', name: 'Acme',
+    category: 'Software', competitors: ['rival.com'], aliases: [],
+    exclude_terms: [], refresh_frequency: 'weekly', created_at: 0, updated_at: 2000,
+  };
+  const response = (engine: string, runId: string): PromptResponse => ({
+    id: `${runId}-response`, run_id: runId, prompt_id: 'prompt-1',
+    prompt_text: 'Best software for agencies', engine, raw_response: '',
+    brand_mentioned: 0, brand_cited_with_link: 0, cited_urls: [],
+    competitors_mentioned: ['rival.com'], engine_citations: [],
+    status: 'ok', error_message: null, captured_at: engine === 'chatgpt' ? 1500 : 3200,
+  });
+  type Comparison = {
+    brand_updated_at: string | null;
+    engines_scanned_before_update: string[];
+    historical_settings_warning: boolean;
+    note: string;
+  };
+  let handler: ((input: { brand_id: string; max_recommendations: number }) => Promise<{
+    structuredContent: { configuration_comparability: Comparison; recommendations: unknown[] };
+  }>) | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, callback: unknown) {
+      if (name === 'get_content_gaps') handler = callback as typeof handler;
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getActivePrompts: async () => [{ id: 'prompt-1' }],
+      getLatestCompletedRun: async (_id, engine) =>
+        engine === 'chatgpt' ? { id: 'old-run', started_at: 1000 } :
+        engine === 'claude' ? { id: 'new-run', started_at: 3000 } : null,
+      getResponsesForRun: async (runId) =>
+        [response(runId === 'old-run' ? 'chatgpt' : 'claude', runId)],
+    } as Db,
+    env: {}, refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(handler);
+
+  const first = (await handler({ brand_id: 'acme', max_recommendations: 2 })).structuredContent;
+  assert.equal(first.recommendations.length, 1);
+  assert.equal(first.configuration_comparability.brand_updated_at, new Date(2000).toISOString());
+  assert.deepEqual(first.configuration_comparability.engines_scanned_before_update, ['chatgpt']);
+  assert.equal(first.configuration_comparability.historical_settings_warning, true);
+  assert.match(first.configuration_comparability.note, /cadence-only|which settings changed/i);
+
+  brand.updated_at = 500;
+  const fresh = (await handler({ brand_id: 'acme', max_recommendations: 2 })).structuredContent;
+  assert.equal(fresh.configuration_comparability.historical_settings_warning, false);
+  assert.deepEqual(fresh.configuration_comparability.engines_scanned_before_update, []);
+});
