@@ -297,6 +297,15 @@ export function extractUrls(text: string): string[] {
   return urls;
 }
 
+export function maskAnswerUrlMentions(text: string, preserveOffsets = false): string {
+  // URL paths are source data, not answer prose. Preserve the original length
+  // when locating an excerpt so a scored mention maps to its actual position.
+  return text.replace(
+    /https?:\/\/(?:\([^()\s]*\)|[^\s()\]\}'"\x60<>])+/gi,
+    (url) => preserveOffsets ? ' '.repeat(url.length) : ' ',
+  );
+}
+
 export function extractCitations(
   brand: Brand,
   responseText: string,
@@ -305,7 +314,7 @@ export function extractCitations(
   // URL hosts and path fragments are link evidence, not answer prose. Consume
   // balanced parentheses inside URLs, but leave an unmatched ')' in place so
   // visible text after a Markdown link target remains scoreable.
-  const mentionText = responseText.replace(/https?:\/\/(?:\([^()\s]*\)|[^\s()\]\}'"\x60<>])+/gi, ' ');
+  const mentionText = maskAnswerUrlMentions(responseText);
   let brandMentioned = mentionsTermSet(mentionText, {
     domain: brand.domain,
     name: brand.name,
