@@ -14,6 +14,11 @@ test('SerpAPI citation evidence excludes credential-bearing and non-web referenc
     { link: 'https://example.com@other.example/impersonation' },
     { link: 'javascript:alert(1)' },
     { link: 'example.com/path' },
+    { link: 'http://localhost/internal' },
+    { link: 'http://127.0.0.1/admin' },
+    { link: 'http://0x7f000001/admin' },
+    { link: 'http://[::1]/admin' },
+    { link: 'https://bad..example/invalid-host' },
     { link: 'https://example.net/another' },
   ]);
   assert.deepEqual(links, [

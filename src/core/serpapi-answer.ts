@@ -1,5 +1,7 @@
 // SerpAPI returns answer content in nested text/list blocks, separate from
 // citations, links, and other provider metadata. Only traverse visible answer fields.
+import { normalizeDomainInput } from './domain.js';
+
 export interface SerpApiAnswerBlock {
   type?: string;
   title?: string;
@@ -23,7 +25,7 @@ export function flattenSerpApiReferences(
       const parsed = new URL(ref.link);
       // Provider metadata is evidence only when it points to a web source.
       if ((parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
-          parsed.hostname && !parsed.username && !parsed.password) {
+          normalizeDomainInput(parsed.hostname) && !parsed.username && !parsed.password) {
         urls.push(ref.link);
       }
     } catch {
