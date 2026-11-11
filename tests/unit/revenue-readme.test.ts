@@ -189,6 +189,14 @@ test('audit report prompt uses the shipped citation source summary without inven
   );
 });
 
+test('audit report prompt carries prompt bias and evidence-mode caveats into client deliverables', () => {
+  assert.match(reportPrompt, /list_prompts[\s\S]*`prompt_review`/);
+  assert.match(reportPrompt, /`prompt_review`[\s\S]*before any authorized provider-backed refresh/);
+  assert.match(reportPrompt, /`mixed_age_warning`[\s\S]*older engines/);
+  assert.match(reportPrompt, /get_content_gaps[\s\S]*`measurement_scope`/);
+  assert.match(reportPrompt, /model-only[\s\S]*search-requested[\s\S]*not proof of source citations/);
+});
+
 test('README documents Roo Code local stdio setup and Windows fallback', () => {
   assert.match(readme, /\*\*Roo Code:\*\*[\s\S]*\.roo\/mcp\.json[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/);
   assert.match(readme, /"command": "cmd"[\s\S]*Windows fallback/);
