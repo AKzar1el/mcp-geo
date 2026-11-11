@@ -1,6 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { flattenSerpApiAnswer, flattenSerpApiReferences } from '../../src/core/serpapi-answer.js';
+import {
+  flattenSerpApiAnswer,
+  flattenSerpApiReferences,
+  MAX_SERPAPI_ANSWER_TEXT_LENGTH,
+} from '../../src/core/serpapi-answer.js';
 
 test('SerpAPI citation evidence excludes credential-bearing and non-web reference links', () => {
   const links = flattenSerpApiReferences([
@@ -36,6 +40,27 @@ test('SerpAPI table parsing preserves existing text and block-count safety limit
   }]), /structured-text size limit/);
   assert.throws(() => flattenSerpApiAnswer([{
     type: 'table', table: [Array.from({ length: 2049 }, () => '')],
+  }]), /structured-text nesting limit/);
+});
+
+test('SerpAPI answer size limit accounts for rendered block separators', () => {
+  const withinLimit = flattenSerpApiAnswer(
+    Array.from({ length: 2048 }, () => ({ text: 'x'.repeat(120) })),
+  );
+  assert.ok(withinLimit.length <= MAX_SERPAPI_ANSWER_TEXT_LENGTH);
+
+  // Individual snippets fit, but the final double-newline separators push this over the cap.
+  assert.throws(() => flattenSerpApiAnswer(
+    Array.from({ length: 2048 }, () => ({ text: 'x'.repeat(121) })),
+  ), /structured-text size limit/);
+});
+
+test('SerpAPI table limit counts rows even when they contain no visible cells', () => {
+  assert.throws(() => flattenSerpApiAnswer([{
+    type: 'table', table: Array.from({ length: 2049 }, () => []),
+  }]), /structured-text nesting limit/);
+  assert.throws(() => flattenSerpApiAnswer([{
+    type: 'table', table: Array.from({ length: 2049 }, () => null),
   }]), /structured-text nesting limit/);
 });
 
