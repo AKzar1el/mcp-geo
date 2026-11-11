@@ -302,7 +302,7 @@ export function extractCitations(
   responseText: string,
 ): CitationExtraction {
   const urls = extractUrls(responseText);
-  // Only visible prose and real URL hosts provide mention evidence.
+  // URL hosts are link evidence only; they must not inflate prose mentions.
   const mentionText = responseText.replace(/https?:\/\/[^\s)\]\}'"\x60<>]+/gi, ' ');
   let brandMentioned = mentionsTermSet(mentionText, {
     domain: brand.domain,
@@ -319,7 +319,6 @@ export function extractCitations(
     if (!host) continue;
     if (hostMatchesDomain(host, brand.domain)) {
       brandCitedWithLink = true;
-      brandMentioned = true;
     }
     if (hosts.length >= 20 || seen.has(host)) continue;
     seen.add(host);
@@ -328,13 +327,7 @@ export function extractCitations(
 
   const competitorsMentioned: string[] = [];
   for (const competitor of brand.competitors) {
-    if (
-      mentionsTermSet(mentionText, { domain: competitor }) ||
-      urls.some((url) => {
-        const host = normalizeHost(url);
-        return host !== null && hostMatchesDomain(host, competitor);
-      })
-    ) {
+    if (mentionsTermSet(mentionText, { domain: competitor })) {
       competitorsMentioned.push(competitor);
     }
   }
