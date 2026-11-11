@@ -8,6 +8,7 @@ export interface SerpApiAnswerBlock {
   snippet?: string;
   text?: string;
   table?: unknown;
+  detailed?: unknown;
   product_labels?: unknown;
   comparison?: unknown;
   list?: SerpApiAnswerBlock[];
@@ -83,7 +84,7 @@ export function flattenSerpApiAnswer(
     }
 
     // Count visible cells before joining; provider metadata never becomes answer text.
-    const addRow = (rawCells: unknown[], leadingCell?: unknown): void => {
+    const addRow = (rawCells: unknown[], leadingCell?: unknown, detailed = false): boolean => {
       const cells: string[] = [];
       let rowLength = 0;
       const addCell = (cell: unknown): void => {
@@ -91,7 +92,11 @@ export function flattenSerpApiAnswer(
         if (count > MAX_BLOCKS) {
           throw new Error('SerpAPI answer exceeds structured-text nesting limit');
         }
-        const value = visibleText(cell);
+        // In detailed table rows only the snippet is visible answer text;
+        // links, reference indexes, and other cell metadata are not.
+        const value = detailed && cell && typeof cell === 'object'
+          ? visibleText((cell as { snippet?: unknown }).snippet)
+          : visibleText(cell);
         if (!value) return;
         rowLength += value.length + (cells.length ? 3 : 0);
         if (length + rowLength > MAX_SERPAPI_ANSWER_TEXT_LENGTH) {
@@ -102,8 +107,10 @@ export function flattenSerpApiAnswer(
       if (leadingCell !== undefined) addCell(leadingCell);
       for (const cell of rawCells) addCell(cell);
       if (cells.length > 0) add(cells.join(' | '));
+      return cells.length > 0;
     };
 
+    let hasVisibleTable = false;
     if (Array.isArray(block.table)) {
       for (const row of block.table) {
         // Empty and malformed rows must also consume the structured block budget.
@@ -111,7 +118,19 @@ export function flattenSerpApiAnswer(
         if (count > MAX_BLOCKS) {
           throw new Error('SerpAPI answer exceeds structured-text nesting limit');
         }
-        if (Array.isArray(row)) addRow(row);
+        if (Array.isArray(row)) hasVisibleTable = addRow(row) || hasVisibleTable;
+      }
+    }
+
+    // Some SerpAPI table results provide detailed snippet objects without
+    // plain string rows. Do not duplicate an already-visible table.
+    if (!hasVisibleTable && Array.isArray(block.detailed)) {
+      for (const row of block.detailed) {
+        count += 1;
+        if (count > MAX_BLOCKS) {
+          throw new Error('SerpAPI answer exceeds structured-text nesting limit');
+        }
+        if (Array.isArray(row)) addRow(row, undefined, true);
       }
     }
 
