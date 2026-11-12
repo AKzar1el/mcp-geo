@@ -57,6 +57,11 @@ type ComparisonResult = {
     }>;
     note: string;
   };
+  identity_attribution: {
+    last_identity_change_at: string | null;
+    excluded_responses: number;
+    note: string;
+  };
   google_search_sampling: {
     engines: string[];
     country: 'us';
@@ -139,6 +144,70 @@ test('compare_competitors counts one latest successful retry per run, engine and
   assert.equal(result.your_share_of_voice_pct, 50);
   assert.equal(result.competitors.find((c) => c.domain === 'asana.com')?.mentions, 1);
   assert.equal(result.competitors.find((c) => c.domain === 'monday.com')?.mentions, 1);
+});
+
+test('compare_competitors excludes pre-identity runs even when responses arrive after the edit', async () => {
+  let comparison: ComparisonTool | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, handler: unknown) {
+      if (name === 'compare_competitors') comparison = { handler: handler as ComparisonTool['handler'] };
+    },
+  } as unknown as McpServer;
+  const changedAt = Date.now() - 5_000;
+  registerTools(server, {
+    db: {
+      getBrand: async () => ({ ...brand, name: 'Beta', identity_changed_at: changedAt }),
+      getResponsesSince: async () => [
+        { ...response('old-brand', 'best old brand', 1, []), run_started_at: changedAt - 1000, captured_at: changedAt + 200 },
+        { ...response('old-loss', 'old competitor win', 0, ['asana.com']), run_started_at: changedAt - 1000, captured_at: changedAt + 300 },
+        { ...response('unknown-start', 'unattributable mention', 1, []), captured_at: changedAt + 350 },
+        { ...response('new-loss', 'new competitor win', 0, ['monday.com']), run_started_at: changedAt + 100, captured_at: changedAt + 400 },
+      ],
+    } as Db,
+    env: {},
+    refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(comparison);
+  const result = (await comparison.handler({ brand_id: brand.id })).structuredContent;
+  assert.equal(result.your_mentions, 0);
+  assert.equal(result.your_share_of_voice_pct, 0);
+  assert.equal(result.observation_coverage.successful_responses, 1);
+  assert.equal(result.competitors.find((c) => c.domain === 'asana.com')?.mentions, 0);
+  assert.equal(result.competitors.find((c) => c.domain === 'monday.com')?.mentions, 1);
+  assert.deepEqual(result.prompts_you_win, []);
+  assert.equal(result.identity_attribution.excluded_responses, 3);
+  assert.equal(result.identity_attribution.last_identity_change_at, new Date(changedAt).toISOString());
+  assert.match(result.identity_attribution.note, /run start/i);
+});
+
+test('compare_competitors does not report old-identity-only observations as measured zeros', async () => {
+  let comparison: ComparisonTool | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, handler: unknown) {
+      if (name === 'compare_competitors') comparison = { handler: handler as ComparisonTool['handler'] };
+    },
+  } as unknown as McpServer;
+  const changedAt = Date.now() - 2_000;
+  registerTools(server, {
+    db: {
+      getBrand: async () => ({ ...brand, identity_changed_at: changedAt }),
+      getResponsesSince: async () => [
+        { ...response('obsolete', 'old brand name', 1, ['asana.com']), run_started_at: changedAt - 3_000 },
+      ],
+    } as Db,
+    env: {},
+    refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(comparison);
+  const result = (await comparison.handler({ brand_id: brand.id })).structuredContent;
+  assert.equal(result.observation_coverage.status, 'no_observations');
+  assert.equal(result.observation_coverage.successful_responses, 0);
+  assert.equal(result.identity_attribution.excluded_responses, 1);
+  assert.equal(result.your_mentions, 0);
+  assert.deepEqual(result.prompts_co_mentioned, []);
+  assert.match(result.observation_coverage.note, /current-identity/i);
 });
 
 test('compare_competitors uses the full response window and exposes raw mention counts', async () => {

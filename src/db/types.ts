@@ -234,7 +234,10 @@ export interface CitationSourceRow {
 // Comparison needs stable retry identity and timing, not full AI answer bodies.
 export type ComparisonEvidenceRow = Pick<PromptResponse,
   'id' | 'run_id' | 'prompt_id' | 'prompt_text' | 'engine' |
-  'brand_mentioned' | 'competitors_mentioned' | 'status' | 'captured_at'>;
+  'brand_mentioned' | 'competitors_mentioned' | 'status' | 'captured_at'> & {
+    // Run start, not response capture, determines identity-version attribution.
+    run_started_at?: number;
+  };
 
 export interface CitationPageOptions {
   limit?: number;
