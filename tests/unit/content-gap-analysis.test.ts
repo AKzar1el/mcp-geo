@@ -871,3 +871,51 @@ test('content gaps disclose usable active-prompt coverage of latest completed en
     ALL_ENGINES.filter((engine) => engine !== 'chatgpt' && engine !== 'claude'));
   assert.match(result.observation_coverage.note, /unmeasured_engines|no usable stored/i);
 });
+
+test('content gaps flag a completed engine run without usable active-prompt evidence as unmeasured', async () => {
+  const brand = {
+    id: 'acme', name: 'Acme', domain: 'acme.com', competitors: ['rival.com'],
+    aliases: [], exclude_terms: [], updated_at: 0,
+  } as Brand;
+  let handler: ((input: { brand_id: string; max_recommendations: number }) => Promise<{
+    structuredContent: {
+      observation_coverage: {
+        per_engine: Array<{ engine: string; usable_prompt_count: number; missing_prompt_count: number }>;
+        incomplete_engines: string[];
+        unmeasured_engines: string[];
+        note: string;
+      };
+      recommendations: unknown[];
+    };
+  }>) | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, callback: unknown) {
+      if (name === 'get_content_gaps') handler = callback as typeof handler;
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getActivePrompts: async () => [{ id: 'current-prompt' }],
+      getLatestCompletedRun: async (_id, engine) =>
+        engine === 'chatgpt' ? { id: 'failed-run', started_at: 1000, completed_at: 2000 } : null,
+      getResponsesForRun: async () => [{
+        id: 'failed-response', run_id: 'failed-run', prompt_id: 'current-prompt',
+        prompt_text: 'Best tools', engine: 'chatgpt', raw_response: '',
+        brand_mentioned: 0, brand_cited_with_link: 0, cited_urls: [],
+        competitors_mentioned: [], engine_citations: [],
+        status: 'error', error_message: 'provider failure', captured_at: 1900,
+      }],
+    } as Db,
+    env: {}, refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(handler);
+  const result = (await handler({ brand_id: brand.id, max_recommendations: 2 })).structuredContent;
+  assert.deepEqual(result.recommendations, []);
+  assert.equal(result.observation_coverage.per_engine[0]?.usable_prompt_count, 0);
+  assert.equal(result.observation_coverage.per_engine[0]?.missing_prompt_count, 1);
+  assert.ok(result.observation_coverage.incomplete_engines.includes('chatgpt'));
+  assert.ok(result.observation_coverage.unmeasured_engines.includes('chatgpt'));
+  assert.match(result.observation_coverage.note, /no usable|zero usable/i);
+});
