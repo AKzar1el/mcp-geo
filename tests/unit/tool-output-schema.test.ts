@@ -127,6 +127,14 @@ test('content-gap output schema describes recommendation records', () => {
     schema.safeParse({
       brand_id: 'acme',
       google_search_sampling: null,
+      observation_coverage: {
+        active_prompt_count: 2,
+        per_engine: [{
+          engine: 'chatgpt', run_id: 'run-1', usable_prompt_count: 1, missing_prompt_count: 1,
+        }],
+        incomplete_engines: ['chatgpt'],
+        note: 'One of two active prompts has usable evidence.',
+      },
       losing_prompt_evidence: {
         note: 'Stored observation references do not prove a source citation.',
         prompts: [{
@@ -167,6 +175,12 @@ test('content-gap output schema describes recommendation records', () => {
     schema.safeParse({
       brand_id: 'acme',
       google_search_sampling: null,
+      observation_coverage: {
+        active_prompt_count: 1,
+        per_engine: [],
+        incomplete_engines: [],
+        note: 'No completed runs.',
+      },
       losing_prompt_evidence: {
         note: 'Stored observation references do not prove a source citation.',
         prompts: [],
