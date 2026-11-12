@@ -263,6 +263,11 @@ const COMPARISON_HISTORY_CAVEAT =
 const compareOutputSchema = z.object({
   brand_id: z.string(),
   days: z.number(),
+  identity_attribution: z.object({
+    last_identity_change_at: z.string().nullable(),
+    excluded_responses: z.number().int().nonnegative(),
+    note: z.string(),
+  }),
   observation_coverage: z.object({
     status: z.enum(['not_compared', 'no_observations', 'observed']),
     successful_responses: z.number().int().nonnegative(),
@@ -1060,10 +1065,18 @@ export function registerTools(
       const outsideCurrentTracking = targets.filter(
         (domain) => !brand.competitors.includes(domain),
       );
+      const identityChangedAt = brand.identity_changed_at ?? null;
+      const lastIdentityChangeAt = identityChangedAt === null
+        ? null : new Date(identityChangedAt).toISOString();
       if (targets.length === 0) {
         const payload = {
           brand_id,
           days,
+          identity_attribution: {
+            last_identity_change_at: lastIdentityChangeAt,
+            excluded_responses: 0,
+            note: 'No competitor response evidence was queried.',
+          },
           observation_coverage: {
             status: 'not_compared' as const,
             successful_responses: 0,
@@ -1102,7 +1115,21 @@ export function registerTools(
           latestByRunPrompt.set(key, row);
         }
       }
-      const allResponses = [...latestByRunPrompt.values()];
+      const deduplicated = [...latestByRunPrompt.values()];
+      // A response can arrive after the matching identity changed while its
+      // run was started against the old brand configuration.
+      const allResponses = identityChangedAt === null ? deduplicated
+        : deduplicated.filter((row) =>
+          typeof row.run_started_at === 'number' &&
+          Number.isFinite(row.run_started_at) && row.run_started_at >= identityChangedAt);
+      const excludedResponses = deduplicated.length - allResponses.length;
+      const identity_attribution = {
+        last_identity_change_at: lastIdentityChangeAt,
+        excluded_responses: excludedResponses,
+        note: identityChangedAt === null
+          ? 'No recorded brand matching-identity boundary is available; earlier identity edits cannot be reconstructed.'
+          : 'Comparison shares and prompt rankings exclude observations from runs started before the latest recorded brand matching-identity edit, or with no verifiable run start. Old observations remain in history; run start, not response capture, determines attribution.',
+      };
       const evidenceByEngine = new Map<string, {
         successfulResponses: number;
         runs: Set<string>;
@@ -1136,7 +1163,7 @@ export function registerTools(
             status: 'no_observations' as const,
             successful_responses: 0,
             per_engine: perEngineEvidence,
-            note: 'No usable AI responses were recorded in this window; zero shares are not measured absence.',
+            note: 'No usable current-identity AI responses were recorded in this window; zero shares are not measured absence.',
           }
         : {
             status: 'observed' as const,
@@ -1238,6 +1265,7 @@ export function registerTools(
       const payload = {
         brand_id,
         days,
+        identity_attribution,
         observation_coverage,
         google_search_sampling: googleSearchSampling(allResponses.map(({ engine }) => engine)),
         your_share_of_voice_pct: pct(brandMentions),

@@ -464,6 +464,9 @@ test('getResponsesSince returns every usable response in the requested brand win
       [first.id, second.id],
     );
     assert.equal(all[0].brand_mentioned, 0, 'latest successful retry must win');
+    assert.equal(all[0].run_started_at, first.started_at,
+      'identity comparisons must use run start, not response capture time');
+    assert.equal(all[1].run_started_at, second.started_at);
 
     const hostedSql: string[] = [];
     const hosted = createD1Db({

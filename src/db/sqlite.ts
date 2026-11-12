@@ -730,7 +730,7 @@ export function openSqliteDb(path?: string): SqliteDb {
           `WITH ranked AS (
              SELECT pr.id, pr.run_id, pr.prompt_id, pr.engine,
                     pr.brand_mentioned, pr.competitors_mentioned_json,
-                    pr.status, pr.captured_at,
+                    pr.status, pr.captured_at, r.started_at AS run_started_at,
                     ROW_NUMBER() OVER (
                       PARTITION BY pr.run_id, pr.engine, pr.prompt_id
                       ORDER BY pr.captured_at DESC, pr.id DESC
@@ -744,7 +744,7 @@ export function openSqliteDb(path?: string): SqliteDb {
            SELECT ranked.id, ranked.run_id, ranked.prompt_id,
                   p.text AS prompt_text, ranked.engine,
                   ranked.brand_mentioned, ranked.competitors_mentioned_json,
-                  ranked.status, ranked.captured_at
+                  ranked.status, ranked.captured_at, ranked.run_started_at
              FROM ranked
              JOIN prompts p ON p.id = ranked.prompt_id
             WHERE ranked.retry_rank = 1
@@ -752,7 +752,8 @@ export function openSqliteDb(path?: string): SqliteDb {
         )
         .all(brandId, since) as Array<Pick<ResponseJoinRow,
           'id' | 'run_id' | 'prompt_id' | 'prompt_text' | 'engine' |
-          'brand_mentioned' | 'competitors_mentioned_json' | 'status' | 'captured_at'>>;
+          'brand_mentioned' | 'competitors_mentioned_json' | 'status' | 'captured_at'> &
+          { run_started_at: number }>;
       return rows.map((row) => ({
         id: row.id,
         run_id: row.run_id,
@@ -763,6 +764,7 @@ export function openSqliteDb(path?: string): SqliteDb {
         competitors_mentioned: parseJsonArray(row.competitors_mentioned_json),
         status: (row.status as ResponseStatus) ?? 'ok',
         captured_at: row.captured_at,
+        run_started_at: row.run_started_at,
       }));
     },
 
