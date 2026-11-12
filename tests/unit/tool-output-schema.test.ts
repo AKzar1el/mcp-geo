@@ -61,6 +61,12 @@ test('visibility output schema describes winning and losing prompt records', () 
       historical_prompt_warning: true,
       note: 'The Claude snapshot uses retired prompts.',
     },
+    prompt_set_scope: {
+      selection: 'full_window',
+      active_prompt_count: 2,
+      excluded_successful_responses: 0,
+      note: 'Historical snapshot.',
+    },
     configuration_comparability: {
       brand_updated_at: '2026-09-19T00:00:00.000Z',
       engines_scanned_before_update: ['claude'],
