@@ -801,3 +801,69 @@ test('content gaps expose bounded traceable winning observations, not retired or
   assert.match(result.losing_prompt_evidence.note, /not.*(verified|source citation)/i);
   assert.doesNotMatch(JSON.stringify(result.losing_prompt_evidence), /Private answer|obsolete.com|retired/);
 });
+
+test('content gaps disclose usable active-prompt coverage of latest completed engine runs', async () => {
+  const brand = {
+    id: 'acme', name: 'Acme', domain: 'acme.com', competitors: ['rival.com'],
+    aliases: [], exclude_terms: [], updated_at: 0,
+  } as Brand;
+  const response = (
+    runId: string, promptId: string, id: string, status: 'ok' | 'error',
+    capturedAt: number,
+  ): PromptResponse => ({
+    id, run_id: runId, prompt_id: promptId, prompt_text: `Question ${promptId}`,
+    engine: runId === 'run-chatgpt' ? 'chatgpt' : 'claude',
+    raw_response: '', brand_mentioned: status === 'ok' ? 0 : 1,
+    brand_cited_with_link: 0, cited_urls: [],
+    competitors_mentioned: status === 'ok' ? ['rival.com'] : [],
+    engine_citations: [], status, error_message: status === 'ok' ? null : 'provider error',
+    captured_at: capturedAt,
+  });
+  let handler: ((input: { brand_id: string; max_recommendations: number }) => Promise<{
+    structuredContent: {
+      observation_coverage: {
+        active_prompt_count: number;
+        per_engine: Array<{
+          engine: string; run_id: string; usable_prompt_count: number;
+          missing_prompt_count: number;
+        }>;
+        incomplete_engines: string[];
+        note: string;
+      };
+    };
+  }>) | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, callback: unknown) {
+      if (name === 'get_content_gaps') handler = callback as typeof handler;
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getActivePrompts: async () => [{ id: 'prompt-1' }, { id: 'prompt-2' }],
+      getLatestCompletedRun: async (_id, engine) =>
+        engine === 'chatgpt' ? { id: 'run-chatgpt' } :
+        engine === 'claude' ? { id: 'run-claude' } : null,
+      getResponsesForRun: async (runId) => runId === 'run-chatgpt' ? [
+        response(runId, 'prompt-1', 'success', 'ok', 100),
+        response(runId, 'prompt-1', 'later-failure', 'error', 200),
+        response(runId, 'prompt-2', 'failure', 'error', 100),
+        response(runId, 'retired', 'retired-success', 'ok', 300),
+      ] : [
+        response(runId, 'prompt-1', 'claude-1', 'ok', 100),
+        response(runId, 'prompt-2', 'claude-2', 'ok', 100),
+      ],
+    } as Db,
+    env: {}, refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(handler);
+  const result = (await handler({ brand_id: brand.id, max_recommendations: 2 })).structuredContent;
+  assert.equal(result.observation_coverage.active_prompt_count, 2);
+  assert.deepEqual(result.observation_coverage.per_engine, [
+    { engine: 'chatgpt', run_id: 'run-chatgpt', usable_prompt_count: 1, missing_prompt_count: 1 },
+    { engine: 'claude', run_id: 'run-claude', usable_prompt_count: 2, missing_prompt_count: 0 },
+  ]);
+  assert.deepEqual(result.observation_coverage.incomplete_engines, ['chatgpt']);
+  assert.match(result.observation_coverage.note, /unlisted engines|no completed run/i);
+});

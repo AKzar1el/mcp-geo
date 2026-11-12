@@ -363,6 +363,17 @@ function decodeCitationCursor(cursor: string, brandId: string, days: number, eng
 const contentGapsOutputSchema = z.object({
   brand_id: z.string(),
   google_search_sampling: googleSearchSamplingSchema,
+  observation_coverage: z.object({
+    active_prompt_count: z.number().int().nonnegative(),
+    per_engine: z.array(z.object({
+      engine: z.string(),
+      run_id: z.string(),
+      usable_prompt_count: z.number().int().nonnegative(),
+      missing_prompt_count: z.number().int().nonnegative(),
+    })),
+    incomplete_engines: z.array(z.string()),
+    note: z.string(),
+  }),
   losing_prompt_evidence: z.object({
     note: z.string(),
     prompts: z.array(z.object({
@@ -1357,6 +1368,10 @@ export function registerTools(
         }
       >();
       let successfulResponses = 0;
+      const perEngineCoverage: Array<{
+        engine: string; run_id: string; usable_prompt_count: number;
+        missing_prompt_count: number;
+      }> = [];
       for (const engine of ALL_ENGINES) {
         const run = await deps.db.getLatestCompletedRun(brand_id, engine);
         if (!run) continue;
@@ -1373,6 +1388,13 @@ export function registerTools(
             latestOkByPrompt.set(response.prompt_id, response);
           }
         }
+        // Report the denominator independently of whether any competitor won.
+        // An observed loss on one prompt is not evidence of complete coverage.
+        perEngineCoverage.push({
+          engine, run_id: run.id,
+          usable_prompt_count: latestOkByPrompt.size,
+          missing_prompt_count: activePromptIds.size - latestOkByPrompt.size,
+        });
         // A settings edit cannot retroactively change an earlier scan. Warn
         // only for engines with usable active-prompt evidence in this analysis.
         if (latestOkByPrompt.size > 0 && Number.isFinite(run.started_at) &&
@@ -1433,6 +1455,14 @@ export function registerTools(
           prompt_id, prompt_text, observations,
         })),
       };
+      const observation_coverage = {
+        active_prompt_count: activePromptIds.size,
+        per_engine: perEngineCoverage,
+        incomplete_engines: perEngineCoverage
+          .filter(({ missing_prompt_count }) => missing_prompt_count > 0)
+          .map(({ engine }) => engine),
+        note: 'Counts are unique currently active prompts with a successful stored response in each listed engine\'s latest completed run, not verified citations or a confidence score. Engines not listed have no completed run; they may be unconfigured or unscanned. Failed or missing prompt results reduce coverage. Refreshing incomplete engines may incur provider charges.',
+      };
 
       const losingEngines = [...new Set(losingPrompts.flatMap((p) => p.engines_lost_on))];
       const searchRequestedEngines = losingEngines.filter(
@@ -1460,6 +1490,7 @@ export function registerTools(
         const payload = {
           brand_id,
           google_search_sampling: null,
+          observation_coverage,
           losing_prompt_evidence,
           configuration_comparability,
           measurement_scope,
@@ -1499,6 +1530,7 @@ export function registerTools(
 
       const payload = {
         brand_id,
+        observation_coverage,
         configuration_comparability,
         losing_prompt_evidence,
         measurement_scope,
