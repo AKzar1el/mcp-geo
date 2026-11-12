@@ -114,6 +114,12 @@ type VisibilitySnapshot = {
     historical_prompt_warning: boolean;
     note: string;
   };
+  prompt_set_scope: {
+    selection: 'full_window' | 'active_only';
+    active_prompt_count: number;
+    excluded_successful_responses: number;
+    note: string;
+  };
   configuration_comparability: {
     brand_updated_at: string;
     engines_scanned_before_update: string[];
@@ -158,6 +164,7 @@ type VisibilityTool = {
     brand_id: string;
     engines?: EngineName[];
     run_mode?: 'live' | 'batch';
+    active_prompts_only?: boolean;
   }) => Promise<{ structuredContent: VisibilitySnapshot }>;
 };
 
@@ -522,6 +529,53 @@ test('check_visibility flags historical prompt evidence after a prompt-set repla
   assert.equal(current.prompt_set_comparability.historical_prompt_warning, false);
   assert.deepEqual(current.prompt_set_comparability.engines_with_retired_prompt_evidence, []);
   assert.match(current.prompt_set_comparability.note, /No retired prompt IDs/);
+});
+
+test('check_visibility optionally scores only current buyer prompts without altering historical defaults', async () => {
+  const tool = registerVisibilityTool({
+    runs: { chatgpt: undefined, claude: runs.claude },
+    responses: {
+      [runs.claude.id]: [
+        response('claude', 'old-win', 'Retired question', 1),
+        response('claude', 'current-loss', 'Current buyer question', 0, ['beta.com']),
+      ],
+    },
+    activePromptIds: ['current-loss'],
+  });
+  const historical = (await tool.handler({ brand_id: brand.id, engines: ['claude'] })).structuredContent;
+  assert.equal(historical.overall_score, 50);
+  assert.equal(historical.prompt_set_scope.selection, 'full_window');
+
+  const current = (await tool.handler({
+    brand_id: brand.id, engines: ['claude'], active_prompts_only: true,
+  })).structuredContent;
+  assert.equal(current.overall_score, 0);
+  assert.equal(current.per_engine[0].coverage.expected_prompts, 1);
+  assert.deepEqual(current.top_winning_prompts, []);
+  assert.equal(current.prompt_set_scope.selection, 'active_only');
+  assert.equal(current.prompt_set_scope.excluded_successful_responses, 1);
+});
+
+test('active-only scoring excludes engines with retired-only evidence instead of counting zeros', async () => {
+  const tool = registerVisibilityTool({ activePromptIds: ['chatgpt-win'] });
+  const snapshot = (await tool.handler({
+    brand_id: brand.id, active_prompts_only: true,
+    engines: ['chatgpt', 'claude'],
+  })).structuredContent;
+  assert.equal(snapshot.overall_score, 100);
+  assert.deepEqual(snapshot.per_engine.map(({ engine }) => engine), ['chatgpt']);
+  assert.deepEqual(snapshot.unmeasured_engines, ['claude']);
+  assert.deepEqual(snapshot.missing_requested_engines, ['claude']);
+  assert.equal(snapshot.freshness.oldest_refreshed_at, new Date(chatgptTimestamp).toISOString());
+  assert.equal(snapshot.prompt_set_scope.excluded_successful_responses, 3);
+});
+
+test('active-only scoring refuses to report a measured zero without active observations', async () => {
+  const tool = registerVisibilityTool({ activePromptIds: ['new-question-not-yet-measured'] });
+  await assert.rejects(
+    tool.handler({ brand_id: brand.id, active_prompts_only: true }),
+    /No successful stored observations for currently active buyer prompts/,
+  );
 });
 
 test('missing successful responses do not count as retired prompts', async () => {

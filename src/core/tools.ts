@@ -157,6 +157,12 @@ const visibilityOutputSchema = z.object({
     historical_prompt_warning: z.boolean(),
     note: z.string(),
   }),
+  prompt_set_scope: z.object({
+    selection: z.enum(['full_window', 'active_only']),
+    active_prompt_count: z.number(),
+    excluded_successful_responses: z.number(),
+    note: z.string(),
+  }),
   configuration_comparability: z.object({
     brand_updated_at: z.string(),
     engines_scanned_before_update: z.array(z.string()),
@@ -601,7 +607,7 @@ export function registerTools(
     {
       title: 'Check AI visibility',
       description:
-        "Read stored visibility scores. run_mode='live' or 'batch' selects stored scans; omit for latest across modes. Live does not guarantee citations. Example: brand_id='acme', engines=['chatgpt'].",
+        "Read stored scores. active_prompts_only=true measures current buyer questions; default includes history. run_mode filters stored live/batch scans. Live need not cite sources. Example: brand_id='acme'.",
       inputSchema: {
         brand_id: z
           .string()
@@ -614,6 +620,8 @@ export function registerTools(
           .enum(['live', 'batch'])
           .optional()
           .describe('Filter by live or batch scans; omit for latest across modes. Live may still be model-only.'),
+        active_prompts_only: z.boolean().default(false)
+          .describe('Score only currently active buyer prompts from stored observations; no provider calls.'),
       },
       outputSchema: visibilityOutputSchema,
       annotations: {
@@ -622,7 +630,7 @@ export function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ brand_id, engines, run_mode }) => {
+    async ({ brand_id, engines, run_mode, active_prompts_only = false }) => {
       const brand = await deps.db.getBrand(brand_id);
       if (!brand) {
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
@@ -678,19 +686,33 @@ export function registerTools(
             : 'No visibility data yet for this brand. Call refresh_brand to populate it.',
         );
       }
-      // An explicit multi-engine request can otherwise look complete even
-      // when only one engine has usable data and contributes to the score.
-      const unmeasuredEngines = selectedEngines.filter((engine) => !refreshedAtByEngine.has(engine));
+      const activePrompts = await deps.db.getActivePrompts(brand_id);
+      const activePromptIds = new Set(activePrompts.map((prompt) => prompt.id));
+      const scoredResponses = active_prompts_only
+        ? selectedResponses.filter((row) => activePromptIds.has(row.prompt_id))
+        : selectedResponses;
+      const scored = computeOverallScore(brand, scoredResponses);
+      // A snapshot containing only retired questions is not a measured zero.
+      if (active_prompts_only && scored.per_engine.length === 0) {
+        throw new Error('No successful stored observations for currently active buyer prompts in the selected engines. A new scan may incur provider charges; historical results remain available without active_prompts_only.');
+      }
+      const scoredEngines = new Set(scored.per_engine.map(({ engine }) => engine));
+      // An explicit multi-engine request must disclose engines whose latest
+      // run contains no successful currently active questions.
+      const unmeasuredEngines = selectedEngines.filter((engine) =>
+        active_prompts_only ? !scoredEngines.has(engine) : !refreshedAtByEngine.has(engine));
       const missingRequestedEngines = engines && engines.length > 0
         ? unmeasuredEngines
         : [];
-      const scored = computeOverallScore(brand, selectedResponses);
-      const oldestTimestamp = Math.min(...refreshMsByEngine.values());
+      const scoredRefreshMs = [...refreshMsByEngine.entries()]
+        .filter(([engine]) => !active_prompts_only || scoredEngines.has(engine));
+      const oldestTimestamp = Math.min(...scoredRefreshMs.map(([, timestamp]) => timestamp));
+      mostRecentTimestamp = Math.max(...scoredRefreshMs.map(([, timestamp]) => timestamp));
       const ageSpreadMs = mostRecentTimestamp - oldestTimestamp;
       // Warn only for materially different observation windows, not minor
       // dispatch delays within a normal multi-engine refresh.
       const mixedAgeCutoffMs = 24 * 60 * 60 * 1000;
-      const olderEngines = [...refreshMsByEngine.entries()]
+      const olderEngines = scoredRefreshMs
         .filter(([, timestamp]) => mostRecentTimestamp - timestamp >= mixedAgeCutoffMs)
         .map(([engine]) => engine)
         .sort();
@@ -701,12 +723,10 @@ export function registerTools(
         : brand.refresh_frequency === 'weekly'
           ? 7 * 24 * 60 * 60 * 1000
           : null;
-      const cadenceOverdueEngines = cadenceMs === null ? [] : [...refreshMsByEngine.entries()]
+      const cadenceOverdueEngines = cadenceMs === null ? [] : scoredRefreshMs
         .filter(([, timestamp]) => Date.now() - timestamp > cadenceMs)
         .map(([engine]) => engine)
         .sort();
-      const activePrompts = await deps.db.getActivePrompts(brand_id);
-      const activePromptIds = new Set(activePrompts.map((prompt) => prompt.id));
       // Successful rows can be a partial sample. Only *observed* retired IDs
       // prove stale evidence; missing current IDs belong to coverage warnings.
       const retiredPromptEngines = [...observedPromptIdsByEngine.entries()]
@@ -717,6 +737,7 @@ export function registerTools(
       // identity snapshot. Report potentially older scoring evidence without
       // claiming we know which metadata fields actually changed.
       const enginesBeforeBrandUpdate = [...startedMsByEngine.entries()]
+        .filter(([engine]) => !active_prompts_only || scoredEngines.has(engine))
         .filter(([, startedAt]) => startedAt < brand.updated_at)
         .map(([engine]) => engine)
         .sort();
@@ -724,10 +745,8 @@ export function registerTools(
         // The score is conditional on distinct usable prompt observations.
         // Report sample coverage explicitly rather than treating retries as
         // extra prompts or presenting a partial scan as full.
-        const expected = Math.max(
-          engine.total_prompts,
-          expectedPromptsByEngine.get(engine.engine) ?? 0,
-        );
+        const expected = active_prompts_only ? Math.max(engine.total_prompts, activePromptIds.size)
+          : Math.max(engine.total_prompts, expectedPromptsByEngine.get(engine.engine) ?? 0);
         return {
           ...engine,
           measurement_mode: measurementModeByEngine.get(engine.engine)!,
@@ -764,7 +783,9 @@ export function registerTools(
         overall_score: scored.overall_score,
         missing_requested_engines: missingRequestedEngines,
         unmeasured_engines: unmeasuredEngines,
-        unmeasured_engines_note: 'These known or requested engines have no usable current-identity stored observations for the selected run mode and are excluded from overall_score. Stale identity engines listed in identity_attribution were deliberately excluded; for other absent engines, absence does not establish whether an engine was configured, attempted or failed.',
+        unmeasured_engines_note: active_prompts_only
+          ? 'These engines have no successful stored observations for the currently active buyer prompts in the selected run mode and are excluded from overall_score. They are unmeasured, not observed zeros. A new scan may incur provider charges.'
+          : 'These known or requested engines have no usable current-identity stored observations for the selected run mode and are excluded from overall_score. Stale identity engines listed in identity_attribution were deliberately excluded; for other absent engines, absence does not establish whether an engine was configured, attempted or failed.',
         measurement_scope: {
           search_requested: searchRequested,
           model_only: modelOnly,
@@ -788,9 +809,21 @@ export function registerTools(
           active_prompt_count: activePromptIds.size,
           engines_with_retired_prompt_evidence: retiredPromptEngines,
           historical_prompt_warning: retiredPromptEngines.length > 0,
-          note: retiredPromptEngines.length > 0
+          note: active_prompts_only
+            ? 'Retired prompts from the stored snapshots were excluded from the displayed scores and rankings. Listed engines still have retired evidence in history; missing active prompts are unmeasured, not observed zeros.'
+            : retiredPromptEngines.length > 0
             ? 'Latest scored responses from the listed engines include prompts no longer in the active set. Their scores remain historical observations and should not be compared as measurements of the current prompt set. Partial scan coverage is reported separately.'
             : 'No retired prompt IDs were observed in these scored responses. This does not prove complete coverage of the current prompt set; inspect per-engine coverage separately.',
+        },
+        prompt_set_scope: {
+          selection: active_prompts_only ? 'active_only' as const : 'full_window' as const,
+          active_prompt_count: activePromptIds.size,
+          excluded_successful_responses: active_prompts_only
+            ? selectedResponses.filter((row) => row.status === 'ok' && !activePromptIds.has(row.prompt_id)).length
+            : 0,
+          note: active_prompts_only
+            ? 'Scores and winning/losing prompts use only successful stored observations for active buyer-prompt IDs, with duplicate attempts deduplicated for scoring. Excluded count describes stored successful rows, not unique prompts. An active prompt missing from a scan is unmeasured, not a score of zero; no provider calls are made.'
+            : 'Full historical snapshot scores may include retired buyer prompts. Set active_prompts_only=true for currently active questions without rerunning any provider.',
         },
         configuration_comparability: {
           brand_updated_at: new Date(brand.updated_at).toISOString(),
