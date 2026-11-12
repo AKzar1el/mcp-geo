@@ -127,6 +127,17 @@ test('content-gap output schema describes recommendation records', () => {
     schema.safeParse({
       brand_id: 'acme',
       google_search_sampling: null,
+      losing_prompt_evidence: {
+        note: 'Stored observation references do not prove a source citation.',
+        prompts: [{
+          prompt_id: 'prompt-1',
+          prompt_text: 'Project tools for agencies',
+          observations: [{
+            engine: 'chatgpt', run_id: 'run-1', response_id: 'response-1',
+            captured_at_ms: 1000, competitors_mentioned: ['beta.com'],
+          }],
+        }],
+      },
       configuration_comparability: {
         brand_updated_at: '2026-11-11T00:00:00.000Z',
         engines_scanned_before_update: [],
@@ -156,6 +167,10 @@ test('content-gap output schema describes recommendation records', () => {
     schema.safeParse({
       brand_id: 'acme',
       google_search_sampling: null,
+      losing_prompt_evidence: {
+        note: 'Stored observation references do not prove a source citation.',
+        prompts: [],
+      },
       configuration_comparability: {
         brand_updated_at: '2026-11-11T00:00:00.000Z',
         engines_scanned_before_update: [],
