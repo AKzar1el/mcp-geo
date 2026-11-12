@@ -585,7 +585,7 @@ test('content-gap analyzer rejects whitespace-only Anthropic credentials before 
   }
 });
 
-test('content-gap advice discloses US/English Google sampling only for observed losing engines', async () => {
+test('content-gap advice discloses US/English Google sampling for observed Google losses', async () => {
   const brand: Brand = {
     id: 'acme', user_id: 'test-user', name: 'Acme', domain: 'acme.com',
     category: 'Software', competitors: ['rival.com'], aliases: [],
@@ -632,6 +632,58 @@ test('content-gap advice discloses US/English Google sampling only for observed 
   const nonGoogle = (await handler({ brand_id: 'acme', max_recommendations: 1 }))
     .structuredContent.google_search_sampling;
   assert.equal(nonGoogle, null);
+});
+
+test('content gaps disclose Google locale for usable scans without competitor-only losses', async () => {
+  const brand = {
+    id: 'acme', name: 'Acme', domain: 'acme.com', competitors: ['rival.com'],
+    aliases: [], exclude_terms: [], updated_at: 0,
+  } as Brand;
+  let observedEngine = 'ai_overviews';
+  let responseStatus: 'ok' | 'error' = 'ok';
+  let handler: ((input: { brand_id: string; max_recommendations: number }) => Promise<{
+    structuredContent: {
+      google_search_sampling: null | { engines: string[]; country: string; language: string };
+      recommendations: unknown[];
+    };
+  }>) | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, callback: unknown) {
+      if (name === 'get_content_gaps') handler = callback as typeof handler;
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getActivePrompts: async () => [{ id: 'prompt-1' }],
+      getLatestCompletedRun: async (_id, engine) => engine === observedEngine
+        ? { id: 'run-1', started_at: 1000, completed_at: 2000 } : null,
+      getResponsesForRun: async () => [{
+        id: 'response-1', run_id: 'run-1', prompt_id: 'prompt-1',
+        prompt_text: 'Best software for agencies', engine: observedEngine,
+        raw_response: '', brand_mentioned: 1, brand_cited_with_link: 0,
+        cited_urls: [], competitors_mentioned: [], engine_citations: [],
+        status: responseStatus, error_message: responseStatus === 'ok' ? null : 'provider error',
+        captured_at: 1500,
+      }],
+    } as Db,
+    env: {}, refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(handler);
+  const measured = (await handler({ brand_id: 'acme', max_recommendations: 1 })).structuredContent;
+  assert.deepEqual(measured.recommendations, []);
+  assert.deepEqual(measured.google_search_sampling?.engines, ['ai_overviews']);
+  assert.equal(measured.google_search_sampling?.country, 'us');
+  assert.equal(measured.google_search_sampling?.language, 'en');
+
+  responseStatus = 'error';
+  const failed = (await handler({ brand_id: 'acme', max_recommendations: 1 })).structuredContent;
+  assert.equal(failed.google_search_sampling, null);
+  observedEngine = 'chatgpt';
+  responseStatus = 'ok';
+  const nonGoogle = (await handler({ brand_id: 'acme', max_recommendations: 1 })).structuredContent;
+  assert.equal(nonGoogle.google_search_sampling, null);
 });
 
 test('content gaps never recommend prompts retired from the active buyer-intent set', async () => {
