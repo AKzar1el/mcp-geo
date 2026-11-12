@@ -731,3 +731,73 @@ test('content gaps disclose whether recommendation evidence predates brand setti
   assert.equal(fresh.configuration_comparability.historical_settings_warning, false);
   assert.deepEqual(fresh.configuration_comparability.engines_scanned_before_update, []);
 });
+
+test('content gaps expose bounded traceable winning observations, not retired or superseded responses', async () => {
+  const brand: Brand = {
+    id: 'acme', user_id: 'test-user', domain: 'acme.com', name: 'Acme',
+    category: 'Software', competitors: ['rival.com'], aliases: [],
+    exclude_terms: [], refresh_frequency: 'manual', created_at: 0, updated_at: 0,
+  };
+  const response = (
+    id: string, promptId: string, competitors: string[], capturedAt: number,
+    brandMentioned = 0,
+  ): PromptResponse => ({
+    id, run_id: 'run-chatgpt', prompt_id: promptId,
+    prompt_text: promptId === 'active' ? 'Best software for agencies' : 'Retired question',
+    engine: 'chatgpt', raw_response: 'Private answer is not a client citation',
+    brand_mentioned: brandMentioned, brand_cited_with_link: 0, cited_urls: [],
+    competitors_mentioned: competitors, engine_citations: [], status: 'ok',
+    error_message: null, captured_at: capturedAt,
+  });
+  let handler: ((input: { brand_id: string; max_recommendations: number }) => Promise<{
+    structuredContent: {
+      losing_prompt_evidence: {
+        note: string;
+        prompts: Array<{
+          prompt_id: string;
+          prompt_text: string;
+          observations: Array<{
+            engine: string;
+            run_id: string;
+            response_id: string;
+            captured_at_ms: number;
+            competitors_mentioned: string[];
+          }>;
+        }>;
+      };
+    };
+  }>) | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, callback: unknown) {
+      if (name === 'get_content_gaps') handler = callback as typeof handler;
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getActivePrompts: async () => [{ id: 'active' }],
+      getLatestCompletedRun: async (_id, engine) =>
+        engine === 'chatgpt' ? { id: 'run-chatgpt', mode: 'live', started_at: 10 } : null,
+      getResponsesForRun: async () => [
+        response('old', 'active', ['obsolete.com'], 100),
+        response('current', 'active', ['rival.com', 'obsolete.com'], 200),
+        response('retired', 'retired', ['rival.com'], 300),
+        response('brand-win', 'active', ['rival.com'], 150, 1),
+      ],
+    } as Db,
+    env: {}, refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(handler);
+  const result = (await handler({ brand_id: 'acme', max_recommendations: 1 })).structuredContent;
+  assert.deepEqual(result.losing_prompt_evidence.prompts, [{
+    prompt_id: 'active',
+    prompt_text: 'Best software for agencies',
+    observations: [{
+      engine: 'chatgpt', run_id: 'run-chatgpt', response_id: 'current',
+      captured_at_ms: 200, competitors_mentioned: ['rival.com'],
+    }],
+  }]);
+  assert.match(result.losing_prompt_evidence.note, /not.*(verified|source citation)/i);
+  assert.doesNotMatch(JSON.stringify(result.losing_prompt_evidence), /Private answer|obsolete.com|retired/);
+});

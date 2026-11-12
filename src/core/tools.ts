@@ -363,6 +363,20 @@ function decodeCitationCursor(cursor: string, brandId: string, days: number, eng
 const contentGapsOutputSchema = z.object({
   brand_id: z.string(),
   google_search_sampling: googleSearchSamplingSchema,
+  losing_prompt_evidence: z.object({
+    note: z.string(),
+    prompts: z.array(z.object({
+      prompt_id: z.string(),
+      prompt_text: z.string(),
+      observations: z.array(z.object({
+        engine: z.string(),
+        run_id: z.string(),
+        response_id: z.string(),
+        captured_at_ms: z.number(),
+        competitors_mentioned: z.array(z.string()),
+      })),
+    })),
+  }),
   configuration_comparability: z.object({
     brand_updated_at: z.string().nullable(),
     engines_scanned_before_update: z.array(z.string()),
@@ -1333,6 +1347,13 @@ export function registerTools(
           prompt_text: string;
           engines: Set<string>;
           competitors: Set<string>;
+          observations: Map<string, {
+            engine: string;
+            run_id: string;
+            response_id: string;
+            captured_at_ms: number;
+            competitors_mentioned: string[];
+          }>;
         }
       >();
       let successfulResponses = 0;
@@ -1363,10 +1384,20 @@ export function registerTools(
           if (r.brand_mentioned !== 0) continue;
           const currentMentions = r.competitors_mentioned.filter((c) => trackedCompetitors.has(c));
           if (currentMentions.length === 0) continue;
+          // Identifiers only: these are traceable stored observations, not
+          // independently verified source citations or copied model answers.
+          const observation = {
+            engine: r.engine,
+            run_id: run.id,
+            response_id: r.id,
+            captured_at_ms: r.captured_at,
+            competitors_mentioned: [...new Set(currentMentions)].sort(),
+          };
           lossModeByEngine.set(engine, visibilityMeasurementMode(engine, run.mode ?? 'live'));
           const existing = losingByPrompt.get(r.prompt_id);
           if (existing) {
             existing.engines.add(r.engine);
+            existing.observations.set(engine, observation);
             for (const c of currentMentions) {
               existing.competitors.add(c);
             }
@@ -1375,15 +1406,19 @@ export function registerTools(
               prompt_text: r.prompt_text,
               engines: new Set([r.engine]),
               competitors: new Set(currentMentions),
+              observations: new Map([[engine, observation]]),
             });
           }
         }
       }
-      const losingPrompts: LosingPromptSummary[] = [...losingByPrompt.values()]
-        .map((l) => ({
+      const losingPrompts = [...losingByPrompt.entries()]
+        .map(([prompt_id, l]) => ({
+          prompt_id,
           prompt_text: l.prompt_text,
           engines_lost_on: [...l.engines].sort(),
           competitors_winning: [...l.competitors].sort(),
+          observations: [...l.observations.values()]
+            .sort((a, b) => a.engine.localeCompare(b.engine)),
         }))
         .sort(
           (a, b) =>
@@ -1392,6 +1427,12 @@ export function registerTools(
             a.prompt_text.localeCompare(b.prompt_text),
         )
         .slice(0, 15);
+      const losing_prompt_evidence = {
+        note: 'These are stored response record references for observed competitor-only mentions in the current active prompt set, not independently verified source citations. No raw model answers are included; inspect stored responses before quoting any evidence in a client audit.',
+        prompts: losingPrompts.map(({ prompt_id, prompt_text, observations }) => ({
+          prompt_id, prompt_text, observations,
+        })),
+      };
 
       const losingEngines = [...new Set(losingPrompts.flatMap((p) => p.engines_lost_on))];
       const searchRequestedEngines = losingEngines.filter(
@@ -1419,6 +1460,7 @@ export function registerTools(
         const payload = {
           brand_id,
           google_search_sampling: null,
+          losing_prompt_evidence,
           configuration_comparability,
           measurement_scope,
           recommendations: [],
@@ -1458,6 +1500,7 @@ export function registerTools(
       const payload = {
         brand_id,
         configuration_comparability,
+        losing_prompt_evidence,
         measurement_scope,
         google_search_sampling: googleSearchSampling(
           losingPrompts.flatMap((prompt) => prompt.engines_lost_on),
