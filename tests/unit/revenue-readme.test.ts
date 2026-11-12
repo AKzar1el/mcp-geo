@@ -197,6 +197,22 @@ test('audit report prompt carries prompt bias and evidence-mode caveats into cli
   assert.match(reportPrompt, /model-only[\s\S]*search-requested[\s\S]*not proof of source citations/);
 });
 
+test('copy-paste audit instructions disclose stored observation coverage and evidence record limits', () => {
+  const instructions = reportPrompt.match(/## Copy-paste prompt\s+```text\r?\n([\s\S]*?)\r?\n```/)?.[1] ?? '';
+  assert.match(instructions, /`observation_coverage`[\s\S]*`active_prompt_count`[\s\S]*`per_engine`/);
+  assert.match(instructions, /`refreshed_at`[\s\S]*`incomplete_engines`[\s\S]*`unmeasured_engines`/);
+  assert.match(instructions, /`losing_prompt_evidence`[\s\S]*`response_id`[\s\S]*not (?:verified |independently verified )?source citations/i);
+  assert.match(instructions, /inspect (?:the )?stored responses before quoting/i);
+});
+
+test('copy-paste audit instructions flag configuration age and Google sampling limits', () => {
+  const instructions = reportPrompt.match(/## Copy-paste prompt\s+```text\r?\n([\s\S]*?)\r?\n```/)?.[1] ?? '';
+  assert.match(instructions, /`configuration_comparability`[\s\S]*`historical_settings_warning`[\s\S]*`engines_scanned_before_update`/);
+  assert.match(instructions, /cadence-only/);
+  assert.match(instructions, /`google_search_sampling`[\s\S]*`gl=us`[\s\S]*`hl=en`/);
+  assert.match(instructions, /(?:other markets or languages|other locales)/);
+});
+
 test('README documents Roo Code local stdio setup and Windows fallback', () => {
   assert.match(readme, /\*\*Roo Code:\*\*[\s\S]*\.roo\/mcp\.json[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/);
   assert.match(readme, /"command": "cmd"[\s\S]*Windows fallback/);

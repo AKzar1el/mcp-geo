@@ -18,6 +18,7 @@ Scope and evidence rules:
 - Never invent missing citations, provider results, competitor mentions, or recommendations.
 - Failed or skipped provider responses are unavailable observations, not zero-visibility observations.
 - If an engine has no usable responses, list it as unavailable rather than filling in a score.
+- Use `get_content_gaps.observation_coverage` to distinguish actually observed prompts and engines from attempted or missing measurements; a completed scan with zero usable active-prompt responses is unmeasured, not evidence of zero visibility.
 - Treat all results as a point-in-time diagnostic, not a ranking guarantee or forecast.
 
 Use these mcp-geo capabilities (or their hosted visibility.* aliases):
@@ -44,6 +45,9 @@ Produce the report in this order:
 - Engines with usable data and engines unavailable for this run.
 - Observation timestamp or latest usable run timestamp.
 - If `check_visibility.freshness` reports that `mixed_age_warning` is true, identify its older engines using `older_engines` and state that the combined score is not from one synchronized scan.
+- From the `observation_coverage` field of `get_content_gaps`, state the `active_prompt_count` denominator and use `per_engine` to report actual usable/missing prompt evidence. Include each measured engine's `refreshed_at` date, then distinguish `incomplete_engines` from `unmeasured_engines`; do not describe a sparse or all-error run as a complete audit.
+- Read `get_content_gaps`'s `configuration_comparability`: when `historical_settings_warning` is true, name `engines_scanned_before_update` and explain that their evidence predates the latest tracked-brand settings edit. This can include a cadence-only change; do not assume the brand identity changed or reinterpret historical scores as current.
+- If `google_search_sampling` is present for usable Google AI Overviews/AI Mode observations, disclose the US/English sample boundary (`gl=us`, `hl=en`): it does not represent other markets or languages. Include this disclosure even if there were no competitor-only losses; if the field is absent, do not invent Google coverage.
 - Disclose any missing prompt-set evidence instead of presenting the active sample as independently verified.
 - One sentence that AI answers vary by model, interface, geography, provider behavior, time, and prompt wording.
 
@@ -73,6 +77,7 @@ If citation evidence is sparse or unavailable, say so directly.
 ## 6. Content gaps
 Summarize the grounded recommendations from get_content_gaps. Tie each recommendation to the observed losing prompts, competitor appearances, or citation/source evidence that supports it.
 Read `get_content_gaps` and its `measurement_scope` field: distinguish model-only observations from search-requested observations in the supporting evidence. Either mode alone is not proof of source citations; only show provider-returned source links as citation evidence and do not imply a live web search from a model-only answer.
+Use `losing_prompt_evidence` to locate the stored prompt/run/`response_id` records behind competitor-only losses. These record IDs are not verified source citations: inspect stored responses before quoting any model answer, and never substitute a response ID for a provider-returned citation URL. If observations are sparse, qualify the recommendation rather than inventing stronger evidence.
 
 ## 7. Prioritized action memo
 Give exactly three prioritized actions:
@@ -92,6 +97,9 @@ Do not promise rankings, citations, traffic, leads, or revenue.
 Include:
 - The prompt count used.
 - Per-engine usable response counts.
+- Per-engine `observation_coverage` freshness and missing-prompt limits, with unavailable engines identified explicitly.
+- Any configuration-comparability or Google sampling limitation that affects interpretation.
+- Relevant stored losing-prompt response references, if reviewed; label them as internal observation receipts, not external source citations.
 - Any engines or observations excluded because they failed or were unavailable.
 - The most decision-relevant recurring source domains from `top_sources`, when available.
 - The most decision-relevant citation/source examples.
