@@ -73,6 +73,12 @@ type ComparisonResult = {
   comparison_semantics: string;
   historical_coverage_note: string;
   outside_current_tracking: string[];
+  prompt_set_scope: {
+    selection: 'full_window' | 'active_only';
+    active_prompt_count: number | null;
+    excluded_observations: number;
+    note: string;
+  };
   requested_competitor_domains: string[] | null;
   prompts_you_win: Array<{ prompt: string; you_cited_by: string[]; competitors_cited: string[] }>;
   prompts_brand_only: Array<{ prompt: string; you_cited_by: string[]; competitors_cited: string[] }>;
@@ -90,6 +96,7 @@ type ComparisonTool = {
     brand_id: string;
     days?: number;
     competitor_domains?: string[];
+    active_prompts_only?: boolean;
   }) => Promise<{ structuredContent: ComparisonResult }>;
 };
 
@@ -549,4 +556,58 @@ test('comparison respects an explicitly empty competitor selection', async () =>
   assert.deepEqual(result.observation_coverage.per_engine, []);
   assert.deepEqual(result.competitors, []);
   assert.deepEqual(result.requested_competitor_domains, []);
+});
+
+test('comparison can restrict its measurement cohort to currently active prompts', async () => {
+  let comparison: ComparisonTool | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, handler: unknown) {
+      if (name === 'compare_competitors') comparison = { handler: handler as ComparisonTool['handler'] };
+    },
+  } as unknown as McpServer;
+  const rows = [
+    { ...response('retired', 'old buyer question', 1, []), prompt_id: 'retired' },
+    { ...response('active', 'new buyer question', 0, ['asana.com']), prompt_id: 'active' },
+  ];
+  let activePromptReads = 0;
+  let selectedPromptIds = ['active'];
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getActivePrompts: async () => {
+        activePromptReads++;
+        return selectedPromptIds.map((id) => ({ id }));
+      },
+      getResponsesSince: async () => rows,
+    } as Db,
+    env: {},
+    refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(comparison);
+
+  const full = (await comparison.handler({ brand_id: brand.id })).structuredContent;
+  assert.equal(full.your_mentions, 1);
+  assert.equal(full.observation_coverage.successful_responses, 2);
+  assert.equal(full.prompt_set_scope.selection, 'full_window');
+  assert.equal(full.prompt_set_scope.active_prompt_count, null);
+  assert.equal(activePromptReads, 0, 'default history must not query the active roster');
+
+  const current = (await comparison.handler({ brand_id: brand.id, active_prompts_only: true })).structuredContent;
+  assert.equal(current.your_mentions, 0);
+  assert.equal(current.competitors[0]?.mentions, 1);
+  assert.equal(current.observation_coverage.successful_responses, 1);
+  assert.deepEqual(current.prompts_you_win, []);
+  assert.equal(current.prompt_set_scope.selection, 'active_only');
+  assert.equal(current.prompt_set_scope.active_prompt_count, 1);
+  assert.equal(current.prompt_set_scope.excluded_observations, 1);
+  assert.equal(activePromptReads, 1);
+  assert.match(current.prompt_set_scope.note, /historical|retired/i);
+
+  selectedPromptIds = [];
+  const empty = (await comparison.handler({ brand_id: brand.id, active_prompts_only: true })).structuredContent;
+  assert.equal(empty.observation_coverage.status, 'no_observations');
+  assert.equal(empty.prompt_set_scope.active_prompt_count, 0);
+  assert.equal(empty.prompt_set_scope.excluded_observations, 2);
+  assert.equal(empty.your_mentions, 0);
 });
