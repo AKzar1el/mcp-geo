@@ -48,6 +48,12 @@ function arraysEqual(a: string[], b: string[]): boolean {
   return left.every((value, index) => value === right[index]);
 }
 
+function matchingTermsEqual(a: string[], b: string[]): boolean {
+  // Matching ignores term case, but keep display-case edits as real metadata
+  // updates without declaring all earlier scans to be a different identity.
+  return arraysEqual(a.map((term) => term.toLowerCase()), b.map((term) => term.toLowerCase()));
+}
+
 export async function updateTrackedBrand(
   db: Db,
   input: UpdateTrackedBrandInput,
@@ -104,12 +110,16 @@ export async function updateTrackedBrand(
   if (!arraysEqual(fields.exclude_terms, existing.exclude_terms)) changedFields.push('exclude_terms');
   if (fields.refresh_frequency !== existing.refresh_frequency) changedFields.push('refresh_frequency');
 
+  const matchingIdentityChanged =
+    fields.name.toLowerCase() !== existing.name.toLowerCase() ||
+    fields.domain !== existing.domain ||
+    !matchingTermsEqual(fields.aliases, existing.aliases) ||
+    !matchingTermsEqual(fields.exclude_terms, existing.exclude_terms);
+
   if (changedFields.length > 0) {
     await db.updateBrand(input.brand_id, {
       ...fields,
-      identity_changed: changedFields.some((field) =>
-        ['name', 'domain', 'aliases', 'exclude_terms'].includes(field),
-      ),
+      identity_changed: matchingIdentityChanged,
     });
   }
 
@@ -122,9 +132,7 @@ export async function updateTrackedBrand(
     changed_fields: changedFields,
     prompt_set_review_recommended: changedFields.includes('category'),
     // Stored observations were scored against the old matching identity.
-    historical_attribution_review_recommended: changedFields.some((field) =>
-      ['name', 'domain', 'aliases', 'exclude_terms'].includes(field),
-    ),
+    historical_attribution_review_recommended: matchingIdentityChanged,
     brand,
   };
 }
