@@ -57,6 +57,12 @@ type HistoryTool = {
       changes_detected: boolean;
       changed_engines: string[];
       insufficient_evidence_engines: string[];
+      current_active_roster: {
+        active_prompt_count: number;
+        latest_run_status_by_engine: Record<string, 'matches' | 'differs' | 'unverified'>;
+        engines_needing_new_measurement: string[];
+        note: string;
+      };
       note: string;
     };
   } }>;
@@ -69,6 +75,7 @@ function registerHistoryTool(
     identityChangedAt?: number;
     onHistoryQuery?: (since: number) => void;
     filterBySince?: boolean;
+    activePromptIds?: string[];
   } = {},
 ): HistoryTool {
   let history: HistoryTool | undefined;
@@ -91,6 +98,7 @@ function registerHistoryTool(
           ? rows.filter((row) => row.completed_at >= since)
           : rows;
       },
+      getActivePrompts: async () => (options.activePromptIds ?? []).map((id) => ({ id })),
     } as Db,
     env: {},
     refreshExecution: 'sync',
@@ -416,7 +424,13 @@ test('history detects different complete prompt rosters, not partial scan subset
   const result = await history.handler({
     brand_id: 'acme', days: 30, granularity: 'daily',
   });
-  assert.deepEqual(result.structuredContent.prompt_set_comparability, {
+  const comparison = result.structuredContent.prompt_set_comparability;
+  assert.deepEqual({
+    changes_detected: comparison.changes_detected,
+    changed_engines: comparison.changed_engines,
+    insufficient_evidence_engines: comparison.insufficient_evidence_engines,
+    note: comparison.note,
+  }, {
     changes_detected: true,
     changed_engines: ['chatgpt'],
     insufficient_evidence_engines: ['claude'],
@@ -437,4 +451,33 @@ test('incomplete rosters do not falsely report a prompt-set change', async () =>
   });
   assert.equal(result.structuredContent.prompt_set_comparability.changes_detected, false);
   assert.deepEqual(result.structuredContent.prompt_set_comparability.insufficient_evidence_engines, ['chatgpt']);
+});
+
+test('history identifies stale and unverified latest prompt rosters against active buyer questions', async () => {
+  const date = Date.UTC(2026, 0, 5);
+  const history = registerHistoryTool([
+    { run_id: 'old-only', engine: 'chatgpt', completed_at: date, total: 2, hits: 1,
+      roster_expected: 2, roster_observed: 2, roster_ids_csv: 'old-a,old-b' },
+    { run_id: 'claude-old', engine: 'claude', completed_at: date, total: 2, hits: 0,
+      roster_expected: 2, roster_observed: 2, roster_ids_csv: 'old-a,old-b' },
+    { run_id: 'claude-new', engine: 'claude', completed_at: date + 2000, total: 2, hits: 1,
+      roster_expected: 2, roster_observed: 2, roster_ids_csv: 'new-b,new-a' },
+    { run_id: 'perplexity-new', engine: 'perplexity', completed_at: date, total: 2, hits: 1,
+      roster_expected: 2, roster_observed: 2, roster_ids_csv: 'new-a,new-b' },
+    { run_id: 'perplexity-partial', engine: 'perplexity', completed_at: date + 3000, total: 1, hits: 1,
+      roster_expected: 2, roster_observed: 1, roster_ids_csv: 'new-a' },
+  ], { activePromptIds: ['new-a', 'new-b'] });
+  const result = await history.handler({ brand_id: 'acme', days: 30, granularity: 'daily' });
+  assert.deepEqual(result.structuredContent.prompt_set_comparability.changed_engines, ['claude'],
+    'a single old complete roster is not itself a historical prompt-set change');
+  assert.deepEqual(result.structuredContent.prompt_set_comparability.current_active_roster, {
+    active_prompt_count: 2,
+    latest_run_status_by_engine: {
+      chatgpt: 'differs',
+      claude: 'matches',
+      perplexity: 'unverified',
+    },
+    engines_needing_new_measurement: ['chatgpt'],
+    note: 'Most recent completed run per engine is compared with the current active prompt IDs. A differing complete roster needs new measurement; a partial or missing roster is unverified, not proof of current coverage. Historical scores remain unchanged.',
+  });
 });
