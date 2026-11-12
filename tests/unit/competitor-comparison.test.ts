@@ -48,6 +48,13 @@ type ComparisonResult = {
   observation_coverage: {
     status: 'not_compared' | 'no_observations' | 'observed';
     successful_responses: number;
+    per_engine: Array<{
+      engine: string;
+      successful_responses: number;
+      distinct_runs: number;
+      distinct_prompts: number;
+      last_observed_at: string;
+    }>;
     note: string;
   };
   google_search_sampling: {
@@ -112,6 +119,22 @@ test('compare_competitors counts one latest successful retry per run, engine and
   assert.ok(comparison);
   const result = (await comparison.handler({ brand_id: brand.id })).structuredContent;
   assert.equal(result.observation_coverage.successful_responses, 3);
+  assert.deepEqual(result.observation_coverage.per_engine, [
+    {
+      engine: 'chatgpt',
+      successful_responses: 2,
+      distinct_runs: 2,
+      distinct_prompts: 1,
+      last_observed_at: new Date(3000).toISOString(),
+    },
+    {
+      engine: 'claude',
+      successful_responses: 1,
+      distinct_runs: 1,
+      distinct_prompts: 1,
+      last_observed_at: new Date(4000).toISOString(),
+    },
+  ]);
   assert.equal(result.your_mentions, 2);
   assert.equal(result.your_share_of_voice_pct, 50);
   assert.equal(result.competitors.find((c) => c.domain === 'asana.com')?.mentions, 1);
@@ -396,6 +419,7 @@ test('comparison distinguishes no successful observations from observed zero men
   assert.equal(missing.your_share_of_voice_pct, 0);
   assert.equal(missing.observation_coverage.status, 'no_observations');
   assert.equal(missing.observation_coverage.successful_responses, 0);
+  assert.deepEqual(missing.observation_coverage.per_engine, []);
   assert.match(missing.observation_coverage.note, /not measured|no usable/i);
 
   rows = [response('no-mentions', 'independent buyer question', 0, [])];
@@ -403,6 +427,8 @@ test('comparison distinguishes no successful observations from observed zero men
   assert.equal(observed.your_share_of_voice_pct, 0);
   assert.equal(observed.observation_coverage.status, 'observed');
   assert.equal(observed.observation_coverage.successful_responses, 1);
+  assert.equal(observed.observation_coverage.per_engine[0]?.engine, 'chatgpt');
+  assert.equal(observed.observation_coverage.per_engine[0]?.distinct_prompts, 1);
   assert.match(observed.observation_coverage.note, /successful response/i);
 });
 
@@ -426,6 +452,7 @@ test('comparison with no configured competitors does not pretend observations we
   const result = (await comparison.handler({ brand_id: brand.id })).structuredContent;
   assert.equal(result.observation_coverage.status, 'not_compared');
   assert.equal(result.observation_coverage.successful_responses, 0);
+  assert.deepEqual(result.observation_coverage.per_engine, []);
   assert.match(result.observation_coverage.note, /competitor/i);
 });
 
@@ -450,6 +477,7 @@ test('comparison respects an explicitly empty competitor selection', async () =>
   const result = (await comparison.handler({ brand_id: brand.id, competitor_domains: [] })).structuredContent;
   assert.equal(result.observation_coverage.status, 'not_compared');
   assert.equal(result.observation_coverage.successful_responses, 0);
+  assert.deepEqual(result.observation_coverage.per_engine, []);
   assert.deepEqual(result.competitors, []);
   assert.deepEqual(result.requested_competitor_domains, []);
 });
