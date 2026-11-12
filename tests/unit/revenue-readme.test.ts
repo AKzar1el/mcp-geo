@@ -215,6 +215,13 @@ test('copy-paste audit instructions flag configuration age and Google sampling l
   assert.match(instructions, /(?:other markets or languages|other locales)/);
 });
 
+test('client audit guidance excludes pre-identity scans from current scores and content gaps', () => {
+  const instructions = reportPrompt.match(/## Copy-paste prompt\s+```text\r?\n([\s\S]*?)\r?\n```/)?.[1] ?? '';
+  assert.match(readme, /`identity_attribution\.stale_engines`[\s\S]*excluded/);
+  assert.match(instructions, /`check_visibility\.identity_attribution`[\s\S]*`get_content_gaps\.identity_attribution`/);
+  assert.match(instructions, /excluded from current-identity scoring and recommendations/);
+});
+
 test('README documents Roo Code local stdio setup and Windows fallback', () => {
   assert.match(readme, /\*\*Roo Code:\*\*[\s\S]*\.roo\/mcp\.json[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/);
   assert.match(readme, /"command": "cmd"[\s\S]*Windows fallback/);

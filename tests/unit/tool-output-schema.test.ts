@@ -154,6 +154,11 @@ test('content-gap output schema describes recommendation records', () => {
         historical_settings_warning: false,
         note: 'No settings-age divergence observed.',
       },
+      identity_attribution: {
+        last_identity_change_at: null,
+        stale_engines: [],
+        note: 'Current-identity evidence only.',
+      },
       measurement_scope: {
         search_requested_engines: ['chatgpt'],
         model_only_engines: [],
@@ -193,6 +198,11 @@ test('content-gap output schema describes recommendation records', () => {
         engines_scanned_before_update: [],
         historical_settings_warning: false,
         note: 'No settings-age divergence observed.',
+      },
+      identity_attribution: {
+        last_identity_change_at: null,
+        stale_engines: [],
+        note: 'Current-identity evidence only.',
       },
       measurement_scope: {
         search_requested_engines: [],

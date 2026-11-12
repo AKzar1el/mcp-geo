@@ -217,6 +217,22 @@ test('check_visibility flags older engine scores after brand matching identity c
   assert.deepEqual(result.structuredContent.identity_attribution.stale_engines, ['claude']);
 });
 
+test('check_visibility never attributes pre-identity-change scores to the current brand', async () => {
+  const changedAt = Date.UTC(2026, 0, 2);
+  const visibility = registerVisibilityTool({ identityChangedAt: changedAt });
+  const current = (await visibility.handler({ brand_id: 'acme' })).structuredContent;
+  assert.equal(current.overall_score, 100, 'old Claude mentions must not lower the current score');
+  assert.deepEqual(current.per_engine.map((engine) => engine.engine), ['chatgpt']);
+  assert.ok(current.unmeasured_engines.includes('claude'));
+  assert.deepEqual(current.identity_attribution.stale_engines, ['claude']);
+
+  const staleOnly = registerVisibilityTool({
+    identityChangedAt: changedAt,
+    runs: { chatgpt: undefined },
+  });
+  await assert.rejects(staleOnly.handler({ brand_id: 'acme' }), /current.*identity|identity.*refresh/i);
+});
+
 test('check_visibility scopes every snapshot field to the requested engine', async () => {
   const visibility = registerVisibilityTool();
 

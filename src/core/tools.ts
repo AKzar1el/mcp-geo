@@ -372,6 +372,11 @@ function decodeCitationCursor(cursor: string, brandId: string, days: number, eng
 const contentGapsOutputSchema = z.object({
   brand_id: z.string(),
   google_search_sampling: googleSearchSamplingSchema,
+  identity_attribution: z.object({
+    last_identity_change_at: z.string().nullable(),
+    stale_engines: z.array(z.string()),
+    note: z.string(),
+  }),
   observation_coverage: z.object({
     active_prompt_count: z.number().int().nonnegative(),
     per_engine: z.array(z.object({
@@ -622,13 +627,16 @@ export function registerTools(
         if (!run) continue;
         const responses = await deps.db.getResponsesForRun(run.id);
         if (responses.length === 0) continue;
+        // Stored mention flags were scored against the brand identity at scan
+        // time. Do not attribute them to a later name/domain/alias revision.
+        if (identityChangedAt !== null && run.started_at < identityChangedAt) {
+          staleIdentityEngines.push(engine);
+          continue;
+        }
         selectedResponses.push(...responses);
         observedPromptIdsByEngine.set(engine, new Set(
           responses.filter((response) => response.status === 'ok').map((response) => response.prompt_id),
         ));
-        if (identityChangedAt !== null && run.started_at < identityChangedAt) {
-          staleIdentityEngines.push(engine);
-        }
         measurementModeByEngine.set(engine, visibilityMeasurementMode(engine, run.mode));
         expectedPromptsByEngine.set(engine, run.prompts_total);
         const ts = run.completed_at ?? run.started_at;
@@ -638,6 +646,9 @@ export function registerTools(
         if (ts > mostRecentTimestamp) mostRecentTimestamp = ts;
       }
       if (selectedResponses.length === 0) {
+        if (staleIdentityEngines.length > 0) {
+          throw new Error('No current-identity visibility data for the selected engines. Stored scans predate the last brand name, domain, alias, or exclusion change; call refresh_brand to measure the current identity (provider charges may apply). Historical runs remain available in get_visibility_history.');
+        }
         throw new Error(
           engines && engines.length > 0
             ? 'No visibility data yet for the selected engines. Call refresh_brand to populate them.'
@@ -730,7 +741,7 @@ export function registerTools(
         overall_score: scored.overall_score,
         missing_requested_engines: missingRequestedEngines,
         unmeasured_engines: unmeasuredEngines,
-        unmeasured_engines_note: 'These known or requested engines have no usable stored observations for the selected run mode and are excluded from overall_score. Their absence does not establish whether an engine was configured, attempted, or failed.',
+        unmeasured_engines_note: 'These known or requested engines have no usable current-identity stored observations for the selected run mode and are excluded from overall_score. Stale identity engines listed in identity_attribution were deliberately excluded; for other absent engines, absence does not establish whether an engine was configured, attempted or failed.',
         measurement_scope: {
           search_requested: searchRequested,
           model_only: modelOnly,
@@ -768,7 +779,7 @@ export function registerTools(
           last_identity_change_at: identityChangedAt === null
             ? null : new Date(identityChangedAt).toISOString(),
           stale_engines: staleIdentityEngines.sort(),
-          note: 'Scores for engines whose runs began before the last matching-identity change were measured against an older name/domain/alias/exclusion set. Refresh those engines before attributing results to the current brand identity. Older changes before the identity-boundary migration are unknown.',
+          note: 'Runs started before the last matching-identity change are excluded from current scores and listed as stale engines, not treated as observed zeros. Refresh those engines before measuring the current brand identity (provider charges may apply). Historical runs remain available in history; older changes before identity-boundary migration are unknown.',
         },
         per_engine: perEngine,
         top_winning_prompts: scored.top_winning_prompts,
@@ -1393,6 +1404,8 @@ export function registerTools(
       // Earlier scans may retain competitors removed by update_brand. Content
       // gaps must reflect the brand's currently configured comparison cohort.
       const trackedCompetitors = new Set(brand.competitors);
+      const identityChangedAt = brand.identity_changed_at ?? null;
+      const staleIdentityEngines: string[] = [];
       const staleSettingsEngines = new Set<string>();
       const lossModeByEngine = new Map<string, 'search_requested' | 'model_only'>();
       const losingByPrompt = new Map<
@@ -1418,6 +1431,12 @@ export function registerTools(
       for (const engine of ALL_ENGINES) {
         const run = await deps.db.getLatestCompletedRun(brand_id, engine);
         if (!run) continue;
+        // Before an identity change these responses were classified using
+        // another name/domain/alias set. Keep them in history, not new advice.
+        if (identityChangedAt !== null && run.started_at < identityChangedAt) {
+          staleIdentityEngines.push(engine);
+          continue;
+        }
         const responses = await deps.db.getResponsesForRun(run.id);
         // Retain history for evidence, but use only each prompt's latest
         // successful result when determining current content-gap advice.
@@ -1511,7 +1530,7 @@ export function registerTools(
         unmeasured_engines: ALL_ENGINES.filter(
           (engine) => !perEngineCoverage.some(
             (entry) => entry.engine === engine && entry.usable_prompt_count > 0)),
-        note: 'Counts are unique currently active prompts with a successful stored response in each listed engine\'s latest selectable run, not verified citations or a confidence score. Per-engine refreshed_at is the run completion time (or start if unfinished), not proof that all prompts succeeded. unmeasured_engines have no usable successful responses for active prompts: an engine can appear in per_engine with zero usable prompts and also be unmeasured if a run was attempted but failed. Other unmeasured engines may be unconfigured or unscanned. Failed or missing active prompts reduce coverage. Refreshing incomplete engines may incur provider charges.',
+        note: 'Counts are unique currently active prompts with a successful stored response after any recorded brand identity change, not verified citations or a confidence score. Per-engine refreshed_at is the run completion time (or start if unfinished), not proof that all prompts succeeded. unmeasured_engines include engines excluded for stale identity and engines with zero usable active-prompt responses; others may be unconfigured or unscanned. Refreshing incomplete engines may incur provider charges.',
       };
 
       const losingEngines = [...new Set(losingPrompts.flatMap((p) => p.engines_lost_on))];
@@ -1535,6 +1554,12 @@ export function registerTools(
         historical_settings_warning: enginesScannedBeforeUpdate.length > 0,
         note: 'The listed engines have usable observations from runs started before the latest brand settings update. Recommendations can therefore reflect earlier brand identity, category, aliases, exclusions or competitors. The database cannot determine which field changed; a cadence-only edit may not affect the evidence. Review the change and refresh affected engines before treating recommendations as current-configuration findings; refresh may incur provider charges.',
       };
+      const identity_attribution = {
+        last_identity_change_at: identityChangedAt === null
+          ? null : new Date(identityChangedAt).toISOString(),
+        stale_engines: staleIdentityEngines.sort(),
+        note: 'Scans begun before the last brand name/domain/alias/exclusion change are excluded from current content-gap recommendations and coverage. Those stored observations remain in history, not new-brand evidence; refresh after identity changes if needed (provider charges may apply). Earlier changes before identity-boundary migration are unknown.',
+      };
       // Google locale limits apply to usable observations even when no
       // competitor-only losses were found in those observations.
       const google_search_sampling = googleSearchSampling(perEngineCoverage
@@ -1548,11 +1573,14 @@ export function registerTools(
           observation_coverage,
           losing_prompt_evidence,
           configuration_comparability,
+          identity_attribution,
           measurement_scope,
           recommendations: [],
           prompt_source: 'fallback' as const,
           reason: successfulResponses === 0
-            ? 'No usable scan responses for currently active prompts in the latest completed runs. A refresh can collect evidence but may incur provider charges.'
+            ? staleIdentityEngines.length > 0
+              ? 'No usable current-identity scan responses for active prompts. Old identity observations were excluded; a refresh can collect new evidence but may incur provider charges.'
+              : 'No usable scan responses for currently active prompts in the latest completed runs. A refresh can collect evidence but may incur provider charges.'
             : `No competitor-only wins observed in ${successfulResponses} usable responses. This does not prove complete prompt or engine coverage.`,
         };
         return toolResult(payload);
@@ -1587,6 +1615,7 @@ export function registerTools(
         brand_id,
         observation_coverage,
         configuration_comparability,
+        identity_attribution,
         losing_prompt_evidence,
         measurement_scope,
         google_search_sampling,
