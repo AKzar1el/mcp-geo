@@ -284,6 +284,12 @@ const compareOutputSchema = z.object({
   comparison_semantics: z.string(),
   historical_coverage_note: z.string(),
   outside_current_tracking: z.array(z.string()),
+  prompt_set_scope: z.object({
+    selection: z.enum(['full_window', 'active_only']),
+    active_prompt_count: z.number().int().nonnegative().nullable(),
+    excluded_observations: z.number().int().nonnegative(),
+    note: z.string(),
+  }),
   your_share_of_voice_pct: z.number(),
   your_mentions: z.number(),
   competitors: z.array(
@@ -1036,7 +1042,7 @@ export function registerTools(
     {
       title: 'Compare competitor AI visibility',
       description:
-        "Compare brand/competitor mentions, co-mentions and share of voice. Coverage separates unmeasured from observed zero; new competitors lack historical scoring. Example: brand_id='acme', competitor_domains=['rival.com'], days=7.",
+        "Compare brand/competitor mentions and share of voice. active_prompts_only=true excludes retired prompts; default keeps history. Unmeasured coverage and tracking caveats are reported. Example: brand_id='acme', days=7.",
       inputSchema: {
         brand_id: z
           .string()
@@ -1052,6 +1058,10 @@ export function registerTools(
           .max(90)
           .default(7)
           .describe('Previous days to compare.'),
+        active_prompts_only: z
+          .boolean()
+          .default(false)
+          .describe('Exclude observations for retired prompts; default keeps the full historical comparison window.'),
       },
       outputSchema: compareOutputSchema,
       annotations: {
@@ -1060,7 +1070,7 @@ export function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ brand_id, competitor_domains, days }) => {
+    async ({ brand_id, competitor_domains, days, active_prompts_only }) => {
       const brand = await deps.db.getBrand(brand_id);
       if (!brand) {
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
@@ -1098,6 +1108,12 @@ export function registerTools(
           comparison_semantics: COMPARISON_SEMANTICS,
           historical_coverage_note: COMPARISON_HISTORY_CAVEAT,
           outside_current_tracking: outsideCurrentTracking,
+          prompt_set_scope: {
+            selection: active_prompts_only ? 'active_only' as const : 'full_window' as const,
+            active_prompt_count: null,
+            excluded_observations: 0,
+            note: 'No comparison targets were selected, so no prompt or response evidence was queried.',
+          },
           competitors: [],
           prompts_you_win: [],
           prompts_brand_only: [],
@@ -1124,11 +1140,24 @@ export function registerTools(
       const deduplicated = [...latestByRunPrompt.values()];
       // A response can arrive after the matching identity changed while its
       // run was started against the old brand configuration.
-      const allResponses = identityChangedAt === null ? deduplicated
+      const currentIdentityResponses = identityChangedAt === null ? deduplicated
         : deduplicated.filter((row) =>
           typeof row.run_started_at === 'number' &&
           Number.isFinite(row.run_started_at) && row.run_started_at >= identityChangedAt);
-      const excludedResponses = deduplicated.length - allResponses.length;
+      const excludedResponses = deduplicated.length - currentIdentityResponses.length;
+      const activePromptIds = active_prompts_only
+        ? new Set((await deps.db.getActivePrompts(brand_id)).map((prompt) => prompt.id))
+        : null;
+      const allResponses = activePromptIds === null ? currentIdentityResponses
+        : currentIdentityResponses.filter((row) => activePromptIds.has(row.prompt_id));
+      const prompt_set_scope = {
+        selection: active_prompts_only ? 'active_only' as const : 'full_window' as const,
+        active_prompt_count: activePromptIds?.size ?? null,
+        excluded_observations: currentIdentityResponses.length - allResponses.length,
+        note: active_prompts_only
+          ? 'Only successful observations for currently active prompt IDs were compared. Retired prompt evidence remains stored in history; no fresh provider measurements were requested.'
+          : 'The full historical window may include retired buyer questions. Set active_prompts_only=true to restrict comparison shares and prompt rankings to the current prompt set.',
+      };
       const identity_attribution = {
         last_identity_change_at: lastIdentityChangeAt,
         excluded_responses: excludedResponses,
@@ -1279,6 +1308,7 @@ export function registerTools(
         comparison_semantics: COMPARISON_SEMANTICS,
         historical_coverage_note: COMPARISON_HISTORY_CAVEAT,
         outside_current_tracking: outsideCurrentTracking,
+        prompt_set_scope,
         competitors: competitorsOut,
         prompts_you_win,
         prompts_brand_only,
