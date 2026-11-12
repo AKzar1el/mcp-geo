@@ -1585,6 +1585,7 @@ test('replacePrompts soft-deletes old prompts and getCitationRows filters by eng
     assert.equal(citations.length, 1);
     assert.equal(citations[0].prompt, 'old prompt');
     assert.equal(citations[0].brand_cited_with_link, 1);
+    assert.equal(citations[0].mode, 'live', 'citation provenance must preserve stored run dispatch mode');
     const filtered = await db.getCitationRows('acme', 0, 'claude');
     assert.equal(filtered.length, 0);
   } finally {

@@ -208,6 +208,7 @@ export interface VisibilityHistoryRow {
 export interface CitationRow {
   response_id: string;
   engine: string;
+  mode?: Run['mode'] | null;
   prompt: string;
   raw_response: string;
   brand_mentioned: number;
