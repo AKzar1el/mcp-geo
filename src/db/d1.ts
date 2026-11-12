@@ -898,7 +898,8 @@ export function createD1Db(d1: D1Database): Db {
       engine?: string,
       page?: CitationPageOptions,
     ): Promise<CitationRow[]> {
-      let sql = `SELECT pr.id AS response_id, r.engine AS engine, p.text AS prompt, pr.raw_response,
+      let sql = `SELECT pr.id AS response_id, r.engine AS engine, r.mode AS mode,
+                  p.text AS prompt, pr.raw_response,
                   pr.brand_mentioned, pr.brand_cited_with_link,
                   pr.cited_urls_json, pr.engine_citations_json,
                   pr.captured_at, pr.run_id, pr.prompt_id

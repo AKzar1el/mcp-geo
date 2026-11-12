@@ -313,6 +313,7 @@ const citationsOutputSchema = z.object({
       prompt: z.string(),
       cited_at: z.string(),
       citation_type: z.string(),
+      measurement_mode: z.enum(['model_only', 'search_requested']),
       response_excerpt: z.string(),
       cited_url: z.string().nullable(),
       url_source: z.enum(['provider_source', 'answer_text']).nullable(),
@@ -1209,7 +1210,7 @@ export function registerTools(
     {
       title: 'Get AI citation evidence',
       description:
-        "Return paginated brand mentions and link-only evidence with genuine URL provenance and top source domains. Continue with next_cursor within 24 hours; restart without a cursor after it expires. Example: brand_id='acme', days=14.",
+        "Return paginated brand mentions, link-only evidence, request mode per row, and top source domains. Search requests do not guarantee citations. Reuse next_cursor within 24 hours. Example: brand_id='acme', days=14.",
       inputSchema: {
         brand_id: z
           .string()
@@ -1269,6 +1270,7 @@ export function registerTools(
               : row.brand_cited_with_link === 1
               ? 'mention_with_link'
               : 'mention_without_link',
+          measurement_mode: visibilityMeasurementMode(row.engine, row.mode ?? 'live'),
           response_excerpt: buildResponseExcerpt(row.raw_response, brand),
           cited_url: brandUrl?.url ?? null,
           url_source: brandUrl?.source ?? null,

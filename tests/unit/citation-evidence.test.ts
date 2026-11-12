@@ -46,6 +46,7 @@ type CitationResult = {
     cited_url: string | null;
     citation_type: string;
     url_source: 'provider_source' | 'answer_text' | null;
+    measurement_mode: 'model_only' | 'search_requested';
   }>;
 };
 
@@ -174,6 +175,24 @@ test('unfiltered citation evidence flags only the Google surfaces actually repre
   ]);
   const result = await tool.handler({ brand_id: brand.id });
   assert.deepEqual(result.structuredContent.google_search_sampling?.engines, ['ai_mode']);
+});
+
+test('citation rows distinguish model-only batch and ungrounded responses from live search requests', async () => {
+  const citation = registerCitationTool([
+    citationRow({ run_id: 'batch', prompt: 'Batch response', engine: 'chatgpt', mode: 'batch' }),
+    citationRow({ run_id: 'live', prompt: 'Live response', engine: 'chatgpt', mode: 'live' }),
+    citationRow({ run_id: 'claude', prompt: 'Claude response', engine: 'claude', mode: 'live' }),
+    citationRow({ run_id: 'google', prompt: 'Google response', engine: 'ai_overviews', mode: 'live' }),
+  ]);
+  const { structuredContent } = await citation.handler({ brand_id: brand.id });
+  assert.deepEqual(Object.fromEntries(structuredContent.citations.map((row) => [
+    row.prompt, row.measurement_mode,
+  ])), {
+    'Batch response': 'model_only',
+    'Live response': 'search_requested',
+    'Claude response': 'model_only',
+    'Google response': 'search_requested',
+  });
 });
 
 test('get_citations produces distinct stable IDs for records sharing short UUID prefixes', async () => {
