@@ -305,6 +305,10 @@ const citationsOutputSchema = z.object({
   days: z.number(),
   engine: z.string().nullable(),
   google_search_sampling: googleSearchSamplingSchema,
+  identity_attribution: z.object({
+    identity_changed_at: z.string(),
+    note: z.string(),
+  }).nullable(),
   limit: z.number().int(),
   has_more: z.boolean(),
   next_cursor: z.string().nullable(),
@@ -317,6 +321,7 @@ const citationsOutputSchema = z.object({
       measurement_modes: z.array(z.enum(['model_only', 'search_requested'])),
       sample_url: z.string(),
       is_brand_domain: z.boolean(),
+      identity_scopes: z.array(z.enum(['current', 'historical', 'unattributed'])).optional(),
     }),
   ),
   citations: z.array(
@@ -327,6 +332,7 @@ const citationsOutputSchema = z.object({
       cited_at: z.string(),
       citation_type: z.string(),
       measurement_mode: z.enum(['model_only', 'search_requested']),
+      identity_scope: z.enum(['current', 'historical', 'unattributed']).optional(),
       response_excerpt: z.string(),
       cited_url: z.string().nullable(),
       url_source: z.enum(['provider_source', 'answer_text']).nullable(),
@@ -1320,6 +1326,7 @@ export function registerTools(
       if (!brand) {
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
       }
+      const identityBoundary = brand.identity_changed_at ?? null;
       const now = Date.now();
       const previous = cursor ? decodeCitationCursor(cursor, brand_id, days, engine ?? null) : null;
       const since = previous?.since ?? (now - days * 86_400_000);
@@ -1349,6 +1356,9 @@ export function registerTools(
               ? 'mention_with_link'
               : 'mention_without_link',
           measurement_mode: visibilityMeasurementMode(row.engine, row.mode ?? 'live'),
+          ...(identityBoundary !== null
+            ? { identity_scope: citationIdentityScope(row.run_started_at, identityBoundary) }
+            : {}),
           response_excerpt: buildResponseExcerpt(row.raw_response, brand),
           cited_url: brandUrl?.url ?? null,
           url_source: brandUrl?.source ?? null,
@@ -1359,6 +1369,10 @@ export function registerTools(
         brand_id,
         days,
         engine: engine ?? null,
+        identity_attribution: identityBoundary === null ? null : {
+          identity_changed_at: new Date(identityBoundary).toISOString(),
+          note: 'Citation rows and top source counts preserve evidence from the requested historical window, including prior tracked brand identities. Historical and unattributed records are not proof of current-brand visibility. Identity scope uses run start, not response capture time.',
+        },
         google_search_sampling: googleSearchSampling([
           ...(engine ? [engine] : []),
           ...sourceResponses.map(({ engine: sourceEngine }) => sourceEngine),
@@ -1382,7 +1396,7 @@ export function registerTools(
               },
             }))
           : null,
-        top_sources: buildTopSources(sourceResponses, brand),
+        top_sources: buildTopSources(sourceResponses, brand, identityBoundary),
         citations,
       };
       return toolResult(payload);
@@ -2195,7 +2209,14 @@ function citationId(responseId: string): string {
   return `cit_${responseId}`;
 }
 
-function buildTopSources(responses: CitationSourceRow[], brand: Brand) {
+type CitationIdentityScope = 'current' | 'historical' | 'unattributed';
+
+function citationIdentityScope(startedAt: number | null | undefined, boundary: number): CitationIdentityScope {
+  if (typeof startedAt !== 'number' || !Number.isFinite(startedAt)) return 'unattributed';
+  return startedAt < boundary ? 'historical' : 'current';
+}
+
+function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityBoundary: number | null = null) {
   const sources = new Map<
     string,
     {
@@ -2203,6 +2224,7 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand) {
       prompts: Set<string>;
       engines: Set<string>;
       measurement_modes: Set<'model_only' | 'search_requested'>;
+      identity_scopes: Set<CitationIdentityScope>;
       sample_url: string;
       sample_captured_at: number;
       sample_response_id: string;
@@ -2211,6 +2233,8 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand) {
 
   for (const response of responses) {
     const domainsForResponse = new Map<string, string>();
+    const identityScope = identityBoundary === null
+      ? null : citationIdentityScope(response.run_started_at, identityBoundary);
     for (const rawUrl of response.engine_citations) {
       try {
         const parsed = new URL(rawUrl);
@@ -2235,6 +2259,7 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand) {
         existing.prompts.add(response.prompt_id);
         existing.engines.add(response.engine);
         existing.measurement_modes.add(measurementMode);
+        if (identityScope !== null) existing.identity_scopes.add(identityScope);
         // A source sample must not depend on database row ordering. Prefer
         // the newest observation, then a stable ID for tied timestamps.
         if (
@@ -2252,6 +2277,7 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand) {
           prompts: new Set([response.prompt_id]),
           engines: new Set([response.engine]),
           measurement_modes: new Set([measurementMode]),
+          identity_scopes: new Set(identityScope === null ? [] : [identityScope]),
           sample_url: sampleUrl,
           sample_captured_at: response.captured_at,
           sample_response_id: response.id,
@@ -2267,6 +2293,7 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand) {
       prompt_count: source.prompts.size,
       engines: [...source.engines].sort(),
       measurement_modes: [...source.measurement_modes].sort(),
+      ...(identityBoundary !== null ? { identity_scopes: [...source.identity_scopes].sort() } : {}),
       sample_url: source.sample_url,
       is_brand_domain: hostMatchesDomain(domain, brand.domain),
     }))

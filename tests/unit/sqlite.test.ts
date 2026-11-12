@@ -559,7 +559,7 @@ test('citation source projections preserve complete window, engine and status pa
       return run.id;
     };
     const firstRunId = await insert(brand, 'p1', 'chatgpt', 'ok', 'https://research.example/old', now - 20_000, 'batch');
-    await insert(brand, 'p1', 'perplexity', 'ok', 'https://research.example/new', now - 10_000);
+    const secondRunId = await insert(brand, 'p1', 'perplexity', 'ok', 'https://research.example/new', now - 10_000);
     await insert(brand, 'p1', 'gemini', 'failed', 'https://invalid.example/failed', now - 5_000);
     await insert(other, 'p2', 'chatgpt', 'ok', 'https://other.example/citation', now - 5_000);
     // A successful retry supersedes an older observation of the same run and
@@ -603,6 +603,9 @@ test('citation source projections preserve complete window, engine and status pa
       assert.deepEqual(full.map((row) => row.engine), ['chatgpt', 'perplexity']);
       assert.deepEqual(full.map((row) => row.mode), ['batch', 'live'],
         'SQLite and D1 must retain source run mode without reading AI answer bodies');
+      assert.deepEqual(full.map((row) => row.run_started_at),
+        [(await db.getRunById(firstRunId))?.started_at, (await db.getRunById(secondRunId))?.started_at],
+        'SQLite and D1 must project originating run start instead of source capture time');
       const frozenWindow = await adapter.getCitationSourceRows('acme', now - 30_000, now - 18_000);
       assert.deepEqual(frozenWindow.map((row) => row.engine_citations[0]),
         ['https://research.example/old'],
@@ -1592,6 +1595,20 @@ test('replacePrompts soft-deletes old prompts and getCitationRows filters by eng
     assert.equal(citations[0].prompt, 'old prompt');
     assert.equal(citations[0].brand_cited_with_link, 1);
     assert.equal(citations[0].mode, 'live', 'citation provenance must preserve stored run dispatch mode');
+    assert.equal(citations[0].run_started_at, run.started_at,
+      'citation page identity provenance must use run start, not response capture');
+    const hosted = createD1Db({
+      prepare(sql: string) {
+        return { bind(...params: unknown[]) {
+          return { async all() {
+            const stmt = db.raw.prepare(sql);
+            return { results: stmt.all(...(params as Parameters<typeof stmt.all>)) };
+          } };
+        } };
+      },
+    } as unknown as Parameters<typeof createD1Db>[0]);
+    assert.equal((await hosted.getCitationRows('acme', 0))[0].run_started_at, run.started_at,
+      'D1 and SQLite citation pages must return identical run start provenance');
     const filtered = await db.getCitationRows('acme', 0, 'claude');
     assert.equal(filtered.length, 0);
   } finally {
