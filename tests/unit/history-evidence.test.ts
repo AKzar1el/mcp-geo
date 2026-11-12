@@ -19,8 +19,15 @@ type HistoryTool = {
     brand_id: string;
     days: number;
     granularity: 'daily' | 'weekly';
+    current_identity_only?: boolean;
   }) => Promise<{ structuredContent: {
     series: HistoryPoint[];
+    identity_scope: {
+      selection: 'full_history' | 'current_identity_only';
+      excluded_runs: number;
+      unknown_start_runs: number;
+      note: string;
+    };
     measurement_scope: {
       mixed_mode_engines: string[];
       by_engine: Record<string, {
@@ -219,8 +226,10 @@ test('visibility history discloses US-English scope when historical Google scans
 test('visibility history discloses stored observations spanning an identity edit', async () => {
   const changedAt = Date.UTC(2026, 0, 8);
   const history = registerHistoryTool([
-    { run_id: 'old', engine: 'chatgpt', completed_at: changedAt - 86_400_000, total: 2, hits: 2 },
-    { run_id: 'new', engine: 'chatgpt', completed_at: changedAt + 86_400_000, total: 2, hits: 0 },
+    { run_id: 'old', engine: 'chatgpt', started_at: changedAt - 86_400_000,
+      completed_at: changedAt - 86_400_000, total: 2, hits: 2 },
+    { run_id: 'new', engine: 'chatgpt', started_at: changedAt + 86_400_000,
+      completed_at: changedAt + 86_400_000, total: 2, hits: 0 },
   ], { identityChangedAt: changedAt });
   const result = await history.handler({ brand_id: 'acme', days: 30, granularity: 'weekly' });
   assert.equal(result.structuredContent.identity_comparability.last_identity_change_at, new Date(changedAt).toISOString());
@@ -247,6 +256,55 @@ test('history attributes a scan to the identity in effect when it started, not w
   assert.equal(result.structuredContent.identity_comparability.pre_change_runs, 1);
   assert.equal(result.structuredContent.identity_comparability.post_change_runs, 1);
   assert.equal(result.structuredContent.identity_comparability.mixes_identity_versions, true);
+});
+
+test('current-identity history excludes pre-edit and unknown-start evidence without changing historical defaults', async () => {
+  const changedAt = Date.UTC(2026, 0, 8, 12);
+  const history = registerHistoryTool([
+    { run_id: 'old-late', engine: 'chatgpt', started_at: changedAt - 60_000,
+      completed_at: changedAt + 60_000, total: 2, hits: 2 },
+    { run_id: 'new', engine: 'chatgpt', started_at: changedAt + 120_000,
+      completed_at: changedAt + 180_000, total: 2, hits: 0 },
+    { run_id: 'unknown', engine: 'chatgpt', completed_at: changedAt + 240_000,
+      total: 2, hits: 2 },
+  ], { identityChangedAt: changedAt });
+  const args = { brand_id: 'acme', days: 30, granularity: 'daily' as const };
+  const legacy = (await history.handler(args)).structuredContent;
+  assert.equal(legacy.identity_scope.selection, 'full_history');
+  assert.equal(legacy.identity_scope.excluded_runs, 0);
+  assert.equal(legacy.series[0].overall_score, 67);
+
+  const current = (await history.handler({ ...args, current_identity_only: true })).structuredContent;
+  assert.equal(current.identity_scope.selection, 'current_identity_only');
+  assert.equal(current.identity_scope.excluded_runs, 2);
+  assert.equal(current.identity_scope.unknown_start_runs, 1);
+  assert.match(current.identity_scope.note, /run start|identity/i);
+  assert.equal(current.series[0].overall_score, 0);
+  assert.deepEqual(current.series[0].per_engine_evidence.chatgpt.usable_prompts, 2);
+  assert.deepEqual(current.measurement_scope.by_engine.chatgpt.search_requested,
+    { brand_mentions: 0, usable_prompts: 2, score: 0 });
+  assert.equal(current.identity_comparability.pre_change_runs, 1,
+    'historical comparability metadata should still describe the entire requested window');
+  assert.equal(current.identity_comparability.post_change_runs, 1,
+    'unknown start provenance must not be classified as a post-change run');
+});
+
+test('current-identity history preserves unknown-boundary data and returns no fabricated zero when all runs are stale', async () => {
+  const changedAt = Date.UTC(2026, 0, 8, 12);
+  const old = { run_id: 'old', engine: 'chatgpt', started_at: changedAt - 60_000,
+    completed_at: changedAt + 60_000, total: 2, hits: 2 };
+  const args = { brand_id: 'acme', days: 30, granularity: 'daily' as const,
+    current_identity_only: true };
+  const oldOnly = (await registerHistoryTool([old], { identityChangedAt: changedAt })
+    .handler(args)).structuredContent;
+  assert.deepEqual(oldOnly.series, []);
+  assert.equal(oldOnly.identity_scope.excluded_runs, 1);
+  assert.equal(oldOnly.identity_comparability.pre_change_runs, 1);
+
+  const unknownBoundary = (await registerHistoryTool([old]).handler(args)).structuredContent;
+  assert.equal(unknownBoundary.series[0].overall_score, 100);
+  assert.equal(unknownBoundary.identity_scope.excluded_runs, 0);
+  assert.match(unknownBoundary.identity_scope.note, /no recorded matching-identity boundary/i);
 });
 
 test('visibility history exposes the evidence denominator behind each engine score', async () => {
