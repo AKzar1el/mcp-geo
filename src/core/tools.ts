@@ -302,6 +302,7 @@ const citationsOutputSchema = z.object({
       citation_count: z.number(),
       prompt_count: z.number(),
       engines: z.array(z.string()),
+      measurement_modes: z.array(z.enum(['model_only', 'search_requested'])),
       sample_url: z.string(),
       is_brand_domain: z.boolean(),
     }),
@@ -2106,6 +2107,7 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand) {
       citation_count: number;
       prompts: Set<string>;
       engines: Set<string>;
+      measurement_modes: Set<'model_only' | 'search_requested'>;
       sample_url: string;
       sample_captured_at: number;
       sample_response_id: string;
@@ -2132,10 +2134,12 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand) {
 
     for (const [domain, sampleUrl] of domainsForResponse) {
       const existing = sources.get(domain);
+      const measurementMode = visibilityMeasurementMode(response.engine, response.mode ?? 'live');
       if (existing) {
         existing.citation_count += 1;
         existing.prompts.add(response.prompt_id);
         existing.engines.add(response.engine);
+        existing.measurement_modes.add(measurementMode);
         // A source sample must not depend on database row ordering. Prefer
         // the newest observation, then a stable ID for tied timestamps.
         if (
@@ -2152,6 +2156,7 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand) {
           citation_count: 1,
           prompts: new Set([response.prompt_id]),
           engines: new Set([response.engine]),
+          measurement_modes: new Set([measurementMode]),
           sample_url: sampleUrl,
           sample_captured_at: response.captured_at,
           sample_response_id: response.id,
@@ -2166,6 +2171,7 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand) {
       citation_count: source.citation_count,
       prompt_count: source.prompts.size,
       engines: [...source.engines].sort(),
+      measurement_modes: [...source.measurement_modes].sort(),
       sample_url: source.sample_url,
       is_brand_domain: hostMatchesDomain(domain, brand.domain),
     }))

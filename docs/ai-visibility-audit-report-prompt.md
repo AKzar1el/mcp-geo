@@ -65,9 +65,9 @@ Use `your_mentions` for the tracked brand and each competitor's `mentions` value
 
 ## 5. Citation/source evidence
 Start with the recurring source landscape from `top_sources` when it is available:
-Domain | Citations | Prompts | Engines | Brand domain?
+Domain | Citations | Prompts | Engines | Evidence modes | Brand domain?
 
-Use the reported `citation_count`, `prompt_count`, `engines`, and `is_brand_domain` values as returned. Do not infer a citation share or source category that mcp-geo did not report.
+Use the reported `citation_count`, `prompt_count`, `engines`, `measurement_modes`, and `is_brand_domain` values as returned. Disclose model-only versus search-requested evidence for each recurring source; neither request mode alone verifies that a source was actually cited. Do not infer a citation share or source category that mcp-geo did not report.
 
 List the strongest concrete citation examples returned by the engines:
 Prompt | Engine | Source/domain | What the evidence shows

@@ -538,8 +538,9 @@ test('citation source projections preserve complete window, engine and status pa
       status: 'ok' | 'failed',
       citedUrl: string,
       capturedAt: number,
+      mode: 'live' | 'batch' = 'live',
     ) => {
-      const run = await db.createRun(target, engine, 'live', 1);
+      const run = await db.createRun(target, engine, mode, 1);
       await db.persistEngineRun(run.id, engine, 'offline-model', 3600, [{
         prompt_id: promptId,
         raw_response: 'This large AI answer is not needed for source aggregation. '.repeat(30),
@@ -554,7 +555,7 @@ test('citation source projections preserve complete window, engine and status pa
         .run(capturedAt, run.id);
       return run.id;
     };
-    const firstRunId = await insert(brand, 'p1', 'chatgpt', 'ok', 'https://research.example/old', now - 20_000);
+    const firstRunId = await insert(brand, 'p1', 'chatgpt', 'ok', 'https://research.example/old', now - 20_000, 'batch');
     await insert(brand, 'p1', 'perplexity', 'ok', 'https://research.example/new', now - 10_000);
     await insert(brand, 'p1', 'gemini', 'failed', 'https://invalid.example/failed', now - 5_000);
     await insert(other, 'p2', 'chatgpt', 'ok', 'https://other.example/citation', now - 5_000);
@@ -597,6 +598,8 @@ test('citation source projections preserve complete window, engine and status pa
       const full = await adapter.getCitationSourceRows('acme', now - 30_000, now);
       assert.deepEqual(full.map((row) => row.engine_citations[0]), expectedUrls);
       assert.deepEqual(full.map((row) => row.engine), ['chatgpt', 'perplexity']);
+      assert.deepEqual(full.map((row) => row.mode), ['batch', 'live'],
+        'SQLite and D1 must retain source run mode without reading AI answer bodies');
       const frozenWindow = await adapter.getCitationSourceRows('acme', now - 30_000, now - 18_000);
       assert.deepEqual(frozenWindow.map((row) => row.engine_citations[0]),
         ['https://research.example/old'],

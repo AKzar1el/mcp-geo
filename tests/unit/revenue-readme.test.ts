@@ -176,13 +176,15 @@ test('audit report prompt uses the shipped citation source summary without inven
   );
   assert.match(
     reportPrompt,
-    /Domain \| Citations \| Prompts \| Engines \| Brand domain\?/,
+    /Domain \| Citations \| Prompts \| Engines \| Evidence modes \| Brand domain\?/,
   );
   assert.match(
     reportPrompt,
     /`citation_count`[\s\S]*`prompt_count`[\s\S]*`engines`[\s\S]*`is_brand_domain`/,
   );
   assert.match(reportPrompt, /Do not infer a citation share or source category/);
+  assert.match(reportPrompt, /`measurement_modes`[\s\S]*model-only versus search-requested evidence/);
+  assert.match(reportPrompt, /neither request mode alone verifies that a source was actually cited/);
   assert.match(
     reportPrompt,
     /recurring source domains from `top_sources`, when available/,

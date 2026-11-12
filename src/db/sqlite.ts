@@ -776,7 +776,7 @@ export function openSqliteDb(path?: string): SqliteDb {
       // within this window so a later retry cannot rewrite a frozen cursor page.
       const rows = sqlite
         .prepare(
-          `SELECT pr.id, pr.prompt_id, pr.engine, pr.engine_citations_json, pr.captured_at
+          `SELECT pr.id, pr.prompt_id, pr.engine, r.mode AS mode, pr.engine_citations_json, pr.captured_at
              FROM prompt_responses pr
              JOIN runs r ON r.id = pr.run_id
             WHERE r.brand_id = ?
