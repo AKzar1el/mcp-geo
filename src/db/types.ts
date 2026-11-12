@@ -226,6 +226,7 @@ export interface CitationSourceRow {
   id: string;
   prompt_id: string;
   engine: string;
+  mode?: Run['mode'] | null;
   engine_citations: string[];
   captured_at: number;
 }

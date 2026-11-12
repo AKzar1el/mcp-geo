@@ -9,6 +9,8 @@ import type {
   PromptResponse,
 } from '../../src/db/types.ts';
 
+type SourceFixture = PromptResponse & { mode?: 'live' | 'batch' };
+
 const brand: Brand = {
   id: 'acme',
   user_id: 'test-user',
@@ -38,6 +40,7 @@ type CitationResult = {
     citation_count: number;
     prompt_count: number;
     engines: string[];
+    measurement_modes: Array<'model_only' | 'search_requested'>;
     sample_url: string;
     is_brand_domain: boolean;
   }>;
@@ -62,7 +65,7 @@ type CitationTool = {
 
 function registerCitationTool(
   row: CitationRow | CitationRow[],
-  responses: PromptResponse[] = [],
+  responses: SourceFixture[] = [],
 ): CitationTool {
   let citationTool: CitationTool | undefined;
   const server = {
@@ -100,10 +103,11 @@ function registerCitationTool(
       getCitationSourceRows: async (_brandId, _since, until, engine) =>
         responses
           .filter((response) => response.captured_at <= until && (!engine || response.engine === engine))
-          .map(({ id, prompt_id, engine: responseEngine, captured_at, engine_citations }) => ({
+          .map(({ id, prompt_id, engine: responseEngine, mode, captured_at, engine_citations }) => ({
             id,
             prompt_id,
             engine: responseEngine,
+            mode,
             captured_at,
             engine_citations,
           })),
@@ -389,6 +393,7 @@ test('get_citations ranks engine-native source domains across the requested wind
       citation_count: 2,
       prompt_count: 2,
       engines: ['chatgpt', 'perplexity'],
+      measurement_modes: ['search_requested'],
       sample_url: 'https://www.g2.com/categories/project-management',
       is_brand_domain: false,
     },
@@ -397,6 +402,7 @@ test('get_citations ranks engine-native source domains across the requested wind
       citation_count: 1,
       prompt_count: 1,
       engines: ['chatgpt'],
+      measurement_modes: ['search_requested'],
       sample_url: 'https://acme.com/guides/project-management',
       is_brand_domain: true,
     },
@@ -405,10 +411,24 @@ test('get_citations ranks engine-native source domains across the requested wind
       citation_count: 1,
       prompt_count: 1,
       engines: ['gemini'],
+      measurement_modes: ['model_only'],
       sample_url: 'https://example.org/pm-tools',
       is_brand_domain: false,
     },
   ]);
+});
+
+test('top source summaries distinguish mixed model-only and search-requested observations', async () => {
+  const captured_at = Date.now() - 60_000;
+  const source = 'https://research.example/guide';
+  const citation = registerCitationTool(citationRow({ captured_at }), [
+    { ...promptResponse({ id: 'batch', run_id: 'batch', captured_at, engine: 'chatgpt', engine_citations: [source] }), mode: 'batch' },
+    { ...promptResponse({ id: 'live', run_id: 'live', captured_at, engine: 'chatgpt', engine_citations: [source] }), mode: 'live' },
+    { ...promptResponse({ id: 'claude', run_id: 'claude', captured_at, engine: 'claude', engine_citations: [source] }), mode: 'live' },
+  ]);
+  const result = await citation.handler({ brand_id: brand.id });
+  assert.equal(result.structuredContent.top_sources[0].citation_count, 3);
+  assert.deepEqual(result.structuredContent.top_sources[0].measurement_modes, ['model_only', 'search_requested']);
 });
 
 test('get_citations aggregates sources without fetching full AI response bodies', async () => {
