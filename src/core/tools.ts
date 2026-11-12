@@ -1494,11 +1494,16 @@ export function registerTools(
         historical_settings_warning: enginesScannedBeforeUpdate.length > 0,
         note: 'The listed engines have usable observations from runs started before the latest brand settings update. Recommendations can therefore reflect earlier brand identity, category, aliases, exclusions or competitors. The database cannot determine which field changed; a cadence-only edit may not affect the evidence. Review the change and refresh affected engines before treating recommendations as current-configuration findings; refresh may incur provider charges.',
       };
+      // Google locale limits apply to usable observations even when no
+      // competitor-only losses were found in those observations.
+      const google_search_sampling = googleSearchSampling(perEngineCoverage
+        .filter(({ usable_prompt_count }) => usable_prompt_count > 0)
+        .map(({ engine }) => engine));
 
       if (losingPrompts.length === 0) {
         const payload = {
           brand_id,
-          google_search_sampling: null,
+          google_search_sampling,
           observation_coverage,
           losing_prompt_evidence,
           configuration_comparability,
@@ -1543,9 +1548,7 @@ export function registerTools(
         configuration_comparability,
         losing_prompt_evidence,
         measurement_scope,
-        google_search_sampling: googleSearchSampling(
-          losingPrompts.flatMap((prompt) => prompt.engines_lost_on),
-        ),
+        google_search_sampling,
         recommendations,
         prompt_source,
         ...(fallbackReason ? { reason: fallbackReason } : {}),
