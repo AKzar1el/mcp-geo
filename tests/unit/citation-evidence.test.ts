@@ -9,7 +9,7 @@ import type {
   PromptResponse,
 } from '../../src/db/types.ts';
 
-type SourceFixture = PromptResponse & { mode?: 'live' | 'batch' };
+type SourceFixture = PromptResponse & { mode?: 'live' | 'batch'; run_started_at?: number | null };
 
 const brand: Brand = {
   id: 'acme',
@@ -43,13 +43,16 @@ type CitationResult = {
     measurement_modes: Array<'model_only' | 'search_requested'>;
     sample_url: string;
     is_brand_domain: boolean;
+    identity_scopes?: Array<'current' | 'historical' | 'unattributed'>;
   }>;
+  identity_attribution: null | { identity_changed_at: string; note: string };
   citations: Array<{
     id: string;
     cited_url: string | null;
     citation_type: string;
     url_source: 'provider_source' | 'answer_text' | null;
     measurement_mode: 'model_only' | 'search_requested';
+    identity_scope?: 'current' | 'historical' | 'unattributed';
   }>;
 };
 
@@ -66,6 +69,7 @@ type CitationTool = {
 function registerCitationTool(
   row: CitationRow | CitationRow[],
   responses: SourceFixture[] = [],
+  trackedBrand: Brand = brand,
 ): CitationTool {
   let citationTool: CitationTool | undefined;
   const server = {
@@ -78,7 +82,7 @@ function registerCitationTool(
 
   registerTools(server, {
     db: {
-      getBrand: async () => brand,
+      getBrand: async () => trackedBrand,
       getCitationRows: async (_brandId, _since, engine, page) => {
         const rows = (Array.isArray(row) ? row : [row])
           .filter((item) => !engine || item.engine === engine)
@@ -103,13 +107,14 @@ function registerCitationTool(
       getCitationSourceRows: async (_brandId, _since, until, engine) =>
         responses
           .filter((response) => response.captured_at <= until && (!engine || response.engine === engine))
-          .map(({ id, prompt_id, engine: responseEngine, mode, captured_at, engine_citations }) => ({
+          .map(({ id, prompt_id, engine: responseEngine, mode, captured_at, engine_citations, run_started_at }) => ({
             id,
             prompt_id,
             engine: responseEngine,
             mode,
             captured_at,
             engine_citations,
+            run_started_at,
           })),
     } as Db,
     env: {},
@@ -122,8 +127,8 @@ function registerCitationTool(
 }
 
 function promptResponse(
-  overrides: Partial<PromptResponse> = {},
-): PromptResponse {
+  overrides: Partial<SourceFixture> = {},
+): SourceFixture {
   return {
     id: 'response-1',
     run_id: 'run-1',
@@ -197,6 +202,29 @@ test('citation rows distinguish model-only batch and ungrounded responses from l
     'Claude response': 'model_only',
     'Google response': 'search_requested',
   });
+});
+
+test('citation evidence distinguishes old-identity scans from current scans using run start rather than capture time', async () => {
+  const now = Date.now();
+  const boundary = now - 10_000;
+  const changedBrand: Brand = { ...brand, identity_changed_at: boundary, name: 'New Brand', domain: 'newbrand.example' };
+  const rows = [
+    citationRow({ response_id: 'old', run_id: 'old-run', prompt_id: 'p1', run_started_at: boundary - 1000, captured_at: now - 1000 }),
+    citationRow({ response_id: 'new', run_id: 'new-run', prompt_id: 'p2', run_started_at: boundary + 1000, captured_at: now - 2000 }),
+    citationRow({ response_id: 'unknown', run_id: 'unknown-run', prompt_id: 'p3', captured_at: now - 3000 }),
+  ];
+  const responses = [
+    promptResponse({ id: 'old', run_id: 'old-run', prompt_id: 'p1', run_started_at: boundary - 1000, captured_at: now - 1000, engine_citations: ['https://research.example/old'] }),
+    promptResponse({ id: 'new', run_id: 'new-run', prompt_id: 'p2', run_started_at: boundary + 1000, captured_at: now - 2000, engine_citations: ['https://research.example/new'] }),
+    promptResponse({ id: 'unknown', run_id: 'unknown-run', prompt_id: 'p3', captured_at: now - 3000, engine_citations: ['https://research.example/unknown'] }),
+  ];
+  const result = (await registerCitationTool(rows, responses, changedBrand).handler({ brand_id: brand.id })).structuredContent;
+  assert.equal(result.identity_attribution?.identity_changed_at, new Date(boundary).toISOString());
+  assert.match(result.identity_attribution?.note ?? '', /historical/i);
+  assert.deepEqual(Object.fromEntries(result.citations.map((row) => [row.id, row.identity_scope])), {
+    cit_old: 'historical', cit_new: 'current', cit_unknown: 'unattributed',
+  });
+  assert.deepEqual(result.top_sources[0]?.identity_scopes, ['current', 'historical', 'unattributed']);
 });
 
 test('get_citations produces distinct stable IDs for records sharing short UUID prefixes', async () => {

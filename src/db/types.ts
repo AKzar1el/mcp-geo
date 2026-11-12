@@ -209,6 +209,7 @@ export interface CitationRow {
   response_id: string;
   engine: string;
   mode?: Run['mode'] | null;
+  run_started_at?: number | null;
   prompt: string;
   raw_response: string;
   brand_mentioned: number;
@@ -227,6 +228,7 @@ export interface CitationSourceRow {
   prompt_id: string;
   engine: string;
   mode?: Run['mode'] | null;
+  run_started_at?: number | null;
   engine_citations: string[];
   captured_at: number;
 }
