@@ -131,8 +131,10 @@ test('content-gap output schema describes recommendation records', () => {
         active_prompt_count: 2,
         per_engine: [{
           engine: 'chatgpt', run_id: 'run-1', usable_prompt_count: 1, missing_prompt_count: 1,
+          refreshed_at: '2026-11-12T00:00:00.000Z',
         }],
         incomplete_engines: ['chatgpt'],
+        unmeasured_engines: ['claude'],
         note: 'One of two active prompts has usable evidence.',
       },
       losing_prompt_evidence: {
@@ -179,6 +181,7 @@ test('content-gap output schema describes recommendation records', () => {
         active_prompt_count: 1,
         per_engine: [],
         incomplete_engines: [],
+        unmeasured_engines: ['chatgpt', 'claude'],
         note: 'No completed runs.',
       },
       losing_prompt_evidence: {

@@ -6,6 +6,7 @@ import {
   buildFallbackRecommendations,
 } from '../../src/core/content-gap-analysis.ts';
 import { registerTools } from '../../src/core/tools.ts';
+import { ALL_ENGINES } from '../../src/core/engines.ts';
 import type { Brand, Db, PromptResponse } from '../../src/db/types.ts';
 
 test('fallback recommendations stay grounded in observed losing prompts', () => {
@@ -825,9 +826,10 @@ test('content gaps disclose usable active-prompt coverage of latest completed en
         active_prompt_count: number;
         per_engine: Array<{
           engine: string; run_id: string; usable_prompt_count: number;
-          missing_prompt_count: number;
+          missing_prompt_count: number; refreshed_at: string | null;
         }>;
         incomplete_engines: string[];
+        unmeasured_engines: string[];
         note: string;
       };
     };
@@ -842,8 +844,8 @@ test('content gaps disclose usable active-prompt coverage of latest completed en
       getBrand: async () => brand,
       getActivePrompts: async () => [{ id: 'prompt-1' }, { id: 'prompt-2' }],
       getLatestCompletedRun: async (_id, engine) =>
-        engine === 'chatgpt' ? { id: 'run-chatgpt' } :
-        engine === 'claude' ? { id: 'run-claude' } : null,
+        engine === 'chatgpt' ? { id: 'run-chatgpt', started_at: 1000, completed_at: 1500 } :
+        engine === 'claude' ? { id: 'run-claude', started_at: 3000, completed_at: null } : null,
       getResponsesForRun: async (runId) => runId === 'run-chatgpt' ? [
         response(runId, 'prompt-1', 'success', 'ok', 100),
         response(runId, 'prompt-1', 'later-failure', 'error', 200),
@@ -861,9 +863,11 @@ test('content gaps disclose usable active-prompt coverage of latest completed en
   const result = (await handler({ brand_id: brand.id, max_recommendations: 2 })).structuredContent;
   assert.equal(result.observation_coverage.active_prompt_count, 2);
   assert.deepEqual(result.observation_coverage.per_engine, [
-    { engine: 'chatgpt', run_id: 'run-chatgpt', usable_prompt_count: 1, missing_prompt_count: 1 },
-    { engine: 'claude', run_id: 'run-claude', usable_prompt_count: 2, missing_prompt_count: 0 },
+    { engine: 'chatgpt', run_id: 'run-chatgpt', usable_prompt_count: 1, missing_prompt_count: 1, refreshed_at: new Date(1500).toISOString() },
+    { engine: 'claude', run_id: 'run-claude', usable_prompt_count: 2, missing_prompt_count: 0, refreshed_at: new Date(3000).toISOString() },
   ]);
   assert.deepEqual(result.observation_coverage.incomplete_engines, ['chatgpt']);
-  assert.match(result.observation_coverage.note, /unlisted engines|no completed run/i);
+  assert.deepEqual(result.observation_coverage.unmeasured_engines,
+    ALL_ENGINES.filter((engine) => engine !== 'chatgpt' && engine !== 'claude'));
+  assert.match(result.observation_coverage.note, /unmeasured_engines|no usable stored/i);
 });

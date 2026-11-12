@@ -368,10 +368,12 @@ const contentGapsOutputSchema = z.object({
     per_engine: z.array(z.object({
       engine: z.string(),
       run_id: z.string(),
+      refreshed_at: z.string().nullable(),
       usable_prompt_count: z.number().int().nonnegative(),
       missing_prompt_count: z.number().int().nonnegative(),
     })),
     incomplete_engines: z.array(z.string()),
+    unmeasured_engines: z.array(z.string()),
     note: z.string(),
   }),
   losing_prompt_evidence: z.object({
@@ -1369,7 +1371,7 @@ export function registerTools(
       >();
       let successfulResponses = 0;
       const perEngineCoverage: Array<{
-        engine: string; run_id: string; usable_prompt_count: number;
+        engine: string; run_id: string; refreshed_at: string | null; usable_prompt_count: number;
         missing_prompt_count: number;
       }> = [];
       for (const engine of ALL_ENGINES) {
@@ -1390,8 +1392,12 @@ export function registerTools(
         }
         // Report the denominator independently of whether any competitor won.
         // An observed loss on one prompt is not evidence of complete coverage.
+        const refreshedAtMs = run.completed_at ?? run.started_at;
         perEngineCoverage.push({
           engine, run_id: run.id,
+          refreshed_at: Number.isFinite(refreshedAtMs) &&
+            Math.abs(refreshedAtMs) <= 8.64e15
+            ? new Date(refreshedAtMs).toISOString() : null,
           usable_prompt_count: latestOkByPrompt.size,
           missing_prompt_count: activePromptIds.size - latestOkByPrompt.size,
         });
@@ -1461,7 +1467,9 @@ export function registerTools(
         incomplete_engines: perEngineCoverage
           .filter(({ missing_prompt_count }) => missing_prompt_count > 0)
           .map(({ engine }) => engine),
-        note: 'Counts are unique currently active prompts with a successful stored response in each listed engine\'s latest completed run, not verified citations or a confidence score. Engines not listed have no completed run; they may be unconfigured or unscanned. Failed or missing prompt results reduce coverage. Refreshing incomplete engines may incur provider charges.',
+        unmeasured_engines: ALL_ENGINES.filter(
+          (engine) => !perEngineCoverage.some((entry) => entry.engine === engine)),
+        note: 'Counts are unique currently active prompts with a successful stored response in each listed engine\'s latest selectable run, not verified citations or a confidence score. Per-engine refreshed_at is the run completion time (or start if unfinished), not proof that all prompts succeeded. unmeasured_engines have no selectable stored run with successful responses; they may be unconfigured, unscanned or failed. Failed or missing active prompts reduce coverage. Refreshing incomplete engines may incur provider charges.',
       };
 
       const losingEngines = [...new Set(losingPrompts.flatMap((p) => p.engines_lost_on))];
