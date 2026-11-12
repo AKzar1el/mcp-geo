@@ -300,6 +300,17 @@ const compareOutputSchema = z.object({
   requested_competitor_domains: z.array(z.string()).nullable(),
 });
 
+const citationSourceOutputSchema = z.object({
+  domain: z.string(),
+  citation_count: z.number(),
+  prompt_count: z.number(),
+  engines: z.array(z.string()),
+  measurement_modes: z.array(z.enum(['model_only', 'search_requested'])),
+  sample_url: z.string(),
+  is_brand_domain: z.boolean(),
+  identity_scopes: z.array(z.enum(['current', 'historical', 'unattributed'])).optional(),
+});
+
 const citationsOutputSchema = z.object({
   brand_id: z.string(),
   days: z.number(),
@@ -312,18 +323,8 @@ const citationsOutputSchema = z.object({
   limit: z.number().int(),
   has_more: z.boolean(),
   next_cursor: z.string().nullable(),
-  top_sources: z.array(
-    z.object({
-      domain: z.string(),
-      citation_count: z.number(),
-      prompt_count: z.number(),
-      engines: z.array(z.string()),
-      measurement_modes: z.array(z.enum(['model_only', 'search_requested'])),
-      sample_url: z.string(),
-      is_brand_domain: z.boolean(),
-      identity_scopes: z.array(z.enum(['current', 'historical', 'unattributed'])).optional(),
-    }),
-  ),
+  top_sources: z.array(citationSourceOutputSchema),
+  current_identity_top_sources: z.array(citationSourceOutputSchema).nullable(),
   citations: z.array(
     z.object({
       id: z.string(),
@@ -1294,7 +1295,7 @@ export function registerTools(
     {
       title: 'Get AI citation evidence',
       description:
-        "Return paginated brand mentions, link-only evidence, request mode per row, and top source domains. Search requests do not guarantee citations. Reuse next_cursor within 24 hours. Example: brand_id='acme', days=14.",
+        "Return paginated citation evidence, request modes, source domains and current-brand source rankings. Search requests do not guarantee citations. Reuse next_cursor within 24 hours. Example: brand_id='acme', days=14.",
       inputSchema: {
         brand_id: z
           .string()
@@ -1397,6 +1398,12 @@ export function registerTools(
             }))
           : null,
         top_sources: buildTopSources(sourceResponses, brand, identityBoundary),
+        current_identity_top_sources: identityBoundary === null ? null : buildTopSources(
+          sourceResponses.filter((response) =>
+            citationIdentityScope(response.run_started_at, identityBoundary) === 'current'),
+          brand,
+          identityBoundary,
+        ),
         citations,
       };
       return toolResult(payload);

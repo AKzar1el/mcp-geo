@@ -45,6 +45,7 @@ type CitationResult = {
     is_brand_domain: boolean;
     identity_scopes?: Array<'current' | 'historical' | 'unattributed'>;
   }>;
+  current_identity_top_sources?: CitationResult['top_sources'] | null;
   identity_attribution: null | { identity_changed_at: string; note: string };
   citations: Array<{
     id: string;
@@ -225,6 +226,21 @@ test('citation evidence distinguishes old-identity scans from current scans usin
     cit_old: 'historical', cit_new: 'current', cit_unknown: 'unattributed',
   });
   assert.deepEqual(result.top_sources[0]?.identity_scopes, ['current', 'historical', 'unattributed']);
+  assert.deepEqual(result.current_identity_top_sources, [{
+    domain: 'research.example',
+    citation_count: 1,
+    prompt_count: 1,
+    engines: ['chatgpt'],
+    measurement_modes: ['search_requested'],
+    identity_scopes: ['current'],
+    sample_url: 'https://research.example/new',
+    is_brand_domain: false,
+  }], 'client-ready current-brand sources must exclude historical and unknown-run rows');
+});
+
+test('current-brand source summary is unavailable without an identity boundary', async () => {
+  const result = (await registerCitationTool(citationRow()).handler({ brand_id: brand.id })).structuredContent;
+  assert.equal(result.current_identity_top_sources, null);
 });
 
 test('get_citations produces distinct stable IDs for records sharing short UUID prefixes', async () => {
