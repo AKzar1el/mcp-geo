@@ -971,3 +971,55 @@ test('content gaps flag a completed engine run without usable active-prompt evid
   assert.ok(result.observation_coverage.unmeasured_engines.includes('chatgpt'));
   assert.match(result.observation_coverage.note, /no usable|zero usable/i);
 });
+
+test('content gaps exclude pre-identity-change losses from recommendations without deleting history', async () => {
+  const trackedBrand = {
+    id: 'acme', name: 'Beta', domain: 'beta.com', competitors: ['rival.com'],
+    aliases: [], exclude_terms: [], updated_at: 2000, identity_changed_at: 2000,
+  } as Brand;
+  let handler: ((input: { brand_id: string; max_recommendations: number }) => Promise<{
+    structuredContent: {
+      recommendations: unknown[];
+      identity_attribution: { last_identity_change_at: string | null; stale_engines: string[]; note: string };
+      observation_coverage: { per_engine: Array<{ engine: string }>; unmeasured_engines: string[] };
+    };
+  }>) | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, callback: unknown) {
+      if (name === 'get_content_gaps') handler = callback as typeof handler;
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => trackedBrand,
+      getActivePrompts: async () => [{ id: 'prompt-1' }],
+      getLatestCompletedRun: async (_id, engine) =>
+        engine === 'chatgpt' ? { id: 'old-acme', mode: 'live', started_at: 1000, completed_at: 1500 } :
+        engine === 'claude' ? { id: 'new-beta', mode: 'live', started_at: 3000, completed_at: 3500 } : null,
+      getResponsesForRun: async (runId) => [{
+        id: `${runId}-response`, run_id: runId, prompt_id: 'prompt-1',
+        prompt_text: 'Best agency tools', engine: runId === 'old-acme' ? 'chatgpt' : 'claude',
+        raw_response: '', brand_mentioned: runId === 'new-beta' ? 1 : 0,
+        brand_cited_with_link: 0, cited_urls: [],
+        competitors_mentioned: runId === 'old-acme' ? ['rival.com'] : [],
+        engine_citations: [], status: 'ok', error_message: null,
+        captured_at: runId === 'old-acme' ? 1400 : 3400,
+      } satisfies PromptResponse],
+    } as Db,
+    env: {}, refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(handler);
+
+  const current = (await handler({ brand_id: trackedBrand.id, max_recommendations: 2 })).structuredContent;
+  assert.equal(current.recommendations.length, 0, 'old Acme losses must not become Beta advice');
+  assert.deepEqual(current.observation_coverage.per_engine.map((row) => row.engine), ['claude']);
+  assert.ok(current.observation_coverage.unmeasured_engines.includes('chatgpt'));
+  assert.deepEqual(current.identity_attribution.stale_engines, ['chatgpt']);
+  assert.equal(current.identity_attribution.last_identity_change_at, new Date(2000).toISOString());
+
+  trackedBrand.identity_changed_at = null;
+  const legacy = (await handler({ brand_id: trackedBrand.id, max_recommendations: 2 })).structuredContent;
+  assert.equal(legacy.recommendations.length, 1, 'legacy rows with unknown identity boundaries remain readable');
+  assert.deepEqual(legacy.identity_attribution.stale_engines, []);
+});
