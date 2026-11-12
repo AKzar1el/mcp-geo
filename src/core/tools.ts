@@ -1468,8 +1468,9 @@ export function registerTools(
           .filter(({ missing_prompt_count }) => missing_prompt_count > 0)
           .map(({ engine }) => engine),
         unmeasured_engines: ALL_ENGINES.filter(
-          (engine) => !perEngineCoverage.some((entry) => entry.engine === engine)),
-        note: 'Counts are unique currently active prompts with a successful stored response in each listed engine\'s latest selectable run, not verified citations or a confidence score. Per-engine refreshed_at is the run completion time (or start if unfinished), not proof that all prompts succeeded. unmeasured_engines have no selectable stored run with successful responses; they may be unconfigured, unscanned or failed. Failed or missing active prompts reduce coverage. Refreshing incomplete engines may incur provider charges.',
+          (engine) => !perEngineCoverage.some(
+            (entry) => entry.engine === engine && entry.usable_prompt_count > 0)),
+        note: 'Counts are unique currently active prompts with a successful stored response in each listed engine\'s latest selectable run, not verified citations or a confidence score. Per-engine refreshed_at is the run completion time (or start if unfinished), not proof that all prompts succeeded. unmeasured_engines have no usable successful responses for active prompts: an engine can appear in per_engine with zero usable prompts and also be unmeasured if a run was attempted but failed. Other unmeasured engines may be unconfigured or unscanned. Failed or missing active prompts reduce coverage. Refreshing incomplete engines may incur provider charges.',
       };
 
       const losingEngines = [...new Set(losingPrompts.flatMap((p) => p.engines_lost_on))];
