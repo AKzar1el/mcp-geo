@@ -204,6 +204,12 @@ const historyOutputSchema = z.object({
   brand_id: z.string(),
   days: z.number(),
   granularity: z.enum(['daily', 'weekly']),
+  identity_scope: z.object({
+    selection: z.enum(['full_history', 'current_identity_only']),
+    excluded_runs: z.number(),
+    unknown_start_runs: z.number(),
+    note: z.string(),
+  }),
   google_search_sampling: googleSearchSamplingSchema,
   measurement_scope: z.object({
     mixed_mode_engines: z.array(z.string()),
@@ -813,7 +819,7 @@ export function registerTools(
     {
       title: 'Get AI visibility history',
       description:
-        "Return daily or weekly visibility history with per-engine scores and per-bucket model-only versus search-requested evidence. Example: brand_id='acme', days=30, granularity='weekly'.",
+        "Daily/weekly visibility history, with model-only versus search-requested evidence. current_identity_only=true filters known old-brand runs. Example: brand_id='acme', days=30, granularity='weekly'.",
       inputSchema: {
         brand_id: z
           .string()
@@ -829,6 +835,8 @@ export function registerTools(
           .enum(['daily', 'weekly'])
           .default('weekly')
           .describe('Time bucket for the series.'),
+        current_identity_only: z.boolean().default(false)
+          .describe('Exclude runs not attributable to the current brand identity; no provider calls.'),
       },
       outputSchema: historyOutputSchema,
       annotations: {
@@ -837,7 +845,7 @@ export function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ brand_id, days, granularity }) => {
+    async ({ brand_id, days, granularity, current_identity_only = false }) => {
       const brand = await deps.db.getBrand(brand_id);
       if (!brand) {
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
@@ -849,18 +857,46 @@ export function registerTools(
       const since = Date.UTC(
         now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - days + 1,
       );
-      const results = await deps.db.getVisibilityHistoryRows(brand_id, since);
+      const allResults = await deps.db.getVisibilityHistoryRows(brand_id, since);
       const identityChangedAt = brand.identity_changed_at ?? null;
+      // A run completed after an identity edit may have started before it.
+      // Missing run-start provenance cannot establish current identity.
+      const results = current_identity_only && identityChangedAt !== null
+        ? allResults.filter((row) =>
+          typeof row.started_at === 'number' && Number.isFinite(row.started_at) &&
+          row.started_at >= identityChangedAt,
+        )
+        : allResults;
+      const unknownStartRuns = allResults.filter((row) =>
+        typeof row.started_at !== 'number' || !Number.isFinite(row.started_at),
+      ).length;
+      const identity_scope = {
+        selection: current_identity_only ? 'current_identity_only' as const : 'full_history' as const,
+        excluded_runs: allResults.length - results.length,
+        unknown_start_runs: unknownStartRuns,
+        note: identityChangedAt === null
+          ? 'No recorded matching-identity boundary exists. All stored history is retained; older identity edits before tracking began cannot be reconstructed.'
+          : current_identity_only
+            ? 'Only runs with a known start at or after the latest matching-identity change contribute to the displayed trend and evidence counts. Earlier or unattributable runs are excluded, not measured zeros. Provider requests are not made.'
+            : 'Full historical series includes earlier matching identities and runs with unknown start provenance. Set current_identity_only=true to compare only observations attributable to the current identity.',
+      };
       const preChangeRuns = identityChangedAt === null ? 0
-        : results.filter((row) => (row.started_at ?? row.completed_at) < identityChangedAt).length;
-      const postChangeRuns = identityChangedAt === null ? 0 : results.length - preChangeRuns;
+        : allResults.filter((row) =>
+          typeof row.started_at === 'number' && Number.isFinite(row.started_at) &&
+          row.started_at < identityChangedAt,
+        ).length;
+      const postChangeRuns = identityChangedAt === null ? 0
+        : allResults.filter((row) =>
+          typeof row.started_at === 'number' && Number.isFinite(row.started_at) &&
+          row.started_at >= identityChangedAt,
+        ).length;
       const identity_comparability = {
         last_identity_change_at: identityChangedAt === null
           ? null : new Date(identityChangedAt).toISOString(),
         pre_change_runs: preChangeRuns,
         post_change_runs: postChangeRuns,
         mixes_identity_versions: preChangeRuns > 0 && postChangeRuns > 0,
-        note: 'Stored runs started before the latest brand matching-identity edit may not be comparable with later runs, even when a scan completed after the edit. Historical scores are retained, not re-scored against the current name/domain/aliases/exclusions. The boundary uses recorded run start times; older edits before this migration cannot be reconstructed.',
+        note: 'Stored runs started before the latest brand matching-identity edit may not be comparable with later runs, even when a scan completed after the edit. Historical scores are retained, not re-scored against the current name/domain/aliases/exclusions. Only known run start times count toward pre/post groups; missing start provenance is unattributed. Older edits before this migration cannot be reconstructed.',
       };
 
       // Historical runs can contain both ungrounded OpenAI batches and
@@ -1027,6 +1063,7 @@ export function registerTools(
         brand_id,
         days,
         granularity,
+        identity_scope,
         google_search_sampling: googleSearchSampling(results.map(({ engine }) => engine)),
         measurement_scope: { ...measurement_scope, by_bucket },
         prompt_set_comparability,
