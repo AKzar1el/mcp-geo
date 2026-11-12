@@ -266,6 +266,13 @@ const compareOutputSchema = z.object({
   observation_coverage: z.object({
     status: z.enum(['not_compared', 'no_observations', 'observed']),
     successful_responses: z.number().int().nonnegative(),
+    per_engine: z.array(z.object({
+      engine: z.string(),
+      successful_responses: z.number().int().nonnegative(),
+      distinct_runs: z.number().int().nonnegative(),
+      distinct_prompts: z.number().int().nonnegative(),
+      last_observed_at: z.string(),
+    })),
     note: z.string(),
   }),
   google_search_sampling: googleSearchSamplingSchema,
@@ -1049,6 +1056,7 @@ export function registerTools(
           observation_coverage: {
             status: 'not_compared' as const,
             successful_responses: 0,
+            per_engine: [],
             note: 'No competitors are configured or selected; response evidence was not queried.',
           },
           google_search_sampling: null,
@@ -1084,16 +1092,46 @@ export function registerTools(
         }
       }
       const allResponses = [...latestByRunPrompt.values()];
+      const evidenceByEngine = new Map<string, {
+        successfulResponses: number;
+        runs: Set<string>;
+        prompts: Set<string>;
+        lastObservedAt: number;
+      }>();
+      for (const row of allResponses) {
+        const existing = evidenceByEngine.get(row.engine) ?? {
+          successfulResponses: 0,
+          runs: new Set<string>(),
+          prompts: new Set<string>(),
+          lastObservedAt: row.captured_at,
+        };
+        existing.successfulResponses++;
+        existing.runs.add(row.run_id);
+        existing.prompts.add(row.prompt_id);
+        existing.lastObservedAt = Math.max(existing.lastObservedAt, row.captured_at);
+        evidenceByEngine.set(row.engine, existing);
+      }
+      const perEngineEvidence = [...evidenceByEngine.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([engine, evidence]) => ({
+          engine,
+          successful_responses: evidence.successfulResponses,
+          distinct_runs: evidence.runs.size,
+          distinct_prompts: evidence.prompts.size,
+          last_observed_at: new Date(evidence.lastObservedAt).toISOString(),
+        }));
       const observation_coverage = allResponses.length === 0
         ? {
             status: 'no_observations' as const,
             successful_responses: 0,
+            per_engine: perEngineEvidence,
             note: 'No usable AI responses were recorded in this window; zero shares are not measured absence.',
           }
         : {
             status: 'observed' as const,
             successful_responses: allResponses.length,
-            note: 'Shares use the latest successful response per run, engine and prompt; this count does not establish complete prompt or engine coverage.',
+            per_engine: perEngineEvidence,
+            note: 'Shares use the latest successful response per run, engine and prompt. Per-engine counts show unequal observed sampling across all runs; distinct prompts and run counts do not establish complete prompt or engine coverage. Unlisted engines may be unconfigured, unscanned or failed.',
           };
 
       const brandMentions = allResponses.reduce(
