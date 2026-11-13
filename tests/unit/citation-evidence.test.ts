@@ -6,6 +6,7 @@ import type {
   Brand,
   CitationRow,
   Db,
+  Prompt,
   PromptResponse,
 } from '../../src/db/types.ts';
 
@@ -51,6 +52,11 @@ type CitationResult = {
     applied: boolean;
     note: string;
   };
+  prompt_set_scope: {
+    selection: 'full_history' | 'active_only';
+    active_prompt_count: number | null;
+    note: string;
+  };
   citations: Array<{
     id: string;
     cited_url: string | null;
@@ -69,6 +75,7 @@ type CitationTool = {
     limit?: number;
     cursor?: string;
     current_identity_only?: boolean;
+    active_prompts_only?: boolean;
   }) => Promise<{ structuredContent: CitationResult }>;
 };
 
@@ -76,6 +83,7 @@ function registerCitationTool(
   row: CitationRow | CitationRow[],
   responses: SourceFixture[] = [],
   trackedBrand: Brand = brand,
+  activeIds: string[] = [],
 ): CitationTool {
   let citationTool: CitationTool | undefined;
   const server = {
@@ -89,12 +97,17 @@ function registerCitationTool(
   registerTools(server, {
     db: {
       getBrand: async () => trackedBrand,
+      getActivePrompts: async () => activeIds.map((id): Prompt => ({
+        id, brand_id: trackedBrand.id, text: id, intent_stage: null,
+        shape: null, active: 1, created_at: 0,
+      })),
       getCitationRows: async (_brandId, _since, engine, page) => {
         const rows = (Array.isArray(row) ? row : [row])
           .filter((item) => !engine || item.engine === engine)
           .filter((item) => item.captured_at <= (page?.until ?? Number.MAX_SAFE_INTEGER))
           .filter((item) => page?.minRunStartedAt === undefined ||
             (typeof item.run_started_at === 'number' && item.run_started_at >= page.minRunStartedAt))
+          .filter((item) => !page?.activePromptsOnly || activeIds.includes(item.prompt_id))
           .filter((item) => !page?.before ||
             item.captured_at < page.before.captured_at ||
             (item.captured_at === page.before.captured_at &&
@@ -112,11 +125,12 @@ function registerCitationTool(
       getResponsesSince: async () => {
         throw new Error('get_citations must not hydrate full responses');
       },
-      getCitationSourceRows: async (_brandId, _since, until, engine, minRunStartedAt) =>
+      getCitationSourceRows: async (_brandId, _since, until, engine, minRunStartedAt, activeOnly) =>
         responses
           .filter((response) => response.captured_at <= until && (!engine || response.engine === engine))
           .filter((response) => minRunStartedAt === undefined ||
             (typeof response.run_started_at === 'number' && response.run_started_at >= minRunStartedAt))
+          .filter((response) => !activeOnly || activeIds.includes(response.prompt_id))
           .map(({ id, prompt_id, engine: responseEngine, mode, captured_at, engine_citations, run_started_at }) => ({
             id,
             prompt_id,
@@ -294,6 +308,63 @@ test('current-identity citation request without a recorded boundary discloses un
   assert.equal(result.identity_filter.selection, 'current_identity_only');
   assert.equal(result.identity_filter.applied, false);
   assert.match(result.identity_filter.note, /no recorded.*boundary/i);
+});
+
+test('active buyer-prompt citation pages and sources exclude newer retired-prompt evidence before LIMIT', async () => {
+  const now = Date.now();
+  const rows = [
+    citationRow({ response_id: 'retired', prompt_id: 'old-question', captured_at: now - 1000 }),
+    citationRow({ response_id: 'current', prompt_id: 'new-question', captured_at: now - 2000 }),
+  ];
+  const sources = [
+    promptResponse({ id: 'retired', prompt_id: 'old-question', captured_at: now - 1000,
+      engine_citations: ['https://old.example/review'] }),
+    promptResponse({ id: 'current', prompt_id: 'new-question', captured_at: now - 2000,
+      engine_citations: ['https://new.example/review'] }),
+  ];
+  const tool = registerCitationTool(rows, sources, brand, ['new-question']);
+  const historical = (await tool.handler({ brand_id: brand.id, limit: 1 })).structuredContent;
+  assert.equal(historical.has_more, true);
+  assert.equal(historical.top_sources.length, 2);
+  assert.equal(historical.prompt_set_scope.selection, 'full_history');
+
+  const active = (await tool.handler({ brand_id: brand.id, active_prompts_only: true, limit: 1 })).structuredContent;
+  assert.equal(active.citations.length, 1);
+  assert.equal(active.citations[0].id, 'cit_current');
+  assert.equal(active.has_more, false);
+  assert.equal(active.prompt_set_scope.selection, 'active_only');
+  assert.equal(active.prompt_set_scope.active_prompt_count, 1);
+  assert.deepEqual(active.top_sources.map(({ domain }) => domain), ['new.example']);
+
+  const noActive = registerCitationTool(rows, sources, brand, []);
+  const empty = (await noActive.handler({ brand_id: brand.id, active_prompts_only: true })).structuredContent;
+  assert.equal(empty.citations.length, 0);
+  assert.deepEqual(empty.top_sources, []);
+  assert.equal(empty.prompt_set_scope.active_prompt_count, 0);
+});
+
+test('active-prompt cursor rejects changed buyer roster and incompatible filter scope', async () => {
+  const now = Date.now();
+  const rows = [
+    citationRow({ response_id: 'one', prompt_id: 'active-1', captured_at: now - 1000 }),
+    citationRow({ response_id: 'two', prompt_id: 'active-2', captured_at: now - 2000 }),
+  ];
+  const tool = registerCitationTool(rows, [], brand, ['active-1', 'active-2']);
+  const first = (await tool.handler({ brand_id: brand.id, active_prompts_only: true, limit: 1 })).structuredContent;
+  assert.ok(first.next_cursor);
+  const second = (await tool.handler({
+    brand_id: brand.id, active_prompts_only: true, limit: 1, cursor: first.next_cursor!,
+  })).structuredContent;
+  assert.equal(second.citations.length, 1);
+  assert.equal(second.has_more, false);
+  await assert.rejects(
+    tool.handler({ brand_id: brand.id, cursor: first.next_cursor! }), /Invalid citation cursor/,
+  );
+  const changed = registerCitationTool(rows, [], brand, ['active-1']);
+  await assert.rejects(
+    changed.handler({ brand_id: brand.id, active_prompts_only: true, cursor: first.next_cursor! }),
+    /Invalid citation cursor/,
+  );
 });
 
 test('get_citations produces distinct stable IDs for records sharing short UUID prefixes', async () => {

@@ -338,6 +338,11 @@ const citationsOutputSchema = z.object({
     applied: z.boolean(),
     note: z.string(),
   }),
+  prompt_set_scope: z.object({
+    selection: z.enum(['full_history', 'active_only']),
+    active_prompt_count: z.number().int().nonnegative().nullable(),
+    note: z.string(),
+  }),
   limit: z.number().int(),
   has_more: z.boolean(),
   next_cursor: z.string().nullable(),
@@ -376,6 +381,8 @@ const citationCursorSchema = z.object({
   engine: z.string().nullable(),
   identity_selection: z.enum(['full_history', 'current_identity_only']).optional(),
   identity_boundary: z.number().int().nullable().optional(),
+  prompt_selection: z.enum(['full_history', 'active_only']).optional(),
+  prompt_roster_digest: z.string().regex(/^[0-9a-f]{64}$/).nullable().optional(),
   since: z.number().finite(),
   until: z.number().int(),
   before: z.object({
@@ -389,9 +396,16 @@ const citationCursorSchema = z.object({
 const CITATION_CURSOR_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const CITATION_DAY_MS = 86_400_000;
 
+async function citationPromptRosterDigest(prompts: Prompt[]): Promise<string> {
+  const canonicalIds = prompts.map(({ id }) => id).sort().join('\u001f');
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalIds));
+  return Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
 function decodeCitationCursor(
   cursor: string, brandId: string, days: number, engine: string | null,
   currentIdentityOnly: boolean, identityBoundary: number | null,
+  activePromptsOnly: boolean, promptRosterDigest: string | null,
 ) {
   try {
     const parsed = citationCursorSchema.parse(JSON.parse(decodeURIComponent(cursor)));
@@ -403,6 +417,9 @@ function decodeCitationCursor(
       (parsed.identity_selection ?? 'full_history') !==
         (currentIdentityOnly ? 'current_identity_only' : 'full_history') ||
       (currentIdentityOnly && parsed.identity_boundary !== identityBoundary) ||
+      (parsed.prompt_selection ?? 'full_history') !==
+        (activePromptsOnly ? 'active_only' : 'full_history') ||
+      (activePromptsOnly && parsed.prompt_roster_digest !== promptRosterDigest) ||
       !Number.isFinite(parsed.since) || !Number.isSafeInteger(parsed.until) ||
       !Number.isSafeInteger(parsed.before.captured_at) ||
       parsed.until > now || parsed.until < now - CITATION_CURSOR_MAX_AGE_MS ||
@@ -413,7 +430,7 @@ function decodeCitationCursor(
     }
     return parsed;
   } catch {
-    throw new Error('Invalid citation cursor. Start again without cursor or preserve the brand, days, engine and identity selection.');
+    throw new Error('Invalid citation cursor. Start again without cursor or preserve the brand, days, engine, identity and prompt selection.');
   }
 }
 
@@ -1439,7 +1456,7 @@ export function registerTools(
     {
       title: 'Get AI citation evidence',
       description:
-        "Page citation evidence and top source domains. current_identity_only=true selects current-brand runs when known; default retains history. Search requests do not prove citations. Reuse cursor within 24h. Example: brand_id='acme', days=14.",
+        "Page stored citations and source rankings. current_identity_only filters current-brand runs; active_prompts_only filters retired buyer prompts. Defaults retain history. No provider scans. Example: brand_id='acme'.",
       inputSchema: {
         brand_id: z
           .string()
@@ -1458,8 +1475,10 @@ export function registerTools(
           .describe('Citation rows per page, 1-100 (default 50).'),
         current_identity_only: z.boolean().default(false)
           .describe('Filter citations and source rankings to current-brand runs when the identity boundary is known.'),
+        active_prompts_only: z.boolean().default(false)
+          .describe('Filter citations and source rankings to currently active buyer questions without new provider scans.'),
         cursor: z.string().max(1600).optional()
-          .describe('Opaque next_cursor from prior page; preserve brand, days, engine and identity selection.'),
+          .describe('Opaque next_cursor; preserve brand, days, engine, identity and prompt selection.'),
       },
       outputSchema: citationsOutputSchema,
       annotations: {
@@ -1468,7 +1487,8 @@ export function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ brand_id, days = 14, engine, limit = 50, current_identity_only = false, cursor }) => {
+    async ({ brand_id, days = 14, engine, limit = 50, current_identity_only = false,
+      active_prompts_only = false, cursor }) => {
       const brand = await deps.db.getBrand(brand_id);
       if (!brand) {
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
@@ -1476,9 +1496,13 @@ export function registerTools(
       const identityBoundary = brand.identity_changed_at ?? null;
       const minRunStartedAt = current_identity_only && identityBoundary !== null
         ? identityBoundary : undefined;
+      const activePrompts = active_prompts_only ? await deps.db.getActivePrompts(brand_id) : null;
+      // Scope cursors to the roster seen on page one; a prompt edit invalidates pagination.
+      const promptRosterDigest = activePrompts === null ? null : await citationPromptRosterDigest(activePrompts);
       const now = Date.now();
       const previous = cursor ? decodeCitationCursor(
         cursor, brand_id, days, engine ?? null, current_identity_only, identityBoundary,
+        active_prompts_only, promptRosterDigest,
       ) : null;
       const since = previous?.since ?? (now - days * 86_400_000);
       const until = previous?.until ?? now;
@@ -1488,11 +1512,12 @@ export function registerTools(
         before: previous?.before,
         limit: limit + 1,
         minRunStartedAt,
+        activePromptsOnly: active_prompts_only,
       });
       const hasMore = rows.length > limit;
       const results = rows.slice(0, limit);
       const sourceResponses = await deps.db.getCitationSourceRows(
-        brand_id, since, until, engine, minRunStartedAt,
+        brand_id, since, until, engine, minRunStartedAt, active_prompts_only,
       );
 
       const citations = results.map((row) => {
@@ -1538,6 +1563,13 @@ export function registerTools(
               ? 'No recorded matching-identity boundary; current-only filtering cannot be established, so full historical evidence is returned.'
               : 'Full historical evidence retained. Opt into current_identity_only for a matching-identity cohort when the boundary is known.',
         },
+        prompt_set_scope: {
+          selection: active_prompts_only ? 'active_only' as const : 'full_history' as const,
+          active_prompt_count: activePrompts?.length ?? null,
+          note: active_prompts_only
+            ? 'Citation pages and source rankings include only currently active buyer prompts. Earlier measurements of those same questions remain historical, not new scans; retired prompts are excluded before pagination and aggregation.'
+            : 'Full historical buyer-prompt evidence retained, including retired questions. Set active_prompts_only=true for current buyer questions without provider requests.',
+        },
         google_search_sampling: googleSearchSampling([
           ...(engine ? [engine] : []),
           ...sourceResponses.map(({ engine: sourceEngine }) => sourceEngine),
@@ -1553,6 +1585,8 @@ export function registerTools(
               engine: engine ?? null,
               identity_selection: current_identity_only ? 'current_identity_only' : 'full_history',
               identity_boundary: current_identity_only ? identityBoundary : null,
+              prompt_selection: active_prompts_only ? 'active_only' : 'full_history',
+              prompt_roster_digest: promptRosterDigest,
               since,
               until,
               before: {

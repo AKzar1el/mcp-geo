@@ -774,6 +774,7 @@ export function openSqliteDb(path?: string): SqliteDb {
       until: number,
       engine?: string,
       minRunStartedAt?: number,
+      activePromptsOnly = false,
     ): Promise<CitationSourceRow[]> {
       // Count the latest successful source observation per run/prompt, but only
       // within this window so a later retry cannot rewrite a frozen cursor page.
@@ -782,10 +783,12 @@ export function openSqliteDb(path?: string): SqliteDb {
           `SELECT pr.id, pr.prompt_id, pr.engine, r.mode AS mode, r.started_at AS run_started_at, pr.engine_citations_json, pr.captured_at
              FROM prompt_responses pr
              JOIN runs r ON r.id = pr.run_id
+             ${activePromptsOnly ? 'JOIN prompts p ON p.id = pr.prompt_id' : ''}
             WHERE r.brand_id = ?
               AND pr.captured_at >= ?
               AND pr.captured_at <= ?
               AND pr.status = 'ok'
+              ${activePromptsOnly ? 'AND p.active = 1' : ''}
               ${minRunStartedAt !== undefined ? 'AND r.started_at >= ?' : ''}
               AND NOT EXISTS (
                 SELECT 1 FROM prompt_responses newer
@@ -960,6 +963,9 @@ export function openSqliteDb(path?: string): SqliteDb {
       if (page?.minRunStartedAt !== undefined) {
         sql += ' AND r.started_at >= ?';
         params.push(page.minRunStartedAt);
+      }
+      if (page?.activePromptsOnly) {
+        sql += ' AND p.active = 1';
       }
       if (engine) {
         sql += ' AND r.engine = ?';
