@@ -22,6 +22,7 @@ type HistoryTool = {
     current_identity_only?: boolean;
     active_prompts_only?: boolean;
     engines?: Array<'chatgpt' | 'claude' | 'perplexity' | 'gemini' | 'grok' | 'ai_overviews' | 'ai_mode'>;
+    measurement_mode?: 'model_only' | 'search_requested';
   }) => Promise<{ structuredContent: {
     series: HistoryPoint[];
     engine_scope: {
@@ -43,6 +44,8 @@ type HistoryTool = {
       note: string;
     };
     measurement_scope: {
+      measurement_mode_filter: 'model_only' | 'search_requested' | null;
+      excluded_mode_runs: number;
       mixed_mode_engines: string[];
       unmeasured_scoped_engines: string[];
       by_engine: Record<string, {
@@ -240,6 +243,60 @@ test('history discloses batch/model-only evidence separately from live search re
     },
   });
   assert.match(result.measurement_scope.note, /combined.*mode|mode.*combined/i);
+});
+
+test('history optionally selects request mode before scoring, comparability and missing-evidence attribution', async () => {
+  const completed_at = Date.UTC(2026, 0, 5);
+  const history = registerHistoryTool([
+    { run_id: 'chatgpt-live', engine: 'chatgpt', mode: 'live', completed_at,
+      total: 4, hits: 1 },
+    { run_id: 'chatgpt-batch', engine: 'chatgpt', mode: 'batch', completed_at: completed_at + 1000,
+      total: 4, hits: 4 },
+    { run_id: 'claude-live', engine: 'claude', mode: 'live', completed_at: completed_at + 2000,
+      total: 4, hits: 3 },
+  ]);
+  const args = {
+    brand_id: 'acme', days: 30, granularity: 'daily' as const,
+    engines: ['chatgpt', 'claude', 'gemini'] as Array<'chatgpt' | 'claude' | 'gemini'>,
+  };
+  const all = (await history.handler(args)).structuredContent;
+  assert.equal(all.measurement_scope.measurement_mode_filter, null);
+  assert.equal(all.measurement_scope.excluded_mode_runs, 0);
+  assert.equal(all.series[0]?.per_engine.chatgpt, 63, 'historical defaults remain mixed');
+
+  const search = (await history.handler({ ...args, measurement_mode: 'search_requested' })).structuredContent;
+  assert.deepEqual(search.series[0]?.per_engine, { chatgpt: 25 });
+  assert.equal(search.series[0]?.overall_score, 25);
+  assert.equal(search.measurement_scope.measurement_mode_filter, 'search_requested');
+  assert.equal(search.measurement_scope.excluded_mode_runs, 2);
+  assert.deepEqual(search.measurement_scope.mixed_mode_engines, []);
+  assert.deepEqual(search.engine_scope.not_observed_engines, ['gemini'],
+    'an engine observed in another mode is not a never-observed engine');
+  assert.deepEqual(search.measurement_scope.unmeasured_scoped_engines, ['claude'],
+    'model-only evidence excluded by mode selection must be disclosed as unmeasured');
+  assert.deepEqual(search.measurement_scope.by_engine, {
+    chatgpt: {
+      search_requested: { brand_mentions: 1, usable_prompts: 4, score: 25 },
+      model_only: null,
+    },
+  });
+  assert.deepEqual(Object.keys(search.measurement_scope.by_bucket['2026-01-05']), ['chatgpt']);
+  assert.deepEqual(Object.keys(search.prompt_set_comparability.current_active_roster.latest_run_status_by_engine),
+    ['chatgpt'], 'unselected mode rosters must not affect comparability');
+
+  const model = (await history.handler({ ...args, measurement_mode: 'model_only' })).structuredContent;
+  assert.deepEqual(model.series[0]?.per_engine, { chatgpt: 100, claude: 75 });
+  assert.equal(model.series[0]?.overall_score, 88);
+  assert.equal(model.measurement_scope.excluded_mode_runs, 1);
+  assert.deepEqual(model.measurement_scope.unmeasured_scoped_engines, []);
+
+  const absentMode = (await history.handler({
+    ...args, engines: ['claude', 'gemini'], measurement_mode: 'search_requested',
+  })).structuredContent;
+  assert.deepEqual(absentMode.series, []);
+  assert.deepEqual(absentMode.engine_scope.not_observed_engines, ['gemini']);
+  assert.deepEqual(absentMode.measurement_scope.unmeasured_scoped_engines, ['claude']);
+  assert.match(absentMode.measurement_scope.note, /unmeasured|excluded/i);
 });
 
 test('history keeps model-only and search-requested evidence in their own weekly buckets', async () => {
