@@ -222,6 +222,18 @@ test('client audit guidance excludes pre-identity scans from current scores and 
   assert.match(instructions, /excluded from current-identity scoring and recommendations/);
 });
 
+test('client audit prompt selects the same active buyer cohort across evidence tools', () => {
+  const instructions = reportPrompt.match(/## Copy-paste prompt\s+```text\r?\n([\s\S]*?)\r?\n```/)?.[1] ?? '';
+  assert.match(instructions, /check_visibility[^\n]*active_prompts_only=true/);
+  assert.match(instructions, /compare_competitors[^\n]*active_prompts_only=true/);
+  assert.match(instructions, /get_citations[^\n]*active_prompts_only=true[^\n]*current_identity_only=true/);
+  assert.match(instructions, /get_visibility_history[^\n]*active_prompts_only=true[^\n]*current_identity_only=true/);
+  assert.match(instructions, /historical default[^\n]*retired/i);
+  assert.match(instructions, /same time window|different time windows/i);
+  assert.match(instructions, /unmeasured[^\n]*not zero/i);
+  assert.match(instructions, /do not perform a fresh scan|no new provider requests/i);
+});
+
 test('README documents Roo Code local stdio setup and Windows fallback', () => {
   assert.match(readme, /\*\*Roo Code:\*\*[\s\S]*\.roo\/mcp\.json[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/);
   assert.match(readme, /"command": "cmd"[\s\S]*Windows fallback/);

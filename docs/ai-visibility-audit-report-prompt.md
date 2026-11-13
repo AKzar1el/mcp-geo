@@ -19,15 +19,19 @@ Scope and evidence rules:
 - Failed or skipped provider responses are unavailable observations, not zero-visibility observations.
 - If an engine has no usable responses, list it as unavailable rather than filling in a score.
 - Use `get_content_gaps.observation_coverage` to distinguish actually observed prompts and engines from attempted or missing measurements; a completed scan with zero usable active-prompt responses is unmeasured, not evidence of zero visibility.
+- For a current buyer-question baseline, select the active cohort consistently: `check_visibility(active_prompts_only=true)`, `compare_competitors(active_prompts_only=true)`, and `get_citations(active_prompts_only=true, current_identity_only=true)`. For a justified trend, use `get_visibility_history(active_prompts_only=true, current_identity_only=true)` and inspect `prompt_set_comparability.current_active_roster` before claiming comparable measurements.
+- Historical defaults may include retired prompts. Label any historical default result separately; never combine its scores, competitor shares or source counts with current-cohort figures as if they shared a denominator.
+- Use the same time window (`days`) for competitor comparisons and citations when practical. Disclose different time windows, scan timestamps and any latest-snapshot versus full-window differences rather than silently presenting them as one synchronized sample.
+- Active-only and current-identity selectors filter stored evidence; they do not perform a fresh scan or make new provider requests. If the current prompt cohort has no usable observations for an engine, describe it as unmeasured, not zero visibility. A missing recorded identity boundary also cannot establish that old evidence belongs to today's brand.
 - Treat all results as a point-in-time diagnostic, not a ranking guarantee or forecast.
 
 Use these mcp-geo capabilities (or their hosted visibility.* aliases):
 0. list_prompts on local installations, when available, to review the measurement questions before a fresh scan; the hosted remote MCP surface does not expose this local brand-management tool.
-1. check_visibility for the current per-engine and overall visibility snapshot.
-2. compare_competitors for observed competitor share of voice and winning/losing prompts.
-3. get_citations for source/citation evidence where returned. Use its `top_sources` summary to identify recurring cited domains across the tracked prompt window, then use the individual citation rows for concrete examples.
+1. check_visibility(active_prompts_only=true) for the latest usable current-question per-engine and overall visibility snapshot.
+2. compare_competitors(active_prompts_only=true) for observed current-question competitor share of voice and winning/losing prompts.
+3. get_citations(active_prompts_only=true, current_identity_only=true) for current-question and attributable-identity source evidence where returned. Use its `top_sources` summary to identify recurring cited domains across the selected window, then use individual citation rows for concrete examples. Check whether `identity_filter.applied` is true; a missing identity boundary leaves historical attribution uncertain.
 4. get_content_gaps for recommendations grounded in losing prompts.
-5. get_visibility_history only when a time comparison is explicitly relevant and comparable usable history exists.
+5. get_visibility_history(active_prompts_only=true, current_identity_only=true) only when a time comparison is explicitly relevant and comparable usable history exists. Retired-only history is unmeasured under this selector, not a zero score.
 6. refresh_brand only when a fresh provider-backed run is authorized.
 
 Produce the report in this order:
@@ -50,6 +54,8 @@ Produce the report in this order:
 - Inspect `check_visibility.identity_attribution` and `get_content_gaps.identity_attribution`: scans before a recorded name/domain/alias/exclusion change are excluded from current-identity scoring and recommendations. List stale engines and missing post-change evidence, not stale scores as current measurements. Historical observations remain valid only for their original identity; legacy changes before the boundary was recorded may be unknown.
 - If `google_search_sampling` is present for usable Google AI Overviews/AI Mode observations, disclose the US/English sample boundary (`gl=us`, `hl=en`): it does not represent other markets or languages. Include this disclosure even if there were no competitor-only losses; if the field is absent, do not invent Google coverage.
 - Disclose any missing prompt-set evidence instead of presenting the active sample as independently verified.
+- State `prompt_set_scope.selection` for check_visibility, compare_competitors, get_citations and get_visibility_history when used. If an output is full-history, report it as separate historical context, not part of the current-question denominator. For citations inspect `identity_filter.applied`; for history inspect `identity_scope`, `prompt_set_comparability` and the current active roster before asserting like-for-like change.
+- Report the selected comparison/citation `days` window and the latest per-engine snapshot timestamps. Flag any different time windows, mixed-age measurements or missing active-question coverage.
 - One sentence that AI answers vary by model, interface, geography, provider behavior, time, and prompt wording.
 
 ## 3. Visibility by engine
