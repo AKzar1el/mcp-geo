@@ -1688,6 +1688,66 @@ test('getCitationRows returns genuine link-only citations but excludes failed an
   }
 });
 
+test('SQLite and D1 scope multi-engine citation pages and source rankings before LIMIT', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'digestseo.sqlite'));
+  try {
+    seedBrandFixture(db, 'acme');
+    const tracked = await db.getBrand('acme');
+    assert.ok(tracked);
+    for (const engine of ['chatgpt', 'claude', 'perplexity']) {
+      const promptId = 'prompt-' + engine;
+      seedPromptFixture(db, 'acme', promptId, 'best project management ' + engine);
+      const run = await db.createRun(tracked, engine, 'live', 1);
+      await db.persistEngineRun(run.id, engine, 'test-model', 3600, [{
+        prompt_id: promptId,
+        raw_response: 'Acme is listed.',
+        brand_mentioned: 1,
+        brand_cited_with_link: 1,
+        cited_urls: ['acme.com'],
+        engine_citations: ['https://' + engine + '.example/report'],
+        competitors_mentioned: [],
+        status: 'ok',
+      }]);
+    }
+    const hosted = createD1Db({
+      prepare(sql: string) {
+        return { bind(...params: unknown[]) {
+          return { async all() {
+            const stmt = db.raw.prepare(sql);
+            return { results: stmt.all(...(params as Parameters<typeof stmt.all>)) };
+          } };
+        } };
+      },
+    } as unknown as Parameters<typeof createD1Db>[0]);
+    const selected = ['perplexity', 'chatgpt'];
+    const until = Date.now() + 1000;
+    for (const adapter of [db, hosted]) {
+      const all = await adapter.getCitationRows('acme', 0, undefined, { until, limit: 10 });
+      assert.equal(all.length, 3);
+      const first = await adapter.getCitationRows('acme', 0, selected, { until, limit: 1 });
+      assert.equal(first.length, 1);
+      const second = await adapter.getCitationRows('acme', 0, selected, {
+        until, limit: 1, before: {
+          captured_at: first[0].captured_at,
+          run_id: first[0].run_id,
+          prompt_id: first[0].prompt_id,
+          response_id: first[0].response_id,
+        },
+      });
+      assert.deepEqual([...first, ...second].map((row) => row.engine).sort(),
+        ['chatgpt', 'perplexity']);
+      const sources = await adapter.getCitationSourceRows('acme', 0, until, selected);
+      assert.deepEqual(sources.map((row) => row.engine).sort(), ['chatgpt', 'perplexity']);
+      assert.equal((await adapter.getCitationRows('acme', 0, 'claude')).length, 1,
+        'legacy single-engine lookup remains unchanged');
+    }
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('SQLite and D1 filter citation pages and top-source inputs by run start before limits', async () => {
   const root = tempRoot();
   const db = openSqliteDb(join(root, 'digestseo.sqlite'));

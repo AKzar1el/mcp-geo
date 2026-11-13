@@ -725,10 +725,11 @@ export function createD1Db(d1: D1Database): Db {
       brandId: string,
       since: number,
       until: number,
-      engine?: string,
+      engine?: string | string[],
       minRunStartedAt?: number,
       activePromptsOnly = false,
     ): Promise<CitationSourceRow[]> {
+      const selectedEngines = Array.isArray(engine) ? [...new Set(engine)] : engine ? [engine] : [];
       // Match SQLite's per-run/prompt retry deduplication and frozen window.
       const { results } = await d1
         .prepare(
@@ -751,12 +752,12 @@ export function createD1Db(d1: D1Database): Db {
                    AND (newer.captured_at > pr.captured_at
                      OR (newer.captured_at = pr.captured_at AND newer.id > pr.id))
               )
-              ${engine ? 'AND pr.engine = ?' : ''}
+              ${selectedEngines.length ? `AND pr.engine IN (${selectedEngines.map(() => '?').join(', ')})` : ''}
             ORDER BY pr.captured_at ASC, pr.id ASC`,
         )
         .bind(brandId, since, until,
           ...(minRunStartedAt !== undefined ? [minRunStartedAt] : []),
-          until, ...(engine ? [engine] : []))
+          until, ...selectedEngines)
         .all<Omit<CitationSourceRow, 'engine_citations'> & { engine_citations_json: string | null }>();
       return (results ?? []).map(({ engine_citations_json, ...row }) => ({
         ...row,
@@ -907,7 +908,7 @@ export function createD1Db(d1: D1Database): Db {
     async getCitationRows(
       brandId: string,
       since: number,
-      engine?: string,
+      engine?: string | string[],
       page?: CitationPageOptions,
     ): Promise<CitationRow[]> {
       let sql = `SELECT pr.id AS response_id, r.engine AS engine, r.mode AS mode, r.started_at AS run_started_at,
@@ -930,9 +931,10 @@ export function createD1Db(d1: D1Database): Db {
       if (page?.activePromptsOnly) {
         sql += ' AND p.active = 1';
       }
-      if (engine) {
-        sql += ' AND r.engine = ?';
-        params.push(engine);
+      const selectedEngines = Array.isArray(engine) ? [...new Set(engine)] : engine ? [engine] : [];
+      if (selectedEngines.length) {
+        sql += ` AND r.engine IN (${selectedEngines.map(() => '?').join(', ')})`;
+        params.push(...selectedEngines);
       }
       if (page?.until !== undefined) {
         sql += ' AND pr.captured_at <= ?';
