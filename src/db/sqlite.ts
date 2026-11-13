@@ -775,6 +775,7 @@ export function openSqliteDb(path?: string): SqliteDb {
       engine?: string | string[],
       minRunStartedAt?: number,
       activePromptsOnly = false,
+      measurementMode?: 'model_only' | 'search_requested',
     ): Promise<CitationSourceRow[]> {
       const selectedEngines = Array.isArray(engine) ? [...new Set(engine)] : engine ? [engine] : [];
       // Count the latest successful source observation per run/prompt, but only
@@ -789,6 +790,8 @@ export function openSqliteDb(path?: string): SqliteDb {
               AND pr.captured_at >= ?
               AND pr.captured_at <= ?
               AND pr.status = 'ok'
+              ${measurementMode === 'model_only' ? "AND (r.mode = 'batch' OR r.engine IN ('claude', 'gemini'))" : ''}
+              ${measurementMode === 'search_requested' ? "AND r.mode <> 'batch' AND r.engine NOT IN ('claude', 'gemini')" : ''}
               ${activePromptsOnly ? 'AND p.active = 1' : ''}
               ${minRunStartedAt !== undefined ? 'AND r.started_at >= ?' : ''}
               AND NOT EXISTS (
@@ -970,6 +973,11 @@ export function openSqliteDb(path?: string): SqliteDb {
       }
       if (page?.activePromptsOnly) {
         sql += ' AND p.active = 1';
+      }
+      if (page?.measurementMode === 'model_only') {
+        sql += " AND (r.mode = 'batch' OR r.engine IN ('claude', 'gemini'))";
+      } else if (page?.measurementMode === 'search_requested') {
+        sql += " AND r.mode <> 'batch' AND r.engine NOT IN ('claude', 'gemini')";
       }
       const selectedEngines = Array.isArray(engine) ? [...new Set(engine)] : engine ? [engine] : [];
       if (selectedEngines.length) {

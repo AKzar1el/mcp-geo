@@ -248,6 +248,8 @@ export type ComparisonEvidenceRow = Pick<PromptResponse,
 export interface CitationPageOptions {
   limit?: number;
   until?: number;
+  // Request mode must be selected in SQL before keyset pagination.
+  measurementMode?: 'model_only' | 'search_requested';
   // Apply identity provenance in SQL before page LIMIT/keyset selection.
   minRunStartedAt?: number;
   // Filter retired buyer questions before page LIMIT/keyset selection.
@@ -334,6 +336,7 @@ export interface Db {
     engine?: string | string[],
     minRunStartedAt?: number,
     activePromptsOnly?: boolean,
+    measurementMode?: 'model_only' | 'search_requested',
   ): Promise<CitationSourceRow[]>;
   replacePrompts(brandId: string, prompts: NewPromptInput[]): Promise<number>;
   cacheGet(

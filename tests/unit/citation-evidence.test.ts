@@ -30,6 +30,7 @@ type CitationResult = {
   has_more: boolean;
   next_cursor: string | null;
   limit: number;
+  measurement_mode_filter: 'model_only' | 'search_requested' | null;
   engine_scope: {
     selection: 'selected' | 'all_stored';
     requested_engines: string[];
@@ -83,6 +84,7 @@ type CitationTool = {
     cursor?: string;
     current_identity_only?: boolean;
     active_prompts_only?: boolean;
+    measurement_mode?: 'model_only' | 'search_requested';
   }) => Promise<{ structuredContent: CitationResult }>;
 };
 
@@ -112,6 +114,9 @@ function registerCitationTool(
         const rows = (Array.isArray(row) ? row : [row])
           .filter((item) => !engine ||
             (Array.isArray(engine) ? engine.length === 0 || engine.includes(item.engine) : item.engine === engine))
+          .filter((item) => !page?.measurementMode ||
+            ((item.mode === 'batch' || item.engine === 'claude' || item.engine === 'gemini'
+              ? 'model_only' : 'search_requested') === page.measurementMode))
           .filter((item) => item.captured_at <= (page?.until ?? Number.MAX_SAFE_INTEGER))
           .filter((item) => page?.minRunStartedAt === undefined ||
             (typeof item.run_started_at === 'number' && item.run_started_at >= page.minRunStartedAt))
@@ -133,10 +138,13 @@ function registerCitationTool(
       getResponsesSince: async () => {
         throw new Error('get_citations must not hydrate full responses');
       },
-      getCitationSourceRows: async (_brandId, _since, until, engine, minRunStartedAt, activeOnly) =>
+      getCitationSourceRows: async (_brandId, _since, until, engine, minRunStartedAt, activeOnly, measurementMode) =>
         responses
           .filter((response) => response.captured_at <= until && (!engine ||
             (Array.isArray(engine) ? engine.length === 0 || engine.includes(response.engine) : response.engine === engine)))
+          .filter((response) => !measurementMode ||
+            ((response.mode === 'batch' || response.engine === 'claude' || response.engine === 'gemini'
+              ? 'model_only' : 'search_requested') === measurementMode))
           .filter((response) => minRunStartedAt === undefined ||
             (typeof response.run_started_at === 'number' && response.run_started_at >= minRunStartedAt))
           .filter((response) => !activeOnly || activeIds.includes(response.prompt_id))
@@ -235,6 +243,41 @@ test('citation rows distinguish model-only batch and ungrounded responses from l
     'Claude response': 'model_only',
     'Google response': 'search_requested',
   });
+});
+
+test('citation request-mode selection filters before paging and source ranking and binds cursors', async () => {
+  const captured_at = Date.now() - 10_000;
+  const rows = [
+    citationRow({ response_id: 'batch', run_id: 'batch', prompt_id: 'p1', mode: 'batch', captured_at }),
+    citationRow({ response_id: 'live-1', run_id: 'live-1', prompt_id: 'p2', mode: 'live', captured_at: captured_at - 100 }),
+    citationRow({ response_id: 'claude', run_id: 'claude', prompt_id: 'p3', engine: 'claude', mode: 'live', captured_at: captured_at - 200 }),
+    citationRow({ response_id: 'live-2', run_id: 'live-2', prompt_id: 'p4', mode: 'live', captured_at: captured_at - 300 }),
+  ];
+  const sources: SourceFixture[] = [
+    { ...promptResponse({ id: 'batch', run_id: 'batch', prompt_id: 'p1', captured_at, engine_citations: ['https://batch.example/report'] }), mode: 'batch' },
+    { ...promptResponse({ id: 'live-1', run_id: 'live-1', prompt_id: 'p2', captured_at: captured_at - 100, engine_citations: ['https://search.example/first'] }), mode: 'live' },
+    { ...promptResponse({ id: 'claude', run_id: 'claude', prompt_id: 'p3', engine: 'claude', captured_at: captured_at - 200, engine_citations: ['https://model.example/report'] }), mode: 'live' },
+    { ...promptResponse({ id: 'live-2', run_id: 'live-2', prompt_id: 'p4', captured_at: captured_at - 300, engine_citations: ['https://search.example/second'] }), mode: 'live' },
+  ];
+  const citation = registerCitationTool(rows, sources);
+  const historical = await citation.handler({ brand_id: brand.id });
+  assert.equal(historical.structuredContent.citations.length, 4);
+  assert.equal(historical.structuredContent.measurement_mode_filter, null);
+
+  const search = await citation.handler({ brand_id: brand.id, measurement_mode: 'search_requested', limit: 1 });
+  assert.equal(search.structuredContent.measurement_mode_filter, 'search_requested');
+  assert.deepEqual(search.structuredContent.citations.map((row) => row.id), ['cit_live-1']);
+  assert.equal(search.structuredContent.has_more, true);
+  assert.deepEqual(search.structuredContent.top_sources.map((row) => [row.domain, row.citation_count]), [['search.example', 2]]);
+  const next = await citation.handler({ brand_id: brand.id, measurement_mode: 'search_requested', limit: 1, cursor: search.structuredContent.next_cursor! });
+  assert.deepEqual(next.structuredContent.citations.map((row) => row.id), ['cit_live-2']);
+  assert.deepEqual(next.structuredContent.top_sources, search.structuredContent.top_sources);
+  await assert.rejects(citation.handler({ brand_id: brand.id, limit: 1, cursor: search.structuredContent.next_cursor! }), /cursor/i);
+  await assert.rejects(citation.handler({ brand_id: brand.id, measurement_mode: 'model_only', limit: 1, cursor: search.structuredContent.next_cursor! }), /cursor/i);
+
+  const model = await citation.handler({ brand_id: brand.id, measurement_mode: 'model_only' });
+  assert.deepEqual(model.structuredContent.citations.map((row) => row.id), ['cit_batch', 'cit_claude']);
+  assert.deepEqual(model.structuredContent.top_sources.map((row) => row.domain).sort(), ['batch.example', 'model.example']);
 });
 
 test('citation evidence distinguishes old-identity scans from current scans using run start rather than capture time', async () => {

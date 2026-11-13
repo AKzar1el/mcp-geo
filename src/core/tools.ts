@@ -348,6 +348,7 @@ const citationsOutputSchema = z.object({
   brand_id: z.string(),
   days: z.number(),
   engine: z.string().nullable(),
+  measurement_mode_filter: z.enum(['model_only', 'search_requested']).nullable(),
   engine_scope: z.object({
     selection: z.enum(['selected', 'all_stored']),
     requested_engines: z.array(z.string()),
@@ -406,6 +407,7 @@ const citationCursorSchema = z.object({
   days: z.number().min(1).max(90),
   engine: z.string().nullable(),
   engines: z.array(engineSchema).optional(),
+  measurement_mode: z.enum(['model_only', 'search_requested']).optional(),
   identity_selection: z.enum(['full_history', 'current_identity_only']).optional(),
   identity_boundary: z.number().int().nullable().optional(),
   prompt_selection: z.enum(['full_history', 'active_only']).optional(),
@@ -432,6 +434,7 @@ async function citationPromptRosterDigest(prompts: Prompt[]): Promise<string> {
 function decodeCitationCursor(
   cursor: string, brandId: string, days: number, engine: string | null,
   engines: string[],
+  measurementMode: 'model_only' | 'search_requested' | undefined,
   currentIdentityOnly: boolean, identityBoundary: number | null,
   activePromptsOnly: boolean, promptRosterDigest: string | null,
 ) {
@@ -443,6 +446,7 @@ function decodeCitationCursor(
     // or to select an arbitrary older historical window.
     if (parsed.brand_id !== brandId || parsed.days !== days || parsed.engine !== engine ||
       JSON.stringify(parsed.engines ?? []) !== JSON.stringify(engines) ||
+      (parsed.measurement_mode ?? null) !== (measurementMode ?? null) ||
       (parsed.identity_selection ?? 'full_history') !==
         (currentIdentityOnly ? 'current_identity_only' : 'full_history') ||
       (currentIdentityOnly && parsed.identity_boundary !== identityBoundary) ||
@@ -459,7 +463,7 @@ function decodeCitationCursor(
     }
     return parsed;
   } catch {
-    throw new Error('Invalid citation cursor. Start again without cursor or preserve the brand, days, engine/engines, identity and prompt selection.');
+    throw new Error('Invalid citation cursor. Start again without cursor or preserve the brand, days, engine/engines, measurement mode, identity and prompt selection.');
   }
 }
 
@@ -1567,7 +1571,7 @@ export function registerTools(
     {
       title: 'Get AI citation evidence',
       description:
-        "Page stored citations and source rankings. engines selects audit surfaces before pagination; engine selects one. Filter by current identity or active prompts. Defaults retain history. No provider scans. Example: brand_id='acme'.",
+        "Page stored citations and source rankings. engines selects audit surfaces; measurement_mode selects model-only or search-requested evidence before pagination. Defaults retain history. No provider scans. Example: brand_id='acme'.",
       inputSchema: {
         brand_id: z
           .string()
@@ -1584,6 +1588,8 @@ export function registerTools(
           .describe('Legacy single-engine selection; do not combine with nonempty engines.'),
         engines: z.array(engineSchema).optional()
           .describe('Selected audit engines; omitted/[] preserves all-engine defaults. Do not combine with engine.'),
+        measurement_mode: z.enum(['model_only', 'search_requested']).optional()
+          .describe('Filter pages and top_sources by request mode; search_requested does not verify source links.'),
         limit: z.number().int().min(1).max(100).default(50)
           .describe('Citation rows per page, 1-100 (default 50).'),
         current_identity_only: z.boolean().default(false)
@@ -1600,7 +1606,7 @@ export function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ brand_id, days = 14, engine, engines, limit = 50, current_identity_only = false,
+    async ({ brand_id, days = 14, engine, engines, measurement_mode, limit = 50, current_identity_only = false,
       active_prompts_only = false, cursor }) => {
       const selectedEngines = [...new Set(engines ?? [])].sort();
       if (engine && selectedEngines.length) {
@@ -1620,7 +1626,7 @@ export function registerTools(
       const promptRosterDigest = activePrompts === null ? null : await citationPromptRosterDigest(activePrompts);
       const now = Date.now();
       const previous = cursor ? decodeCitationCursor(
-        cursor, brand_id, days, engine ?? null, selectedEngines, current_identity_only, identityBoundary,
+        cursor, brand_id, days, engine ?? null, selectedEngines, measurement_mode, current_identity_only, identityBoundary,
         active_prompts_only, promptRosterDigest,
       ) : null;
       const since = previous?.since ?? (now - days * 86_400_000);
@@ -1632,11 +1638,12 @@ export function registerTools(
         limit: limit + 1,
         minRunStartedAt,
         activePromptsOnly: active_prompts_only,
+        measurementMode: measurement_mode,
       });
       const hasMore = rows.length > limit;
       const results = rows.slice(0, limit);
       const sourceResponses = await deps.db.getCitationSourceRows(
-        brand_id, since, until, engineSelection, minRunStartedAt, active_prompts_only,
+        brand_id, since, until, engineSelection, minRunStartedAt, active_prompts_only, measurement_mode,
       );
 
       const citations = results.map((row) => {
@@ -1667,6 +1674,7 @@ export function registerTools(
         brand_id,
         days,
         engine: engine ?? null,
+        measurement_mode_filter: measurement_mode ?? null,
         engine_scope: {
           selection: requestedEngines.length ? 'selected' as const : 'all_stored' as const,
           requested_engines: requestedEngines,
@@ -1710,6 +1718,7 @@ export function registerTools(
               days,
               engine: engine ?? null,
               ...(selectedEngines.length ? { engines: selectedEngines } : {}),
+              ...(measurement_mode ? { measurement_mode } : {}),
               identity_selection: current_identity_only ? 'current_identity_only' : 'full_history',
               identity_boundary: current_identity_only ? identityBoundary : null,
               prompt_selection: active_prompts_only ? 'active_only' : 'full_history',
