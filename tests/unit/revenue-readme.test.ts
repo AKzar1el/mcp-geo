@@ -243,6 +243,14 @@ test('client audit prompt scopes stored competitor comparisons to the selected A
   assert.match(instructions, /not measured zero|not zero visibility|neither is measured zero/i);
 });
 
+test('client audit instructions use selected engines for headline scores and optional trends', () => {
+  const instructions = reportPrompt.match(/## Copy-paste prompt\s+```text\r?\n([\s\S]*?)\r?\n```/)?.[1] ?? '';
+  assert.match(instructions, /check_visibility\(active_prompts_only=true, engines=\[\.\.\.\]\)/);
+  assert.match(instructions, /1\. check_visibility\(active_prompts_only=true, engines=\[\.\.\.\]\)/);
+  assert.match(instructions, /5\. get_visibility_history\(active_prompts_only=true, current_identity_only=true, engines=\[\.\.\.\]\)/);
+  assert.match(instructions, /overall score[^\n]*selected (?:audit )?engines|selected (?:audit )?engines[^\n]*overall score/i);
+});
+
 test('README documents Roo Code local stdio setup and Windows fallback', () => {
   assert.match(readme, /\*\*Roo Code:\*\*[\s\S]*\.roo\/mcp\.json[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/);
   assert.match(readme, /"command": "cmd"[\s\S]*Windows fallback/);
