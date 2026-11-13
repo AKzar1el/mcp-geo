@@ -246,6 +246,8 @@ export interface CitationPageOptions {
   until?: number;
   // Apply identity provenance in SQL before page LIMIT/keyset selection.
   minRunStartedAt?: number;
+  // Filter retired buyer questions before page LIMIT/keyset selection.
+  activePromptsOnly?: boolean;
   // response_id breaks ties between repeated observations of one run/prompt.
   // Optional for cursors issued before response-level pagination existed.
   before?: Pick<CitationRow, 'captured_at' | 'run_id' | 'prompt_id'> & {
@@ -327,6 +329,7 @@ export interface Db {
     until: number,
     engine?: string,
     minRunStartedAt?: number,
+    activePromptsOnly?: boolean,
   ): Promise<CitationSourceRow[]>;
   replacePrompts(brandId: string, prompts: NewPromptInput[]): Promise<number>;
   cacheGet(
