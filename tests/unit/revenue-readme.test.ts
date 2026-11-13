@@ -234,6 +234,15 @@ test('client audit prompt selects the same active buyer cohort across evidence t
   assert.match(instructions, /do not perform a fresh scan|no new provider requests/i);
 });
 
+test('client audit prompt scopes stored competitor comparisons to the selected AI surfaces', () => {
+  const instructions = reportPrompt.match(/## Copy-paste prompt\s+```text\r?\n([\s\S]*?)\r?\n```/)?.[1] ?? '';
+  assert.match(instructions, /compare_competitors\(active_prompts_only=true, engines=\[\.\.\.\]\)/);
+  assert.match(instructions, /get_visibility_history\(active_prompts_only=true, current_identity_only=true, engines=\[\.\.\.\]\)/);
+  assert.match(instructions, /`engine_scope\.not_observed_engines`/);
+  assert.match(instructions, /`engine_scope\.unmeasured_scoped_engines`/);
+  assert.match(instructions, /not measured zero|not zero visibility|neither is measured zero/i);
+});
+
 test('README documents Roo Code local stdio setup and Windows fallback', () => {
   assert.match(readme, /\*\*Roo Code:\*\*[\s\S]*\.roo\/mcp\.json[\s\S]*"command": "npx"[\s\S]*@digestseo\/mcp-geo/);
   assert.match(readme, /"command": "cmd"[\s\S]*Windows fallback/);

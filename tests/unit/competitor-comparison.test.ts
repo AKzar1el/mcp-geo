@@ -79,6 +79,13 @@ type ComparisonResult = {
     excluded_observations: number;
     note: string;
   };
+  engine_scope: {
+    selection: 'all_stored' | 'selected';
+    requested_engines: string[];
+    not_observed_engines: string[];
+    unmeasured_scoped_engines: string[];
+    note: string;
+  };
   requested_competitor_domains: string[] | null;
   prompts_you_win: Array<{ prompt: string; you_cited_by: string[]; competitors_cited: string[] }>;
   prompts_brand_only: Array<{ prompt: string; you_cited_by: string[]; competitors_cited: string[] }>;
@@ -97,8 +104,95 @@ type ComparisonTool = {
     days?: number;
     competitor_domains?: string[];
     active_prompts_only?: boolean;
+    engines?: string[];
   }) => Promise<{ structuredContent: ComparisonResult }>;
 };
+
+test('comparison scopes engine evidence before shares, prompt rankings and Google sampling', async () => {
+  let comparison: ComparisonTool | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, handler: unknown) {
+      if (name === 'compare_competitors') comparison = { handler: handler as ComparisonTool['handler'] };
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getResponsesSince: async () => [
+        response('brand-chatgpt', 'best project tracker', 1, []),
+        { ...response('asana-claude', 'compare project trackers', 0, ['asana.com']), engine: 'claude' },
+        { ...response('monday-google', 'team planning software', 0, ['monday.com']), engine: 'ai_overviews' },
+      ],
+    } as Db,
+    env: {},
+    refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(comparison);
+
+  const full = (await comparison.handler({ brand_id: brand.id })).structuredContent;
+  assert.equal(full.observation_coverage.successful_responses, 3);
+  assert.equal(full.your_share_of_voice_pct, 33);
+  assert.equal(full.competitors.find((c) => c.domain === 'monday.com')?.mentions, 1);
+  assert.deepEqual(full.engine_scope.requested_engines, []);
+  assert.equal(full.engine_scope.selection, 'all_stored');
+
+  const selected = (await comparison.handler({
+    brand_id: brand.id, engines: ['chatgpt', 'claude', 'chatgpt'],
+  })).structuredContent;
+  assert.equal(selected.your_share_of_voice_pct, 50);
+  assert.equal(selected.your_mentions, 1);
+  assert.equal(selected.observation_coverage.successful_responses, 2);
+  assert.deepEqual(selected.observation_coverage.per_engine.map((x) => x.engine), ['chatgpt', 'claude']);
+  assert.equal(selected.competitors.find((c) => c.domain === 'asana.com')?.mentions, 1);
+  assert.equal(selected.competitors.find((c) => c.domain === 'monday.com')?.mentions, 0);
+  assert.deepEqual(selected.competitors.find((c) => c.domain === 'monday.com')?.prompts_won_against_you, []);
+  assert.deepEqual(selected.prompts_you_win[0]?.you_cited_by, ['chatgpt']);
+  assert.equal(selected.google_search_sampling, null);
+  assert.deepEqual(selected.engine_scope.requested_engines, ['chatgpt', 'claude']);
+  assert.deepEqual(selected.engine_scope.not_observed_engines, []);
+
+  const missing = (await comparison.handler({ brand_id: brand.id, engines: ['grok'] })).structuredContent;
+  assert.equal(missing.observation_coverage.status, 'no_observations');
+  assert.equal(missing.your_mentions, 0);
+  assert.deepEqual(missing.engine_scope.not_observed_engines, ['grok']);
+  assert.match(missing.engine_scope.note, /unmeasured|not zero/i);
+
+  const empty = (await comparison.handler({ brand_id: brand.id, engines: [] })).structuredContent;
+  assert.equal(empty.engine_scope.selection, 'all_stored');
+  assert.equal(empty.observation_coverage.successful_responses, 3);
+});
+
+test('comparison distinguishes selected engines excluded by the active buyer-prompt cohort', async () => {
+  let comparison: ComparisonTool | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, handler: unknown) {
+      if (name === 'compare_competitors') comparison = { handler: handler as ComparisonTool['handler'] };
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getActivePrompts: async () => [{ id: 'active' }],
+      getResponsesSince: async () => [
+        { ...response('active', 'current buyer query', 1, []), prompt_id: 'active' },
+        { ...response('retired', 'retired buyer query', 0, ['asana.com']), engine: 'claude', prompt_id: 'retired' },
+      ],
+    } as Db,
+    env: {},
+    refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(comparison);
+  const scoped = (await comparison.handler({
+    brand_id: brand.id, engines: ['chatgpt', 'claude'], active_prompts_only: true,
+  })).structuredContent;
+  assert.equal(scoped.your_mentions, 1);
+  assert.equal(scoped.observation_coverage.successful_responses, 1);
+  assert.deepEqual(scoped.engine_scope.not_observed_engines, []);
+  assert.deepEqual(scoped.engine_scope.unmeasured_scoped_engines, ['claude']);
+  assert.equal(scoped.prompt_set_scope.excluded_observations, 1);
+});
 
 test('compare_competitors counts one latest successful retry per run, engine and prompt', async () => {
   let comparison: ComparisonTool | undefined;
