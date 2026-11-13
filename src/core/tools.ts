@@ -321,6 +321,13 @@ const compareOutputSchema = z.object({
     excluded_observations: z.number().int().nonnegative(),
     note: z.string(),
   }),
+  engine_scope: z.object({
+    selection: z.enum(['all_stored', 'selected']),
+    requested_engines: z.array(z.string()),
+    not_observed_engines: z.array(z.string()),
+    unmeasured_scoped_engines: z.array(z.string()),
+    note: z.string(),
+  }),
   your_share_of_voice_pct: z.number(),
   your_mentions: z.number(),
   competitors: z.array(
@@ -1233,11 +1240,13 @@ export function registerTools(
     {
       title: 'Compare competitor AI visibility',
       description:
-        "Compare brand/competitor mentions and share of voice. active_prompts_only=true excludes retired prompts; default keeps history. Unmeasured coverage and tracking caveats are reported. Example: brand_id='acme', days=7.",
+        "Compare stored brand/competitor mentions and share of voice. engines scopes selected AI surfaces; active_prompts_only excludes retired prompts. Coverage caveats are reported; no provider calls. Example: brand_id='acme'.",
       inputSchema: {
         brand_id: z
           .string()
           .describe('Tracked brand ID to compare.'),
+        engines: z.array(engineSchema).optional()
+          .describe('Only compare these engines; omit or pass [] for all stored engines.'),
         competitor_domains: z
           .array(z.string())
           .optional()
@@ -1261,11 +1270,12 @@ export function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ brand_id, competitor_domains, days, active_prompts_only }) => {
+    async ({ brand_id, engines, competitor_domains, days, active_prompts_only }) => {
       const brand = await deps.db.getBrand(brand_id);
       if (!brand) {
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
       }
+      const requestedEngines = engines && engines.length > 0 ? uniqueEngineNames(engines) : null;
       const targets = competitor_domains === undefined
         ? brand.competitors
         : normalizeCompetitorDomains(competitor_domains, brand.domain);
@@ -1305,6 +1315,13 @@ export function registerTools(
             excluded_observations: 0,
             note: 'No comparison targets were selected, so no prompt or response evidence was queried.',
           },
+          engine_scope: {
+            selection: requestedEngines ? 'selected' as const : 'all_stored' as const,
+            requested_engines: requestedEngines ?? [],
+            not_observed_engines: [],
+            unmeasured_scoped_engines: [],
+            note: 'No comparison targets were selected. No engine evidence was queried, so missing observations cannot be classified.',
+          },
           competitors: [],
           prompts_you_win: [],
           prompts_brand_only: [],
@@ -1316,10 +1333,16 @@ export function registerTools(
 
       const since = Date.now() - days * 86_400_000;
       const fetchedResponses = await deps.db.getResponsesSince(brand_id, since);
+      const selectedEngineSet = requestedEngines ? new Set<string>(requestedEngines) : null;
+      // Apply the engine scope before deduplication and every downstream
+      // attribution, prompt ranking, share and measurement calculation.
+      const selectedResponses = selectedEngineSet
+        ? fetchedResponses.filter((row) => selectedEngineSet.has(row.engine))
+        : fetchedResponses;
       // Preserve every distinct scan in the selected window, but do not
       // count repeated successful attempts for the same scan/prompt twice.
       const latestByRunPrompt = new Map<string, ComparisonEvidenceRow>();
-      for (const row of fetchedResponses) {
+      for (const row of selectedResponses) {
         if (row.status !== 'ok') continue;
         const key = JSON.stringify([row.run_id, row.engine, row.prompt_id]);
         const previous = latestByRunPrompt.get(key);
@@ -1341,6 +1364,18 @@ export function registerTools(
         : null;
       const allResponses = activePromptIds === null ? currentIdentityResponses
         : currentIdentityResponses.filter((row) => activePromptIds.has(row.prompt_id));
+      const successfulEngines = new Set(deduplicated.map((row) => row.engine));
+      const usableEngines = new Set(allResponses.map((row) => row.engine));
+      const engine_scope = {
+        selection: requestedEngines ? 'selected' as const : 'all_stored' as const,
+        requested_engines: requestedEngines ?? [],
+        not_observed_engines: requestedEngines?.filter((engine) => !successfulEngines.has(engine)) ?? [],
+        unmeasured_scoped_engines: requestedEngines?.filter((engine) =>
+          successfulEngines.has(engine) && !usableEngines.has(engine)) ?? [],
+        note: requestedEngines
+          ? 'Only selected engines contribute to comparison shares, prompt rankings and coverage. Requested engines without successful stored responses, or with only identity/prompt-filtered evidence, are unmeasured, not observed zeros. No provider scans were requested.'
+          : 'Comparison uses all stored engines in the selected window. Omit engines or pass [] to retain the historical default; no provider scans were requested.',
+      };
       const prompt_set_scope = {
         selection: active_prompts_only ? 'active_only' as const : 'full_window' as const,
         active_prompt_count: activePromptIds?.size ?? null,
@@ -1500,6 +1535,7 @@ export function registerTools(
         historical_coverage_note: COMPARISON_HISTORY_CAVEAT,
         outside_current_tracking: outsideCurrentTracking,
         prompt_set_scope,
+        engine_scope,
         competitors: competitorsOut,
         prompts_you_win,
         prompts_brand_only,
