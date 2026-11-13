@@ -331,7 +331,7 @@ export interface Db {
     brandId: string,
     since: number,
     until: number,
-    engine?: string,
+    engine?: string | string[],
     minRunStartedAt?: number,
     activePromptsOnly?: boolean,
   ): Promise<CitationSourceRow[]>;
@@ -360,7 +360,7 @@ export interface Db {
   getCitationRows(
     brandId: string,
     since: number,
-    engine?: string,
+    engine?: string | string[],
     page?: CitationPageOptions,
   ): Promise<CitationRow[]>;
 }

@@ -30,6 +30,12 @@ type CitationResult = {
   has_more: boolean;
   next_cursor: string | null;
   limit: number;
+  engine_scope: {
+    selection: 'selected' | 'all_stored';
+    requested_engines: string[];
+    not_observed_engines: string[];
+    note: string;
+  };
   google_search_sampling: null | {
     engines: string[];
     country: 'us';
@@ -72,6 +78,7 @@ type CitationTool = {
     brand_id: string;
     days?: number;
     engine?: 'chatgpt' | 'claude' | 'perplexity' | 'gemini' | 'ai_overviews' | 'ai_mode';
+    engines?: Array<'chatgpt' | 'claude' | 'perplexity' | 'gemini' | 'ai_overviews' | 'ai_mode'>;
     limit?: number;
     cursor?: string;
     current_identity_only?: boolean;
@@ -103,7 +110,8 @@ function registerCitationTool(
       })),
       getCitationRows: async (_brandId, _since, engine, page) => {
         const rows = (Array.isArray(row) ? row : [row])
-          .filter((item) => !engine || item.engine === engine)
+          .filter((item) => !engine ||
+            (Array.isArray(engine) ? engine.length === 0 || engine.includes(item.engine) : item.engine === engine))
           .filter((item) => item.captured_at <= (page?.until ?? Number.MAX_SAFE_INTEGER))
           .filter((item) => page?.minRunStartedAt === undefined ||
             (typeof item.run_started_at === 'number' && item.run_started_at >= page.minRunStartedAt))
@@ -127,7 +135,8 @@ function registerCitationTool(
       },
       getCitationSourceRows: async (_brandId, _since, until, engine, minRunStartedAt, activeOnly) =>
         responses
-          .filter((response) => response.captured_at <= until && (!engine || response.engine === engine))
+          .filter((response) => response.captured_at <= until && (!engine ||
+            (Array.isArray(engine) ? engine.length === 0 || engine.includes(response.engine) : response.engine === engine)))
           .filter((response) => minRunStartedAt === undefined ||
             (typeof response.run_started_at === 'number' && response.run_started_at >= minRunStartedAt))
           .filter((response) => !activeOnly || activeIds.includes(response.prompt_id))
@@ -686,6 +695,49 @@ test('get_citations source ranking honors the engine filter', async () => {
     result.structuredContent.top_sources.map((source) => source.domain),
     ['reddit.com'],
   );
+});
+
+test('get_citations selected engines filter before pagination and source rankings and bind the cursor scope', async () => {
+  const at = Date.now() - 60_000;
+  const tool = registerCitationTool([
+    citationRow({ response_id: 'chat-1', run_id: 'r-chat', prompt_id: 'p-chat', engine: 'chatgpt', captured_at: at + 2 }),
+    citationRow({ response_id: 'claude-1', run_id: 'r-claude', prompt_id: 'p-claude', engine: 'claude', captured_at: at + 1 }),
+    citationRow({ response_id: 'perp-1', run_id: 'r-perp', prompt_id: 'p-perp', engine: 'perplexity', captured_at: at }),
+  ], [
+    promptResponse({ id: 'chat-source', run_id: 'r-chat', engine: 'chatgpt',
+      engine_citations: ['https://chat.example/a'], captured_at: at + 2 }),
+    promptResponse({ id: 'claude-source', run_id: 'r-claude', engine: 'claude',
+      engine_citations: ['https://claude.example/a'], captured_at: at + 1 }),
+    promptResponse({ id: 'perp-source', run_id: 'r-perp', engine: 'perplexity',
+      engine_citations: ['https://perplexity.example/a'], captured_at: at }),
+  ]);
+  const engines = ['perplexity', 'claude'] as const;
+  const first = (await tool.handler({ brand_id: brand.id, engines: [...engines], limit: 1 })).structuredContent;
+  assert.equal(first.has_more, true);
+  assert.equal(first.citations.length, 1);
+  assert.deepEqual(first.top_sources.map(({ domain }) => domain).sort(),
+    ['claude.example', 'perplexity.example']);
+  assert.deepEqual(first.engine_scope.requested_engines, ['claude', 'perplexity']);
+  assert.deepEqual(first.engine_scope.not_observed_engines, []);
+  const withMissing = (await tool.handler({
+    brand_id: brand.id, engines: ['ai_mode', 'claude'],
+  })).structuredContent;
+  assert.deepEqual(withMissing.engine_scope.not_observed_engines, ['ai_mode']);
+  const second = (await tool.handler({
+    brand_id: brand.id, engines: ['claude', 'perplexity'], limit: 1, cursor: first.next_cursor!,
+  })).structuredContent;
+  assert.equal(second.citations.length, 1);
+  assert.equal(second.has_more, false);
+  assert.notEqual(first.citations[0].id, second.citations[0].id);
+  await assert.rejects(tool.handler({
+    brand_id: brand.id, engines: ['claude'], cursor: first.next_cursor!,
+  }), /Invalid citation cursor/);
+  await assert.rejects(tool.handler({
+    brand_id: brand.id, engine: 'claude', engines: ['perplexity'],
+  }), /engine.*engines/i);
+  const all = (await tool.handler({ brand_id: brand.id, engines: [] })).structuredContent;
+  assert.equal(all.citations.length, 3);
+  assert.equal(all.engine_scope.selection, 'all_stored');
 });
 
 test('get_citations provides stable cursor pages for tied observation timestamps', async () => {

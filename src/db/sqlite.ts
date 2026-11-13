@@ -772,10 +772,11 @@ export function openSqliteDb(path?: string): SqliteDb {
       brandId: string,
       since: number,
       until: number,
-      engine?: string,
+      engine?: string | string[],
       minRunStartedAt?: number,
       activePromptsOnly = false,
     ): Promise<CitationSourceRow[]> {
+      const selectedEngines = Array.isArray(engine) ? [...new Set(engine)] : engine ? [engine] : [];
       // Count the latest successful source observation per run/prompt, but only
       // within this window so a later retry cannot rewrite a frozen cursor page.
       const rows = sqlite
@@ -799,12 +800,12 @@ export function openSqliteDb(path?: string): SqliteDb {
                    AND (newer.captured_at > pr.captured_at
                      OR (newer.captured_at = pr.captured_at AND newer.id > pr.id))
               )
-              ${engine ? 'AND pr.engine = ?' : ''}
+              ${selectedEngines.length ? `AND pr.engine IN (${selectedEngines.map(() => '?').join(', ')})` : ''}
             ORDER BY pr.captured_at ASC, pr.id ASC`,
         )
         .all(brandId, since, until,
           ...(minRunStartedAt !== undefined ? [minRunStartedAt] : []),
-          until, ...(engine ? [engine] : [])) as Array<
+          until, ...selectedEngines) as Array<
           Omit<CitationSourceRow, 'engine_citations'> & { engine_citations_json: string | null }
         >;
       return rows.map(({ engine_citations_json, ...row }) => ({
@@ -947,7 +948,7 @@ export function openSqliteDb(path?: string): SqliteDb {
     async getCitationRows(
       brandId: string,
       since: number,
-      engine?: string,
+      engine?: string | string[],
       page?: CitationPageOptions,
     ): Promise<CitationRow[]> {
       let sql = `SELECT pr.id AS response_id, r.engine AS engine, r.mode AS mode, r.started_at AS run_started_at,
@@ -970,9 +971,10 @@ export function openSqliteDb(path?: string): SqliteDb {
       if (page?.activePromptsOnly) {
         sql += ' AND p.active = 1';
       }
-      if (engine) {
-        sql += ' AND r.engine = ?';
-        params.push(engine);
+      const selectedEngines = Array.isArray(engine) ? [...new Set(engine)] : engine ? [engine] : [];
+      if (selectedEngines.length) {
+        sql += ` AND r.engine IN (${selectedEngines.map(() => '?').join(', ')})`;
+        params.push(...selectedEngines);
       }
       if (page?.until !== undefined) {
         sql += ' AND pr.captured_at <= ?';
