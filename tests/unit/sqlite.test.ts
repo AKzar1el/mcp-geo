@@ -467,6 +467,8 @@ test('getResponsesSince returns every usable response in the requested brand win
     assert.equal(all[0].run_started_at, first.started_at,
       'identity comparisons must use run start, not response capture time');
     assert.equal(all[1].run_started_at, second.started_at);
+    assert.equal(all[0].mode, 'live', 'comparison evidence must retain the original run request mode');
+    assert.equal(all[1].mode, 'live');
 
     const hostedSql: string[] = [];
     const hosted = createD1Db({
@@ -515,6 +517,15 @@ test('getResponsesSince returns every usable response in the requested brand win
     const recent = await db.getResponsesSince('acme', Date.now() - 60_000);
     assert.equal(recent.length, 1);
     assert.equal(recent[0].run_id, second.id);
+    const batch = await db.createRun(brand, 'chatgpt', 'batch', 1);
+    await db.persistEngineRun(batch.id, 'chatgpt', 'gpt-4o-mini', 3600, [{
+      prompt_id: 'p1', raw_response: 'Batch comparison evidence', brand_mentioned: 0,
+      brand_cited_with_link: 0, cited_urls: [], competitors_mentioned: ['asana.com'], status: 'ok',
+    }]);
+    const withBatch = await db.getResponsesSince('acme', Date.now() - 60_000);
+    assert.equal(withBatch.find((row) => row.run_id === batch.id)?.mode, 'batch');
+    assert.deepEqual(await hosted.getResponsesSince('acme', Date.now() - 60_000), withBatch,
+      'D1/SQLite comparison must retain request mode for both live and batch runs');
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });
