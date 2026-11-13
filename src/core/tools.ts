@@ -230,6 +230,8 @@ const historyOutputSchema = z.object({
   }),
   google_search_sampling: googleSearchSamplingSchema,
   measurement_scope: z.object({
+    measurement_mode_filter: z.enum(['model_only', 'search_requested']).nullable(),
+    excluded_mode_runs: z.number().int().nonnegative(),
     mixed_mode_engines: z.array(z.string()),
     unmeasured_scoped_engines: z.array(z.string()),
     by_engine: z.record(z.string(), historyModeScopeSchema),
@@ -928,13 +930,15 @@ export function registerTools(
     {
       title: 'Get AI visibility history',
       description:
-        "Stored daily/weekly trends. Optional engines scopes results; missing selected engines are unmeasured. active_prompts_only and current_identity_only filter stored evidence. Defaults retain history. Example: brand_id='acme', days=30.",
+        "Stored trends. Optional engines and measurement_mode select AI surfaces and request mode; missing evidence is unmeasured. Identity/prompt filters apply to stored data. Defaults retain history. Example: brand_id='acme', days=30.",
       inputSchema: {
         brand_id: z
           .string()
           .describe('Tracked brand ID to inspect.'),
         engines: z.array(engineSchema).optional()
           .describe('Only include these engines in trends and metadata; omit or pass [] for all stored engines.'),
+        measurement_mode: z.enum(['model_only', 'search_requested']).optional()
+          .describe('Filter by request mode; omit for combined history. Search-requested does not prove citations.'),
         days: z
           .number()
           .int()
@@ -958,7 +962,7 @@ export function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ brand_id, engines, days, granularity, current_identity_only = false, active_prompts_only = false }) => {
+    async ({ brand_id, engines, measurement_mode, days, granularity, current_identity_only = false, active_prompts_only = false }) => {
       const brand = await deps.db.getBrand(brand_id);
       if (!brand) {
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
@@ -975,10 +979,17 @@ export function registerTools(
       const selectedSet = requestedEngines ? new Set<string>(requestedEngines) : null;
       // Scope before calculating any score, cohort, provenance or missing-evidence
       // metadata. Filtering the finished series would leave misleading totals.
-      const allResults = selectedSet
+      const engineScopedResults = selectedSet
         ? storedResults.filter((row) => selectedSet.has(row.engine))
         : storedResults;
-      const observedEngines = new Set(allResults.map((row) => row.engine));
+      // Compare modes at the run level before trend buckets, provenance and
+      // current-roster analysis, never by filtering already-computed scores.
+      const allResults = measurement_mode
+        ? engineScopedResults.filter((row) =>
+          visibilityMeasurementMode(row.engine, row.mode ?? 'live') === measurement_mode)
+        : engineScopedResults;
+      const excludedModeRuns = engineScopedResults.length - allResults.length;
+      const observedEngines = new Set(engineScopedResults.map((row) => row.engine));
       const engine_scope = {
         selection: requestedEngines ? 'selected' as const : 'all_stored' as const,
         requested_engines: requestedEngines ?? [],
@@ -1072,9 +1083,11 @@ export function registerTools(
       // evidence for the selected identity/prompt cohort. Expose those gaps
       // without implying that never-scanned or unconfigured engines were used.
       const measuredScopedEngines = new Set(results.map((row) => row.engine));
-      const unmeasuredScopedEngines = [...new Set(allResults.map((row) => row.engine))]
+      const unmeasuredScopedEngines = [...new Set(engineScopedResults.map((row) => row.engine))]
         .filter((engine) => !measuredScopedEngines.has(engine)).sort();
       const measurement_scope = {
+        measurement_mode_filter: measurement_mode ?? null,
+        excluded_mode_runs: excludedModeRuns,
         mixed_mode_engines: [...scopeCounts.entries()]
           .filter(([, counts]) =>
             counts.search_requested.usable_prompts > 0 && counts.model_only.usable_prompts > 0,
@@ -1086,7 +1099,7 @@ export function registerTools(
             search_requested: scoredCounts(counts.search_requested),
             model_only: scoredCounts(counts.model_only),
           }])),
-        note: 'Combined legacy daily and weekly scores may mix model-only and search-requested run evidence in the same bucket. by_engine summarizes the selected window; by_bucket separates scored denominators in each daily or weekly period. unmeasured_scoped_engines have stored history but no usable rows after the selected identity and buyer-prompt filters; they are unmeasured, not observed zeros. Engines with no stored history are not listed, and no provider scan is requested. Search-requested responses do not necessarily contain citations.',
+        note: 'Without a request-mode filter, combined legacy daily and weekly scores may mix model-only and search-requested runs. When measurement_mode_filter is set, trends, provenance, rosters and by_bucket use only that mode; excluded_mode_runs counts stored runs removed by this selection. by_engine and by_bucket disclose scored denominators. unmeasured_scoped_engines have stored history but no usable rows after the selected mode, identity and buyer-prompt filters; they are unmeasured, not observed zeros. Never-scanned engines are not inferred, no provider calls occur, and search-requested responses do not necessarily contain citations.',
       };
 
       // Only compare complete recorded run rosters. Comparing successful
