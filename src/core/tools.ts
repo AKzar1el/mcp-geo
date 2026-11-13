@@ -210,6 +210,12 @@ const historyOutputSchema = z.object({
   brand_id: z.string(),
   days: z.number(),
   granularity: z.enum(['daily', 'weekly']),
+  engine_scope: z.object({
+    selection: z.enum(['all_stored', 'selected']),
+    requested_engines: z.array(z.string()),
+    not_observed_engines: z.array(z.string()),
+    note: z.string(),
+  }),
   prompt_set_scope: z.object({
     selection: z.enum(['full_history', 'active_only']),
     active_prompt_count: z.number().int().nonnegative(),
@@ -895,11 +901,13 @@ export function registerTools(
     {
       title: 'Get AI visibility history',
       description:
-        "Daily/weekly stored visibility trends. active_prompts_only=true scores current buyer questions; current_identity_only=true excludes old identities. Historical default retained. Example: brand_id='acme', days=30.",
+        "Stored daily/weekly trends. Optional engines scopes results; missing selected engines are unmeasured. active_prompts_only and current_identity_only filter stored evidence. Defaults retain history. Example: brand_id='acme', days=30.",
       inputSchema: {
         brand_id: z
           .string()
           .describe('Tracked brand ID to inspect.'),
+        engines: z.array(engineSchema).optional()
+          .describe('Only include these engines in trends and metadata; omit or pass [] for all stored engines.'),
         days: z
           .number()
           .int()
@@ -923,7 +931,7 @@ export function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ brand_id, days, granularity, current_identity_only = false, active_prompts_only = false }) => {
+    async ({ brand_id, engines, days, granularity, current_identity_only = false, active_prompts_only = false }) => {
       const brand = await deps.db.getBrand(brand_id);
       if (!brand) {
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
@@ -935,7 +943,23 @@ export function registerTools(
       const since = Date.UTC(
         now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - days + 1,
       );
-      const allResults = await deps.db.getVisibilityHistoryRows(brand_id, since);
+      const storedResults = await deps.db.getVisibilityHistoryRows(brand_id, since);
+      const requestedEngines = engines && engines.length > 0 ? uniqueEngineNames(engines) : null;
+      const selectedSet = requestedEngines ? new Set<string>(requestedEngines) : null;
+      // Scope before calculating any score, cohort, provenance or missing-evidence
+      // metadata. Filtering the finished series would leave misleading totals.
+      const allResults = selectedSet
+        ? storedResults.filter((row) => selectedSet.has(row.engine))
+        : storedResults;
+      const observedEngines = new Set(allResults.map((row) => row.engine));
+      const engine_scope = {
+        selection: requestedEngines ? 'selected' as const : 'all_stored' as const,
+        requested_engines: requestedEngines ?? [],
+        not_observed_engines: requestedEngines?.filter((engine) => !observedEngines.has(engine)) ?? [],
+        note: requestedEngines
+          ? 'Only requested AI surfaces contribute to the selected history and metadata. A requested engine with no stored observations in this window is unmeasured, not a zero score; this does not prove it was configured or scanned and makes no provider requests.'
+          : 'History includes all engines with stored observations in this window. Omit engines or pass [] to preserve this default; no provider requests are made.',
+      };
       const identityChangedAt = brand.identity_changed_at ?? null;
       // A run completed after an identity edit may have started before it.
       // Missing run-start provenance cannot establish current identity.
@@ -1191,6 +1215,7 @@ export function registerTools(
         brand_id,
         days,
         granularity,
+        engine_scope,
         prompt_set_scope,
         identity_scope,
         google_search_sampling: googleSearchSampling(results.map(({ engine }) => engine)),
