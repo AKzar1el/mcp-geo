@@ -327,6 +327,11 @@ const citationsOutputSchema = z.object({
     identity_changed_at: z.string(),
     note: z.string(),
   }).nullable(),
+  identity_filter: z.object({
+    selection: z.enum(['full_history', 'current_identity_only']),
+    applied: z.boolean(),
+    note: z.string(),
+  }),
   limit: z.number().int(),
   has_more: z.boolean(),
   next_cursor: z.string().nullable(),
@@ -363,6 +368,8 @@ const citationCursorSchema = z.object({
   brand_id: z.string(),
   days: z.number().min(1).max(90),
   engine: z.string().nullable(),
+  identity_selection: z.enum(['full_history', 'current_identity_only']).optional(),
+  identity_boundary: z.number().int().nullable().optional(),
   since: z.number().finite(),
   until: z.number().int(),
   before: z.object({
@@ -376,7 +383,10 @@ const citationCursorSchema = z.object({
 const CITATION_CURSOR_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const CITATION_DAY_MS = 86_400_000;
 
-function decodeCitationCursor(cursor: string, brandId: string, days: number, engine: string | null) {
+function decodeCitationCursor(
+  cursor: string, brandId: string, days: number, engine: string | null,
+  currentIdentityOnly: boolean, identityBoundary: number | null,
+) {
   try {
     const parsed = citationCursorSchema.parse(JSON.parse(decodeURIComponent(cursor)));
     const now = Date.now();
@@ -384,6 +394,9 @@ function decodeCitationCursor(cursor: string, brandId: string, days: number, eng
     // one to expand a requested 1-90-day citation query into an unbounded scan
     // or to select an arbitrary older historical window.
     if (parsed.brand_id !== brandId || parsed.days !== days || parsed.engine !== engine ||
+      (parsed.identity_selection ?? 'full_history') !==
+        (currentIdentityOnly ? 'current_identity_only' : 'full_history') ||
+      (currentIdentityOnly && parsed.identity_boundary !== identityBoundary) ||
       !Number.isFinite(parsed.since) || !Number.isSafeInteger(parsed.until) ||
       !Number.isSafeInteger(parsed.before.captured_at) ||
       parsed.until > now || parsed.until < now - CITATION_CURSOR_MAX_AGE_MS ||
@@ -394,7 +407,7 @@ function decodeCitationCursor(cursor: string, brandId: string, days: number, eng
     }
     return parsed;
   } catch {
-    throw new Error('Invalid citation cursor. Start again without cursor or use the unchanged brand, days and engine.');
+    throw new Error('Invalid citation cursor. Start again without cursor or preserve the brand, days, engine and identity selection.');
   }
 }
 
@@ -1394,7 +1407,7 @@ export function registerTools(
     {
       title: 'Get AI citation evidence',
       description:
-        "Return paginated brand mentions, link-only evidence, request mode per row, and top source domains. Search requests do not guarantee citations. Reuse next_cursor within 24 hours. Example: brand_id='acme', days=14.",
+        "Page citation evidence and top source domains. current_identity_only=true selects current-brand runs when known; default retains history. Search requests do not prove citations. Reuse cursor within 24h. Example: brand_id='acme', days=14.",
       inputSchema: {
         brand_id: z
           .string()
@@ -1411,8 +1424,10 @@ export function registerTools(
           .describe('Engine to filter by; omit for all engines.'),
         limit: z.number().int().min(1).max(100).default(50)
           .describe('Citation rows per page, 1-100 (default 50).'),
+        current_identity_only: z.boolean().default(false)
+          .describe('Filter citations and source rankings to current-brand runs when the identity boundary is known.'),
         cursor: z.string().max(1600).optional()
-          .describe('Opaque next_cursor from prior page; preserve brand, days and engine.'),
+          .describe('Opaque next_cursor from prior page; preserve brand, days, engine and identity selection.'),
       },
       outputSchema: citationsOutputSchema,
       annotations: {
@@ -1421,14 +1436,18 @@ export function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ brand_id, days = 14, engine, limit = 50, cursor }) => {
+    async ({ brand_id, days = 14, engine, limit = 50, current_identity_only = false, cursor }) => {
       const brand = await deps.db.getBrand(brand_id);
       if (!brand) {
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
       }
       const identityBoundary = brand.identity_changed_at ?? null;
+      const minRunStartedAt = current_identity_only && identityBoundary !== null
+        ? identityBoundary : undefined;
       const now = Date.now();
-      const previous = cursor ? decodeCitationCursor(cursor, brand_id, days, engine ?? null) : null;
+      const previous = cursor ? decodeCitationCursor(
+        cursor, brand_id, days, engine ?? null, current_identity_only, identityBoundary,
+      ) : null;
       const since = previous?.since ?? (now - days * 86_400_000);
       const until = previous?.until ?? now;
       // Query one extra row to tell the caller whether another page exists.
@@ -1436,10 +1455,13 @@ export function registerTools(
         until,
         before: previous?.before,
         limit: limit + 1,
+        minRunStartedAt,
       });
       const hasMore = rows.length > limit;
       const results = rows.slice(0, limit);
-      const sourceResponses = await deps.db.getCitationSourceRows(brand_id, since, until, engine);
+      const sourceResponses = await deps.db.getCitationSourceRows(
+        brand_id, since, until, engine, minRunStartedAt,
+      );
 
       const citations = results.map((row) => {
         const engineHosts = parseStringArray(row.engine_citations_json);
@@ -1471,7 +1493,18 @@ export function registerTools(
         engine: engine ?? null,
         identity_attribution: identityBoundary === null ? null : {
           identity_changed_at: new Date(identityBoundary).toISOString(),
-          note: 'Citation rows and top source counts preserve evidence from the requested historical window, including prior tracked brand identities. Historical and unattributed records are not proof of current-brand visibility. Identity scope uses run start, not response capture time.',
+          note: minRunStartedAt === undefined
+            ? 'Citation rows and top sources preserve the historical window, including prior tracked identities. Historical and unattributed evidence is not proof of current-brand visibility. Identity scope uses run start.'
+            : 'Citation pages and top sources include only observations whose originating run started after the recorded brand identity change. Unknown run starts and old identities are excluded; this does not establish fresh measurement.',
+        },
+        identity_filter: {
+          selection: current_identity_only ? 'current_identity_only' as const : 'full_history' as const,
+          applied: minRunStartedAt !== undefined,
+          note: minRunStartedAt !== undefined
+            ? 'Filtered on originating run start before pagination and source aggregation; historical and unattributed evidence excluded.'
+            : current_identity_only
+              ? 'No recorded matching-identity boundary; current-only filtering cannot be established, so full historical evidence is returned.'
+              : 'Full historical evidence retained. Opt into current_identity_only for a matching-identity cohort when the boundary is known.',
         },
         google_search_sampling: googleSearchSampling([
           ...(engine ? [engine] : []),
@@ -1486,6 +1519,8 @@ export function registerTools(
               brand_id,
               days,
               engine: engine ?? null,
+              identity_selection: current_identity_only ? 'current_identity_only' : 'full_history',
+              identity_boundary: current_identity_only ? identityBoundary : null,
               since,
               until,
               before: {
