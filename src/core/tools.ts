@@ -523,6 +523,7 @@ const contentGapsOutputSchema = z.object({
     note: z.string(),
   }),
   measurement_scope: z.object({
+    measurement_mode_filter: z.enum(['model_only', 'search_requested']).nullable(),
     search_requested_engines: z.array(z.string()),
     model_only_engines: z.array(z.string()),
     mixed_modes: z.boolean(),
@@ -1784,13 +1785,15 @@ export function registerTools(
     {
       title: 'Find AI visibility content gaps',
       description:
-        "Prioritize observed competitor-winning prompts. engines restricts stored audit surfaces; omitted/[] uses all. Provider-free by default; ai_analysis=true opts in to token-billed Claude (may retry once). Example: brand_id='acme'.",
+        "Prioritize stored competitor-winning prompts. engines and measurement_mode scope audit evidence. Provider-free unless ai_analysis=true opts into token-billed Claude. Example: brand_id='acme'.",
       inputSchema: {
         brand_id: z
           .string()
           .describe('Tracked brand ID to analyze.'),
         engines: z.array(engineSchema).optional()
           .describe('Only recommend from these engines; omit or pass [] to retain all-engine defaults.'),
+        measurement_mode: z.enum(['model_only', 'search_requested']).optional()
+          .describe('Select latest matching request-mode runs; omit for historical all-mode default.'),
         max_recommendations: z
           .number()
           .int()
@@ -1810,7 +1813,7 @@ export function registerTools(
         openWorldHint: true,
       },
     },
-    async ({ brand_id, engines, max_recommendations, ai_analysis }) => {
+    async ({ brand_id, engines, measurement_mode, max_recommendations, ai_analysis }) => {
       const brand = await deps.db.getBrand(brand_id);
       if (!brand) {
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
@@ -1853,8 +1856,18 @@ export function registerTools(
         missing_prompt_count: number;
       }> = [];
       for (const engine of selectedEngines) {
-        const run = await deps.db.getLatestCompletedRun(brand_id, engine);
+        // Claude/Gemini never request search, even during a live run. For
+        // other engines, batch runs are model-only; query the matching run
+        // rather than discarding an older matching cohort after latest lookup.
+        if (measurement_mode === 'search_requested' &&
+            (engine === 'claude' || engine === 'gemini')) continue;
+        const runMode = !measurement_mode ? undefined :
+          measurement_mode === 'search_requested' ? 'live' :
+          engine === 'claude' || engine === 'gemini' ? undefined : 'batch';
+        const run = await deps.db.getLatestCompletedRun(brand_id, engine, runMode);
         if (!run) continue;
+        if (measurement_mode &&
+            visibilityMeasurementMode(engine, run.mode ?? 'live') !== measurement_mode) continue;
         recordedRunEngines.add(engine);
         // Before an identity change these responses were classified using
         // another name/domain/alias set. Keep them in history, not new advice.
@@ -1956,7 +1969,7 @@ export function registerTools(
         unmeasured_engines: selectedEngines.filter(
           (engine) => !perEngineCoverage.some(
             (entry) => entry.engine === engine && entry.usable_prompt_count > 0)),
-        note: 'Counts are unique currently active prompts with a successful stored response after any recorded brand identity change, not verified citations or a confidence score. Per-engine refreshed_at is the run completion time (or start if unfinished), not proof that all prompts succeeded. unmeasured_engines cover the selected engine scope and include engines excluded for stale identity or with zero usable active-prompt responses; others may be unconfigured or unscanned. Refreshing incomplete engines may incur provider charges.',
+        note: 'Counts are unique active prompts with a successful stored response in the selected engine/request-mode cohort after recorded identity changes, not verified citations or a confidence score. Per-engine refreshed_at is the run completion time (or start if unfinished), not proof all prompts succeeded. unmeasured_engines include engines without an eligible selected-mode run, with stale identity or zero usable active-prompt responses; others may be unconfigured or unscanned. Refreshing incomplete engines may incur provider charges.',
       };
       const engine_scope = {
         selection: requestedEngines ? 'selected' as const : 'all_stored' as const,
@@ -1978,10 +1991,13 @@ export function registerTools(
         (engine) => lossModeByEngine.get(engine) === 'model_only',
       ).sort();
       const measurement_scope = {
+        measurement_mode_filter: measurement_mode ?? null,
         search_requested_engines: searchRequestedEngines,
         model_only_engines: modelOnlyEngines,
         mixed_modes: searchRequestedEngines.length > 0 && modelOnlyEngines.length > 0,
-        note: 'Engines contributing competitor-only losses are grouped by request path. Search-requested does not prove a source citation was returned; model-only observations are not live AI-search evidence. Review the stored answers before using recommendations in a client audit.',
+        note: measurement_mode
+          ? 'Only latest eligible stored runs for the selected request mode contribute to losses, coverage and recommendations. Engines without eligible data are unmeasured, not observed zeros. Search-requested does not prove citations; no provider refresh occurs.'
+          : 'Engines contributing competitor-only losses are grouped by request path. Search-requested does not prove a source citation was returned; model-only observations are not live AI-search evidence. Review stored answers before using recommendations in a client audit.',
       };
       const enginesScannedBeforeUpdate = [...staleSettingsEngines].sort();
       const configuration_comparability = {

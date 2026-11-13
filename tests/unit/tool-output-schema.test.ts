@@ -171,6 +171,7 @@ test('content-gap output schema describes recommendation records', () => {
         note: 'Current-identity evidence only.',
       },
       measurement_scope: {
+        measurement_mode_filter: null,
         search_requested_engines: ['chatgpt'],
         model_only_engines: [],
         mixed_modes: false,
@@ -221,6 +222,7 @@ test('content-gap output schema describes recommendation records', () => {
         note: 'Current-identity evidence only.',
       },
       measurement_scope: {
+        measurement_mode_filter: null,
         search_requested_engines: [],
         model_only_engines: ['claude'],
         mixed_modes: false,
