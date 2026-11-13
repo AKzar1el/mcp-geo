@@ -120,6 +120,87 @@ test('content gaps distinguishes missing scan evidence from observed absence of 
   assert.match(failed.reason ?? '', /no usable scan responses/i);
 });
 
+test('content gaps limit recommendations and coverage to selected audit engines', async () => {
+  const brand: Brand = {
+    id: 'acme', user_id: 'test-user', domain: 'acme.com', name: 'Acme',
+    category: 'Software', competitors: ['rival.com'], aliases: [],
+    exclude_terms: [], refresh_frequency: 'weekly', created_at: 0, updated_at: 0,
+  };
+  const makeResponse = (engine: string, promptId: string): PromptResponse => ({
+    id: `${engine}-response`, run_id: `${engine}-run`, prompt_id: promptId,
+    prompt_text: `${engine} buyer question`, engine, raw_response: '',
+    brand_mentioned: 0, brand_cited_with_link: 0, cited_urls: [],
+    competitors_mentioned: ['rival.com'], engine_citations: [], status: 'ok',
+    error_message: null, captured_at: 2000,
+  });
+  const runs: Record<string, PromptResponse[]> = {
+    'chatgpt-run': [makeResponse('chatgpt', 'prompt-chatgpt')],
+    'claude-run': [makeResponse('claude', 'prompt-claude')],
+  };
+  type GapPayload = {
+    recommendations: Array<{ topic: string }>;
+    observation_coverage: { per_engine: Array<{ engine: string }>; unmeasured_engines: string[] };
+    losing_prompt_evidence: { prompts: Array<{ observations: Array<{ engine: string }> }> };
+    engine_scope: { selection: string; requested_engines: string[];
+      not_observed_engines: string[]; unmeasured_scoped_engines: string[] };
+  };
+  let handler: ((args: { brand_id: string; max_recommendations: number;
+    engines?: string[] }) => Promise<{ structuredContent: GapPayload }>) | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, callback: unknown) {
+      if (name === 'get_content_gaps') handler = callback as typeof handler;
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getActivePrompts: async () => [{ id: 'prompt-chatgpt' }, { id: 'prompt-claude' }],
+      getLatestCompletedRun: async (_id, engine) => runs[`${engine}-run`]
+        ? { id: `${engine}-run`, started_at: 1000, completed_at: 2000 } : null,
+      getResponsesForRun: async (runId) => runs[runId] ?? [],
+    } as Db,
+    env: {}, refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(handler);
+
+  const selected = (await handler({ brand_id: 'acme', max_recommendations: 5,
+    engines: ['chatgpt', 'chatgpt'] })).structuredContent;
+  assert.deepEqual(selected.recommendations.map((r) => r.topic),
+    ['Address losing prompt: "chatgpt buyer question"']);
+  assert.deepEqual(selected.observation_coverage.per_engine.map((r) => r.engine), ['chatgpt']);
+  assert.deepEqual(selected.observation_coverage.unmeasured_engines, []);
+  assert.equal(selected.engine_scope.selection, 'selected');
+  assert.deepEqual(selected.engine_scope.requested_engines, ['chatgpt']);
+  assert.deepEqual(selected.engine_scope.not_observed_engines, []);
+  assert.deepEqual(selected.engine_scope.unmeasured_scoped_engines, []);
+  assert.deepEqual(selected.losing_prompt_evidence.prompts
+    .flatMap((p) => p.observations.map((r) => r.engine)), ['chatgpt']);
+
+  const missing = (await handler({ brand_id: 'acme', max_recommendations: 5,
+    engines: ['gemini'] })).structuredContent;
+  assert.deepEqual(missing.recommendations, []);
+  assert.deepEqual(missing.observation_coverage.unmeasured_engines, ['gemini']);
+  assert.deepEqual(missing.engine_scope.not_observed_engines, ['gemini']);
+  assert.deepEqual(missing.engine_scope.unmeasured_scoped_engines, []);
+
+  const all = (await handler({ brand_id: 'acme', max_recommendations: 5,
+    engines: [] })).structuredContent;
+  assert.equal(all.engine_scope.selection, 'all_stored');
+  assert.equal(all.recommendations.length, 2);
+  const omitted = (await handler({ brand_id: 'acme', max_recommendations: 5 }))
+    .structuredContent;
+  assert.deepEqual(all.recommendations, omitted.recommendations);
+
+  brand.identity_changed_at = 1500;
+  const stale = (await handler({ brand_id: 'acme', max_recommendations: 5,
+    engines: ['claude'] })).structuredContent;
+  assert.deepEqual(stale.recommendations, []);
+  assert.deepEqual(stale.engine_scope.not_observed_engines, []);
+  assert.deepEqual(stale.engine_scope.unmeasured_scoped_engines, ['claude']);
+  assert.deepEqual(stale.observation_coverage.unmeasured_engines, ['claude']);
+});
+
 test('content-gap recommendations disclose model-only and search-requested loss evidence', async () => {
   const brand = {
     id: 'acme', domain: 'acme.com', name: 'Acme', competitors: ['rival.com'],

@@ -133,6 +133,11 @@ test('content-gap output schema describes recommendation records', () => {
     schema.safeParse({
       brand_id: 'acme',
       google_search_sampling: null,
+      engine_scope: {
+        selection: 'all_stored', requested_engines: [],
+        not_observed_engines: [], unmeasured_scoped_engines: [],
+        note: 'All stored engines are included.',
+      },
       observation_coverage: {
         active_prompt_count: 2,
         per_engine: [{
@@ -188,6 +193,11 @@ test('content-gap output schema describes recommendation records', () => {
     schema.safeParse({
       brand_id: 'acme',
       google_search_sampling: null,
+      engine_scope: {
+        selection: 'all_stored', requested_engines: [],
+        not_observed_engines: [], unmeasured_scoped_engines: [],
+        note: 'All stored engines are included.',
+      },
       observation_coverage: {
         active_prompt_count: 1,
         per_engine: [],
