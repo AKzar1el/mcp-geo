@@ -603,6 +603,17 @@ test('citation source projections preserve complete window, engine and status pa
       assert.deepEqual(full.map((row) => row.engine), ['chatgpt', 'perplexity']);
       assert.deepEqual(full.map((row) => row.mode), ['batch', 'live'],
         'SQLite and D1 must retain source run mode without reading AI answer bodies');
+      assert.deepEqual(
+        (await adapter.getCitationSourceRows('acme', now - 30_000, now, undefined, undefined, false, 'model_only'))
+          .map((row) => row.engine_citations[0]),
+        ['https://research.example/retried'],
+        'mode selection must keep batch ChatGPT sources and exclude live search requests',
+      );
+      assert.deepEqual(
+        (await adapter.getCitationSourceRows('acme', now - 30_000, now, undefined, undefined, false, 'search_requested'))
+          .map((row) => row.engine_citations[0]),
+        ['https://research.example/new'],
+      );
       assert.deepEqual(full.map((row) => row.run_started_at),
         [(await db.getRunById(firstRunId))?.started_at, (await db.getRunById(secondRunId))?.started_at],
         'SQLite and D1 must project originating run start instead of source capture time');
@@ -1725,6 +1736,14 @@ test('SQLite and D1 scope multi-engine citation pages and source rankings before
     for (const adapter of [db, hosted]) {
       const all = await adapter.getCitationRows('acme', 0, undefined, { until, limit: 10 });
       assert.equal(all.length, 3);
+      const modelOnly = await adapter.getCitationRows('acme', 0, undefined, {
+        until, limit: 1, measurementMode: 'model_only',
+      });
+      assert.deepEqual(modelOnly.map((row) => row.engine), ['claude']);
+      const searchOnly = await adapter.getCitationRows('acme', 0, undefined, {
+        until, limit: 10, measurementMode: 'search_requested',
+      });
+      assert.deepEqual(searchOnly.map((row) => row.engine).sort(), ['chatgpt', 'perplexity']);
       const first = await adapter.getCitationRows('acme', 0, selected, { until, limit: 1 });
       assert.equal(first.length, 1);
       const second = await adapter.getCitationRows('acme', 0, selected, {

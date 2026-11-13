@@ -728,6 +728,7 @@ export function createD1Db(d1: D1Database): Db {
       engine?: string | string[],
       minRunStartedAt?: number,
       activePromptsOnly = false,
+      measurementMode?: 'model_only' | 'search_requested',
     ): Promise<CitationSourceRow[]> {
       const selectedEngines = Array.isArray(engine) ? [...new Set(engine)] : engine ? [engine] : [];
       // Match SQLite's per-run/prompt retry deduplication and frozen window.
@@ -741,6 +742,8 @@ export function createD1Db(d1: D1Database): Db {
               AND pr.captured_at >= ?
               AND pr.captured_at <= ?
               AND pr.status = 'ok'
+              ${measurementMode === 'model_only' ? "AND (r.mode = 'batch' OR r.engine IN ('claude', 'gemini'))" : ''}
+              ${measurementMode === 'search_requested' ? "AND r.mode <> 'batch' AND r.engine NOT IN ('claude', 'gemini')" : ''}
               ${activePromptsOnly ? 'AND p.active = 1' : ''}
               ${minRunStartedAt !== undefined ? 'AND r.started_at >= ?' : ''}
               AND NOT EXISTS (
@@ -930,6 +933,11 @@ export function createD1Db(d1: D1Database): Db {
       }
       if (page?.activePromptsOnly) {
         sql += ' AND p.active = 1';
+      }
+      if (page?.measurementMode === 'model_only') {
+        sql += " AND (r.mode = 'batch' OR r.engine IN ('claude', 'gemini'))";
+      } else if (page?.measurementMode === 'search_requested') {
+        sql += " AND r.mode <> 'batch' AND r.engine NOT IN ('claude', 'gemini')";
       }
       const selectedEngines = Array.isArray(engine) ? [...new Set(engine)] : engine ? [engine] : [];
       if (selectedEngines.length) {
