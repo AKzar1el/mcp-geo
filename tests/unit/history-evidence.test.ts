@@ -20,8 +20,15 @@ type HistoryTool = {
     days: number;
     granularity: 'daily' | 'weekly';
     current_identity_only?: boolean;
+    active_prompts_only?: boolean;
   }) => Promise<{ structuredContent: {
     series: HistoryPoint[];
+    prompt_set_scope: {
+      selection: 'full_history' | 'active_only';
+      active_prompt_count: number;
+      excluded_observations: number;
+      note: string;
+    };
     identity_scope: {
       selection: 'full_history' | 'current_identity_only';
       excluded_runs: number;
@@ -313,6 +320,58 @@ test('current-identity history preserves unknown-boundary data and returns no fa
   assert.equal(unknownBoundary.series[0].overall_score, 100);
   assert.equal(unknownBoundary.identity_scope.excluded_runs, 0);
   assert.match(unknownBoundary.identity_scope.note, /no recorded matching-identity boundary/i);
+});
+
+test('active-prompt history excludes retired buyer questions before scoring while keeping roster warnings', async () => {
+  const date = Date.UTC(2026, 10, 11);
+  const history = registerHistoryTool([
+    { run_id: 'older', engine: 'chatgpt', mode: 'live', started_at: date,
+      completed_at: date, total: 2, hits: 2, active_total: 0, active_hits: 0,
+      roster_expected: 2, roster_observed: 2, roster_ids_csv: 'retired-a,retired-b' },
+    { run_id: 'mixed', engine: 'chatgpt', mode: 'live', started_at: date + 1000,
+      completed_at: date + 1000, total: 2, hits: 1, active_total: 1, active_hits: 0,
+      roster_expected: 2, roster_observed: 2, roster_ids_csv: 'active,retired-a' },
+    { run_id: 'retired-only', engine: 'claude', mode: 'live', started_at: date + 2000,
+      completed_at: date + 2000, total: 1, hits: 1, active_total: 0, active_hits: 0,
+      roster_expected: 1, roster_observed: 1, roster_ids_csv: 'retired-a' },
+  ], { activePromptIds: ['active'] });
+  const args = { brand_id: 'acme', days: 30, granularity: 'daily' as const };
+  const legacy = (await history.handler(args)).structuredContent;
+  assert.equal(legacy.series[0].per_engine.chatgpt, 75);
+  assert.equal(legacy.series[0].per_engine.claude, 100);
+  assert.equal(legacy.prompt_set_scope.selection, 'full_history');
+
+  const current = (await history.handler({ ...args, active_prompts_only: true })).structuredContent;
+  assert.equal(current.prompt_set_scope.selection, 'active_only');
+  assert.equal(current.prompt_set_scope.active_prompt_count, 1);
+  assert.equal(current.prompt_set_scope.excluded_observations, 4);
+  assert.equal(current.series[0].per_engine.chatgpt, 0);
+  assert.equal(current.series[0].per_engine_evidence.chatgpt.usable_prompts, 1);
+  assert.equal(current.series[0].per_engine.claude, undefined,
+    'an engine with retired-only responses is unmeasured, not scored as zero');
+  assert.equal(current.measurement_scope.by_engine.chatgpt.search_requested?.usable_prompts, 1);
+  assert.equal(current.prompt_set_comparability.current_active_roster.latest_run_status_by_engine.claude,
+    'differs', 'retired-only runs still inform the roster mismatch warning');
+  assert.match(current.prompt_set_scope.note, /stored|provider/i);
+
+  const noActive = (await registerHistoryTool([
+    { run_id: 'retired', engine: 'chatgpt', completed_at: date, total: 2, hits: 2,
+      active_total: 0, active_hits: 0 },
+  ]).handler({ ...args, active_prompts_only: true })).structuredContent;
+  assert.deepEqual(noActive.series, []);
+  assert.equal(noActive.prompt_set_scope.active_prompt_count, 0);
+
+  const sameIdentity = (await registerHistoryTool([
+    { run_id: 'old', engine: 'chatgpt', started_at: date, completed_at: date,
+      total: 2, hits: 2, active_total: 0, active_hits: 0 },
+    { run_id: 'new', engine: 'chatgpt', started_at: date + 1000,
+      completed_at: date + 1000, total: 2, hits: 1, active_total: 1, active_hits: 0 },
+  ], { identityChangedAt: date + 500, activePromptIds: ['active'] })
+    .handler({ ...args, current_identity_only: true, active_prompts_only: true })).structuredContent;
+  assert.equal(sameIdentity.identity_scope.excluded_runs, 1);
+  assert.equal(sameIdentity.prompt_set_scope.excluded_observations, 1);
+  assert.equal(sameIdentity.series[0].per_engine.chatgpt, 0,
+    'identity and prompt selection must be independently composable');
 });
 
 test('visibility history exposes the evidence denominator behind each engine score', async () => {

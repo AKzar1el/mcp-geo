@@ -1493,6 +1493,8 @@ test('read history: getVisibilityHistoryRows aggregates ok rows per run', async 
     assert.equal(rows[0].started_at, run.started_at);
     assert.equal(Number(rows[0].total), 2);
     assert.equal(Number(rows[0].hits), 1);
+    assert.equal(Number(rows[0].active_total), 2);
+    assert.equal(Number(rows[0].active_hits), 1);
     assert.equal(Number(rows[0].roster_expected), 2);
     assert.equal(Number(rows[0].roster_observed), 2);
     assert.deepEqual(rows[0].roster_ids_csv?.split(',').sort(), ['p1', 'p2']);
@@ -1525,6 +1527,9 @@ test('SQLite and D1 history count only the latest successful observation per run
     // Match computeOverallScore's deterministic id tie-breaker.
     insert.run('a-old-tie', run.id, 'p2', 0, 'ok', 2000);
     insert.run('b-new-tie', run.id, 'p2', 1, 'ok', 2000);
+    // Retiring a prompt preserves its historical responses, but removes it
+    // from an opt-in current buyer-question trend.
+    db.raw.prepare("UPDATE prompts SET active = 0 WHERE id = 'p1'").run();
 
     const hosted = createD1Db({
       prepare(sql: string) {
@@ -1548,7 +1553,16 @@ test('SQLite and D1 history count only the latest successful observation per run
         'both adapters must expose the real scan start for historical identity attribution');
       assert.equal(Number(rows[0].total), 2, 'retries must not inflate prompt denominator');
       assert.equal(Number(rows[0].hits), 2, 'latest successful response determines the hit');
+      assert.equal(Number(rows[0].active_total), 1, 'retired questions cannot count in current trends');
+      assert.equal(Number(rows[0].active_hits), 1, 'current hit count uses the latest successful active response');
       assert.equal(Number(rows[0].roster_observed), 2);
+    }
+    db.raw.prepare("UPDATE prompts SET active = 0 WHERE id = 'p2'").run();
+    for (const adapter of [db, hosted]) {
+      const rows = await adapter.getVisibilityHistoryRows('acme', 0);
+      assert.equal(rows.length, 1, 'retired-only runs remain available for historical evidence');
+      assert.equal(Number(rows[0].active_total), 0);
+      assert.equal(Number(rows[0].active_hits), 0);
     }
   } finally {
     db.close();

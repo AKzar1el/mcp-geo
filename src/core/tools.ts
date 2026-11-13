@@ -210,6 +210,12 @@ const historyOutputSchema = z.object({
   brand_id: z.string(),
   days: z.number(),
   granularity: z.enum(['daily', 'weekly']),
+  prompt_set_scope: z.object({
+    selection: z.enum(['full_history', 'active_only']),
+    active_prompt_count: z.number().int().nonnegative(),
+    excluded_observations: z.number().int().nonnegative(),
+    note: z.string(),
+  }),
   identity_scope: z.object({
     selection: z.enum(['full_history', 'current_identity_only']),
     excluded_runs: z.number(),
@@ -888,7 +894,7 @@ export function registerTools(
     {
       title: 'Get AI visibility history',
       description:
-        "Daily/weekly history with model-only vs search-requested evidence and current buyer-prompt comparability. current_identity_only=true excludes old identities. Example: brand_id='acme', days=30, granularity='weekly'.",
+        "Daily/weekly stored visibility trends. active_prompts_only=true scores current buyer questions; current_identity_only=true excludes old identities. Historical default retained. Example: brand_id='acme', days=30.",
       inputSchema: {
         brand_id: z
           .string()
@@ -906,6 +912,8 @@ export function registerTools(
           .describe('Time bucket for the series.'),
         current_identity_only: z.boolean().default(false)
           .describe('Exclude runs not attributable to the current brand identity; no provider calls.'),
+        active_prompts_only: z.boolean().default(false)
+          .describe('Score only currently active buyer prompts using stored responses; no provider calls.'),
       },
       outputSchema: historyOutputSchema,
       annotations: {
@@ -914,7 +922,7 @@ export function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ brand_id, days, granularity, current_identity_only = false }) => {
+    async ({ brand_id, days, granularity, current_identity_only = false, active_prompts_only = false }) => {
       const brand = await deps.db.getBrand(brand_id);
       if (!brand) {
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
@@ -930,18 +938,36 @@ export function registerTools(
       const identityChangedAt = brand.identity_changed_at ?? null;
       // A run completed after an identity edit may have started before it.
       // Missing run-start provenance cannot establish current identity.
-      const results = current_identity_only && identityChangedAt !== null
+      const scopedResults = current_identity_only && identityChangedAt !== null
         ? allResults.filter((row) =>
           typeof row.started_at === 'number' && Number.isFinite(row.started_at) &&
           row.started_at >= identityChangedAt,
         )
         : allResults;
+      const activePromptIds = (await deps.db.getActivePrompts(brand_id)).map((prompt) => prompt.id);
+      // Preserve original run rosters for comparability even if a run has no
+      // currently active questions and therefore contributes no trend score.
+      const results = active_prompts_only
+        ? scopedResults.filter((row) => Number(row.active_total ?? 0) > 0)
+          .map((row) => ({ ...row, total: row.active_total ?? 0, hits: row.active_hits ?? 0 }))
+        : scopedResults;
+      const prompt_set_scope = {
+        selection: active_prompts_only ? 'active_only' as const : 'full_history' as const,
+        active_prompt_count: activePromptIds.length,
+        excluded_observations: active_prompts_only
+          ? scopedResults.reduce((sum, row) =>
+            sum + Math.max(0, Number(row.total ?? 0) - Number(row.active_total ?? 0)), 0)
+          : 0,
+        note: active_prompts_only
+          ? 'Trends and evidence counts use only stored successful observations of currently active buyer questions. Retired-only runs are unmeasured, not zeros. This does not perform a new scan or establish that the full current roster was measured.'
+          : 'Historical scores retain all recorded buyer questions, including retired ones. Set active_prompts_only=true for current-question trends using stored responses without provider calls.',
+      };
       const unknownStartRuns = allResults.filter((row) =>
         typeof row.started_at !== 'number' || !Number.isFinite(row.started_at),
       ).length;
       const identity_scope = {
         selection: current_identity_only ? 'current_identity_only' as const : 'full_history' as const,
-        excluded_runs: allResults.length - results.length,
+        excluded_runs: allResults.length - scopedResults.length,
         unknown_start_runs: unknownStartRuns,
         note: identityChangedAt === null
           ? 'No recorded matching-identity boundary exists. All stored history is retained; older identity edits before tracking began cannot be reconstructed.'
@@ -1010,7 +1036,7 @@ export function registerTools(
       const promptRosters = new Map<string, Set<string>>();
       const incompleteRosters = new Set<string>();
       const latestRosters = new Map<string, { completed_at: number; signature: string | null }>();
-      for (const row of results) {
+      for (const row of scopedResults) {
         const expected = row.roster_expected;
         const observed = row.roster_observed;
         const ids = row.roster_ids_csv?.split(',') ?? [];
@@ -1038,11 +1064,10 @@ export function registerTools(
       const changedEngines = [...promptRosters.entries()]
         .filter(([, signatures]) => signatures.size > 1)
         .map(([engine]) => engine).sort();
-      const insufficientEngines = [...new Set(results.map((row) => row.engine))]
+      const insufficientEngines = [...new Set(scopedResults.map((row) => row.engine))]
         .filter((engine) =>
           incompleteRosters.has(engine) || (promptRosters.get(engine)?.size ?? 0) < 1,
         ).sort();
-      const activePromptIds = (await deps.db.getActivePrompts(brand_id)).map((prompt) => prompt.id);
       const activeRosterSignature = activePromptIds.length > 0
         ? [...activePromptIds].sort().join('\u001f') : null;
       const latest_run_status_by_engine = Object.fromEntries([...latestRosters.entries()]
@@ -1158,6 +1183,7 @@ export function registerTools(
         brand_id,
         days,
         granularity,
+        prompt_set_scope,
         identity_scope,
         google_search_sampling: googleSearchSampling(results.map(({ engine }) => engine)),
         measurement_scope: { ...measurement_scope, by_bucket },

@@ -195,6 +195,10 @@ export interface VisibilityHistoryRow {
   completed_at: number;
   total: number | null;
   hits: number | null;
+  // Current buyer-prompt cohort counts from the same deduplicated source rows.
+  // Optional for older in-memory fixtures; production adapters always return them.
+  active_total?: number | null;
+  active_hits?: number | null;
   // Roster coverage includes all response statuses, not just successful
   // responses used in scoring. Missing/incomplete rosters cannot establish
   // that two historical runs used the same set of prompts.
