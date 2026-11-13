@@ -773,6 +773,7 @@ export function openSqliteDb(path?: string): SqliteDb {
       since: number,
       until: number,
       engine?: string,
+      minRunStartedAt?: number,
     ): Promise<CitationSourceRow[]> {
       // Count the latest successful source observation per run/prompt, but only
       // within this window so a later retry cannot rewrite a frozen cursor page.
@@ -785,6 +786,7 @@ export function openSqliteDb(path?: string): SqliteDb {
               AND pr.captured_at >= ?
               AND pr.captured_at <= ?
               AND pr.status = 'ok'
+              ${minRunStartedAt !== undefined ? 'AND r.started_at >= ?' : ''}
               AND NOT EXISTS (
                 SELECT 1 FROM prompt_responses newer
                  WHERE newer.run_id = pr.run_id
@@ -797,7 +799,9 @@ export function openSqliteDb(path?: string): SqliteDb {
               ${engine ? 'AND pr.engine = ?' : ''}
             ORDER BY pr.captured_at ASC, pr.id ASC`,
         )
-        .all(...(engine ? [brandId, since, until, until, engine] : [brandId, since, until, until])) as Array<
+        .all(brandId, since, until,
+          ...(minRunStartedAt !== undefined ? [minRunStartedAt] : []),
+          until, ...(engine ? [engine] : [])) as Array<
           Omit<CitationSourceRow, 'engine_citations'> & { engine_citations_json: string | null }
         >;
       return rows.map(({ engine_citations_json, ...row }) => ({
@@ -953,6 +957,10 @@ export function openSqliteDb(path?: string): SqliteDb {
               AND (pr.brand_mentioned = 1 OR pr.brand_cited_with_link = 1)
               AND pr.status = 'ok'`;
       const params: unknown[] = [brandId, since];
+      if (page?.minRunStartedAt !== undefined) {
+        sql += ' AND r.started_at >= ?';
+        params.push(page.minRunStartedAt);
+      }
       if (engine) {
         sql += ' AND r.engine = ?';
         params.push(engine);

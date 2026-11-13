@@ -46,6 +46,11 @@ type CitationResult = {
     identity_scopes?: Array<'current' | 'historical' | 'unattributed'>;
   }>;
   identity_attribution: null | { identity_changed_at: string; note: string };
+  identity_filter: {
+    selection: 'full_history' | 'current_identity_only';
+    applied: boolean;
+    note: string;
+  };
   citations: Array<{
     id: string;
     cited_url: string | null;
@@ -63,6 +68,7 @@ type CitationTool = {
     engine?: 'chatgpt' | 'claude' | 'perplexity' | 'gemini' | 'ai_overviews' | 'ai_mode';
     limit?: number;
     cursor?: string;
+    current_identity_only?: boolean;
   }) => Promise<{ structuredContent: CitationResult }>;
 };
 
@@ -87,6 +93,8 @@ function registerCitationTool(
         const rows = (Array.isArray(row) ? row : [row])
           .filter((item) => !engine || item.engine === engine)
           .filter((item) => item.captured_at <= (page?.until ?? Number.MAX_SAFE_INTEGER))
+          .filter((item) => page?.minRunStartedAt === undefined ||
+            (typeof item.run_started_at === 'number' && item.run_started_at >= page.minRunStartedAt))
           .filter((item) => !page?.before ||
             item.captured_at < page.before.captured_at ||
             (item.captured_at === page.before.captured_at &&
@@ -104,9 +112,11 @@ function registerCitationTool(
       getResponsesSince: async () => {
         throw new Error('get_citations must not hydrate full responses');
       },
-      getCitationSourceRows: async (_brandId, _since, until, engine) =>
+      getCitationSourceRows: async (_brandId, _since, until, engine, minRunStartedAt) =>
         responses
           .filter((response) => response.captured_at <= until && (!engine || response.engine === engine))
+          .filter((response) => minRunStartedAt === undefined ||
+            (typeof response.run_started_at === 'number' && response.run_started_at >= minRunStartedAt))
           .map(({ id, prompt_id, engine: responseEngine, mode, captured_at, engine_citations, run_started_at }) => ({
             id,
             prompt_id,
@@ -225,6 +235,65 @@ test('citation evidence distinguishes old-identity scans from current scans usin
     cit_old: 'historical', cit_new: 'current', cit_unknown: 'unattributed',
   });
   assert.deepEqual(result.top_sources[0]?.identity_scopes, ['current', 'historical', 'unattributed']);
+});
+
+test('current-identity citation pages and top sources exclude historical and unattributed runs before LIMIT', async () => {
+  const now = Date.now();
+  const boundary = now - 20_000;
+  const changedBrand: Brand = { ...brand, identity_changed_at: boundary };
+  const records = [
+    { id: 'old', run: 'old-run', started: boundary - 1000, captured: now - 1000, url: 'https://old.example/a' },
+    { id: 'unknown', run: 'unknown-run', started: undefined, captured: now - 1500, url: 'https://unknown.example/b' },
+    { id: 'new-1', run: 'new-1-run', started: boundary + 1000, captured: now - 2000, url: 'https://fresh.example/one' },
+    { id: 'new-2', run: 'new-2-run', started: boundary + 2000, captured: now - 2000, url: 'https://fresh.example/two' },
+  ];
+  const tool = registerCitationTool(
+    records.map(({ id, run, started, captured }) =>
+      citationRow({ response_id: id, run_id: run, prompt_id: id, run_started_at: started, captured_at: captured })),
+    records.map(({ id, run, started, captured, url }) =>
+      promptResponse({ id, run_id: run, prompt_id: id, run_started_at: started, captured_at: captured, engine_citations: [url] })),
+    changedBrand,
+  );
+  const full = (await tool.handler({ brand_id: brand.id })).structuredContent;
+  assert.equal(full.citations.length, 4);
+  assert.equal(full.identity_filter.selection, 'full_history');
+  assert.equal(full.top_sources.length, 3);
+
+  const first = (await tool.handler({ brand_id: brand.id, current_identity_only: true, limit: 1 })).structuredContent;
+  assert.equal(first.identity_filter.selection, 'current_identity_only');
+  assert.equal(first.identity_filter.applied, true);
+  assert.equal(first.citations.length, 1);
+  assert.equal(first.citations[0].identity_scope, 'current');
+  assert.equal(first.has_more, true);
+  assert.ok(first.next_cursor);
+  assert.deepEqual(first.top_sources.map(({ domain, citation_count }) => [domain, citation_count]),
+    [['fresh.example', 2]]);
+  const second = (await tool.handler({
+    brand_id: brand.id, current_identity_only: true, limit: 1, cursor: first.next_cursor!,
+  })).structuredContent;
+  assert.equal(second.has_more, false);
+  assert.equal(second.citations.length, 1);
+  assert.equal(second.citations[0].identity_scope, 'current');
+  assert.notEqual(second.citations[0].id, first.citations[0].id);
+
+  await assert.rejects(
+    tool.handler({ brand_id: brand.id, limit: 1, cursor: first.next_cursor! }),
+    /Invalid citation cursor/,
+  );
+  const changedAgain = registerCitationTool([], [], { ...changedBrand, identity_changed_at: boundary + 500 });
+  await assert.rejects(
+    changedAgain.handler({ brand_id: brand.id, current_identity_only: true, cursor: first.next_cursor! }),
+    /Invalid citation cursor/,
+  );
+});
+
+test('current-identity citation request without a recorded boundary discloses unfiltered evidence', async () => {
+  const tool = registerCitationTool(citationRow({ response_id: 'legacy', captured_at: Date.now() - 1000 }));
+  const result = (await tool.handler({ brand_id: brand.id, current_identity_only: true })).structuredContent;
+  assert.equal(result.citations.length, 1);
+  assert.equal(result.identity_filter.selection, 'current_identity_only');
+  assert.equal(result.identity_filter.applied, false);
+  assert.match(result.identity_filter.note, /no recorded.*boundary/i);
 });
 
 test('get_citations produces distinct stable IDs for records sharing short UUID prefixes', async () => {
@@ -592,6 +661,27 @@ test('get_citations paginates fractional-day windows without losing the cursor s
     tool.handler({ brand_id: brand.id, days: 1.5, limit: 1, cursor: first.structuredContent.next_cursor! }),
     /Invalid citation cursor/,
   );
+});
+
+test('get_citations continues legacy historical v1 cursors without identity fields', async () => {
+  const observed = Date.now() - 1000;
+  const tool = registerCitationTool([
+    citationRow({ prompt_id: 'p1', captured_at: observed }),
+    citationRow({ prompt_id: 'p2', captured_at: observed - 1 }),
+  ]);
+  const first = (await tool.handler({ brand_id: brand.id, limit: 1 })).structuredContent;
+  assert.ok(first.next_cursor);
+  const legacy = JSON.parse(decodeURIComponent(first.next_cursor));
+  delete legacy.identity_selection;
+  delete legacy.identity_boundary;
+  const second = (await tool.handler({
+    brand_id: brand.id,
+    cursor: encodeURIComponent(JSON.stringify(legacy)),
+    limit: 1,
+  })).structuredContent;
+  assert.equal(second.citations.length, 1);
+  assert.equal(second.has_more, false);
+  assert.notEqual(first.citations[0].id, second.citations[0].id);
 });
 
 test('get_citations rejects a cursor used with a different brand or engine', async () => {
