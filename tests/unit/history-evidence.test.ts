@@ -21,8 +21,15 @@ type HistoryTool = {
     granularity: 'daily' | 'weekly';
     current_identity_only?: boolean;
     active_prompts_only?: boolean;
+    engines?: Array<'chatgpt' | 'claude' | 'perplexity' | 'gemini' | 'grok' | 'ai_overviews' | 'ai_mode'>;
   }) => Promise<{ structuredContent: {
     series: HistoryPoint[];
+    engine_scope: {
+      selection: 'all_stored' | 'selected';
+      requested_engines: string[];
+      not_observed_engines: string[];
+      note: string;
+    };
     prompt_set_scope: {
       selection: 'full_history' | 'active_only';
       active_prompt_count: number;
@@ -136,6 +143,42 @@ test('visibility history preserves an empty series for an existing unscanned bra
   assert.deepEqual(result.structuredContent.series, []);
   assert.equal(result.structuredContent.google_search_sampling, null);
   assert.deepEqual(result.structuredContent.measurement_scope.mixed_mode_engines, []);
+});
+
+test('history limits all evidence and scores to explicitly selected engines without inventing missing scores', async () => {
+  const completed_at = Date.UTC(2026, 0, 5);
+  const history = registerHistoryTool([
+    { run_id: 'a', engine: 'chatgpt', completed_at, total: 4, hits: 1 },
+    { run_id: 'b', engine: 'claude', completed_at, total: 4, hits: 4 },
+    { run_id: 'c', engine: 'ai_mode', completed_at, total: 4, hits: 2 },
+  ]);
+  const args = { brand_id: 'acme', days: 30, granularity: 'daily' as const };
+  const all = (await history.handler(args)).structuredContent;
+  assert.equal(all.series[0]?.overall_score, 58);
+  assert.equal(all.engine_scope.selection, 'all_stored');
+  assert.deepEqual(all.engine_scope.requested_engines, []);
+  assert.deepEqual(all.google_search_sampling?.engines, ['ai_mode']);
+
+  const selected = (await history.handler({
+    ...args, engines: ['chatgpt', 'gemini', 'chatgpt'],
+  })).structuredContent;
+  assert.equal(selected.engine_scope.selection, 'selected');
+  assert.deepEqual(selected.engine_scope.requested_engines, ['chatgpt', 'gemini']);
+  assert.deepEqual(selected.engine_scope.not_observed_engines, ['gemini']);
+  assert.match(selected.engine_scope.note, /not.*observed|no.*stored/i);
+  assert.deepEqual(selected.series[0]?.per_engine, { chatgpt: 25 });
+  assert.deepEqual(selected.series[0]?.per_engine_evidence.chatgpt.usable_prompts, 4);
+  assert.equal(selected.series[0]?.overall_score, 25);
+  assert.deepEqual(Object.keys(selected.measurement_scope.by_engine), ['chatgpt']);
+  assert.deepEqual(Object.keys(selected.measurement_scope.by_bucket['2026-01-05']), ['chatgpt']);
+  assert.equal(selected.google_search_sampling, null);
+  assert.deepEqual(selected.measurement_scope.unmeasured_scoped_engines, [],
+    'a never-observed requested engine must not be described as filtered historical evidence');
+
+  const missingOnly = (await history.handler({ ...args, engines: ['gemini'] })).structuredContent;
+  assert.deepEqual(missingOnly.series, []);
+  assert.deepEqual(missingOnly.engine_scope.not_observed_engines, ['gemini']);
+  assert.deepEqual(missingOnly.prompt_set_comparability.current_active_roster.latest_run_status_by_engine, {});
 });
 
 test('daily history includes the entire requested UTC calendar-day window', async (t) => {
