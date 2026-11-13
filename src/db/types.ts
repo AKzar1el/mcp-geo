@@ -244,6 +244,8 @@ export type ComparisonEvidenceRow = Pick<PromptResponse,
 export interface CitationPageOptions {
   limit?: number;
   until?: number;
+  // Apply identity provenance in SQL before page LIMIT/keyset selection.
+  minRunStartedAt?: number;
   // response_id breaks ties between repeated observations of one run/prompt.
   // Optional for cursors issued before response-level pagination existed.
   before?: Pick<CitationRow, 'captured_at' | 'run_id' | 'prompt_id'> & {
@@ -324,6 +326,7 @@ export interface Db {
     since: number,
     until: number,
     engine?: string,
+    minRunStartedAt?: number,
   ): Promise<CitationSourceRow[]>;
   replacePrompts(brandId: string, prompts: NewPromptInput[]): Promise<number>;
   cacheGet(

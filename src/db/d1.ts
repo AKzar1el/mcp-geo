@@ -726,6 +726,7 @@ export function createD1Db(d1: D1Database): Db {
       since: number,
       until: number,
       engine?: string,
+      minRunStartedAt?: number,
     ): Promise<CitationSourceRow[]> {
       // Match SQLite's per-run/prompt retry deduplication and frozen window.
       const { results } = await d1
@@ -737,6 +738,7 @@ export function createD1Db(d1: D1Database): Db {
               AND pr.captured_at >= ?
               AND pr.captured_at <= ?
               AND pr.status = 'ok'
+              ${minRunStartedAt !== undefined ? 'AND r.started_at >= ?' : ''}
               AND NOT EXISTS (
                 SELECT 1 FROM prompt_responses newer
                  WHERE newer.run_id = pr.run_id
@@ -749,7 +751,9 @@ export function createD1Db(d1: D1Database): Db {
               ${engine ? 'AND pr.engine = ?' : ''}
             ORDER BY pr.captured_at ASC, pr.id ASC`,
         )
-        .bind(...(engine ? [brandId, since, until, until, engine] : [brandId, since, until, until]))
+        .bind(brandId, since, until,
+          ...(minRunStartedAt !== undefined ? [minRunStartedAt] : []),
+          until, ...(engine ? [engine] : []))
         .all<Omit<CitationSourceRow, 'engine_citations'> & { engine_citations_json: string | null }>();
       return (results ?? []).map(({ engine_citations_json, ...row }) => ({
         ...row,
@@ -913,6 +917,10 @@ export function createD1Db(d1: D1Database): Db {
               AND (pr.brand_mentioned = 1 OR pr.brand_cited_with_link = 1)
               AND pr.status = 'ok'`;
       const params: unknown[] = [brandId, since];
+      if (page?.minRunStartedAt !== undefined) {
+        sql += ' AND r.started_at >= ?';
+        params.push(page.minRunStartedAt);
+      }
       if (engine) {
         sql += ' AND r.engine = ?';
         params.push(engine);

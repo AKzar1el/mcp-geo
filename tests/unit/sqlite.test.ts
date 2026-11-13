@@ -1674,6 +1674,70 @@ test('getCitationRows returns genuine link-only citations but excludes failed an
   }
 });
 
+test('SQLite and D1 filter citation pages and top-source inputs by run start before limits', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'digestseo.sqlite'));
+  try {
+    seedBrandFixture(db, 'acme');
+    seedPromptFixture(db, 'acme', 'p1', 'best project management');
+    const brand = await db.getBrand('acme');
+    assert.ok(brand);
+    const boundary = Date.now() - 60_000;
+    const oldRun = await db.createRun(brand, 'chatgpt', 'live', 1);
+    const newRun = await db.createRun(brand, 'chatgpt', 'live', 1);
+    for (const [runId, url] of [[oldRun.id, 'https://old.example/one'], [newRun.id, 'https://current.example/two']]) {
+      await db.persistEngineRun(runId, 'chatgpt', 'test-model', 3600, [{
+        prompt_id: 'p1', raw_response: 'Acme was mentioned.', brand_mentioned: 1,
+        brand_cited_with_link: 1, cited_urls: ['acme.com'], engine_citations: [url],
+        competitors_mentioned: [], status: 'ok',
+      }]);
+    }
+    db.raw.prepare('UPDATE runs SET started_at = ? WHERE id = ?').run(boundary - 5000, oldRun.id);
+    db.raw.prepare('UPDATE runs SET started_at = ? WHERE id = ?').run(boundary + 5000, newRun.id);
+    const captured = Date.now() - 2000;
+    // The old identity has the newest capture: response time must not reclassify it.
+    db.raw.prepare('UPDATE prompt_responses SET captured_at = ? WHERE run_id = ?').run(captured, oldRun.id);
+    db.raw.prepare('UPDATE prompt_responses SET captured_at = ? WHERE run_id = ?').run(captured - 1000, newRun.id);
+    const hosted = createD1Db({
+      prepare(sql: string) {
+        return { bind(...params: unknown[]) {
+          return { async all() {
+            const stmt = db.raw.prepare(sql);
+            return { results: stmt.all(...(params as Parameters<typeof stmt.all>)) };
+          } };
+        } };
+      },
+    } as unknown as Parameters<typeof createD1Db>[0]);
+    for (const adapter of [db, hosted]) {
+      const full = await adapter.getCitationRows('acme', 0, undefined, { until: Date.now(), limit: 2 });
+      assert.deepEqual(full.map(({ run_id }) => run_id), [oldRun.id, newRun.id]);
+      const current = await adapter.getCitationRows('acme', 0, undefined, {
+        until: Date.now(), limit: 1, minRunStartedAt: boundary,
+      });
+      assert.deepEqual(current.map(({ run_id }) => run_id), [newRun.id]);
+      const sources = await adapter.getCitationSourceRows('acme', 0, Date.now(), undefined, boundary);
+      assert.deepEqual(sources.map((row) => row.engine_citations[0]), ['https://current.example/two']);
+      const engineScoped = await adapter.getCitationRows('acme', 0, 'chatgpt', {
+        until: Date.now(), limit: 1, minRunStartedAt: boundary,
+      });
+      assert.deepEqual(engineScoped.map(({ run_id }) => run_id), [newRun.id]);
+      const engineSources = await adapter.getCitationSourceRows('acme', 0, Date.now(), 'chatgpt', boundary);
+      assert.deepEqual(engineSources.map((row) => row.engine_citations[0]), ['https://current.example/two']);
+      const afterLast = await adapter.getCitationRows('acme', 0, undefined, {
+        until: Date.now(), limit: 1, minRunStartedAt: boundary,
+        before: {
+          captured_at: current[0].captured_at, run_id: current[0].run_id,
+          prompt_id: current[0].prompt_id, response_id: current[0].response_id,
+        },
+      });
+      assert.deepEqual(afterLast, []);
+    }
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('citation row pagination preserves repeated observations of the same run and prompt', async () => {
   const root = tempRoot();
   const db = openSqliteDb(join(root, 'digestseo.sqlite'));
