@@ -456,6 +456,13 @@ function decodeCitationCursor(
 
 const contentGapsOutputSchema = z.object({
   brand_id: z.string(),
+  engine_scope: z.object({
+    selection: z.enum(['selected', 'all_stored']),
+    requested_engines: z.array(z.string()),
+    not_observed_engines: z.array(z.string()),
+    unmeasured_scoped_engines: z.array(z.string()),
+    note: z.string(),
+  }),
   google_search_sampling: googleSearchSamplingSchema,
   identity_attribution: z.object({
     last_identity_change_at: z.string().nullable(),
@@ -1704,11 +1711,13 @@ export function registerTools(
     {
       title: 'Find AI visibility content gaps',
       description:
-        "Prioritize observed competitor-winning prompts. Provider-free by default; ai_analysis=true opts in to token-billed Claude (may retry once). Example: brand_id='acme'.",
+        "Prioritize observed competitor-winning prompts. engines restricts stored audit surfaces; omitted/[] uses all. Provider-free by default; ai_analysis=true opts in to token-billed Claude (may retry once). Example: brand_id='acme'.",
       inputSchema: {
         brand_id: z
           .string()
           .describe('Tracked brand ID to analyze.'),
+        engines: z.array(engineSchema).optional()
+          .describe('Only recommend from these engines; omit or pass [] to retain all-engine defaults.'),
         max_recommendations: z
           .number()
           .int()
@@ -1728,11 +1737,15 @@ export function registerTools(
         openWorldHint: true,
       },
     },
-    async ({ brand_id, max_recommendations, ai_analysis }) => {
+    async ({ brand_id, engines, max_recommendations, ai_analysis }) => {
       const brand = await deps.db.getBrand(brand_id);
       if (!brand) {
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
       }
+      const requestedEngines = engines && engines.length > 0 ? uniqueEngineNames(engines) : null;
+      const selectedEngines = requestedEngines ?? ALL_ENGINES;
+      const recordedRunEngines = new Set<string>();
+      const usableEngines = new Set<string>();
 
       // Retired prompt observations remain in history, but must not become
       // current buyer-intent advice after the active prompt set is replaced.
@@ -1766,9 +1779,10 @@ export function registerTools(
         engine: string; run_id: string; refreshed_at: string | null; usable_prompt_count: number;
         missing_prompt_count: number;
       }> = [];
-      for (const engine of ALL_ENGINES) {
+      for (const engine of selectedEngines) {
         const run = await deps.db.getLatestCompletedRun(brand_id, engine);
         if (!run) continue;
+        recordedRunEngines.add(engine);
         // Before an identity change these responses were classified using
         // another name/domain/alias set. Keep them in history, not new advice.
         if (identityChangedAt !== null && run.started_at < identityChangedAt) {
@@ -1788,6 +1802,7 @@ export function registerTools(
             latestOkByPrompt.set(response.prompt_id, response);
           }
         }
+        if (latestOkByPrompt.size > 0) usableEngines.add(engine);
         // Report the denominator independently of whether any competitor won.
         // An observed loss on one prompt is not evidence of complete coverage.
         const refreshedAtMs = run.completed_at ?? run.started_at;
@@ -1865,10 +1880,21 @@ export function registerTools(
         incomplete_engines: perEngineCoverage
           .filter(({ missing_prompt_count }) => missing_prompt_count > 0)
           .map(({ engine }) => engine),
-        unmeasured_engines: ALL_ENGINES.filter(
+        unmeasured_engines: selectedEngines.filter(
           (engine) => !perEngineCoverage.some(
             (entry) => entry.engine === engine && entry.usable_prompt_count > 0)),
-        note: 'Counts are unique currently active prompts with a successful stored response after any recorded brand identity change, not verified citations or a confidence score. Per-engine refreshed_at is the run completion time (or start if unfinished), not proof that all prompts succeeded. unmeasured_engines include engines excluded for stale identity and engines with zero usable active-prompt responses; others may be unconfigured or unscanned. Refreshing incomplete engines may incur provider charges.',
+        note: 'Counts are unique currently active prompts with a successful stored response after any recorded brand identity change, not verified citations or a confidence score. Per-engine refreshed_at is the run completion time (or start if unfinished), not proof that all prompts succeeded. unmeasured_engines cover the selected engine scope and include engines excluded for stale identity or with zero usable active-prompt responses; others may be unconfigured or unscanned. Refreshing incomplete engines may incur provider charges.',
+      };
+      const engine_scope = {
+        selection: requestedEngines ? 'selected' as const : 'all_stored' as const,
+        requested_engines: requestedEngines ?? [],
+        not_observed_engines: requestedEngines?.filter((engine) =>
+          !recordedRunEngines.has(engine)) ?? [],
+        unmeasured_scoped_engines: requestedEngines?.filter((engine) =>
+          recordedRunEngines.has(engine) && !usableEngines.has(engine)) ?? [],
+        note: requestedEngines
+          ? 'Only selected stored engines contribute to recommendations, observation coverage, evidence and Google sampling. Requested engines without a latest eligible run, or with only identity/active-prompt-excluded evidence, are unmeasured rather than zero visibility. No provider refresh was requested.'
+          : 'All supported engines are considered using the historical stored-evidence default. Omit engines or pass [] for this behavior; no provider refresh was requested.',
       };
 
       const losingEngines = [...new Set(losingPrompts.flatMap((p) => p.engines_lost_on))];
@@ -1907,6 +1933,7 @@ export function registerTools(
       if (losingPrompts.length === 0) {
         const payload = {
           brand_id,
+          engine_scope,
           google_search_sampling,
           observation_coverage,
           losing_prompt_evidence,
@@ -1951,6 +1978,7 @@ export function registerTools(
 
       const payload = {
         brand_id,
+        engine_scope,
         observation_coverage,
         configuration_comparability,
         identity_attribution,
