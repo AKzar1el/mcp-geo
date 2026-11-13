@@ -917,6 +917,8 @@ export function openSqliteDb(path?: string): SqliteDb {
                   COALESCE(r.completed_at, r.started_at) AS completed_at,
                   COUNT(pr.id) AS total,
                   SUM(pr.brand_mentioned) AS hits,
+                  SUM(CASE WHEN p.active = 1 THEN 1 ELSE 0 END) AS active_total,
+                  SUM(CASE WHEN p.active = 1 THEN pr.brand_mentioned ELSE 0 END) AS active_hits,
                   r.prompts_total AS roster_expected,
                   (SELECT COUNT(DISTINCT all_pr.prompt_id)
                      FROM prompt_responses all_pr WHERE all_pr.run_id = r.id) AS roster_observed,
@@ -933,6 +935,7 @@ export function openSqliteDb(path?: string): SqliteDb {
                    AND (newer.captured_at > pr.captured_at
                      OR (newer.captured_at = pr.captured_at AND newer.id > pr.id))
               )
+             LEFT JOIN prompts p ON p.id = pr.prompt_id AND p.brand_id = r.brand_id
             WHERE r.brand_id = ?
               AND COALESCE(r.completed_at, r.started_at) >= ?
             GROUP BY r.id, r.engine
