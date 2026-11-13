@@ -55,6 +55,7 @@ Produce the report in this order:
 - If `google_search_sampling` is present for usable Google AI Overviews/AI Mode observations, disclose the US/English sample boundary (`gl=us`, `hl=en`): it does not represent other markets or languages. Include this disclosure even if there were no competitor-only losses; if the field is absent, do not invent Google coverage.
 - Disclose any missing prompt-set evidence instead of presenting the active sample as independently verified.
 - State `prompt_set_scope.selection` for check_visibility, compare_competitors, get_citations and get_visibility_history when used. If an output is full-history, report it as separate historical context, not part of the current-question denominator. For citations inspect `identity_filter.applied`; for history inspect `identity_scope`, `prompt_set_comparability` and the current active roster before asserting like-for-like change.
+- In scoped history, list any `measurement_scope.unmeasured_scoped_engines` as engines with past observations but no usable evidence under the selected identity and buyer-question filters. Do not report these as zero visibility or infer that other absent engines were configured or scanned. Filtering stored history never triggers a provider refresh.
 - Report the selected comparison/citation `days` window and the latest per-engine snapshot timestamps. Flag any different time windows, mixed-age measurements or missing active-question coverage.
 - One sentence that AI answers vary by model, interface, geography, provider behavior, time, and prompt wording.
 

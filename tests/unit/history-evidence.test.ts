@@ -37,6 +37,7 @@ type HistoryTool = {
     };
     measurement_scope: {
       mixed_mode_engines: string[];
+      unmeasured_scoped_engines: string[];
       by_engine: Record<string, {
         search_requested: { brand_mentions: number; usable_prompts: number; score: number } | null;
         model_only: { brand_mentions: number; usable_prompts: number; score: number } | null;
@@ -313,6 +314,8 @@ test('current-identity history preserves unknown-boundary data and returns no fa
   const oldOnly = (await registerHistoryTool([old], { identityChangedAt: changedAt })
     .handler(args)).structuredContent;
   assert.deepEqual(oldOnly.series, []);
+  assert.deepEqual(oldOnly.measurement_scope.unmeasured_scoped_engines, ['chatgpt'],
+    'pre-identity-only evidence must not silently disappear from current-only coverage');
   assert.equal(oldOnly.identity_scope.excluded_runs, 1);
   assert.equal(oldOnly.identity_comparability.pre_change_runs, 1);
 
@@ -339,6 +342,7 @@ test('active-prompt history excludes retired buyer questions before scoring whil
   const legacy = (await history.handler(args)).structuredContent;
   assert.equal(legacy.series[0].per_engine.chatgpt, 75);
   assert.equal(legacy.series[0].per_engine.claude, 100);
+  assert.deepEqual(legacy.measurement_scope.unmeasured_scoped_engines, []);
   assert.equal(legacy.prompt_set_scope.selection, 'full_history');
 
   const current = (await history.handler({ ...args, active_prompts_only: true })).structuredContent;
@@ -349,6 +353,8 @@ test('active-prompt history excludes retired buyer questions before scoring whil
   assert.equal(current.series[0].per_engine_evidence.chatgpt.usable_prompts, 1);
   assert.equal(current.series[0].per_engine.claude, undefined,
     'an engine with retired-only responses is unmeasured, not scored as zero');
+  assert.deepEqual(current.measurement_scope.unmeasured_scoped_engines, ['claude'],
+    'active-only history must identify engines with historical but no selected evidence');
   assert.equal(current.measurement_scope.by_engine.chatgpt.search_requested?.usable_prompts, 1);
   assert.equal(current.prompt_set_comparability.current_active_roster.latest_run_status_by_engine.claude,
     'differs', 'retired-only runs still inform the roster mismatch warning');
@@ -372,6 +378,24 @@ test('active-prompt history excludes retired buyer questions before scoring whil
   assert.equal(sameIdentity.prompt_set_scope.excluded_observations, 1);
   assert.equal(sameIdentity.series[0].per_engine.chatgpt, 0,
     'identity and prompt selection must be independently composable');
+});
+
+test('history discloses engines excluded by both identity and active-prompt scopes', async () => {
+  const changedAt = Date.UTC(2026, 10, 12);
+  const history = registerHistoryTool([
+    { run_id: 'old-identity', engine: 'chatgpt', started_at: changedAt - 1000,
+      completed_at: changedAt - 500, total: 1, hits: 1, active_total: 1, active_hits: 1 },
+    { run_id: 'retired-prompts', engine: 'claude', started_at: changedAt + 1000,
+      completed_at: changedAt + 2000, total: 1, hits: 1, active_total: 0, active_hits: 0 },
+    { run_id: 'current', engine: 'perplexity', started_at: changedAt + 3000,
+      completed_at: changedAt + 4000, total: 1, hits: 0, active_total: 1, active_hits: 0 },
+  ], { identityChangedAt: changedAt, activePromptIds: ['current'] });
+  const result = (await history.handler({ brand_id: 'acme', days: 30, granularity: 'daily',
+    current_identity_only: true, active_prompts_only: true })).structuredContent;
+  assert.deepEqual(result.measurement_scope.unmeasured_scoped_engines, ['chatgpt', 'claude']);
+  assert.deepEqual(Object.keys(result.series[0].per_engine), ['perplexity']);
+  assert.equal(result.series[0].per_engine.perplexity, 0,
+    'an actual observed loss remains a measured zero');
 });
 
 test('visibility history exposes the evidence denominator behind each engine score', async () => {

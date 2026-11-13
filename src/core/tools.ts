@@ -225,6 +225,7 @@ const historyOutputSchema = z.object({
   google_search_sampling: googleSearchSamplingSchema,
   measurement_scope: z.object({
     mixed_mode_engines: z.array(z.string()),
+    unmeasured_scoped_engines: z.array(z.string()),
     by_engine: z.record(z.string(), historyModeScopeSchema),
     by_bucket: z.record(z.string(), z.record(z.string(), historyModeScopeSchema)),
     note: z.string(),
@@ -1016,18 +1017,25 @@ export function registerTools(
         ...counts,
         score: Math.round(100 * counts.brand_mentions / counts.usable_prompts),
       };
+      // A filtered series can omit engines that have stored history but no
+      // evidence for the selected identity/prompt cohort. Expose those gaps
+      // without implying that never-scanned or unconfigured engines were used.
+      const measuredScopedEngines = new Set(results.map((row) => row.engine));
+      const unmeasuredScopedEngines = [...new Set(allResults.map((row) => row.engine))]
+        .filter((engine) => !measuredScopedEngines.has(engine)).sort();
       const measurement_scope = {
         mixed_mode_engines: [...scopeCounts.entries()]
           .filter(([, counts]) =>
             counts.search_requested.usable_prompts > 0 && counts.model_only.usable_prompts > 0,
           )
           .map(([engine]) => engine).sort(),
+        unmeasured_scoped_engines: unmeasuredScopedEngines,
         by_engine: Object.fromEntries([...scopeCounts.entries()].sort(([a], [b]) => a.localeCompare(b))
           .map(([engine, counts]) => [engine, {
             search_requested: scoredCounts(counts.search_requested),
             model_only: scoredCounts(counts.model_only),
           }])),
-        note: 'Combined legacy daily and weekly scores may mix model-only and search-requested run evidence in the same bucket. by_engine summarizes the full requested window; by_bucket separates scored denominators in each daily or weekly period. Search-requested responses do not necessarily contain citations.',
+        note: 'Combined legacy daily and weekly scores may mix model-only and search-requested run evidence in the same bucket. by_engine summarizes the selected window; by_bucket separates scored denominators in each daily or weekly period. unmeasured_scoped_engines have stored history but no usable rows after the selected identity and buyer-prompt filters; they are unmeasured, not observed zeros. Engines with no stored history are not listed, and no provider scan is requested. Search-requested responses do not necessarily contain citations.',
       };
 
       // Only compare complete recorded run rosters. Comparing successful
