@@ -871,7 +871,7 @@ export function registerTools(
     {
       title: 'Get AI visibility history',
       description:
-        "Daily/weekly visibility history, with model-only versus search-requested evidence and current buyer-prompt roster comparability. current_identity_only=true filters known old-brand runs. Example: brand_id='acme', days=30, granularity='weekly'.",
+        "Daily/weekly history with model-only vs search-requested evidence and current buyer-prompt comparability. current_identity_only=true excludes old identities. Example: brand_id='acme', days=30, granularity='weekly'.",
       inputSchema: {
         brand_id: z
           .string()
