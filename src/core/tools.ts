@@ -227,6 +227,12 @@ const historyOutputSchema = z.object({
     changes_detected: z.boolean(),
     changed_engines: z.array(z.string()),
     insufficient_evidence_engines: z.array(z.string()),
+    current_active_roster: z.object({
+      active_prompt_count: z.number(),
+      latest_run_status_by_engine: z.record(z.string(), z.enum(['matches', 'differs', 'unverified'])),
+      engines_needing_new_measurement: z.array(z.string()),
+      note: z.string(),
+    }),
     note: z.string(),
   }),
   identity_comparability: z.object({
@@ -865,7 +871,7 @@ export function registerTools(
     {
       title: 'Get AI visibility history',
       description:
-        "Daily/weekly visibility history, with model-only versus search-requested evidence. current_identity_only=true filters known old-brand runs. Example: brand_id='acme', days=30, granularity='weekly'.",
+        "Daily/weekly history with model-only vs search-requested evidence and current buyer-prompt comparability. current_identity_only=true excludes old identities. Example: brand_id='acme', days=30, granularity='weekly'.",
       inputSchema: {
         brand_id: z
           .string()
@@ -986,21 +992,30 @@ export function registerTools(
       // Prompt IDs are stable while active and change on set_prompts.
       const promptRosters = new Map<string, Set<string>>();
       const incompleteRosters = new Set<string>();
+      const latestRosters = new Map<string, { completed_at: number; signature: string | null }>();
       for (const row of results) {
         const expected = row.roster_expected;
         const observed = row.roster_observed;
         const ids = row.roster_ids_csv?.split(',') ?? [];
-        if (
+        const complete = !(
           typeof expected !== 'number' || expected <= 0 ||
           observed !== expected || ids.length !== expected ||
           ids.some((id) => !id)
-        ) {
+        );
+        const signature = complete ? [...ids].sort().join('\u001f') : null;
+        const previousLatest = latestRosters.get(row.engine);
+        if (!previousLatest || row.completed_at > previousLatest.completed_at) {
+          latestRosters.set(row.engine, { completed_at: row.completed_at, signature });
+        } else if (row.completed_at === previousLatest.completed_at && signature !== previousLatest.signature) {
+          // Equal timestamps cannot prove which prompt cohort was observed last.
+          latestRosters.set(row.engine, { completed_at: row.completed_at, signature: null });
+        }
+        if (!complete) {
           incompleteRosters.add(row.engine);
           continue;
         }
-        const signature = [...ids].sort().join('\u001f');
         const signatures = promptRosters.get(row.engine) ?? new Set<string>();
-        signatures.add(signature);
+        signatures.add(signature!);
         promptRosters.set(row.engine, signatures);
       }
       const changedEngines = [...promptRosters.entries()]
@@ -1010,10 +1025,27 @@ export function registerTools(
         .filter((engine) =>
           incompleteRosters.has(engine) || (promptRosters.get(engine)?.size ?? 0) < 1,
         ).sort();
+      const activePromptIds = (await deps.db.getActivePrompts(brand_id)).map((prompt) => prompt.id);
+      const activeRosterSignature = activePromptIds.length > 0
+        ? [...activePromptIds].sort().join('\u001f') : null;
+      const latest_run_status_by_engine = Object.fromEntries([...latestRosters.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([engine, latest]) => [engine,
+          activeRosterSignature === null || latest.signature === null
+            ? 'unverified'
+            : latest.signature === activeRosterSignature ? 'matches' : 'differs',
+        ]));
       const prompt_set_comparability = {
         changes_detected: changedEngines.length > 0,
         changed_engines: changedEngines,
         insufficient_evidence_engines: insufficientEngines,
+        current_active_roster: {
+          active_prompt_count: activePromptIds.length,
+          latest_run_status_by_engine,
+          engines_needing_new_measurement: Object.keys(latest_run_status_by_engine)
+            .filter((engine) => latest_run_status_by_engine[engine] === 'differs'),
+          note: 'Most recent completed run per engine is compared with the current active prompt IDs. A differing complete roster needs new measurement; a partial or missing roster is unverified, not proof of current coverage. Historical scores remain unchanged.',
+        },
         note: 'Changes are detected only when complete recorded prompt-ID rosters differ for the same engine. Different prompt sets make historical scores non-comparable; partial or missing rosters cannot establish stability.',
       };
 
