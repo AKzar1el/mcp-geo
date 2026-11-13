@@ -86,6 +86,11 @@ type ComparisonResult = {
     unmeasured_scoped_engines: string[];
     note: string;
   };
+  measurement_scope: {
+    measurement_mode_filter: 'model_only' | 'search_requested' | null;
+    excluded_mode_responses: number;
+    note: string;
+  };
   requested_competitor_domains: string[] | null;
   prompts_you_win: Array<{ prompt: string; you_cited_by: string[]; competitors_cited: string[] }>;
   prompts_brand_only: Array<{ prompt: string; you_cited_by: string[]; competitors_cited: string[] }>;
@@ -105,8 +110,51 @@ type ComparisonTool = {
     competitor_domains?: string[];
     active_prompts_only?: boolean;
     engines?: string[];
+    measurement_mode?: 'model_only' | 'search_requested';
   }) => Promise<{ structuredContent: ComparisonResult }>;
 };
+
+test('comparison scopes model-only and search-requested evidence before shares and coverage', async () => {
+  let comparison: ComparisonTool | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, handler: unknown) {
+      if (name === 'compare_competitors') comparison = { handler: handler as ComparisonTool['handler'] };
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getResponsesSince: async () => [
+        { ...response('live', 'live question', 1, []), mode: 'live' },
+        { ...response('batch', 'batch question', 0, ['asana.com']), mode: 'batch' },
+        { ...response('claude', 'claude question', 0, ['monday.com']), engine: 'claude', mode: 'live' },
+      ],
+    } as Db,
+    env: {}, refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(comparison);
+  const full = (await comparison.handler({ brand_id: brand.id })).structuredContent;
+  assert.equal(full.observation_coverage.successful_responses, 3);
+  assert.equal(full.measurement_scope.measurement_mode_filter, null);
+  assert.equal(full.measurement_scope.excluded_mode_responses, 0);
+  const search = (await comparison.handler({ brand_id: brand.id, measurement_mode: 'search_requested', engines: ['chatgpt', 'claude'] })).structuredContent;
+  assert.equal(search.observation_coverage.successful_responses, 1);
+  assert.equal(search.your_mentions, 1);
+  assert.equal(search.your_share_of_voice_pct, 100);
+  assert.equal(search.measurement_scope.excluded_mode_responses, 2);
+  assert.equal(search.measurement_scope.measurement_mode_filter, 'search_requested');
+  assert.deepEqual(search.engine_scope.not_observed_engines, []);
+  assert.deepEqual(search.engine_scope.unmeasured_scoped_engines, ['claude']);
+  assert.equal(search.competitors.find((c) => c.domain === 'asana.com')?.mentions, 0);
+  assert.equal(search.google_search_sampling, null);
+  const model = (await comparison.handler({ brand_id: brand.id, measurement_mode: 'model_only' })).structuredContent;
+  assert.equal(model.observation_coverage.successful_responses, 2);
+  assert.equal(model.your_mentions, 0);
+  assert.equal(model.competitors.find((c) => c.domain === 'asana.com')?.mentions, 1);
+  assert.equal(model.competitors.find((c) => c.domain === 'monday.com')?.mentions, 1);
+  assert.equal(model.measurement_scope.excluded_mode_responses, 1);
+});
 
 test('comparison scopes engine evidence before shares, prompt rankings and Google sampling', async () => {
   let comparison: ComparisonTool | undefined;

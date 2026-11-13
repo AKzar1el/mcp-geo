@@ -330,6 +330,11 @@ const compareOutputSchema = z.object({
     unmeasured_scoped_engines: z.array(z.string()),
     note: z.string(),
   }),
+  measurement_scope: z.object({
+    measurement_mode_filter: z.enum(['model_only', 'search_requested']).nullable(),
+    excluded_mode_responses: z.number().int().nonnegative(),
+    note: z.string(),
+  }),
   your_share_of_voice_pct: z.number(),
   your_mentions: z.number(),
   competitors: z.array(
@@ -1273,13 +1278,15 @@ export function registerTools(
     {
       title: 'Compare competitor AI visibility',
       description:
-        "Compare stored brand/competitor mentions and share of voice. engines scopes selected AI surfaces; active_prompts_only excludes retired prompts. Coverage caveats are reported; no provider calls. Example: brand_id='acme'.",
+        "Compare stored brand/competitor mentions and share of voice. Select engines, active buyer prompts or request mode for like-for-like evidence. No provider calls. Example: brand_id='acme'.",
       inputSchema: {
         brand_id: z
           .string()
           .describe('Tracked brand ID to compare.'),
         engines: z.array(engineSchema).optional()
           .describe('Only compare these engines; omit or pass [] for all stored engines.'),
+        measurement_mode: z.enum(['model_only', 'search_requested']).optional()
+          .describe('Compare only one stored request mode; omit to combine both modes.'),
         competitor_domains: z
           .array(z.string())
           .optional()
@@ -1303,7 +1310,7 @@ export function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ brand_id, engines, competitor_domains, days, active_prompts_only }) => {
+    async ({ brand_id, engines, measurement_mode, competitor_domains, days, active_prompts_only }) => {
       const brand = await deps.db.getBrand(brand_id);
       if (!brand) {
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
@@ -1355,6 +1362,11 @@ export function registerTools(
             unmeasured_scoped_engines: [],
             note: 'No comparison targets were selected. No engine evidence was queried, so missing observations cannot be classified.',
           },
+          measurement_scope: {
+            measurement_mode_filter: measurement_mode ?? null,
+            excluded_mode_responses: 0,
+            note: 'No comparison targets were selected; no stored request-mode evidence was queried.',
+          },
           competitors: [],
           prompts_you_win: [],
           prompts_brand_only: [],
@@ -1372,10 +1384,17 @@ export function registerTools(
       const selectedResponses = selectedEngineSet
         ? fetchedResponses.filter((row) => selectedEngineSet.has(row.engine))
         : fetchedResponses;
+      const modeResponses = measurement_mode
+        ? selectedResponses.filter((row) =>
+          visibilityMeasurementMode(row.engine, row.mode ?? 'live') === measurement_mode)
+        : selectedResponses;
+      const excludedModeResponses = selectedResponses.length - modeResponses.length;
+      const preModeSuccessfulEngines = new Set(selectedResponses
+        .filter((row) => row.status === 'ok').map((row) => row.engine));
       // Preserve every distinct scan in the selected window, but do not
       // count repeated successful attempts for the same scan/prompt twice.
       const latestByRunPrompt = new Map<string, ComparisonEvidenceRow>();
-      for (const row of selectedResponses) {
+      for (const row of modeResponses) {
         if (row.status !== 'ok') continue;
         const key = JSON.stringify([row.run_id, row.engine, row.prompt_id]);
         const previous = latestByRunPrompt.get(key);
@@ -1397,17 +1416,23 @@ export function registerTools(
         : null;
       const allResponses = activePromptIds === null ? currentIdentityResponses
         : currentIdentityResponses.filter((row) => activePromptIds.has(row.prompt_id));
-      const successfulEngines = new Set(deduplicated.map((row) => row.engine));
       const usableEngines = new Set(allResponses.map((row) => row.engine));
       const engine_scope = {
         selection: requestedEngines ? 'selected' as const : 'all_stored' as const,
         requested_engines: requestedEngines ?? [],
-        not_observed_engines: requestedEngines?.filter((engine) => !successfulEngines.has(engine)) ?? [],
+        not_observed_engines: requestedEngines?.filter((engine) => !preModeSuccessfulEngines.has(engine)) ?? [],
         unmeasured_scoped_engines: requestedEngines?.filter((engine) =>
-          successfulEngines.has(engine) && !usableEngines.has(engine)) ?? [],
+          preModeSuccessfulEngines.has(engine) && !usableEngines.has(engine)) ?? [],
         note: requestedEngines
-          ? 'Only selected engines contribute to comparison shares, prompt rankings and coverage. Requested engines without successful stored responses, or with only identity/prompt-filtered evidence, are unmeasured, not observed zeros. No provider scans were requested.'
+          ? 'Only selected engines contribute to comparison shares, prompt rankings and coverage. Requested engines without successful stored responses, or with only mode/identity/prompt-filtered evidence, are unmeasured, not observed zeros. No provider scans were requested.'
           : 'Comparison uses all stored engines in the selected window. Omit engines or pass [] to retain the historical default; no provider scans were requested.',
+      };
+      const measurement_scope = {
+        measurement_mode_filter: measurement_mode ?? null,
+        excluded_mode_responses: excludedModeResponses,
+        note: measurement_mode
+          ? 'Only this stored request mode contributes to shares, rankings and coverage; excluded responses are not observed zeros. Search-requested does not prove a source was cited. No provider calls.'
+          : 'The historical default combines model-only and search-requested observations; use measurement_mode for a like-for-like subset. No provider calls.',
       };
       const prompt_set_scope = {
         selection: active_prompts_only ? 'active_only' as const : 'full_window' as const,
@@ -1569,6 +1594,7 @@ export function registerTools(
         outside_current_tracking: outsideCurrentTracking,
         prompt_set_scope,
         engine_scope,
+        measurement_scope,
         competitors: competitorsOut,
         prompts_you_win,
         prompts_brand_only,

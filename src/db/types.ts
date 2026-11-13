@@ -243,6 +243,8 @@ export type ComparisonEvidenceRow = Pick<PromptResponse,
   'brand_mentioned' | 'competitors_mentioned' | 'status' | 'captured_at'> & {
     // Run start, not response capture, determines identity-version attribution.
     run_started_at?: number;
+    // Stored live/batch request mode, not inferred from the response body.
+    mode?: Run['mode'] | null;
   };
 
 export interface CitationPageOptions {
