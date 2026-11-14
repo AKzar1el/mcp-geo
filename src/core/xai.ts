@@ -13,6 +13,7 @@ import type {
   Prompt,
 } from '../db/types.js';
 import { fetchWithTimeout } from './fetch.js';
+import { redactProviderError } from './provider-error.js';
 import { normalizeDomainInput } from './domain.js';
 
 export const MODEL = 'grok-4.7';
@@ -132,14 +133,14 @@ export async function chatCompletion(
       tools: [{ type: 'web_search' }],
       tool_choice: 'required',
     }),
-  });
+  }).catch((error: unknown) => { throw new Error(redactProviderError(error, apiKey)); });
   if (!resp.ok) {
     const text = await resp.text();
-    throw new Error(`xAI Responses API failed: ${resp.status} ${text}`);
+    throw new Error(`xAI Responses API failed: ${resp.status} ${redactProviderError(text, apiKey)}`);
   }
   const data = (await resp.json()) as XAiResponse;
   if (data.status !== 'completed') {
-    throw new Error(`xAI response incomplete: ${data.status ?? 'missing status'}`);
+    throw new Error(`xAI response incomplete: ${redactProviderError(data.status ?? 'missing status', apiKey)}`);
   }
   const text = extractResponseText(data);
   if (text.trim().length === 0) {
@@ -189,8 +190,8 @@ function buildSkippedResult(prompt: Prompt): EnginePromptResult {
   };
 }
 
-function buildFailedResult(prompt: Prompt, err: unknown): EnginePromptResult {
-  const message = err instanceof Error ? err.message : String(err);
+function buildFailedResult(prompt: Prompt, err: unknown, apiKey?: string): EnginePromptResult {
+  const message = redactProviderError(err, apiKey);
   console.error('runLive[grok]: prompt failed', {
     prompt_id: prompt.id,
     message,
@@ -261,7 +262,7 @@ export async function runLive(
           const payload = await chatCompletion(requireXAiKey(env), prompt.text);
           results[index] = buildOkResult(brand, prompt, payload);
         } catch (err) {
-          results[index] = buildFailedResult(prompt, err);
+          results[index] = buildFailedResult(prompt, err, env.XAI_API_KEY);
         }
       }),
     );
@@ -276,13 +277,14 @@ export async function runLive(
       results,
     );
   } catch (err) {
+    const message = redactProviderError(err, env.XAI_API_KEY);
     console.error('runLive[grok]: persistEngineRun failed', {
       run_id: runId,
-      message: err instanceof Error ? err.message : String(err),
+      message,
     });
     await env.db.updateRun(runId, {
       status: 'failed',
-      error: err instanceof Error ? err.message : String(err),
+      error: message,
       completed_at: Date.now(),
     }).catch(() => {});
   }

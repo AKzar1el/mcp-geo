@@ -11,6 +11,7 @@ import type {
 } from '../db/types.js';
 import { fetchWithTimeout } from './fetch.js';
 import { normalizeDomainInput } from './domain.js';
+import { redactProviderError } from './provider-error.js';
 
 export const MODEL = 'gpt-5-search-api';
 const BATCH_MODEL = 'gpt-4o-mini';
@@ -98,10 +99,10 @@ export async function chatCompletion(
         { role: 'user', content: userText },
       ],
     }),
-  });
+  }).catch((error: unknown) => { throw new Error(redactProviderError(error, apiKey)); });
   if (!resp.ok) {
     const text = await resp.text();
-    throw new Error(`OpenAI chat completion failed: ${resp.status} ${text}`);
+    throw new Error(`OpenAI chat completion failed: ${resp.status} ${redactProviderError(text, apiKey)}`);
   }
   const data = (await resp.json()) as ChatCompletionResponse;
   const finishReason = data.choices?.[0]?.finish_reason;
@@ -363,8 +364,8 @@ function buildSkippedResult(prompt: Prompt): EnginePromptResult {
   };
 }
 
-function buildFailedResult(prompt: Prompt, err: unknown): EnginePromptResult {
-  const msg = err instanceof Error ? err.message : String(err);
+function buildFailedResult(prompt: Prompt, err: unknown, apiKey?: string): EnginePromptResult {
+  const msg = redactProviderError(err, apiKey);
   console.error('runLive: prompt failed', {
     prompt_id: prompt.id,
     message: msg,
@@ -438,7 +439,7 @@ export async function runLive(
             status: 'ok',
           };
         } catch (err) {
-          results[idx] = buildFailedResult(prompt, err);
+          results[idx] = buildFailedResult(prompt, err, env.OPENAI_API_KEY);
         }
       }),
     );
@@ -453,7 +454,7 @@ export async function runLive(
       results,
     );
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = redactProviderError(err, env.OPENAI_API_KEY);
     console.error('runLive: persistEngineRun failed', {
       run_id: runId,
       message,
