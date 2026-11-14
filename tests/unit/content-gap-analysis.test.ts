@@ -1104,3 +1104,86 @@ test('content gaps exclude pre-identity-change losses from recommendations witho
   assert.equal(legacy.recommendations.length, 1, 'legacy rows with unknown identity boundaries remain readable');
   assert.deepEqual(legacy.identity_attribution.stale_engines, []);
 });
+
+test('content gaps select the latest eligible run within a request-mode cohort', async () => {
+  const brand = {
+    id: 'acme', name: 'Acme', domain: 'acme.com', competitors: ['rival.com'],
+    aliases: [], exclude_terms: [], updated_at: 0,
+  } as Brand;
+  const selectedRuns: Array<{ engine: string; mode: string }> = [];
+  let handler: ((input: {
+    brand_id: string; engines: string[]; max_recommendations: number;
+    ai_analysis: boolean; measurement_mode?: 'model_only' | 'search_requested';
+  }) => Promise<{ structuredContent: {
+    observation_coverage: { per_engine: Array<{ run_id: string }>; unmeasured_engines: string[] };
+    losing_prompt_evidence: { prompts: Array<{ prompt_id: string }> };
+    measurement_scope: {
+      measurement_mode_filter: 'model_only' | 'search_requested' | null;
+      model_only_engines: string[]; search_requested_engines: string[];
+    };
+  } }>) | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, callback: unknown) {
+      if (name === 'get_content_gaps') handler = callback as typeof handler;
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getActivePrompts: async () => [
+        { id: 'prompt-live' }, { id: 'prompt-batch' }, { id: 'prompt-claude' },
+      ],
+      getLatestCompletedRun: async (_id, engine, mode) => {
+        selectedRuns.push({ engine, mode: mode ?? 'any' });
+        const id = engine === 'chatgpt'
+          ? mode === 'live' ? 'live-old' : 'batch-new'
+          : engine === 'claude' && mode !== 'batch' ? 'claude-run' : null;
+        return id ? {
+          id, mode: id === 'batch-new' ? 'batch' : 'live',
+          started_at: id === 'live-old' ? 1000 : 3000, completed_at: 3500,
+        } : null;
+      },
+      getResponsesForRun: async (runId) => [{
+        id: `${runId}-response`, run_id: runId,
+        prompt_id: runId === 'live-old' ? 'prompt-live'
+          : runId === 'batch-new' ? 'prompt-batch' : 'prompt-claude',
+        prompt_text: `Question from ${runId}`,
+        engine: runId === 'claude-run' ? 'claude' : 'chatgpt',
+        raw_response: '', brand_mentioned: 0, brand_cited_with_link: 0,
+        cited_urls: [], competitors_mentioned: ['rival.com'], engine_citations: [],
+        status: 'ok', error_message: null, captured_at: 3400,
+      } satisfies PromptResponse],
+    } as Db,
+    env: {}, refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(handler);
+  const input = {
+    brand_id: brand.id, engines: ['chatgpt', 'claude'],
+    max_recommendations: 5, ai_analysis: false,
+  };
+  const search = (await handler({ ...input, measurement_mode: 'search_requested' })).structuredContent;
+  assert.equal(search.measurement_scope.measurement_mode_filter, 'search_requested');
+  assert.deepEqual(search.observation_coverage.per_engine.map((run) => run.run_id), ['live-old']);
+  assert.deepEqual(search.losing_prompt_evidence.prompts.map((prompt) => prompt.prompt_id), ['prompt-live']);
+  assert.deepEqual(search.measurement_scope.search_requested_engines, ['chatgpt']);
+  assert.ok(search.observation_coverage.unmeasured_engines.includes('claude'));
+  assert.ok(!selectedRuns.some(({ engine }) => engine === 'claude'),
+    'Claude has no search-requested adapter and must not enter that cohort');
+  assert.ok(selectedRuns.some(({ engine, mode }) => engine === 'chatgpt' && mode === 'live'),
+    'an older live run must be selected instead of the newer batch run');
+
+  selectedRuns.length = 0;
+  const model = (await handler({ ...input, measurement_mode: 'model_only' })).structuredContent;
+  assert.equal(model.measurement_scope.measurement_mode_filter, 'model_only');
+  assert.deepEqual(model.observation_coverage.per_engine.map((run) => run.run_id),
+    ['batch-new', 'claude-run']);
+  assert.deepEqual(model.measurement_scope.model_only_engines, ['chatgpt', 'claude']);
+  assert.ok(selectedRuns.some(({ engine, mode }) => engine === 'chatgpt' && mode === 'batch'));
+  assert.ok(selectedRuns.some(({ engine, mode }) => engine === 'claude' && mode === 'any'));
+
+  const legacy = (await handler(input)).structuredContent;
+  assert.equal(legacy.measurement_scope.measurement_mode_filter, null);
+  assert.deepEqual(legacy.observation_coverage.per_engine.map((run) => run.run_id),
+    ['batch-new', 'claude-run']);
+});
