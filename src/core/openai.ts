@@ -287,12 +287,14 @@ export function hasBrandInEngineCitations(
 }
 
 export function extractUrls(text: string): string[] {
-  // An embedded Markdown image is an asset, not a cited source. Remove its
-  // target before scanning plain URLs, which would otherwise count it anyway.
-  const sourceText = text.replace(
-    /!\[[^\]\r\n]*\]\(\s*https?:\/\/(?:\([^()\s]*\)|[^\s()])+(?:\s+(?:"[^"\r\n]*"|'[^'\r\n]*'))?\s*\)/gi,
-    ' ',
-  );
+  // HTML and Markdown image targets are assets, not cited sources. Remove
+  // them before scanning plain URLs, which would otherwise count them anyway.
+  const sourceText = text
+    .replace(/<img\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi, ' ')
+    .replace(
+      /!\[[^\]\r\n]*\]\(\s*https?:\/\/(?:\([^()\s]*\)|[^\s()])+(?:\s+(?:"[^"\r\n]*"|'[^'\r\n]*'))?\s*\)/gi,
+      ' ',
+    );
   const markdownRe = /\[[^\]]+\]\((https?:\/\/[^\s)]+)\)/gi;
   const plainRe = /https?:\/\/[^\s)\]\}'"`<>]+/gi;
   const urls: string[] = [];
