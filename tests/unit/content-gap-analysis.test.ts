@@ -701,6 +701,39 @@ test('content-gap analyzer keeps only recommendations anchored to observed compe
   }
 });
 
+test('content-gap analyzer returns distinct actionable topics instead of duplicate paid-model advice', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return Response.json({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify([
+        { priority: 1, topic: 'Acme versus Asana', rationale: 'Compare the observed Asana loss', suggested_format: 'comparison_page' },
+        { priority: 2, topic: ' acme  VERSUS   asana ', rationale: 'Repeat the same Asana comparison', suggested_format: 'comparison_page' },
+        { priority: 3, topic: 'Acme versus Asana', rationale: 'Answer a distinct Asana FAQ', suggested_format: 'faq_page' },
+        { priority: 4, topic: 'Acme pricing versus Asana', rationale: 'Compare pricing to Asana', suggested_format: 'pricing_page' },
+      ]) }],
+    });
+  };
+  try {
+    const recommendations = await analyzeContentGaps(
+      { ANTHROPIC_API_KEY: 'synthetic-offline-key' },
+      { id: 'acme', name: 'Acme', domain: 'acme.com' } as Brand,
+      [{ prompt_text: 'Compare Acme and Asana for agencies', engines_lost_on: ['chatgpt'], competitors_winning: ['asana.com'] }],
+      3,
+    );
+    assert.deepEqual(recommendations.map((rec) => [rec.priority, rec.topic, rec.suggested_format]), [
+      [1, 'Acme versus Asana', 'comparison_page'],
+      [3, 'Acme versus Asana', 'faq_page'],
+      [4, 'Acme pricing versus Asana', 'pricing_page'],
+    ]);
+    assert.equal(calls, 1, 'deduplicating valid advice must not trigger a second paid request');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('content-gap analyzer excludes mixed observed and invented competitor domains without another paid call', async () => {
   const originalFetch = globalThis.fetch;
   let calls = 0;
