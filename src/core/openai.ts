@@ -287,16 +287,22 @@ export function hasBrandInEngineCitations(
 }
 
 export function extractUrls(text: string): string[] {
+  // An embedded Markdown image is an asset, not a cited source. Remove its
+  // target before scanning plain URLs, which would otherwise count it anyway.
+  const sourceText = text.replace(
+    /!\[[^\]\r\n]*\]\(\s*https?:\/\/(?:\([^()\s]*\)|[^\s()])+(?:\s+(?:"[^"\r\n]*"|'[^'\r\n]*'))?\s*\)/gi,
+    ' ',
+  );
   const markdownRe = /\[[^\]]+\]\((https?:\/\/[^\s)]+)\)/gi;
   const plainRe = /https?:\/\/[^\s)\]\}'"`<>]+/gi;
   const urls: string[] = [];
   let m: RegExpExecArray | null;
-  while ((m = markdownRe.exec(text)) !== null) {
+  while ((m = markdownRe.exec(sourceText)) !== null) {
     urls.push(m[1]);
   }
   // Run plain after markdown — plainRe also catches the URL inside the
   // markdown link, which is fine: we dedupe by hostname below.
-  while ((m = plainRe.exec(text)) !== null) {
+  while ((m = plainRe.exec(sourceText)) !== null) {
     urls.push(m[0]);
   }
   return urls;
