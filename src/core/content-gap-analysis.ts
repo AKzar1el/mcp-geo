@@ -331,7 +331,15 @@ export async function analyzeContentGaps(
   if (recs.length === 0) {
     throw new Error('no recommendation passes observed competitor and domain provenance checks');
   }
-  // Sort by priority asc and trim to requested count.
+  // A repeated model topic should not consume multiple capped audit slots.
+  // Different suggested formats remain distinct actions.
   recs.sort((a, b) => a.priority - b.priority);
-  return recs.slice(0, maxRecommendations);
+  const seen = new Set<string>();
+  return recs.filter((rec) => {
+    const normalizedTopic = rec.topic.toLowerCase().replace(/\s+/g, ' ').trim();
+    const key = `${rec.suggested_format}:${normalizedTopic}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, maxRecommendations);
 }
