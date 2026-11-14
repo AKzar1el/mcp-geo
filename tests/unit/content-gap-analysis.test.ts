@@ -643,6 +643,64 @@ test('content-gap analyzer still retries malformed model output once', async () 
   }
 });
 
+test('content-gap analyzer rejects advice without an observed competitor anchor without a paid retry', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return Response.json({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify([{
+        priority: 1,
+        topic: 'Compare Acme to Zephyr',
+        rationale: 'zephyr.example wins all observed buyer questions',
+        suggested_format: 'comparison_page',
+      }]) }],
+    });
+  };
+  try {
+    await assert.rejects(
+      analyzeContentGaps(
+        { ANTHROPIC_API_KEY: 'synthetic-offline-key' },
+        { id: 'acme', name: 'Acme', domain: 'acme.com' } as Brand,
+        [{ prompt_text: 'Best software for agencies', engines_lost_on: ['chatgpt'], competitors_winning: ['asana.com'] }],
+        1,
+      ),
+      /no recommendation references an observed competitor/i,
+    );
+    assert.equal(calls, 1, 'grounding failures must not cause a second billed request');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('content-gap analyzer keeps only recommendations anchored to observed competitors', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return Response.json({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify([
+        { priority: 1, topic: 'Compare Acme to Zephyr', rationale: 'Zephyr leads the market', suggested_format: 'comparison_page' },
+        { priority: 2, topic: 'Acme versus Asana', rationale: 'Answer observed agency buyer questions', suggested_format: 'comparison_page' },
+      ]) }],
+    });
+  };
+  try {
+    const recommendations = await analyzeContentGaps(
+      { ANTHROPIC_API_KEY: 'synthetic-offline-key' },
+      { id: 'acme', name: 'Acme', domain: 'acme.com' } as Brand,
+      [{ prompt_text: 'Best software for agencies', engines_lost_on: ['chatgpt'], competitors_winning: ['asana.com'] }],
+      2,
+    );
+    assert.deepEqual(recommendations.map((rec) => rec.topic), ['Acme versus Asana']);
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('content-gap analyzer rejects whitespace-only Anthropic credentials before requests', async () => {
   const originalFetch = globalThis.fetch;
   let fetchCalls = 0;

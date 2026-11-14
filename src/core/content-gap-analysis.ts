@@ -60,6 +60,7 @@ const BASE_SYSTEM_PROMPT = [
   "3. suggested_format: one of: 'comparison_page', 'listicle', 'how_to_guide', 'faq_page', 'case_study', 'pricing_page', 'integration_landing_page'.",
   '4. Prioritize by impact: prompts where ALL competitors win get higher priority than prompts where only 1 wins.',
   '5. Mix tactical (quick wins) with strategic (longer plays).',
+  '6. Every recommendation must name at least one competitor from the observed losing prompts. Do not invent competitor names.',
 ].join('\n');
 
 const STRICT_SUFFIX =
@@ -89,6 +90,28 @@ function inferFallbackFormat(promptText: string): string {
 
 function formatLabel(format: string): string {
   return format.replaceAll('_', ' ');
+}
+
+function mentionsObservedCompetitor(
+  recommendation: ContentGapRecommendation,
+  losingPrompts: LosingPromptSummary[],
+): boolean {
+  const text = `${recommendation.topic} ${recommendation.rationale}`;
+  for (const prompt of losingPrompts) {
+    for (const competitor of prompt.competitors_winning) {
+      const domain = competitor.trim().toLowerCase().replace(/^www\./, '');
+      const label = domain.split('.')[0] ?? '';
+      // Names such as Asana may be used instead of asana.com. Short labels
+      // would match unrelated prose, so require their full domain instead.
+      for (const anchor of [domain, ...(label.length >= 4 ? [label] : [])]) {
+        const escaped = anchor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        if (escaped && new RegExp(`(^|[^a-z0-9])${escaped}($|[^a-z0-9])`, 'i').test(text)) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
 }
 
 // Provider-free fallback used when the analyzer is unavailable. It must stay
@@ -274,6 +297,13 @@ export async function analyzeContentGaps(
       maxRecommendations,
       true,
     );
+  }
+  // Shape-valid model output can still invent an unrelated competitor. Do not
+  // present unanchored advice as scan-grounded, or spend a second provider call
+  // retrying a semantic error. The caller can use its provider-free fallback.
+  recs = recs.filter((rec) => mentionsObservedCompetitor(rec, losingPrompts));
+  if (recs.length === 0) {
+    throw new Error('no recommendation references an observed competitor');
   }
   // Sort by priority asc and trim to requested count.
   recs.sort((a, b) => a.priority - b.priority);
