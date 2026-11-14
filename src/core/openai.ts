@@ -561,7 +561,7 @@ export async function submitBatch(
       throw new Error('OpenAI batch create returned no batch id');
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = redactProviderError(error, env.OPENAI_API_KEY);
     try {
       await env.db.updateRun(runId, {
         status: 'failed',
@@ -571,10 +571,10 @@ export async function submitBatch(
     } catch (persistError) {
       console.error('submitBatch: failed to mark rejected batch submission terminal', {
         run_id: runId,
-        message: persistError instanceof Error ? persistError.message : String(persistError),
+        message: redactProviderError(persistError, env.OPENAI_API_KEY),
       });
     }
-    throw error;
+    throw new Error(message);
   }
 
   await env.db.updateRun(runId, { batch_id: batch.id, status: 'in_progress' });
@@ -639,11 +639,13 @@ async function downloadBatchFile(
 ): Promise<string> {
   const response = await fetchWithTimeout(`${OPENAI_BASE}/files/${fileId}/content`, {
     headers: { Authorization: `Bearer ${requireOpenAiKey(env)}` },
+  }).catch((error: unknown) => {
+    throw new Error(redactProviderError(error, env.OPENAI_API_KEY));
   });
   if (!response.ok) {
     const text = await response.text();
     throw new Error(
-      `OpenAI batch ${source} file failed: ${response.status} ${text}`,
+      `OpenAI batch ${source} file failed: ${response.status} ${redactProviderError(text, env.OPENAI_API_KEY)}`,
     );
   }
   return response.text();
@@ -678,11 +680,11 @@ function assertUniqueBatchCustomIds(
   }
 }
 
-function batchErrorMessage(line: BatchOutputLine): string {
+function batchErrorMessage(line: BatchOutputLine, apiKey?: string): string {
   const message =
     line.error?.message ?? line.response?.body?.error?.message;
   if (typeof message === 'string' && message.length > 0) {
-    return truncateError(message);
+    return truncateError(redactProviderError(message, apiKey));
   }
   if (typeof line.response?.status_code === 'number') {
     return `OpenAI batch request failed with status ${line.response.status_code}`;
@@ -700,10 +702,14 @@ export async function collectBatch(
   }
   const statusResp = await fetchWithTimeout(`${OPENAI_BASE}/batches/${run.batch_id}`, {
     headers: { Authorization: `Bearer ${requireOpenAiKey(env)}` },
+  }).catch((error: unknown) => {
+    throw new Error(redactProviderError(error, env.OPENAI_API_KEY));
   });
   if (!statusResp.ok) {
     const text = await statusResp.text();
-    throw new Error(`OpenAI batch status failed: ${statusResp.status} ${text}`);
+    throw new Error(
+      `OpenAI batch status failed: ${statusResp.status} ${redactProviderError(text, env.OPENAI_API_KEY)}`,
+    );
   }
   const batch = (await statusResp.json()) as OpenAiBatch;
 
@@ -827,7 +833,7 @@ export async function collectBatch(
       content.trim().length === 0
     ) {
       const errorMessage = statusCode !== undefined && (statusCode < 200 || statusCode >= 300)
-        ? batchErrorMessage(parsed)
+        ? batchErrorMessage(parsed, env.OPENAI_API_KEY)
         : finishReason !== 'stop'
           ? `OpenAI batch response incomplete: ${finishReason ?? 'missing finish_reason'}`
           : 'OpenAI batch response missing non-empty content';
@@ -871,7 +877,7 @@ export async function collectBatch(
       cited_urls: [],
       competitors_mentioned: [],
       status: 'failed',
-      error_message: batchErrorMessage(parsed),
+      error_message: batchErrorMessage(parsed, env.OPENAI_API_KEY),
     });
   }
 
