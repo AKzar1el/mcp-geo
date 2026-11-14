@@ -79,6 +79,24 @@ test('Markdown image assets are not source citations, but ordinary links remain 
   assert.deepEqual(withSource.cited_urls, ['acme.com']);
 });
 
+test('HTML image assets do not count as source citations but surrounding anchors do', () => {
+  for (const image of [
+    '<img src="https://acme.com/media/logo.svg" alt="Logo">',
+    "<IMG ALT='chart > preview' SRC='https://acme.com/charts/weekly.png' />",
+    '<img src=https://asana.com/images/icon.png>',
+  ]) {
+    const result = extractCitations(acme, image);
+    assert.equal(result.brand_cited_with_link, 0, image);
+    assert.deepEqual(result.cited_urls, [], image);
+  }
+  const linked = extractCitations(
+    acme,
+    '<a href="https://acme.com/research"><img src="https://asana.com/chart.png" alt="chart"></a>',
+  );
+  assert.equal(linked.brand_cited_with_link, 1);
+  assert.deepEqual(linked.cited_urls, ['acme.com']);
+});
+
 test('subdomain link without brand prose counts only as linked citation', () => {
   const r = extractCitations(acme, 'See https://docs.acme.com/setup for the guide.');
   assert.equal(r.brand_mentioned, 0);
