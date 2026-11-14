@@ -129,6 +129,7 @@ const visibilityOutputSchema = z.object({
   unmeasured_engines: z.array(z.string()),
   unmeasured_engines_note: z.string(),
   measurement_scope: z.object({
+    measurement_mode_filter: z.enum(['model_only', 'search_requested']).nullable(),
     search_requested: z.object({
       score: z.number().nullable(),
       engines: z.array(z.string()),
@@ -691,7 +692,7 @@ export function registerTools(
     {
       title: 'Check AI visibility',
       description:
-        "Read stored scores. active_prompts_only=true measures current buyer questions; default includes history. run_mode filters stored live/batch scans. Live need not cite sources. Example: brand_id='acme'.",
+        "Read stored scores. engines selects surfaces; measurement_mode selects model-only or search-requested evidence. run_mode selects live/batch dispatch. Defaults retain history; no provider calls. Example: brand_id='acme'.",
       inputSchema: {
         brand_id: z
           .string()
@@ -704,6 +705,8 @@ export function registerTools(
           .enum(['live', 'batch'])
           .optional()
           .describe('Filter by live or batch scans; omit for latest across modes. Live may still be model-only.'),
+        measurement_mode: z.enum(['model_only', 'search_requested']).optional()
+          .describe('Select latest stored model-only or search-requested evidence per engine; omit for mixed history.'),
         active_prompts_only: z.boolean().default(false)
           .describe('Score only currently active buyer prompts from stored observations; no provider calls.'),
       },
@@ -714,7 +717,7 @@ export function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ brand_id, engines, run_mode, active_prompts_only = false }) => {
+    async ({ brand_id, engines, run_mode, measurement_mode, active_prompts_only = false }) => {
       const brand = await deps.db.getBrand(brand_id);
       if (!brand) {
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
@@ -738,7 +741,17 @@ export function registerTools(
       const measurementModeByEngine = new Map<string, 'search_requested' | 'model_only'>();
       let mostRecentTimestamp = 0;
       for (const engine of selectedEngines) {
-        const run = await deps.db.getLatestCompletedRun(brand_id, engine, run_mode);
+        // Request mode is an evidence-path property, not identical to run
+        // dispatch mode: Claude/Gemini live runs are still model-only.
+        let eligibleRunMode = run_mode;
+        if (measurement_mode === 'search_requested') {
+          if (run_mode === 'batch' || engine === 'claude' || engine === 'gemini') continue;
+          eligibleRunMode = 'live';
+        } else if (measurement_mode === 'model_only' && engine !== 'claude' && engine !== 'gemini') {
+          if (run_mode === 'live') continue;
+          eligibleRunMode = 'batch';
+        }
+        const run = await deps.db.getLatestCompletedRun(brand_id, engine, eligibleRunMode);
         if (!run) continue;
         const responses = await deps.db.getResponsesForRun(run.id);
         if (responses.length === 0) continue;
@@ -763,6 +776,9 @@ export function registerTools(
       if (selectedResponses.length === 0) {
         if (staleIdentityEngines.length > 0) {
           throw new Error('No current-identity visibility data for the selected engines. Stored scans predate the last brand name, domain, alias, or exclusion change; call refresh_brand to measure the current identity (provider charges may apply). Historical runs remain available in get_visibility_history.');
+        }
+        if (measurement_mode) {
+          throw new Error('No usable stored visibility observations match the selected measurement_mode and run_mode for these engines. Missing evidence is unmeasured, not zero; a new provider scan may incur charges.');
         }
         throw new Error(
           engines && engines.length > 0
@@ -868,13 +884,14 @@ export function registerTools(
         missing_requested_engines: missingRequestedEngines,
         unmeasured_engines: unmeasuredEngines,
         unmeasured_engines_note: active_prompts_only
-          ? 'These engines have no successful stored observations for the currently active buyer prompts in the selected run mode and are excluded from overall_score. They are unmeasured, not observed zeros. A new scan may incur provider charges.'
-          : 'These known or requested engines have no usable current-identity stored observations for the selected run mode and are excluded from overall_score. Stale identity engines listed in identity_attribution were deliberately excluded; for other absent engines, absence does not establish whether an engine was configured, attempted or failed.',
+          ? 'These engines have no successful stored observations for currently active buyer prompts under the selected run and measurement modes and are excluded from overall_score. They are unmeasured, not observed zeros. A new scan may incur provider charges.'
+          : 'These known or requested engines have no usable current-identity observations under the selected run and measurement modes and are excluded from overall_score. Stale identity engines are listed in identity_attribution; absence does not establish whether an engine was configured, attempted or failed.',
         measurement_scope: {
+          measurement_mode_filter: measurement_mode ?? null,
           search_requested: searchRequested,
           model_only: modelOnly,
           mixed_modes: searchRequested.engines.length > 0 && modelOnly.engines.length > 0,
-          note: 'Scores count brand mentions in the latest usable observation per distinct prompt and engine, not independently verified search citations. Search-requested engines use a live search/SERP request path but may return no source links. Claude and Gemini here use model-only answers; ungrounded batch runs are also model-only. Compare these groups separately, especially before interpreting the combined overall_score.',
+          note: 'Scores count brand mentions in the latest usable observation per distinct prompt and engine from each eligible stored run, not independently verified search citations. A measurement_mode filter selects matching evidence before scoring, even when a newer run has a different request mode; absent matching engines are unmeasured. Search-requested runs may return no source links. Claude/Gemini live runs and all batch runs are model-only; run_mode alone does not select a request mode. Omission retains historical mixed results; no provider calls occur.',
         },
         google_search_sampling: googleSearchSampling(perEngine.map(({ engine }) => engine)),
         freshness: {

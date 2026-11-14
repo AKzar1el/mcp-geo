@@ -39,6 +39,7 @@ test('visibility output schema describes winning and losing prompt records', () 
     unmeasured_engines: ['chatgpt'],
     unmeasured_engines_note: 'No usable stored observation; this does not establish why.',
     measurement_scope: {
+      measurement_mode_filter: null,
       search_requested: { score: null, engines: [] },
       model_only: { score: 50, engines: ['claude'] },
       mixed_modes: false,
@@ -105,6 +106,7 @@ test('visibility output schema describes winning and losing prompt records', () 
     refreshed_at: '2026-09-19T00:00:00.000Z',
     overall_score: 50,
     measurement_scope: {
+      measurement_mode_filter: null,
       search_requested: { score: null, engines: [] },
       model_only: { score: 50, engines: ['claude'] },
       mixed_modes: false,

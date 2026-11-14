@@ -87,6 +87,7 @@ type VisibilitySnapshot = {
   unmeasured_engines: string[];
   unmeasured_engines_note: string;
   measurement_scope: {
+    measurement_mode_filter: 'model_only' | 'search_requested' | null;
     search_requested: { score: number | null; engines: string[] };
     model_only: { score: number | null; engines: string[] };
     mixed_modes: boolean;
@@ -164,6 +165,7 @@ type VisibilityTool = {
     brand_id: string;
     engines?: EngineName[];
     run_mode?: 'live' | 'batch';
+    measurement_mode?: 'model_only' | 'search_requested';
     active_prompts_only?: boolean;
   }) => Promise<{ structuredContent: VisibilitySnapshot }>;
 };
@@ -660,4 +662,57 @@ test('check_visibility can select older live evidence without changing the defau
   const batchOnly = (await tool.handler({ brand_id: brand.id, engines: ['chatgpt'], run_mode: 'batch' })).structuredContent;
   assert.equal(batchOnly.overall_score, 0);
   assert.equal(batchOnly.per_engine[0].measurement_mode, 'model_only');
+});
+
+test('check_visibility selects latest eligible stored request mode before headline scoring', async () => {
+  const live = { ...run('chatgpt', chatgptTimestamp, 'live'), id: 'chatgpt-live' };
+  const newerBatch = { ...run('chatgpt', chatgptTimestamp + 1000, 'batch'), id: 'chatgpt-batch' };
+  const tool = registerVisibilityTool({
+    runs: { chatgpt: newerBatch },
+    alternateRuns: { chatgpt: live },
+    responses: {
+      [live.id]: [{ ...response('chatgpt', 'live-win', 'Live winner', 1), run_id: live.id }],
+      [newerBatch.id]: [{ ...response('chatgpt', 'batch-loss', 'Batch loss', 0), run_id: newerBatch.id }],
+    },
+  });
+
+  const legacy = (await tool.handler({ brand_id: brand.id, engines: ['chatgpt', 'claude'] })).structuredContent;
+  assert.equal(legacy.overall_score, 25); // 0% newer ChatGPT batch and 50% Claude live
+  assert.equal(legacy.measurement_scope.measurement_mode_filter, null);
+
+  const search = (await tool.handler({
+    brand_id: brand.id, engines: ['chatgpt', 'claude'], measurement_mode: 'search_requested',
+  })).structuredContent;
+  assert.equal(search.overall_score, 100);
+  assert.deepEqual(search.per_engine.map((row) => row.engine), ['chatgpt']);
+  assert.deepEqual(search.unmeasured_engines, ['claude']);
+  assert.deepEqual(search.missing_requested_engines, ['claude']);
+  assert.deepEqual(search.top_winning_prompts.map((row) => row.prompt), ['Live winner']);
+  assert.equal(search.measurement_scope.measurement_mode_filter, 'search_requested');
+  assert.equal(search.measurement_scope.mixed_modes, false);
+  assert.match(search.measurement_scope.note, /not.*citations/i);
+
+  const model = (await tool.handler({
+    brand_id: brand.id, engines: ['chatgpt', 'claude'], measurement_mode: 'model_only',
+  })).structuredContent;
+  assert.equal(model.overall_score, 25);
+  assert.deepEqual(model.per_engine.map((row) => row.engine), ['chatgpt', 'claude']);
+  assert.equal(model.measurement_scope.measurement_mode_filter, 'model_only');
+  assert.deepEqual(model.top_winning_prompts.map((row) => row.prompt), ['Claude winner']);
+
+  const liveModel = (await tool.handler({
+    brand_id: brand.id, engines: ['chatgpt', 'claude'],
+    run_mode: 'live', measurement_mode: 'model_only',
+  })).structuredContent;
+  assert.equal(liveModel.overall_score, 50);
+  assert.deepEqual(liveModel.unmeasured_engines, ['chatgpt']);
+  assert.deepEqual(liveModel.per_engine.map((row) => row.engine), ['claude']);
+
+  await assert.rejects(
+    tool.handler({
+      brand_id: brand.id, engines: ['chatgpt'],
+      run_mode: 'batch', measurement_mode: 'search_requested',
+    }),
+    /No usable stored visibility observations match the selected measurement_mode/,
+  );
 });
