@@ -55,6 +55,30 @@ test('markdown link to brand domain counts as linked citation', () => {
   assert.ok(r.cited_urls.includes('asana.com'));
 });
 
+test('Markdown image assets are not source citations, but ordinary links remain evidence', () => {
+  const imageOnly = extractCitations(
+    acme,
+    '![screenshot](https://acme.com/media/logo.svg) ![icon](https://asana.com/icon.png)',
+  );
+  assert.equal(imageOnly.brand_cited_with_link, 0);
+  assert.deepEqual(imageOnly.cited_urls, []);
+  for (const image of [
+    '![screenshot](https://acme.com/assets/logo_(dark).svg)',
+    '![screenshot](https://acme.com/assets/logo.svg "brand asset")',
+  ]) {
+    const result = extractCitations(acme, image);
+    assert.equal(result.brand_cited_with_link, 0, image);
+    assert.deepEqual(result.cited_urls, [], image);
+  }
+
+  const withSource = extractCitations(
+    acme,
+    '![screenshot](https://acme.com/media/logo.svg) [source](https://acme.com/research)',
+  );
+  assert.equal(withSource.brand_cited_with_link, 1);
+  assert.deepEqual(withSource.cited_urls, ['acme.com']);
+});
+
 test('subdomain link without brand prose counts only as linked citation', () => {
   const r = extractCitations(acme, 'See https://docs.acme.com/setup for the guide.');
   assert.equal(r.brand_mentioned, 0);
