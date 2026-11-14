@@ -99,6 +99,52 @@ test('Gemini retains primitive provider rejections as failed prompt evidence', a
   }
 });
 
+test('Gemini URL API keys never enter provider failure errors, persisted rows, or logs', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalConsoleError = console.error;
+  const secret = 'offline+Gemini/123';
+  const encoded = encodeURIComponent(secret);
+  const brand = { name: 'Acme', domain: 'acme.com', competitors: [], aliases: [], exclude_terms: [] } as Brand;
+  const prompt = { id: 'p1', text: 'Find Acme' } as Prompt;
+  const logs: string[] = [];
+  let persisted: EnginePromptResult[] = [];
+  const db = {
+    persistEngineRun: async (
+      _runId: string, _engine: string, _model: string, _ttl: number,
+      results: EnginePromptResult[],
+    ) => { persisted = results; },
+  } as Db;
+
+  try {
+    console.error = (...args: unknown[]) => { logs.push(JSON.stringify(args)); };
+    for (const failure of ['network', 'http'] as const) {
+      globalThis.fetch = (async (input) => {
+        if (failure === 'network') {
+          throw new Error(`network refused ${String(input)} raw=${secret}`);
+        }
+        return new Response(`upstream rejected key=${secret}; encoded=${encoded}`, { status: 403 });
+      }) as typeof fetch;
+      await assert.rejects(
+        chatCompletion(secret, 'Find Acme', 'Be concise.'),
+        (error: Error) => {
+          assert.match(error.message, failure === 'network' ? /network refused/ : /403/);
+          assert.ok(!error.message.includes(secret));
+          assert.ok(!error.message.includes(encoded));
+          return true;
+        },
+      );
+      await runLive({ db, GEMINI_API_KEY: secret }, brand, [prompt], `offline-${failure}`);
+      assert.equal(persisted[0]?.status, 'failed');
+      const exposed = [persisted[0]?.error_message ?? '', ...logs].join('\n');
+      assert.ok(!exposed.includes(secret), 'raw Gemini key must remain private');
+      assert.ok(!exposed.includes(encoded), 'encoded Gemini key must remain private');
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.error = originalConsoleError;
+  }
+});
+
 test('Gemini records primitive persistence errors as terminal failed run metadata', async () => {
   let failure: { status?: string; error?: string } | undefined;
   const db = {

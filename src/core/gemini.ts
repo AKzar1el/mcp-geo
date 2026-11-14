@@ -35,6 +35,18 @@ function requireGeminiKey(env: GeminiEnv): string {
   return env.GEMINI_API_KEY;
 }
 
+function redactGeminiError(error: unknown, apiKey?: string): string {
+  let message = error instanceof Error ? error.message : String(error);
+  if (apiKey) {
+    const formEncoded = new URLSearchParams({ key: apiKey }).toString().slice('key='.length);
+    for (const value of new Set([apiKey, encodeURIComponent(apiKey), formEncoded])) {
+      if (value) message = message.split(value).join('[REDACTED]');
+    }
+  }
+  // Fetch errors can echo the credential-bearing Gemini request URL.
+  return message.replace(/(\bkey=)[^\s&;"'<>]+/gi, '$1[REDACTED]');
+}
+
 interface GeminiResponse {
   candidates?: Array<{
     content?: { parts?: Array<{ text?: string; thought?: boolean }> };
@@ -60,10 +72,10 @@ export async function chatCompletion(
         maxOutputTokens: 600,
       },
     }),
-  });
+  }).catch((error: unknown) => { throw new Error(redactGeminiError(error, apiKey)); });
   if (!resp.ok) {
     const text = await resp.text();
-    throw new Error(`Gemini completion failed: ${resp.status} ${text}`);
+    throw new Error(`Gemini completion failed: ${resp.status} ${redactGeminiError(text, apiKey)}`);
   }
   const data = (await resp.json()) as GeminiResponse;
   if (data.promptFeedback?.blockReason) {
@@ -108,8 +120,8 @@ function buildSkippedResult(prompt: Prompt): EnginePromptResult {
   };
 }
 
-function buildFailedResult(prompt: Prompt, err: unknown): EnginePromptResult {
-  const msg = err instanceof Error ? err.message : String(err);
+function buildFailedResult(prompt: Prompt, err: unknown, apiKey?: string): EnginePromptResult {
+  const msg = redactGeminiError(err, apiKey);
   console.error('runLive[gemini]: prompt failed', {
     prompt_id: prompt.id,
     message: msg,
@@ -175,7 +187,7 @@ export async function runLive(
             status: 'ok',
           };
         } catch (err) {
-          results[idx] = buildFailedResult(prompt, err);
+          results[idx] = buildFailedResult(prompt, err, env.GEMINI_API_KEY);
         }
       }),
     );
@@ -190,7 +202,7 @@ export async function runLive(
       results,
     );
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = redactGeminiError(err, env.GEMINI_API_KEY);
     console.error('runLive[gemini]: persistEngineRun failed', {
       run_id: runId,
       message,
