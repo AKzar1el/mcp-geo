@@ -153,7 +153,9 @@ function rootTermFromDomain(domain: string): string {
   if (parts.length >= 3 && COMMON_TWO_LABEL_PUBLIC_SUFFIXES.has(suffix)) {
     return parts[parts.length - 3]!.toLowerCase();
   }
-  return parts.slice(0, -1).join('.').toLowerCase();
+  // A tracked subdomain (e.g. shop.rival.com) still names the parent brand
+  // in prose. The whole host-minus-TLD (shop.rival) is not a usable word.
+  return parts[parts.length - 2]!.toLowerCase();
 }
 
 function escapeRegExp(s: string): string {
