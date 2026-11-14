@@ -5,6 +5,7 @@
 // evidence-grounded recommendations if this function throws.
 
 import { chatCompletion as anthropicChat } from './anthropic.js';
+import { normalizeDomainInput } from './domain.js';
 import type { Brand } from '../db/types.js';
 
 export interface AnalysisEnv {
@@ -127,6 +128,21 @@ function referencesUnobservedDomain(
   const text = `${recommendation.topic} ${recommendation.rationale}`;
   // A valid observed anchor elsewhere in a sentence must not lend provenance
   // to an invented domain or URL in that same recommendation.
+  // Hostnames in absolute URLs may contain Unicode/IDNA labels, which the
+  // ASCII-only bare-domain scan below cannot see. Parse their actual host first
+  // so an observed competitor cannot legitimize an invented international URL.
+  for (const match of text.matchAll(/https?:\/\/[^\s<>"']+/gi)) {
+    const urlText = match[0].replace(/[.,;:!?)}\]]+$/, '');
+    let host: string | null;
+    try {
+      host = normalizeDomainInput(new URL(urlText).hostname);
+    } catch {
+      return true;
+    }
+    if (!host || ![...allowed].some((known) => host === known || host.endsWith(`.${known}`))) {
+      return true;
+    }
+  }
   const domainPattern = /\b(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z][a-z0-9-]{1,62}\b/gi;
   for (const match of text.matchAll(domainPattern)) {
     const domain = match[0].toLowerCase().replace(/^www\./, '');
