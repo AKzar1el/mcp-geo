@@ -802,6 +802,52 @@ test('content-gap analyzer falls back when every model recommendation mixes obse
   }
 });
 
+test('content-gap analyzer rejects unobserved Unicode URL hosts beside genuine competitor evidence', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return Response.json({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify([
+        {
+          priority: 1,
+          topic: 'Acme versus Asana in international markets',
+          rationale: 'Asana is observed but https://\u5047\u5192.\u6d4b\u8bd5/agency is an unobserved comparison source',
+          suggested_format: 'comparison_page',
+        },
+        {
+          priority: 2,
+          topic: 'Acme versus Asana for agencies',
+          rationale: 'Asana is observed at https://www.asana.com/teams',
+          suggested_format: 'comparison_page',
+        },
+        {
+          priority: 3,
+          topic: 'Acme versus Asana and observed international vendor',
+          rationale: 'Asana and https://\u4f8b\u5b50.\u4e2d\u56fd/teams are both observed competitors',
+          suggested_format: 'comparison_page',
+        },
+      ]) }],
+    });
+  };
+  try {
+    const result = await analyzeContentGaps(
+      { ANTHROPIC_API_KEY: 'synthetic-offline-key' },
+      { id: 'acme', name: 'Acme', domain: 'acme.com' } as Brand,
+      [{ prompt_text: 'Compare agency tools', engines_lost_on: ['chatgpt'], competitors_winning: ['asana.com', 'xn--fsqu00a.xn--fiqs8s'] }],
+      3,
+    );
+    assert.deepEqual(result.map((item) => item.topic), [
+      'Acme versus Asana for agencies',
+      'Acme versus Asana and observed international vendor',
+    ]);
+    assert.equal(calls, 1, 'URL evidence filtering must not request another paid completion');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('content-gap analyzer rejects whitespace-only Anthropic credentials before requests', async () => {
   const originalFetch = globalThis.fetch;
   let fetchCalls = 0;
