@@ -40,6 +40,7 @@ interface BrandRow {
   created_at: number;
   updated_at: number;
   identity_changed_at: number | null;
+  category_prompt_review_pending: number;
 }
 
 function rowToBrand(row: BrandRow): Brand {
@@ -67,6 +68,7 @@ function rowToBrand(row: BrandRow): Brand {
     created_at: row.created_at,
     updated_at: row.updated_at,
     identity_changed_at: row.identity_changed_at,
+    category_prompt_review_pending: row.category_prompt_review_pending === 1,
   };
 }
 
@@ -107,7 +109,7 @@ export function createD1Db(d1: D1Database): Db {
     async getBrand(brandId: string): Promise<Brand | null> {
       const row = await d1
         .prepare(
-          'SELECT id, user_id, domain, name, category, competitors_json, aliases_json, exclude_terms_json, refresh_frequency, created_at, updated_at, identity_changed_at FROM brands WHERE id = ?',
+          'SELECT id, user_id, domain, name, category, competitors_json, aliases_json, exclude_terms_json, refresh_frequency, created_at, updated_at, identity_changed_at, category_prompt_review_pending FROM brands WHERE id = ?',
         )
         .bind(brandId)
         .first<BrandRow>();
@@ -188,7 +190,8 @@ export function createD1Db(d1: D1Database): Db {
               SET domain = ?, name = ?, category = ?, competitors_json = ?,
                   aliases_json = ?, exclude_terms_json = ?, refresh_frequency = ?,
                   updated_at = ?,
-                  identity_changed_at = CASE WHEN ? = 1 THEN ? ELSE identity_changed_at END
+                  identity_changed_at = CASE WHEN ? = 1 THEN ? ELSE identity_changed_at END,
+                  category_prompt_review_pending = CASE WHEN ? = 1 THEN 1 ELSE category_prompt_review_pending END
             WHERE id = ?`,
         )
         .bind(
@@ -202,6 +205,7 @@ export function createD1Db(d1: D1Database): Db {
           now,
           fields.identity_changed ? 1 : 0,
           now,
+          fields.category_changed ? 1 : 0,
           brandId,
         )
         .run();
@@ -213,6 +217,7 @@ export function createD1Db(d1: D1Database): Db {
           `SELECT b.id, b.user_id, b.domain, b.name, b.category,
                   b.competitors_json, b.aliases_json, b.exclude_terms_json,
                   b.refresh_frequency, b.created_at, b.updated_at, b.identity_changed_at,
+                  b.category_prompt_review_pending,
                   COUNT(p.id) AS active_prompts
              FROM brands b
              LEFT JOIN prompts p ON p.brand_id = b.id AND p.active = 1
@@ -791,9 +796,14 @@ export function createD1Db(d1: D1Database): Db {
             )
             .bind(randomId(), brandId, p.text, p.intent_stage, p.shape, now),
         ),
+        d1.prepare('UPDATE brands SET category_prompt_review_pending = 0 WHERE id = ?').bind(brandId),
       ];
       await d1.batch(stmts);
       return prompts.length;
+    },
+
+    async confirmCategoryPromptReview(brandId: string): Promise<void> {
+      await d1.prepare('UPDATE brands SET category_prompt_review_pending = 0 WHERE id = ? AND category_prompt_review_pending = 1').bind(brandId).run();
     },
 
     async cacheGet(

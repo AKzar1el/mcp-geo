@@ -33,7 +33,7 @@ export function normalizeExactPrompts(prompts: readonly string[]): string[] {
 }
 
 export async function applyExactPromptSet(
-  db: Pick<Db, 'getActivePrompts' | 'replacePrompts'>,
+  db: Pick<Db, 'getActivePrompts' | 'replacePrompts'> & Partial<Pick<Db, 'confirmCategoryPromptReview'>>,
   brandId: string,
   prompts: readonly string[],
 ): Promise<ExactPromptSetResult> {
@@ -48,6 +48,10 @@ export async function applyExactPromptSet(
       brandId,
       normalized.map((text) => ({ text, intent_stage: null, shape: null })),
     );
+  } else {
+    // Exact re-submission is an intentional review, not a reason to rewrite
+    // active prompt IDs or their historical response associations.
+    await db.confirmCategoryPromptReview?.(brandId);
   }
 
   return {

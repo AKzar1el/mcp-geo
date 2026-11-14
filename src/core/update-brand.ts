@@ -120,6 +120,7 @@ export async function updateTrackedBrand(
     await db.updateBrand(input.brand_id, {
       ...fields,
       identity_changed: matchingIdentityChanged,
+      category_changed: changedFields.includes('category'),
     });
   }
 
@@ -130,7 +131,7 @@ export async function updateTrackedBrand(
     updated: changedFields.length > 0,
     brand_id: input.brand_id,
     changed_fields: changedFields,
-    prompt_set_review_recommended: changedFields.includes('category'),
+    prompt_set_review_recommended: brand.category_prompt_review_pending === true,
     // Stored observations were scored against the old matching identity.
     historical_attribution_review_recommended: matchingIdentityChanged,
     brand,
