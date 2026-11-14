@@ -120,6 +120,28 @@ test('Pakistani and Thai public suffixes keep competitor names visible in prose'
   );
 });
 
+test('subdomain-tracked brands and competitors match their registrable name in answer prose', () => {
+  const brand = makeBrand({
+    domain: 'portal.acme.com',
+    name: 'Acme Portal',
+    competitors: ['shop.rival.com', 'docs.zen.co.uk'],
+  });
+  const observed = extractCitations(brand, 'Acme and Rival compete with Zen for teams.');
+  assert.equal(observed.brand_mentioned, 1);
+  assert.deepEqual(observed.competitors_mentioned, ['shop.rival.com', 'docs.zen.co.uk']);
+
+  const unrelated = extractCitations(
+    brand,
+    'Portal and Shop are ordinary words; Rivalry and Zenify are unrelated.',
+  );
+  assert.equal(unrelated.brand_mentioned, 0);
+  assert.deepEqual(unrelated.competitors_mentioned, []);
+  assert.deepEqual(
+    extractCitations(brand, 'https://shop.rival.com/docs').competitors_mentioned,
+    [],
+  );
+});
+
 test('Australian government-domain competitor names match visible prose without a URL', () => {
   const brand = makeBrand({
     domain: 'example.com',
