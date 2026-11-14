@@ -11,7 +11,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { Brand, CitationSourceRow, ComparisonEvidenceRow, Db, Prompt, PromptResponse } from '../db/types.js';
-import { extractUrls, findTermSetMatchIndex, hostMatchesDomain } from './openai.js';
+import { extractUrls, findTermSetMatchIndex, hostMatchesDomain, maskAnswerUrlMentions } from './openai.js';
 import {
   ALL_ENGINES,
   getAvailableEngines,
@@ -2749,12 +2749,16 @@ export function buildResponseExcerpt(text: string, brand: Brand): string {
       return rawUrl;
     }
   });
-  const idx = findTermSetMatchIndex(safeText, {
+  const matchTerms = {
     domain: brand.domain,
     name: brand.name,
     aliases: brand.aliases,
     excludeTerms: brand.exclude_terms,
-  });
+  };
+  // Prefer the same prose that determines brand_mentioned; only fall back to
+  // link text when a citation is source_link_only with no prose mention.
+  const proseIndex = findTermSetMatchIndex(maskAnswerUrlMentions(safeText, true), matchTerms);
+  const idx = proseIndex !== -1 ? proseIndex : findTermSetMatchIndex(safeText, matchTerms);
   if (idx === -1) return safeText.slice(0, 250);
   const start = Math.max(0, idx - 100);
   const end = Math.min(safeText.length, idx + 150);
