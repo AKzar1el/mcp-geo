@@ -16,6 +16,7 @@ import type {
   Prompt,
 } from '../db/types.js';
 import { fetchWithTimeout } from './fetch.js';
+import { redactProviderError } from './provider-error.js';
 
 // Perplexity is retiring fixed Sonar tiers on 2026-09-27. The Agent API
 // maps legacy Sonar to the `fast` preset, which Perplexity may retune over
@@ -138,10 +139,10 @@ export async function chatCompletion(
       temperature: 0.3,
       max_output_tokens: 600,
     }),
-  });
+  }).catch((error: unknown) => { throw new Error(redactProviderError(error, apiKey)); });
   if (!resp.ok) {
     const text = await resp.text();
-    throw new Error(`Perplexity Agent API failed: ${resp.status} ${text}`);
+    throw new Error(`Perplexity Agent API failed: ${resp.status} ${redactProviderError(text, apiKey)}`);
   }
   const data = (await resp.json()) as PerplexityResponse;
   if (data.status !== 'completed') {
@@ -149,7 +150,7 @@ export async function chatCompletion(
       'Perplexity Agent API status ' +
         (data.status ?? 'unknown') +
         ': ' +
-        describeAgentError(data),
+        redactProviderError(describeAgentError(data), apiKey),
     );
   }
   const text = extractAgentText(data);
@@ -201,8 +202,8 @@ function buildSkippedResult(prompt: Prompt): EnginePromptResult {
   };
 }
 
-function buildFailedResult(prompt: Prompt, err: unknown): EnginePromptResult {
-  const msg = err instanceof Error ? err.message : String(err);
+function buildFailedResult(prompt: Prompt, err: unknown, apiKey?: string): EnginePromptResult {
+  const msg = redactProviderError(err, apiKey);
   console.error('runLive[perplexity]: prompt failed', {
     prompt_id: prompt.id,
     message: msg,
@@ -281,7 +282,7 @@ export async function runLive(
           );
           results[idx] = buildOkResult(brand, prompt, payload);
         } catch (err) {
-          results[idx] = buildFailedResult(prompt, err);
+          results[idx] = buildFailedResult(prompt, err, env.PERPLEXITY_API_KEY);
         }
       }),
     );
@@ -296,7 +297,7 @@ export async function runLive(
       results,
     );
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = redactProviderError(err, env.PERPLEXITY_API_KEY);
     console.error('runLive[perplexity]: persistEngineRun failed', {
       run_id: runId,
       message,
