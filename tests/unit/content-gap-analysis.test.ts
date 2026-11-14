@@ -666,7 +666,7 @@ test('content-gap analyzer rejects advice without an observed competitor anchor 
         [{ prompt_text: 'Best software for agencies', engines_lost_on: ['chatgpt'], competitors_winning: ['asana.com'] }],
         1,
       ),
-      /no recommendation references an observed competitor/i,
+      /no recommendation passes observed competitor and domain provenance checks/i,
     );
     assert.equal(calls, 1, 'grounding failures must not cause a second billed request');
   } finally {
@@ -695,6 +695,74 @@ test('content-gap analyzer keeps only recommendations anchored to observed compe
       2,
     );
     assert.deepEqual(recommendations.map((rec) => rec.topic), ['Acme versus Asana']);
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('content-gap analyzer excludes mixed observed and invented competitor domains without another paid call', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return Response.json({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify([
+        {
+          priority: 1,
+          topic: 'Acme versus Asana and Zephyr',
+          rationale: 'Asana is observed, but zephyr.example also supposedly wins these prompts',
+          suggested_format: 'comparison_page',
+        },
+        {
+          priority: 2,
+          topic: 'Acme.com versus Asana.com',
+          rationale: 'Compare acme.com with the observed asana.com competitor',
+          suggested_format: 'comparison_page',
+        },
+      ]) }],
+    });
+  };
+  try {
+    const recommendations = await analyzeContentGaps(
+      { ANTHROPIC_API_KEY: 'synthetic-offline-key' },
+      { id: 'acme', name: 'Acme', domain: 'acme.com' } as Brand,
+      [{ prompt_text: 'Best agency tools', engines_lost_on: ['chatgpt'], competitors_winning: ['asana.com'] }],
+      2,
+    );
+    assert.deepEqual(recommendations.map((rec) => rec.topic), ['Acme.com versus Asana.com']);
+    assert.equal(calls, 1, 'semantic grounding validation must not retry a billable model');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('content-gap analyzer falls back when every model recommendation mixes observed and invented domains', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return Response.json({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify([{
+        priority: 1,
+        topic: 'Compare Asana and fake.example',
+        rationale: 'asana.com has real observed evidence, fake.example does not',
+        suggested_format: 'comparison_page',
+      }]) }],
+    });
+  };
+  try {
+    await assert.rejects(
+      analyzeContentGaps(
+        { ANTHROPIC_API_KEY: 'synthetic-offline-key' },
+        { id: 'acme', name: 'Acme', domain: 'acme.com' } as Brand,
+        [{ prompt_text: 'Best agency tools', engines_lost_on: ['chatgpt'], competitors_winning: ['asana.com'] }],
+        1,
+      ),
+      /no recommendation passes observed competitor and domain provenance checks/i,
+    );
     assert.equal(calls, 1);
   } finally {
     globalThis.fetch = originalFetch;

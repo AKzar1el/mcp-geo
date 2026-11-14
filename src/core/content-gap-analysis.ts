@@ -61,6 +61,7 @@ const BASE_SYSTEM_PROMPT = [
   '4. Prioritize by impact: prompts where ALL competitors win get higher priority than prompts where only 1 wins.',
   '5. Mix tactical (quick wins) with strategic (longer plays).',
   '6. Every recommendation must name at least one competitor from the observed losing prompts. Do not invent competitor names.',
+  '7. Do not introduce competitor domains or website URLs absent from the observed losing prompts or the tracked brand domain.',
 ].join('\n');
 
 const STRICT_SUFFIX =
@@ -109,6 +110,28 @@ function mentionsObservedCompetitor(
           return true;
         }
       }
+    }
+  }
+  return false;
+}
+
+function referencesUnobservedDomain(
+  recommendation: ContentGapRecommendation,
+  brand: Brand,
+  losingPrompts: LosingPromptSummary[],
+): boolean {
+  const allowed = new Set([
+    brand.domain,
+    ...losingPrompts.flatMap((prompt) => prompt.competitors_winning),
+  ].map((domain) => domain.trim().toLowerCase().replace(/^www\./, '')));
+  const text = `${recommendation.topic} ${recommendation.rationale}`;
+  // A valid observed anchor elsewhere in a sentence must not lend provenance
+  // to an invented domain or URL in that same recommendation.
+  const domainPattern = /\b(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z][a-z0-9-]{1,62}\b/gi;
+  for (const match of text.matchAll(domainPattern)) {
+    const domain = match[0].toLowerCase().replace(/^www\./, '');
+    if (![...allowed].some((known) => domain === known || domain.endsWith(`.${known}`))) {
+      return true;
     }
   }
   return false;
@@ -301,9 +324,12 @@ export async function analyzeContentGaps(
   // Shape-valid model output can still invent an unrelated competitor. Do not
   // present unanchored advice as scan-grounded, or spend a second provider call
   // retrying a semantic error. The caller can use its provider-free fallback.
-  recs = recs.filter((rec) => mentionsObservedCompetitor(rec, losingPrompts));
+  recs = recs.filter((rec) =>
+    mentionsObservedCompetitor(rec, losingPrompts) &&
+    !referencesUnobservedDomain(rec, brand, losingPrompts),
+  );
   if (recs.length === 0) {
-    throw new Error('no recommendation references an observed competitor');
+    throw new Error('no recommendation passes observed competitor and domain provenance checks');
   }
   // Sort by priority asc and trim to requested count.
   recs.sort((a, b) => a.priority - b.priority);
