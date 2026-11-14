@@ -13,6 +13,7 @@ import type {
   Prompt,
 } from '../db/types.js';
 import { fetchWithTimeout } from './fetch.js';
+import { normalizeDomainInput } from './domain.js';
 
 export const MODEL = 'grok-4.7';
 export const ENGINE = 'grok';
@@ -82,10 +83,10 @@ function extractResponseCitations(data: XAiResponse): string[] {
     } catch {
       return;
     }
-    // Model metadata is citation evidence only for navigable web URLs.
-    // Disallow userinfo, which can disguise a different destination host.
+    // Model metadata must refer to a domain-shaped web host, not loopback,
+    // IP literals, repeated-dot DNS names, or disguised userinfo.
     if ((url.protocol !== 'http:' && url.protocol !== 'https:') ||
-        !url.hostname || url.username || url.password || seen.has(url.href)) return;
+        !normalizeDomainInput(url.hostname) || url.username || url.password || seen.has(url.href)) return;
     seen.add(url.href);
     urls.push(url.href);
   };
