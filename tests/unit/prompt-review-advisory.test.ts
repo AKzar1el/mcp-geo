@@ -6,15 +6,16 @@ import { registerLocalManagementTools } from '../../src/core/tools.ts';
 
 type PromptReview = {
   category_missing: boolean;
+  category_change_pending: boolean;
   prompts_naming_brand: number;
   review_recommended: boolean;
   note: string;
 };
 
-async function listPrompts(category: string | null, texts: string[]) {
+async function listPrompts(category: string | null, texts: string[], categoryChangePending = false) {
   const brand = {
     id: 'acme', name: 'Acme', domain: 'acme.com', category,
-    aliases: [], exclude_terms: [],
+    aliases: [], exclude_terms: [], category_prompt_review_pending: categoryChangePending,
   } as Brand;
   const prompts = texts.map((text, index) => ({
     id: `p${index}`, text, intent_stage: null, shape: null,
@@ -67,4 +68,14 @@ test('list_prompts does not claim neutral category prompts are audit-validated',
 test('list_prompts does not label longer unrelated words as brand mentions', async () => {
   const result = await listPrompts('Design', ['AcmeWare design app comparison']);
   assert.equal(result.prompt_review.prompts_naming_brand, 0);
+});
+
+test('list_prompts warns of persisted category changes even for neutral-looking old buyer questions', async () => {
+  const result = await listPrompts('CRM software', ['Which project platform suits a remote team?'], true);
+  assert.equal(result.prompt_review.category_missing, false);
+  assert.equal(result.prompt_review.prompts_naming_brand, 0);
+  assert.equal(result.prompt_review.category_change_pending, true);
+  assert.equal(result.prompt_review.review_recommended, true);
+  assert.match(result.prompt_review.note, /category changed/i);
+  assert.match(result.prompt_review.note, /set_prompts/);
 });

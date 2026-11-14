@@ -538,6 +538,8 @@ const contentGapsOutputSchema = z.object({
 const refreshOutputSchema = z.object({
   brand_id: z.string(),
   message: z.string(),
+  category_prompt_review_pending: z.boolean(),
+  prompt_review_note: z.string().nullable(),
   run_ids: z.record(z.string(), z.string()),
   skipped_unconfigured_engines: z.array(z.string()),
   estimated_completion_seconds: z.number(),
@@ -606,6 +608,7 @@ const listPromptsOutputSchema = z.object({
   count: z.number(),
   prompt_review: z.object({
     category_missing: z.boolean(),
+    category_change_pending: z.boolean(),
     prompts_naming_brand: z.number().int(),
     review_recommended: z.boolean(),
     note: z.string(),
@@ -2171,6 +2174,10 @@ export function registerTools(
             ? `; ${alreadyRunning} engine${alreadyRunning === 1 ? '' : 's'} already in progress (existing run IDs reused)`
             : '') +
           (skippedUnconfigured.length > 0 ? `; skipped unconfigured: ${skippedUnconfigured.join(', ')}` : ''),
+        category_prompt_review_pending: brand.category_prompt_review_pending === true,
+        prompt_review_note: brand.category_prompt_review_pending === true
+          ? 'The tracked category changed after the active buyer questions were last confirmed. This scan used the existing prompts; review list_prompts and confirm or replace them with set_prompts before interpreting results as current-market visibility.'
+          : null,
         run_ids,
         skipped_unconfigured_engines: skippedUnconfigured,
         estimated_completion_seconds: refreshIsAsync ? 30 : 0,
@@ -2493,7 +2500,8 @@ export function registerLocalManagementTools(
           excludeTerms: [],
         }) !== -1,
       ).length;
-      const review_recommended = category_missing || prompts_naming_brand > 0;
+      const category_change_pending = brand.category_prompt_review_pending === true;
+      const review_recommended = category_missing || prompts_naming_brand > 0 || category_change_pending;
       const payload = {
         brand_id,
         prompts: prompts.map((prompt) => ({
@@ -2506,9 +2514,12 @@ export function registerLocalManagementTools(
         count: prompts.length,
         prompt_review: {
           category_missing,
+          category_change_pending,
           prompts_naming_brand,
           review_recommended,
-          note: review_recommended
+          note: category_change_pending
+            ? 'Category changed after the active questions were last confirmed. Review and explicitly confirm or replace buyer-intent prompts with set_prompts before interpreting the next scan as current-market visibility. No prompts have been regenerated automatically.'
+            : review_recommended
             ? 'Review active prompts before provider-backed scans: a missing category or questions naming the tracked brand can bias an unprompted visibility baseline. Brand-specific questions may be intentional; this is advisory, not a rejection.'
             : 'No missing-category or brand-name warning detected. Prompt representativeness and buyer intent have not been independently validated; review before provider-backed scans.',
         },
