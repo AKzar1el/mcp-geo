@@ -195,6 +195,16 @@ test('citation hosts accept one DNS root dot but reject repeated dots and lookal
   assert.equal(extractCitations(acme, 'See https://acme.com.').brand_cited_with_link, 1);
 });
 
+test('answer-text citation sources exclude localhost and IP literals', () => {
+  const result = extractCitations(
+    acme,
+    'Sources: https://localhost/internal https://127.0.0.1/private ' +
+      'https://[::1]/debug https://acme.com../invalid ' +
+      'https://docs.acme.com./guide https://example.org/report',
+  );
+  assert.deepEqual(result.cited_urls, ['docs.acme.com', 'example.org']);
+  assert.equal(result.brand_cited_with_link, 1);
+});
 
 test('encoded root dots cannot turn repeated-dot citation hosts into brand evidence', () => {
   // URL.hostname decodes %2e in host labels; validate the decoded root-dot count.

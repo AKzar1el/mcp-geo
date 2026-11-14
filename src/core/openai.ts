@@ -10,6 +10,7 @@ import type {
   Run,
 } from '../db/types.js';
 import { fetchWithTimeout } from './fetch.js';
+import { normalizeDomainInput } from './domain.js';
 
 export const MODEL = 'gpt-5-search-api';
 const BATCH_MODEL = 'gpt-4o-mini';
@@ -265,8 +266,9 @@ function normalizeHost(rawUrl: string): string | null {
     host = host.replace(/[;,!]+$/, '');
     if (host.endsWith('.')) host = host.slice(0, -1);
     if (host.endsWith('.')) return null; // Do not turn repeated root dots into brand evidence.
-    if (host.startsWith('www.')) host = host.slice(4);
-    return host || null;
+    // Reuse the brand-domain gate for answer-text source hosts too: local or
+    // IP-literal URLs are not independent external citation evidence.
+    return normalizeDomainInput(host);
   } catch {
     return null;
   }
