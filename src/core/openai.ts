@@ -308,10 +308,19 @@ function omitMarkdownCodeExamples(text: string): string {
   }).join('\n');
 }
 
+function omitHtmlCodeExamples(text: string): string {
+  // HTML comments are hidden, while pre/code blocks show examples rather than
+  // sources cited by the answer. An unclosed block is an example to the end.
+  return text
+    .replace(/<!--[\s\S]*?(?:-->|$)/g, ' ')
+    .replace(/<(pre|code)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, ' ')
+    .replace(/<(pre|code)\b[^>]*>[\s\S]*$/gi, ' ');
+}
+
 export function extractUrls(text: string): string[] {
   // HTML and Markdown image targets are assets, not cited sources. Remove
   // them and non-citation code examples before scanning plain URLs.
-  const sourceText = omitMarkdownCodeExamples(text)
+  const sourceText = omitHtmlCodeExamples(omitMarkdownCodeExamples(text))
     .replace(/<img\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi, ' ')
     .replace(
       /!\[[^\]\r\n]*\]\(\s*https?:\/\/(?:\([^()\s]*\)|[^\s()])+(?:\s+(?:"[^"\r\n]*"|'[^'\r\n]*'))?\s*\)/gi,

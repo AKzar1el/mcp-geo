@@ -119,6 +119,29 @@ test('URLs in Markdown code examples are not evidence of a linked source', () =>
   assert.deepEqual(withRealLink.cited_urls, ['acme.com']);
 });
 
+test('HTML code examples and hidden comments are not linked source evidence', () => {
+  const examples = [
+    '<pre>curl https://acme.com/v1/search</pre>',
+    '<code>https://acme.com/docs/example</code>',
+    '<PRE class="language-html"><code>&lt;a href="https://acme.com/demo"&gt;</code></PRE>',
+    '<!-- internal example: https://acme.com/not-a-source -->',
+    '<!-- unfinished comment: https://acme.com/not-a-source',
+    '<pre class="example">https://acme.com/unterminated',
+  ];
+  for (const example of examples) {
+    const result = extractCitations(acme, example);
+    assert.equal(result.brand_cited_with_link, 0, example);
+    assert.deepEqual(result.cited_urls, [], example);
+  }
+
+  const withRealLink = extractCitations(
+    acme,
+    '<code>https://asana.com/sample</code> <a href="https://acme.com/research">Source</a>',
+  );
+  assert.equal(withRealLink.brand_cited_with_link, 1);
+  assert.deepEqual(withRealLink.cited_urls, ['acme.com']);
+});
+
 test('subdomain link without brand prose counts only as linked citation', () => {
   const r = extractCitations(acme, 'See https://docs.acme.com/setup for the guide.');
   assert.equal(r.brand_mentioned, 0);
