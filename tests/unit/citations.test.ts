@@ -55,6 +55,47 @@ test('markdown link to brand domain counts as linked citation', () => {
   assert.ok(r.cited_urls.includes('asana.com'));
 });
 
+test('unused Markdown reference definitions are not visible mentions or citations', () => {
+  const r = extractCitations(
+    acme,
+    'Other products can help.\n\n[Acme Project Tool]: https://acme.com/claims\n[Asana]: https://asana.com',
+  );
+  assert.equal(r.brand_mentioned, 0);
+  assert.equal(r.brand_cited_with_link, 0);
+  assert.deepEqual(r.competitors_mentioned, []);
+  assert.deepEqual(r.cited_urls, []);
+});
+
+test('used Markdown reference links retain their source citation without hidden mentions', () => {
+  const r = extractCitations(
+    acme,
+    'The results are documented in [independent evidence][  Proof  Link ].\n\n[proof link]: <https://acme.com/research> "Full paper"',
+  );
+  assert.equal(r.brand_mentioned, 0);
+  assert.equal(r.brand_cited_with_link, 1);
+  assert.deepEqual(r.cited_urls, ['acme.com']);
+});
+
+test('reference-style Markdown image assets cannot count as visible answer evidence', () => {
+  const r = extractCitations(
+    acme,
+    '![Acme Project Tool][logo]\n\n[logo]: https://acme.com/logo.svg',
+  );
+  assert.equal(r.brand_mentioned, 0);
+  assert.equal(r.brand_cited_with_link, 0);
+  assert.deepEqual(r.cited_urls, []);
+});
+
+test('shortcut Markdown references preserve visible labels and linked source evidence', () => {
+  const r = extractCitations(
+    acme,
+    'Try [Acme Project Tool] for planning.\n\n[Acme Project Tool]: https://acme.com',
+  );
+  assert.equal(r.brand_mentioned, 1);
+  assert.equal(r.brand_cited_with_link, 1);
+  assert.deepEqual(r.cited_urls, ['acme.com']);
+});
+
 test('Markdown image assets are not source citations, but ordinary links remain evidence', () => {
   const imageOnly = extractCitations(
     acme,

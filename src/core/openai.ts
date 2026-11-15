@@ -330,7 +330,38 @@ function omitMarkdownImageAssets(text: string): string {
   return text.replace(
     /!\[[^\]\r\n]*\]\(\s*(?:\([^()\s]*\)|[^\s()])+(?:\s+(?:"[^"\r\n]*"|'[^'\r\n]*'))?\s*\)/gi,
     ' ',
+  ).replace(/!\[[^\]\r\n]*\](?:\[[^\]\r\n]*\])?/g, ' ');
+}
+
+function parseMarkdownReferenceLinks(text: string): { visibleText: string; urls: string[] } {
+  // Definitions are not rendered. Only a non-image reference that uses a
+  // definition makes its URL evidence of an actual linked source.
+  const normalizeLabel = (label: string) => label.trim().replace(/\s+/g, ' ').toLowerCase();
+  const definitions = new Map<string, string>();
+  const visibleText = text.replace(
+    /^[ \t]{0,3}\[([^\]\r\n]+)\]:[ \t]*(?:<([^<>\r\n]+)>|([^\s\r\n]+))(?:[ \t]+(?:"[^"\r\n]*"|'[^'\r\n]*'|\([^()\r\n]*\)))?[ \t]*$/gm,
+    (_full, label: string, angled: string | undefined, bare: string | undefined) => {
+      const key = normalizeLabel(label);
+      if (!definitions.has(key)) definitions.set(key, angled ?? bare ?? '');
+      return ' ';
+    },
   );
+  const urls: string[] = [];
+  const addReference = (label: string) => {
+    const url = definitions.get(normalizeLabel(label));
+    if (url && /^https?:\/\//i.test(url)) urls.push(url);
+  };
+  const explicit = /(?<!!)\[([^\]\r\n]+)\]\[([^\]\r\n]*)\]/g;
+  for (const match of visibleText.matchAll(explicit)) {
+    addReference(match[2] || match[1]);
+  }
+  // Shortcut references [label] are links only when a matching definition
+  // exists. Ignore labels already consumed by explicit or inline links.
+  const withoutExplicit = visibleText.replace(explicit, ' ');
+  for (const match of withoutExplicit.matchAll(/(?<!!)\[([^\]\r\n]+)\](?!\s*[\[(])/g)) {
+    addReference(match[1]);
+  }
+  return { visibleText, urls };
 }
 
 function decodeVisibleHtmlCharacterReferences(text: string): string {
@@ -377,10 +408,11 @@ export function extractUrls(text: string): string[] {
   // them and non-citation code examples before scanning plain URLs.
   const htmlSource = omitMarkdownImageAssets(omitHtmlCodeExamples(omitMarkdownCodeExamples(text))
     .replace(/<img\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi, ' '));
-  const sourceText = omitHtmlTags(htmlSource);
+  const { visibleText: sourceText, urls: referenceUrls } =
+    parseMarkdownReferenceLinks(omitHtmlTags(htmlSource));
   const markdownRe = /\[[^\]]+\]\((https?:\/\/[^\s)]+)\)/gi;
   const plainRe = /https?:\/\/[^\s)\]\}'"`<>]+/gi;
-  const urls = extractHtmlAnchorHrefs(htmlSource);
+  const urls = [...extractHtmlAnchorHrefs(htmlSource), ...referenceUrls];
   let m: RegExpExecArray | null;
   while ((m = markdownRe.exec(sourceText)) !== null) {
     urls.push(m[1]);
@@ -403,7 +435,8 @@ export function extractCitations(
   // visible text after a Markdown link target remains scoreable. Hidden HTML
   // and sample code must not inflate brand or competitor answer mentions.
   const answerProse = decodeVisibleHtmlCharacterReferences(
-    omitMarkdownImageAssets(omitHtmlTags(omitHtmlCodeExamples(omitMarkdownCodeExamples(responseText)))));
+    parseMarkdownReferenceLinks(omitMarkdownImageAssets(
+      omitHtmlTags(omitHtmlCodeExamples(omitMarkdownCodeExamples(responseText))))).visibleText);
   const mentionText = answerProse.replace(/https?:\/\/(?:\([^()\s]*\)|[^\s()\]\}'"\x60<>])+/gi, ' ');
   let brandMentioned = mentionsTermSet(mentionText, {
     domain: brand.domain,
