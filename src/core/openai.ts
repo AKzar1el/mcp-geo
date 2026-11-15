@@ -332,6 +332,24 @@ function omitMarkdownImageAssets(text: string): string {
   );
 }
 
+function decodeVisibleHtmlCharacterReferences(text: string): string {
+  // AI answers may contain HTML-escaped visible labels. Decode only after
+  // removing hidden markup, and only for mention text: encoded URL text is not
+  // independent source-link evidence.
+  const named: Record<string, string> = {
+    amp: '&', quot: '"', apos: "'", lt: '<', gt: '>', nbsp: ' ',
+  };
+  return text.replace(/&(?:#[xX][0-9a-fA-F]+|#[0-9]+|amp|quot|apos|lt|gt|nbsp);/gi, (raw) => {
+    const entity = raw.slice(1, -1).toLowerCase();
+    if (!entity.startsWith('#')) return named[entity] ?? raw;
+    const hex = entity.startsWith('#x');
+    const codePoint = Number.parseInt(entity.slice(hex ? 2 : 1), hex ? 16 : 10);
+    if (!Number.isSafeInteger(codePoint) || codePoint < 32 || codePoint > 0x10ffff ||
+        (codePoint >= 0xd800 && codePoint <= 0xdfff)) return raw;
+    return codePoint === 160 ? ' ' : String.fromCodePoint(codePoint);
+  });
+}
+
 function extractHtmlAnchorHrefs(text: string): string[] {
   const urls: string[] = [];
   // Only explicit HTML anchors cite a source. Other tag attributes are
@@ -383,7 +401,8 @@ export function extractCitations(
   // balanced parentheses inside URLs, but leave an unmatched ')' in place so
   // visible text after a Markdown link target remains scoreable. Hidden HTML
   // and sample code must not inflate brand or competitor answer mentions.
-  const answerProse = omitMarkdownImageAssets(omitHtmlTags(omitHtmlCodeExamples(omitMarkdownCodeExamples(responseText))));
+  const answerProse = decodeVisibleHtmlCharacterReferences(
+    omitMarkdownImageAssets(omitHtmlTags(omitHtmlCodeExamples(omitMarkdownCodeExamples(responseText)))));
   const mentionText = answerProse.replace(/https?:\/\/(?:\([^()\s]*\)|[^\s()\]\}'"\x60<>])+/gi, ' ');
   let brandMentioned = mentionsTermSet(mentionText, {
     domain: brand.domain,

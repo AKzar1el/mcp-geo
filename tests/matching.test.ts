@@ -255,3 +255,26 @@ test('URL schemes are case-insensitive for evidence and mention scoring', () => 
   assert.deepEqual(rival.competitors_mentioned, []);
   assert.deepEqual(rival.cited_urls, ['shop.rival.com']);
 });
+
+test('visible HTML character references preserve brand and competitor mentions without creating links', () => {
+  const brand = makeBrand({
+    domain: 'vendor.example',
+    name: 'Smith & Sons',
+    aliases: [],
+    exclude_terms: ['vendor'],
+    competitors: ['notion.so'],
+  });
+  const visible = extractCitations(brand, 'Compare Smith &amp; Sons with N&#111;tion and Smith &#x26; Sons.');
+  assert.equal(visible.brand_mentioned, 1);
+  assert.deepEqual(visible.competitors_mentioned, ['notion.so']);
+  assert.equal(visible.brand_cited_with_link, 0);
+
+  const hidden = extractCitations(brand,
+    '<span data-label="Smith &amp; Sons">Other provider</span> https:&#x2F;&#x2F;vendor.example');
+  assert.equal(hidden.brand_mentioned, 0);
+  assert.equal(hidden.brand_cited_with_link, 0);
+  assert.deepEqual(hidden.cited_urls, []);
+
+  // Decoding should happen once, not turn double-encoded markup into a brand mention.
+  assert.equal(extractCitations(brand, 'Smith &amp;amp; Sons').brand_mentioned, 0);
+});
