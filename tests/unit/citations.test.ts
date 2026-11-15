@@ -235,6 +235,38 @@ test('HTML attributes do not count as visible brand or competitor answer mention
   assert.deepEqual(visible.cited_urls, ['neutral.example']);
 });
 
+test('HTML metadata and data attributes are not linked citations; anchor hrefs are', () => {
+  for (const hidden of [
+    '<meta property="og:url" content="https://acme.com/marketing">',
+    '<link rel="stylesheet" href="https://acme.com/styles.css">',
+    '<span data-source="https://acme.com/internal">Read analysis</span>',
+    '<div title="https://acme.com/not-cited">No source link</div>',
+    '<span data-html="<a href=\'https://acme.com/not-a-link\'>">Not a visible link</span>',
+  ]) {
+    const result = extractCitations(acme, hidden);
+    assert.equal(result.brand_cited_with_link, 0, hidden);
+    assert.deepEqual(result.cited_urls, [], hidden);
+  }
+
+  const linked = extractCitations(
+    acme,
+    '<a title="https://asana.com/not-a-source" href="https://acme.com/research">Evidence</a> ' +
+      '<span data-source="https://asana.com/internal">See also https://neutral.example/report</span>',
+  );
+  assert.equal(linked.brand_cited_with_link, 1);
+  assert.deepEqual(linked.cited_urls, ['acme.com', 'neutral.example']);
+
+  const quoted = extractCitations(
+    acme,
+    '<a title=\'view href="https://asana.com/fake"\' HREF = \'https://acme.com/study\'>Study</a>',
+  );
+  assert.deepEqual(quoted.cited_urls, ['acme.com']);
+
+  const autolink = extractCitations(acme, 'Sources: <https://acme.com/guide> and <https://asana.com/help>.');
+  assert.equal(autolink.brand_cited_with_link, 1);
+  assert.deepEqual(autolink.cited_urls, ['acme.com', 'asana.com']);
+});
+
 test('subdomain link without brand prose counts only as linked citation', () => {
   const r = extractCitations(acme, 'See https://docs.acme.com/setup for the guide.');
   assert.equal(r.brand_mentioned, 0);

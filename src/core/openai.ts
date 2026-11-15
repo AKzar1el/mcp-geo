@@ -319,8 +319,9 @@ function omitHtmlCodeExamples(text: string): string {
 
 function omitHtmlTags(text: string): string {
   // Attribute values (including alt/title/data-*) are metadata, not answer prose.
-  // Keep text nodes such as visible anchor labels while handling quoted '>' in tags.
-  return text.replace(/<\/?[a-z][^>"']*(?:(?:"[^"]*"|'[^']*')[^>"']*)*>/gi, ' ');
+  // Keep visible anchor labels and Markdown <https://...> autolinks; only
+  // remove actual tags while handling quoted '>' inside HTML attributes.
+  return text.replace(/<\/?(?!https?:\/\/)[a-z][^>"']*(?:(?:"[^"]*"|'[^']*')[^>"']*)*>/gi, ' ');
 }
 
 function omitMarkdownImageAssets(text: string): string {
@@ -331,14 +332,36 @@ function omitMarkdownImageAssets(text: string): string {
   );
 }
 
+function extractHtmlAnchorHrefs(text: string): string[] {
+  const urls: string[] = [];
+  // Only explicit HTML anchors cite a source. Other tag attributes are
+  // metadata, assets or internal data, even if they contain URLs or markup.
+  // Scan whole tags first so an anchor inside a quoted attribute is not a link.
+  const tagRe = /<\/?(?!https?:\/\/)[a-z][^>"']*(?:(?:"[^"]*"|'[^']*')[^>"']*)*>/gi;
+  for (const tag of text.matchAll(tagRe)) {
+    if (!/^<a\b/i.test(tag[0])) continue;
+    const attrs = tag[0].slice(2, -1);
+    const attrRe = /([^\s=/>]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
+    for (const attr of attrs.matchAll(attrRe)) {
+      if (attr[1].toLowerCase() === 'href') {
+        const href = attr[2] ?? attr[3] ?? attr[4];
+        if (href) urls.push(href);
+        break;
+      }
+    }
+  }
+  return urls;
+}
+
 export function extractUrls(text: string): string[] {
   // HTML and Markdown image targets are assets, not cited sources. Remove
   // them and non-citation code examples before scanning plain URLs.
-  const sourceText = omitMarkdownImageAssets(omitHtmlCodeExamples(omitMarkdownCodeExamples(text))
+  const htmlSource = omitMarkdownImageAssets(omitHtmlCodeExamples(omitMarkdownCodeExamples(text))
     .replace(/<img\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi, ' '));
+  const sourceText = omitHtmlTags(htmlSource);
   const markdownRe = /\[[^\]]+\]\((https?:\/\/[^\s)]+)\)/gi;
   const plainRe = /https?:\/\/[^\s)\]\}'"`<>]+/gi;
-  const urls: string[] = [];
+  const urls = extractHtmlAnchorHrefs(htmlSource);
   let m: RegExpExecArray | null;
   while ((m = markdownRe.exec(sourceText)) !== null) {
     urls.push(m[1]);
