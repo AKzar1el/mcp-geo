@@ -539,6 +539,7 @@ const refreshOutputSchema = z.object({
   brand_id: z.string(),
   message: z.string(),
   run_ids: z.record(z.string(), z.string()),
+  failed_engines: z.array(z.string()).optional(),
   skipped_unconfigured_engines: z.array(z.string()),
   estimated_completion_seconds: z.number(),
 });
@@ -2158,20 +2159,24 @@ export function registerTools(
           'No engines available. Set at least one of OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, PERPLEXITY_API_KEY, XAI_API_KEY, SERPAPI_API_KEY. Google AI Mode additionally requires SERPAPI_AI_MODE_ENABLED=true.',
         );
       }
-      const { run_ids, engines: kicked } = await deps.runEnginesInline(
+      const { run_ids, engines: kicked, failed_engines = [] } = await deps.runEnginesInline(
         brand,
         prompts,
         filtered,
       );
       const alreadyRunning = Object.keys(run_ids).length - kicked.length;
+      const completedCount = kicked.length - failed_engines.length;
       const payload = {
         brand_id: brand.id,
-        message: `Refresh ${refreshIsAsync ? 'started' : 'completed'} for ${kicked.length} engine${kicked.length === 1 ? '' : 's'}` +
+        message: (failed_engines.length > 0
+          ? `Refresh partially completed for ${completedCount} engine${completedCount === 1 ? '' : 's'}; failed: ${failed_engines.join(', ')} (check stored run status before retrying; provider calls may incur charges)`
+          : `Refresh ${refreshIsAsync ? 'started' : 'completed'} for ${kicked.length} engine${kicked.length === 1 ? '' : 's'}`) +
           (alreadyRunning > 0
             ? `; ${alreadyRunning} engine${alreadyRunning === 1 ? '' : 's'} already in progress (existing run IDs reused)`
             : '') +
           (skippedUnconfigured.length > 0 ? `; skipped unconfigured: ${skippedUnconfigured.join(', ')}` : ''),
         run_ids,
+        failed_engines,
         skipped_unconfigured_engines: skippedUnconfigured,
         estimated_completion_seconds: refreshIsAsync ? 30 : 0,
       };

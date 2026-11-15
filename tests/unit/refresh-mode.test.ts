@@ -44,6 +44,7 @@ function registerRefreshTool(
     OPENAI_API_KEY: 'test-openai-key',
     ANTHROPIC_API_KEY: 'test-anthropic-key',
   },
+  failedEngines: EngineName[] = [],
 ): RefreshTool {
   const tools = new Map<string, RefreshTool>();
   const server = {
@@ -69,6 +70,7 @@ function registerRefreshTool(
           engines.map((engine) => [engine, `run-${engine}`]),
         ),
         engines,
+        failed_engines: failedEngines,
       }),
     },
     { namespaced },
@@ -95,6 +97,17 @@ test('sync refresh metadata and result report completed scans', async () => {
 
   const result = await refresh.handler({ brand_id: brand.id });
   assert.equal(result.structuredContent.message, 'Refresh completed for 2 engines');
+  assert.equal(result.structuredContent.estimated_completion_seconds, 0);
+});
+
+test('sync partial refresh discloses failures and preserves successful run IDs without claiming full completion', async () => {
+  const refresh = registerRefreshTool('sync', false, undefined, ['chatgpt']);
+  const result = await refresh.handler({ brand_id: brand.id, engines: ['chatgpt', 'claude'] });
+
+  assert.match(String(result.structuredContent.message), /partially completed for 1 engine; failed: chatgpt/i);
+  assert.match(String(result.structuredContent.message), /provider calls may incur charges/i);
+  assert.deepEqual(result.structuredContent.failed_engines, ['chatgpt']);
+  assert.deepEqual(result.structuredContent.run_ids, { chatgpt: 'run-chatgpt', claude: 'run-claude' });
   assert.equal(result.structuredContent.estimated_completion_seconds, 0);
 });
 

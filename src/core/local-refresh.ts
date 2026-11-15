@@ -53,9 +53,11 @@ export async function runLocalRefresh(
     }
     log(`refresh_brand: ${engine} finished`);
   }
-  if (failures.length > 0) {
+  // Preserve the successful run IDs when an independent engine failed.
+  // If every newly started engine failed, retain the error contract.
+  if (failures.length > 0 && failures.length === started.length) {
     if (failures.length === 1) throw failures[0];
     throw new AggregateError(failures, `Local refresh failed for ${failedEngines.join(', ')}; other requested engines were attempted`);
   }
-  return { run_ids, engines: started };
+  return { run_ids, engines: started, failed_engines: failedEngines };
 }
