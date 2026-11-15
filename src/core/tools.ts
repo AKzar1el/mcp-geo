@@ -542,6 +542,11 @@ const refreshOutputSchema = z.object({
   failed_engines: z.array(z.string()).optional(),
   skipped_unconfigured_engines: z.array(z.string()),
   estimated_completion_seconds: z.number(),
+  preview_only: z.boolean().optional(),
+  planned_engines: z.array(z.string()).optional(),
+  active_prompt_count: z.number().optional(),
+  planned_prompt_engine_pairs: z.number().optional(),
+  cost_note: z.string().optional(),
 });
 
 const trackBrandOutputSchema = z.object({
@@ -685,8 +690,8 @@ export function registerTools(
   const refreshIsAsync = deps.refreshExecution === 'async';
   const refreshCostNote = ' Provider API requests may incur charges. Retries rerun every active prompt, including prior successes.';
   const refreshDescription = refreshIsAsync
-    ? "Start fresh scans on selected engines; returns run IDs immediately." + refreshCostNote + " Example: brand_id='acme', engines=['chatgpt','gemini']."
-    : "Scan selected engines and return after completion." + refreshCostNote + " Example: brand_id='acme', engines=['chatgpt','gemini'].";
+    ? "Start scans; returns run IDs immediately." + refreshCostNote + " Set preview_only=true for a no-call scope preview. Example: brand_id='acme'."
+    : "Scan; return after completion." + refreshCostNote + " Set preview_only=true for a no-call scope preview. Example: brand_id='acme'.";
 
   server.registerTool(
     toolName('check_visibility'),
@@ -2114,6 +2119,8 @@ export function registerTools(
           .min(1)
           .optional()
           .describe('Engines to run (at least one); omit for every configured engine.'),
+        preview_only: z.boolean().default(false)
+          .describe('Preview configured prompt-engine pairs without provider calls; not a billing quote.'),
       },
       outputSchema: refreshOutputSchema,
       annotations: {
@@ -2122,7 +2129,7 @@ export function registerTools(
         openWorldHint: true,
       },
     },
-    async ({ brand_id, engines }) => {
+    async ({ brand_id, engines, preview_only = false }) => {
       const brand = await deps.db.getBrand(brand_id);
       if (!brand) {
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
@@ -2158,6 +2165,21 @@ export function registerTools(
         throw new Error(
           'No engines available. Set at least one of OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, PERPLEXITY_API_KEY, XAI_API_KEY, SERPAPI_API_KEY. Google AI Mode additionally requires SERPAPI_AI_MODE_ENABLED=true.',
         );
+      }
+      if (preview_only) {
+        return toolResult({
+          brand_id: brand.id,
+          message: 'Preview only: no provider requests started. Run refresh_brand without preview_only only after reviewing the active prompts and provider charges.',
+          run_ids: {},
+          failed_engines: [],
+          skipped_unconfigured_engines: skippedUnconfigured,
+          estimated_completion_seconds: 0,
+          preview_only: true,
+          planned_engines: filtered,
+          active_prompt_count: prompts.length,
+          planned_prompt_engine_pairs: prompts.length * filtered.length,
+          cost_note: 'Logical prompt-engine pairs are not a billing estimate or total cost. Actual API requests, retries, token use and provider charges can differ.',
+        });
       }
       const { run_ids, engines: kicked, failed_engines = [] } = await deps.runEnginesInline(
         brand,
