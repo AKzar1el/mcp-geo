@@ -117,14 +117,16 @@ test('a failed local engine does not prevent independent requested engines from 
     }];
 
     const called: string[] = [];
-    await assert.rejects(
-      runLocalRefresh(db, {}, brand, prompts, ['chatgpt', 'claude'], async (_env, _brand, _prompts, run) => {
-        called.push(run.engine);
-        if (run.engine === 'chatgpt') throw new Error('first provider failed');
-        await db.updateRun(run.run_id, { status: 'completed', completed_at: Date.now() });
-      }),
-      /first provider failed/,
-    );
+    const result = await runLocalRefresh(db, {}, brand, prompts, ['chatgpt', 'claude'], async (_env, _brand, _prompts, run) => {
+      called.push(run.engine);
+      if (run.engine === 'chatgpt') throw new Error('first provider failed');
+      await db.updateRun(run.run_id, { status: 'completed', completed_at: Date.now() });
+    });
+    assert.deepEqual(result.engines, ['chatgpt', 'claude']);
+    assert.deepEqual(result.failed_engines, ['chatgpt']);
+    assert.ok(result.run_ids.chatgpt);
+    assert.ok(result.run_ids.claude);
+    assert.notEqual(result.run_ids.chatgpt, result.run_ids.claude);
     assert.deepEqual(called, ['chatgpt', 'claude']);
     assert.equal((await db.getLatestRun(brand.id, 'chatgpt'))?.status, 'failed');
     assert.equal((await db.getLatestRun(brand.id, 'claude'))?.status, 'completed');
