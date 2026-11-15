@@ -286,10 +286,32 @@ export function hasBrandInEngineCitations(
   });
 }
 
+function omitMarkdownCodeExamples(text: string): string {
+  // Example commands and JSON snippets are not sources cited by the answer.
+  // Treat an unterminated fence as code through the end of the response.
+  let fence: { char: string; length: number } | null = null;
+  return text.split(/\r?\n/).map((line) => {
+    const marker = /^[ \t]{0,3}(`+|~+)/.exec(line);
+    if (fence) {
+      if (
+        marker && marker[1][0] === fence.char &&
+        marker[1].length >= fence.length &&
+        line.slice(marker[0].length).trim() === ''
+      ) fence = null;
+      return '';
+    }
+    if (marker && marker[1].length >= 3) {
+      fence = { char: marker[1][0], length: marker[1].length };
+      return '';
+    }
+    return line.replace(/(`+)[^`\r\n]*?\1/g, ' ');
+  }).join('\n');
+}
+
 export function extractUrls(text: string): string[] {
   // HTML and Markdown image targets are assets, not cited sources. Remove
-  // them before scanning plain URLs, which would otherwise count them anyway.
-  const sourceText = text
+  // them and non-citation code examples before scanning plain URLs.
+  const sourceText = omitMarkdownCodeExamples(text)
     .replace(/<img\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi, ' ')
     .replace(
       /!\[[^\]\r\n]*\]\(\s*https?:\/\/(?:\([^()\s]*\)|[^\s()])+(?:\s+(?:"[^"\r\n]*"|'[^'\r\n]*'))?\s*\)/gi,
