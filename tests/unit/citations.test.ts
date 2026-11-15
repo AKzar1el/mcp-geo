@@ -162,6 +162,28 @@ test('HTML code examples and hidden comments are not linked source evidence', ()
   assert.deepEqual(withRealLink.cited_urls, ['acme.com']);
 });
 
+test('HTML head metadata is not answer evidence while visible body and header remain', () => {
+  const result = extractCitations(
+    acme,
+    '<head><title>Acme Project Tool at https://acme.com/study</title>' +
+      '<meta name="description" content="Asana"></head>' +
+      '<body><header>Asana is recommended.</header>' +
+      '<a href="https://neutral.example/report">Read the report</a></body>',
+  );
+  assert.equal(result.brand_mentioned, 0);
+  assert.equal(result.brand_cited_with_link, 0);
+  assert.deepEqual(result.competitors_mentioned, ['asana.com']);
+  assert.deepEqual(result.cited_urls, ['neutral.example']);
+
+  const unclosedHead = extractCitations(
+    acme,
+    '<head><title>Acme Project Tool</title>https://acme.com/study',
+  );
+  assert.equal(unclosedHead.brand_mentioned, 0);
+  assert.equal(unclosedHead.brand_cited_with_link, 0);
+  assert.deepEqual(unclosedHead.cited_urls, []);
+});
+
 test('HTML script and style resources are not cited sources but visible anchors remain', () => {
   const nonSources = [
     '<script src="https://acme.com/analytics.js"></script>',
