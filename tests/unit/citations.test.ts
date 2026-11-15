@@ -165,6 +165,33 @@ test('HTML script and style resources are not cited sources but visible anchors 
   assert.deepEqual(visibleSource.cited_urls, ['acme.com']);
 });
 
+test('hidden markup and example code do not count as brand or competitor answer mentions', () => {
+  const nonProse = [
+    '<!-- Acme Project Tool and Asana should not count as recommendations -->',
+    '<script>const choice = "Acme Project Tool"; const rival = "Asana";</script>',
+    '<pre>Acme Project Tool versus Asana</pre>',
+    'Example:\n```json\n{"choice":"Acme Project Tool","rival":"Asana"}\n```',
+    'Use `Acme Project Tool` and `Asana` as sample identifiers.',
+  ];
+  for (const answer of nonProse) {
+    const result = extractCitations(acme, answer);
+    assert.equal(result.brand_mentioned, 0, answer);
+    assert.deepEqual(result.competitors_mentioned, [], answer);
+    assert.equal(result.brand_cited_with_link, 0, answer);
+  }
+
+  const visibleBrand = extractCitations(
+    acme,
+    '<!-- Asana --> <script>const rival = "Asana";</script> Acme Project Tool is useful.',
+  );
+  assert.equal(visibleBrand.brand_mentioned, 1);
+  assert.deepEqual(visibleBrand.competitors_mentioned, []);
+
+  const visibleCompetitor = extractCitations(acme, '<code>Acme Project Tool</code> Asana is a real competitor.');
+  assert.equal(visibleCompetitor.brand_mentioned, 0);
+  assert.deepEqual(visibleCompetitor.competitors_mentioned, ['asana.com']);
+});
+
 test('subdomain link without brand prose counts only as linked citation', () => {
   const r = extractCitations(acme, 'See https://docs.acme.com/setup for the guide.');
   assert.equal(r.brand_mentioned, 0);

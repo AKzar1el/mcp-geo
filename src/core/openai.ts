@@ -348,8 +348,10 @@ export function extractCitations(
   const urls = extractUrls(responseText);
   // URL hosts and path fragments are link evidence, not answer prose. Consume
   // balanced parentheses inside URLs, but leave an unmatched ')' in place so
-  // visible text after a Markdown link target remains scoreable.
-  const mentionText = responseText.replace(/https?:\/\/(?:\([^()\s]*\)|[^\s()\]\}'"\x60<>])+/gi, ' ');
+  // visible text after a Markdown link target remains scoreable. Hidden HTML
+  // and sample code must not inflate brand or competitor answer mentions.
+  const answerProse = omitHtmlCodeExamples(omitMarkdownCodeExamples(responseText));
+  const mentionText = answerProse.replace(/https?:\/\/(?:\([^()\s]*\)|[^\s()\]\}'"\x60<>])+/gi, ' ');
   let brandMentioned = mentionsTermSet(mentionText, {
     domain: brand.domain,
     name: brand.name,
