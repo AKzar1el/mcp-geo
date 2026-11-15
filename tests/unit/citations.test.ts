@@ -249,6 +249,29 @@ test('HTML head metadata is not answer evidence while visible body and header re
   assert.deepEqual(unclosedHead.cited_urls, []);
 });
 
+test('inert HTML template content cannot manufacture brand mentions or cited sources', () => {
+  for (const hidden of [
+    '<template><p>Acme Project Tool beats Asana</p><a href="https://acme.com/research">source</a></template>',
+    '<TEMPLATE id="cached-answer"><a href="https://acme.com/research">Acme Project Tool</a>',
+  ]) {
+    const result = extractCitations(acme, hidden);
+    assert.equal(result.brand_mentioned, 0, hidden);
+    assert.equal(result.brand_cited_with_link, 0, hidden);
+    assert.deepEqual(result.competitors_mentioned, [], hidden);
+    assert.deepEqual(result.cited_urls, [], hidden);
+  }
+
+  const withVisibleSource = extractCitations(
+    acme,
+    '<template><a href="https://acme.com/hidden">Acme Project Tool</a></template>' +
+      '<p>Asana is recommended.</p><a href="https://neutral.example/report">Report</a>',
+  );
+  assert.equal(withVisibleSource.brand_mentioned, 0);
+  assert.equal(withVisibleSource.brand_cited_with_link, 0);
+  assert.deepEqual(withVisibleSource.competitors_mentioned, ['asana.com']);
+  assert.deepEqual(withVisibleSource.cited_urls, ['neutral.example']);
+});
+
 test('HTML script and style resources are not cited sources but visible anchors remain', () => {
   const nonSources = [
     '<script src="https://acme.com/analytics.js"></script>',
