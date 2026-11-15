@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { runInNewContext } from 'node:vm';
 
 async function loadAuditModule() {
   try {
@@ -196,6 +197,84 @@ test('audit request flow provides form, clipboard, direct-email, and no-JS fallb
   assert.match(body, /aria-live="polite"/);
   assert.match(body, /Email <a href="mailto:info@tomiseregi\.si"/);
   assert.match(body, /<noscript>[\s\S]*mailto:info@tomiseregi\.si/);
+});
+
+test('audit form refuses blank required values and more than three competitors before email or copy', async () => {
+  const { handlePublicAudit } = await loadAuditModule();
+  const response = handlePublicAudit(new Request('https://geo-mcp.digestseo.com/audit'));
+  assert.ok(response);
+  const html = await response.text();
+  const script = html.match(/<script>\s*([\s\S]*?)\s*<\/script>/)?.[1];
+  assert.ok(script);
+
+  type Handler = (event: { preventDefault(): void }) => void | Promise<void>;
+  class FakeForm {
+    values: Record<string, string> = {
+      brand: 'example.com',
+      category: 'Project management',
+      competitors: '',
+      context: '',
+    };
+    handlers = new Map<string, Handler>();
+    addEventListener(name: string, callback: Handler) { this.handlers.set(name, callback); }
+    reportValidity() { return true; }
+  }
+  class FakeButton {
+    handlers = new Map<string, Handler>();
+    addEventListener(name: string, callback: Handler) { this.handlers.set(name, callback); }
+  }
+  class FakeFormData {
+    constructor(private readonly form: FakeForm) {}
+    get(name: string) { return this.form.values[name] ?? null; }
+  }
+  const form = new FakeForm();
+  const button = new FakeButton();
+  const status = { textContent: '' };
+  const location = { href: '' };
+  const copied: string[] = [];
+  runInNewContext(script, {
+    document: {
+      getElementById(id: string) {
+        return id === 'audit-request-form' ? form : id === 'copy-request' ? button : status;
+      },
+    },
+    HTMLFormElement: FakeForm,
+    HTMLButtonElement: FakeButton,
+    FormData: FakeFormData,
+    navigator: { clipboard: { writeText: async (value: string) => { copied.push(value); } } },
+    window: { location },
+    encodeURIComponent,
+  });
+
+  const submit = () => form.handlers.get('submit')?.({ preventDefault() {} });
+  const copy = () => button.handlers.get('click')?.({ preventDefault() {} });
+
+  form.values.brand = '   ';
+  submit();
+  assert.equal(location.href, '', 'whitespace-only brand must not open an email');
+  assert.match(status.textContent, /brand\/domain and category/i);
+
+  form.values.brand = 'example.com';
+  form.values.category = '  ';
+  submit();
+  assert.equal(location.href, '', 'whitespace-only category must not open an email');
+  form.values.category = 'Project management';
+  form.values.competitors = 'one.com, two.com, three.com, four.com';
+  submit();
+  assert.equal(location.href, '', 'more than three competitors must not open an email');
+  assert.match(status.textContent, /up to 3 competitors/i);
+  await copy();
+  assert.equal(copied.length, 0, 'copy must apply the same scope validation');
+
+  form.values.competitors = 'one.com; two.com; three.com; four.com';
+  submit();
+  assert.equal(location.href, '', 'semicolon-separated extras must be rejected too');
+
+  form.values.competitors = 'one.com, two.com, three.com';
+  submit();
+  assert.match(location.href, /^mailto:info@tomiseregi\.si\?/);
+  await copy();
+  assert.equal(copied.length, 1, 'a request with three competitors remains copyable');
 });
 
 test('non-GET /audit requests are rejected without entering MCP or admin flows', async () => {
