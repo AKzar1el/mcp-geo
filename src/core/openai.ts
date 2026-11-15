@@ -309,12 +309,12 @@ function omitMarkdownCodeExamples(text: string): string {
 }
 
 function omitHtmlCodeExamples(text: string): string {
-  // Comments, document-head metadata, scripts, styles, and code samples are
-  // not visible answer evidence. Exclude unclosed blocks through the end.
+  // Comments, document-head metadata, inert templates, scripts, styles, and
+  // code samples are not visible evidence. Exclude unclosed blocks to the end.
   return text
     .replace(/<!--[\s\S]*?(?:-->|$)/g, ' ')
-    .replace(/<(pre|code|script|style|head)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, ' ')
-    .replace(/<(pre|code|script|style|head)\b[^>]*>[\s\S]*$/gi, ' ');
+    .replace(/<(pre|code|script|style|head|template)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, ' ')
+    .replace(/<(pre|code|script|style|head|template)\b[^>]*>[\s\S]*$/gi, ' ');
 }
 
 function omitHtmlTags(text: string): string {
