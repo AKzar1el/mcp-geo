@@ -99,6 +99,30 @@ test('Markdown image alt labels do not become visible brand or competitor mentio
   assert.deepEqual(visible.cited_urls, ['asana.com']);
 });
 
+test('relative and embedded Markdown image labels are not visible recommendation evidence', () => {
+  for (const image of [
+    '![Acme Project Tool](./images/brand.svg)',
+    '![Acme Project Tool](assets/logo_(small).svg)',
+    '![Asana](/assets/logo.png)',
+    '![Asana](<./icons/asana.svg>)',
+    '![Acme Project Tool](data:image/png;base64,AAAA)',
+    '![Asana](../assets/logo.svg "Asana logo")',
+  ]) {
+    const result = extractCitations(acme, image);
+    assert.equal(result.brand_mentioned, 0, image);
+    assert.deepEqual(result.competitors_mentioned, [], image);
+    assert.deepEqual(result.cited_urls, [], image);
+  }
+
+  const visible = extractCitations(
+    acme,
+    '![Acme Project Tool](./assets/logo.png) Compare [Asana](https://asana.com) with Acme Project Tool.',
+  );
+  assert.equal(visible.brand_mentioned, 1);
+  assert.deepEqual(visible.competitors_mentioned, ['asana.com']);
+  assert.deepEqual(visible.cited_urls, ['asana.com']);
+});
+
 test('HTML image assets do not count as source citations but surrounding anchors do', () => {
   for (const image of [
     '<img src="https://acme.com/media/logo.svg" alt="Logo">',
