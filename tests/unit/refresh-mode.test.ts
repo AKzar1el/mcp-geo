@@ -32,7 +32,7 @@ const prompt: Prompt = {
 
 type RefreshTool = {
   description: string;
-  handler: (args: { brand_id: string; engines?: EngineName[] }) => Promise<{
+  handler: (args: { brand_id: string; engines?: EngineName[]; preview_only?: boolean }) => Promise<{
     structuredContent: Record<string, unknown>;
   }>;
 };
@@ -45,6 +45,7 @@ function registerRefreshTool(
     ANTHROPIC_API_KEY: 'test-anthropic-key',
   },
   failedEngines: EngineName[] = [],
+  onDispatch?: () => void,
 ): RefreshTool {
   const tools = new Map<string, RefreshTool>();
   const server = {
@@ -65,13 +66,16 @@ function registerRefreshTool(
       } as Db,
       env,
       refreshExecution,
-      runEnginesInline: async (_brand, _prompts, engines) => ({
-        run_ids: Object.fromEntries(
-          engines.map((engine) => [engine, `run-${engine}`]),
-        ),
-        engines,
-        failed_engines: failedEngines,
-      }),
+      runEnginesInline: async (_brand, _prompts, engines) => {
+        onDispatch?.();
+        return {
+          run_ids: Object.fromEntries(
+            engines.map((engine) => [engine, `run-${engine}`]),
+          ),
+          engines,
+          failed_engines: failedEngines,
+        };
+      },
     },
     { namespaced },
   );
@@ -163,4 +167,28 @@ test('refresh deduplicates explicitly requested engines before dispatch', async 
     chatgpt: 'run-chatgpt',
     claude: 'run-claude',
   });
+});
+
+test('preview_only exposes planned prompt-engine scope without provider dispatch or run IDs', async () => {
+  let dispatches = 0;
+  const refresh = registerRefreshTool('async', true, {
+    OPENAI_API_KEY: 'test-openai-key',
+  }, [], () => { dispatches += 1; });
+
+  const result = await refresh.handler({
+    brand_id: brand.id,
+    engines: ['chatgpt', 'chatgpt', 'claude'],
+    preview_only: true,
+  });
+
+  assert.match(refresh.description, /preview_only=true/i);
+  assert.equal(dispatches, 0);
+  assert.deepEqual(result.structuredContent.run_ids, {});
+  assert.deepEqual(result.structuredContent.planned_engines, ['chatgpt']);
+  assert.deepEqual(result.structuredContent.skipped_unconfigured_engines, ['claude']);
+  assert.equal(result.structuredContent.active_prompt_count, 1);
+  assert.equal(result.structuredContent.planned_prompt_engine_pairs, 1);
+  assert.equal(result.structuredContent.preview_only, true);
+  assert.match(String(result.structuredContent.message), /no provider requests/i);
+  assert.match(String(result.structuredContent.cost_note), /not.*bill|not.*cost/i);
 });
