@@ -55,6 +55,35 @@ test('markdown link to brand domain counts as linked citation', () => {
   assert.ok(r.cited_urls.includes('asana.com'));
 });
 
+test('Markdown link titles are hidden metadata, not cited URLs or visible recommendations', () => {
+  for (const link of [
+    '[report](https://neutral.example/report "Acme Project Tool and Asana at https://acme.com/hidden")',
+    "[report](https://neutral.example/report 'Acme Project Tool and Asana at https://asana.com/hidden')",
+    '[report](<https://neutral.example/report> "Acme Project Tool and Asana")',
+    '[report](https://neutral.example/a(b) (Acme Project Tool and Asana))',
+  ]) {
+    const r = extractCitations(acme, `See this ${link} for independent evidence.`);
+    assert.equal(r.brand_mentioned, 0, link);
+    assert.equal(r.brand_cited_with_link, 0, link);
+    assert.deepEqual(r.competitors_mentioned, [], link);
+    assert.deepEqual(r.cited_urls, ['neutral.example'], link);
+  }
+
+  const relative = extractCitations(acme, '[internal](/about "Acme Project Tool at https://acme.com/hidden")');
+  assert.equal(relative.brand_mentioned, 0);
+  assert.equal(relative.brand_cited_with_link, 0);
+  assert.deepEqual(relative.cited_urls, []);
+
+  const visible = extractCitations(
+    acme,
+    '[Acme Project Tool](https://acme.com/report "Independent research") and Asana are discussed.',
+  );
+  assert.equal(visible.brand_mentioned, 1);
+  assert.equal(visible.brand_cited_with_link, 1);
+  assert.deepEqual(visible.competitors_mentioned, ['asana.com']);
+  assert.deepEqual(visible.cited_urls, ['acme.com']);
+});
+
 test('unused Markdown reference definitions are not visible mentions or citations', () => {
   const r = extractCitations(
     acme,
