@@ -309,12 +309,12 @@ function omitMarkdownCodeExamples(text: string): string {
 }
 
 function omitHtmlCodeExamples(text: string): string {
-  // HTML comments are hidden, while pre/code blocks show examples rather than
-  // sources cited by the answer. An unclosed block is an example to the end.
+  // Comments, executable scripts, styles, and code samples are not cited
+  // sources. An unclosed block is excluded through the end of the response.
   return text
     .replace(/<!--[\s\S]*?(?:-->|$)/g, ' ')
-    .replace(/<(pre|code)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, ' ')
-    .replace(/<(pre|code)\b[^>]*>[\s\S]*$/gi, ' ');
+    .replace(/<(pre|code|script|style)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, ' ')
+    .replace(/<(pre|code|script|style)\b[^>]*>[\s\S]*$/gi, ' ');
 }
 
 export function extractUrls(text: string): string[] {
