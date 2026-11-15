@@ -192,6 +192,29 @@ test('hidden markup and example code do not count as brand or competitor answer 
   assert.deepEqual(visibleCompetitor.competitors_mentioned, ['asana.com']);
 });
 
+test('HTML attributes do not count as visible brand or competitor answer mentions', () => {
+  const attributesOnly = [
+    '<img src="https://neutral.example/chart.png" alt="Acme Project Tool versus Asana">',
+    '<meta name="description" content="Acme Project Tool and Asana">',
+    '<a href="https://neutral.example/source" title="Acme Project Tool and Asana">Read source</a>',
+    '<span data-tooltip="Acme Project Tool versus Asana">Read analysis</span>',
+    '<img alt="Asana > Acme Project Tool" src="/assets/compare.svg">',
+  ];
+  for (const answer of attributesOnly) {
+    const result = extractCitations(acme, answer);
+    assert.equal(result.brand_mentioned, 0, answer);
+    assert.deepEqual(result.competitors_mentioned, [], answer);
+  }
+
+  const visible = extractCitations(
+    acme,
+    '<a href="https://neutral.example/source" title="Asana">Acme Project Tool is recommended.</a>',
+  );
+  assert.equal(visible.brand_mentioned, 1);
+  assert.deepEqual(visible.competitors_mentioned, []);
+  assert.deepEqual(visible.cited_urls, ['neutral.example']);
+});
+
 test('subdomain link without brand prose counts only as linked citation', () => {
   const r = extractCitations(acme, 'See https://docs.acme.com/setup for the guide.');
   assert.equal(r.brand_mentioned, 0);
