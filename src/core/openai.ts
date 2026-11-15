@@ -317,6 +317,12 @@ function omitHtmlCodeExamples(text: string): string {
     .replace(/<(pre|code|script|style)\b[^>]*>[\s\S]*$/gi, ' ');
 }
 
+function omitHtmlTags(text: string): string {
+  // Attribute values (including alt/title/data-*) are metadata, not answer prose.
+  // Keep text nodes such as visible anchor labels while handling quoted '>' in tags.
+  return text.replace(/<\/?[a-z][^>"']*(?:(?:"[^"]*"|'[^']*')[^>"']*)*>/gi, ' ');
+}
+
 export function extractUrls(text: string): string[] {
   // HTML and Markdown image targets are assets, not cited sources. Remove
   // them and non-citation code examples before scanning plain URLs.
@@ -350,7 +356,7 @@ export function extractCitations(
   // balanced parentheses inside URLs, but leave an unmatched ')' in place so
   // visible text after a Markdown link target remains scoreable. Hidden HTML
   // and sample code must not inflate brand or competitor answer mentions.
-  const answerProse = omitHtmlCodeExamples(omitMarkdownCodeExamples(responseText));
+  const answerProse = omitHtmlTags(omitHtmlCodeExamples(omitMarkdownCodeExamples(responseText)));
   const mentionText = answerProse.replace(/https?:\/\/(?:\([^()\s]*\)|[^\s()\]\}'"\x60<>])+/gi, ' ');
   let brandMentioned = mentionsTermSet(mentionText, {
     domain: brand.domain,
