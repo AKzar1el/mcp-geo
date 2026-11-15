@@ -142,6 +142,29 @@ test('HTML code examples and hidden comments are not linked source evidence', ()
   assert.deepEqual(withRealLink.cited_urls, ['acme.com']);
 });
 
+test('HTML script and style resources are not cited sources but visible anchors remain', () => {
+  const nonSources = [
+    '<script src="https://acme.com/analytics.js"></script>',
+    '<script>fetch("https://asana.com/api")</script>',
+    '<style>@import url("https://acme.com/theme.css");</style>',
+    '<STYLE>body { background: url(https://asana.com/pattern.svg) }</STYLE>',
+    '<script type="application/ld+json">{"url":"https://acme.com"}</script>',
+    '<script>const endpoint = "https://acme.com/unclosed"',
+  ];
+  for (const answer of nonSources) {
+    const result = extractCitations(acme, answer);
+    assert.equal(result.brand_cited_with_link, 0, answer);
+    assert.deepEqual(result.cited_urls, [], answer);
+  }
+
+  const visibleSource = extractCitations(
+    acme,
+    '<script src="https://asana.com/asset.js"></script><a href="https://acme.com/research">Evidence</a>',
+  );
+  assert.equal(visibleSource.brand_cited_with_link, 1);
+  assert.deepEqual(visibleSource.cited_urls, ['acme.com']);
+});
+
 test('subdomain link without brand prose counts only as linked citation', () => {
   const r = extractCitations(acme, 'See https://docs.acme.com/setup for the guide.');
   assert.equal(r.brand_mentioned, 0);
