@@ -323,15 +323,19 @@ function omitHtmlTags(text: string): string {
   return text.replace(/<\/?[a-z][^>"']*(?:(?:"[^"]*"|'[^']*')[^>"']*)*>/gi, ' ');
 }
 
+function omitMarkdownImageAssets(text: string): string {
+  // Image alt labels describe assets, not an AI recommendation or source link.
+  return text.replace(
+    /!\[[^\]\r\n]*\]\(\s*https?:\/\/(?:\([^()\s]*\)|[^\s()])+(?:\s+(?:"[^"\r\n]*"|'[^'\r\n]*'))?\s*\)/gi,
+    ' ',
+  );
+}
+
 export function extractUrls(text: string): string[] {
   // HTML and Markdown image targets are assets, not cited sources. Remove
   // them and non-citation code examples before scanning plain URLs.
-  const sourceText = omitHtmlCodeExamples(omitMarkdownCodeExamples(text))
-    .replace(/<img\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi, ' ')
-    .replace(
-      /!\[[^\]\r\n]*\]\(\s*https?:\/\/(?:\([^()\s]*\)|[^\s()])+(?:\s+(?:"[^"\r\n]*"|'[^'\r\n]*'))?\s*\)/gi,
-      ' ',
-    );
+  const sourceText = omitMarkdownImageAssets(omitHtmlCodeExamples(omitMarkdownCodeExamples(text))
+    .replace(/<img\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi, ' '));
   const markdownRe = /\[[^\]]+\]\((https?:\/\/[^\s)]+)\)/gi;
   const plainRe = /https?:\/\/[^\s)\]\}'"`<>]+/gi;
   const urls: string[] = [];
@@ -356,7 +360,7 @@ export function extractCitations(
   // balanced parentheses inside URLs, but leave an unmatched ')' in place so
   // visible text after a Markdown link target remains scoreable. Hidden HTML
   // and sample code must not inflate brand or competitor answer mentions.
-  const answerProse = omitHtmlTags(omitHtmlCodeExamples(omitMarkdownCodeExamples(responseText)));
+  const answerProse = omitMarkdownImageAssets(omitHtmlTags(omitHtmlCodeExamples(omitMarkdownCodeExamples(responseText))));
   const mentionText = answerProse.replace(/https?:\/\/(?:\([^()\s]*\)|[^\s()\]\}'"\x60<>])+/gi, ' ');
   let brandMentioned = mentionsTermSet(mentionText, {
     domain: brand.domain,
