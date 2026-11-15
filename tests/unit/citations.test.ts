@@ -97,6 +97,28 @@ test('HTML image assets do not count as source citations but surrounding anchors
   assert.deepEqual(linked.cited_urls, ['acme.com']);
 });
 
+test('URLs in Markdown code examples are not evidence of a linked source', () => {
+  const examples = [
+    'Example response:\n```json\n{"source":"https://acme.com/research"}\n```',
+    'Example terminal command: `curl https://acme.com/api`',
+    'Example variable: ``https://acme.com/reference``',
+    'Example configuration:\n~~~yaml\nurl: https://asana.com/sample\n~~~',
+    'Unfinished example:\n```json\n{"source":"https://acme.com/research"}',
+  ];
+  for (const example of examples) {
+    const result = extractCitations(acme, example);
+    assert.equal(result.brand_cited_with_link, 0, example);
+    assert.deepEqual(result.cited_urls, [], example);
+  }
+
+  const withRealLink = extractCitations(
+    acme,
+    'Sample: `https://asana.com/example`\nActual source: [research](https://acme.com/research)',
+  );
+  assert.equal(withRealLink.brand_cited_with_link, 1);
+  assert.deepEqual(withRealLink.cited_urls, ['acme.com']);
+});
+
 test('subdomain link without brand prose counts only as linked citation', () => {
   const r = extractCitations(acme, 'See https://docs.acme.com/setup for the guide.');
   assert.equal(r.brand_mentioned, 0);
