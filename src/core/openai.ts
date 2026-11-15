@@ -333,6 +333,15 @@ function omitMarkdownImageAssets(text: string): string {
   ).replace(/!\[[^\]\r\n]*\](?:\[[^\]\r\n]*\])?/g, ' ');
 }
 
+function omitMarkdownLinkTitles(text: string): string {
+  // Inline link titles are tooltip metadata, not visible answer prose or cited
+  // URLs. Retain the linked label and destination as actual evidence.
+  return text.replace(
+    /(?<!!)(\[[^\]\r\n]+\]\(\s*(?:<[^<>\s\r\n]+>|(?:\([^()\s]*\)|[^\s()])+))\s+(?:"[^"\r\n]*"|'[^'\r\n]*'|\([^()\r\n]*\))\s*\)/g,
+    '$1)',
+  );
+}
+
 function parseMarkdownReferenceLinks(text: string): { visibleText: string; urls: string[] } {
   // Definitions are not rendered. Only a non-image reference that uses a
   // definition makes its URL evidence of an actual linked source.
@@ -406,8 +415,8 @@ function extractHtmlAnchorHrefs(text: string): string[] {
 export function extractUrls(text: string): string[] {
   // HTML and Markdown image targets are assets, not cited sources. Remove
   // them and non-citation code examples before scanning plain URLs.
-  const htmlSource = omitMarkdownImageAssets(omitHtmlCodeExamples(omitMarkdownCodeExamples(text))
-    .replace(/<img\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi, ' '));
+  const htmlSource = omitMarkdownLinkTitles(omitMarkdownImageAssets(omitHtmlCodeExamples(omitMarkdownCodeExamples(text))
+    .replace(/<img\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi, ' ')));
   const { visibleText: sourceText, urls: referenceUrls } =
     parseMarkdownReferenceLinks(omitHtmlTags(htmlSource));
   const markdownRe = /\[[^\]]+\]\((https?:\/\/[^\s)]+)\)/gi;
@@ -435,8 +444,8 @@ export function extractCitations(
   // visible text after a Markdown link target remains scoreable. Hidden HTML
   // and sample code must not inflate brand or competitor answer mentions.
   const answerProse = decodeVisibleHtmlCharacterReferences(
-    parseMarkdownReferenceLinks(omitMarkdownImageAssets(
-      omitHtmlTags(omitHtmlCodeExamples(omitMarkdownCodeExamples(responseText))))).visibleText);
+    parseMarkdownReferenceLinks(omitMarkdownLinkTitles(omitMarkdownImageAssets(
+      omitHtmlTags(omitHtmlCodeExamples(omitMarkdownCodeExamples(responseText)))))).visibleText);
   const mentionText = answerProse.replace(/https?:\/\/(?:\([^()\s]*\)|[^\s()\]\}'"\x60<>])+/gi, ' ');
   let brandMentioned = mentionsTermSet(mentionText, {
     domain: brand.domain,
