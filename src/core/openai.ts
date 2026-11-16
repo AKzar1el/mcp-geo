@@ -10,6 +10,8 @@ import type {
   Run,
 } from '../db/types.js';
 import { fetchWithTimeout } from './fetch.js';
+import { normalizeDomainInput } from './domain.js';
+import { redactProviderError } from './provider-error.js';
 
 export const MODEL = 'gpt-5-search-api';
 const BATCH_MODEL = 'gpt-4o-mini';
@@ -97,10 +99,10 @@ export async function chatCompletion(
         { role: 'user', content: userText },
       ],
     }),
-  });
+  }).catch((error: unknown) => { throw new Error(redactProviderError(error, apiKey)); });
   if (!resp.ok) {
     const text = await resp.text();
-    throw new Error(`OpenAI chat completion failed: ${resp.status} ${text}`);
+    throw new Error(`OpenAI chat completion failed: ${resp.status} ${redactProviderError(text, apiKey)}`);
   }
   const data = (await resp.json()) as ChatCompletionResponse;
   const finishReason = data.choices?.[0]?.finish_reason;
@@ -265,8 +267,9 @@ function normalizeHost(rawUrl: string): string | null {
     host = host.replace(/[;,!]+$/, '');
     if (host.endsWith('.')) host = host.slice(0, -1);
     if (host.endsWith('.')) return null; // Do not turn repeated root dots into brand evidence.
-    if (host.startsWith('www.')) host = host.slice(4);
-    return host || null;
+    // Reuse the brand-domain gate for answer-text source hosts too: local or
+    // IP-literal URLs are not independent external citation evidence.
+    return normalizeDomainInput(host);
   } catch {
     return null;
   }
@@ -283,17 +286,149 @@ export function hasBrandInEngineCitations(
   });
 }
 
+function omitMarkdownCodeExamples(text: string): string {
+  // Example commands and JSON snippets are not sources cited by the answer.
+  // Treat an unterminated fence as code through the end of the response.
+  let fence: { char: string; length: number } | null = null;
+  return text.split(/\r?\n/).map((line) => {
+    const marker = /^[ \t]{0,3}(`+|~+)/.exec(line);
+    if (fence) {
+      if (
+        marker && marker[1][0] === fence.char &&
+        marker[1].length >= fence.length &&
+        line.slice(marker[0].length).trim() === ''
+      ) fence = null;
+      return '';
+    }
+    if (marker && marker[1].length >= 3) {
+      fence = { char: marker[1][0], length: marker[1].length };
+      return '';
+    }
+    return line.replace(/(`+)[^`\r\n]*?\1/g, ' ');
+  }).join('\n');
+}
+
+function omitHtmlCodeExamples(text: string): string {
+  // Comments, document-head metadata, inert templates, scripts, styles, and
+  // code samples are not visible evidence. Exclude unclosed blocks to the end.
+  return text
+    .replace(/<!--[\s\S]*?(?:-->|$)/g, ' ')
+    .replace(/<(pre|code|script|style|head|template)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, ' ')
+    .replace(/<(pre|code|script|style|head|template)\b[^>]*>[\s\S]*$/gi, ' ');
+}
+
+function omitHtmlTags(text: string): string {
+  // Attribute values (including alt/title/data-*) are metadata, not answer prose.
+  // Keep visible anchor labels and Markdown <https://...> autolinks; only
+  // remove actual tags while handling quoted '>' inside HTML attributes.
+  return text.replace(/<\/?(?!https?:\/\/)[a-z][^>"']*(?:(?:"[^"]*"|'[^']*')[^>"']*)*>/gi, ' ');
+}
+
+function omitMarkdownImageAssets(text: string): string {
+  // Image alt labels describe assets, not AI recommendations or source links.
+  // This applies to relative and embedded targets as well as web URLs.
+  return text.replace(
+    /!\[[^\]\r\n]*\]\(\s*(?:\([^()\s]*\)|[^\s()])+(?:\s+(?:"[^"\r\n]*"|'[^'\r\n]*'))?\s*\)/gi,
+    ' ',
+  ).replace(/!\[[^\]\r\n]*\](?:\[[^\]\r\n]*\])?/g, ' ');
+}
+
+function omitMarkdownLinkTitles(text: string): string {
+  // Inline link titles are tooltip metadata, not visible answer prose or cited
+  // URLs. Retain the linked label and destination as actual evidence.
+  return text.replace(
+    /(?<!!)(\[[^\]\r\n]+\]\(\s*(?:<[^<>\s\r\n]+>|(?:\([^()\s]*\)|[^\s()])+))\s+(?:"[^"\r\n]*"|'[^'\r\n]*'|\([^()\r\n]*\))\s*\)/g,
+    '$1)',
+  );
+}
+
+function parseMarkdownReferenceLinks(text: string): { visibleText: string; urls: string[] } {
+  // Definitions are not rendered. Only a non-image reference that uses a
+  // definition makes its URL evidence of an actual linked source.
+  const normalizeLabel = (label: string) => label.trim().replace(/\s+/g, ' ').toLowerCase();
+  const definitions = new Map<string, string>();
+  const visibleText = text.replace(
+    /^[ \t]{0,3}\[([^\]\r\n]+)\]:[ \t]*(?:<([^<>\r\n]+)>|([^\s\r\n]+))(?:[ \t]+(?:"[^"\r\n]*"|'[^'\r\n]*'|\([^()\r\n]*\)))?[ \t]*$/gm,
+    (_full, label: string, angled: string | undefined, bare: string | undefined) => {
+      const key = normalizeLabel(label);
+      if (!definitions.has(key)) definitions.set(key, angled ?? bare ?? '');
+      return ' ';
+    },
+  );
+  const urls: string[] = [];
+  const addReference = (label: string) => {
+    const url = definitions.get(normalizeLabel(label));
+    if (url && /^https?:\/\//i.test(url)) urls.push(url);
+  };
+  const explicit = /(?<!!)\[([^\]\r\n]+)\]\[([^\]\r\n]*)\]/g;
+  for (const match of visibleText.matchAll(explicit)) {
+    addReference(match[2] || match[1]);
+  }
+  // Shortcut references [label] are links only when a matching definition
+  // exists. Ignore labels already consumed by explicit or inline links.
+  const withoutExplicit = visibleText.replace(explicit, ' ');
+  for (const match of withoutExplicit.matchAll(/(?<!!)\[([^\]\r\n]+)\](?!\s*[\[(])/g)) {
+    addReference(match[1]);
+  }
+  return { visibleText, urls };
+}
+
+function decodeVisibleHtmlCharacterReferences(text: string): string {
+  // AI answers may contain HTML-escaped visible labels. Decode only after
+  // removing hidden markup, and only for mention text: encoded URL text is not
+  // independent source-link evidence.
+  const named: Record<string, string> = {
+    amp: '&', quot: '"', apos: "'", lt: '<', gt: '>', nbsp: ' ',
+  };
+  return text.replace(/&(?:#[xX][0-9a-fA-F]+|#[0-9]+|amp|quot|apos|lt|gt|nbsp);/gi, (raw) => {
+    const entity = raw.slice(1, -1).toLowerCase();
+    if (!entity.startsWith('#')) return named[entity] ?? raw;
+    const hex = entity.startsWith('#x');
+    const codePoint = Number.parseInt(entity.slice(hex ? 2 : 1), hex ? 16 : 10);
+    if (!Number.isSafeInteger(codePoint) || codePoint < 32 || codePoint > 0x10ffff ||
+        (codePoint >= 0xd800 && codePoint <= 0xdfff)) return raw;
+    return codePoint === 160 ? ' ' : String.fromCodePoint(codePoint);
+  });
+}
+
+function extractHtmlAnchorHrefs(text: string): string[] {
+  const urls: string[] = [];
+  // Only explicit HTML anchors cite a source. Other tag attributes are
+  // metadata, assets or internal data, even if they contain URLs or markup.
+  // Scan whole tags first so an anchor inside a quoted attribute is not a link.
+  const tagRe = /<\/?(?!https?:\/\/)[a-z][^>"']*(?:(?:"[^"]*"|'[^']*')[^>"']*)*>/gi;
+  for (const tag of text.matchAll(tagRe)) {
+    if (!/^<a\b/i.test(tag[0])) continue;
+    const attrs = tag[0].slice(2, -1);
+    const attrRe = /([^\s=/>]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
+    for (const attr of attrs.matchAll(attrRe)) {
+      if (attr[1].toLowerCase() === 'href') {
+        const href = attr[2] ?? attr[3] ?? attr[4];
+        if (href) urls.push(href);
+        break;
+      }
+    }
+  }
+  return urls;
+}
+
 export function extractUrls(text: string): string[] {
+  // HTML and Markdown image targets are assets, not cited sources. Remove
+  // them and non-citation code examples before scanning plain URLs.
+  const htmlSource = omitMarkdownLinkTitles(omitMarkdownImageAssets(omitHtmlCodeExamples(omitMarkdownCodeExamples(text))
+    .replace(/<img\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi, ' ')));
+  const { visibleText: sourceText, urls: referenceUrls } =
+    parseMarkdownReferenceLinks(omitHtmlTags(htmlSource));
   const markdownRe = /\[[^\]]+\]\((https?:\/\/[^\s)]+)\)/gi;
   const plainRe = /https?:\/\/[^\s)\]\}'"`<>]+/gi;
-  const urls: string[] = [];
+  const urls = [...extractHtmlAnchorHrefs(htmlSource), ...referenceUrls];
   let m: RegExpExecArray | null;
-  while ((m = markdownRe.exec(text)) !== null) {
+  while ((m = markdownRe.exec(sourceText)) !== null) {
     urls.push(m[1]);
   }
   // Run plain after markdown — plainRe also catches the URL inside the
   // markdown link, which is fine: we dedupe by hostname below.
-  while ((m = plainRe.exec(text)) !== null) {
+  while ((m = plainRe.exec(sourceText)) !== null) {
     urls.push(m[0]);
   }
   return urls;
@@ -306,8 +441,12 @@ export function extractCitations(
   const urls = extractUrls(responseText);
   // URL hosts and path fragments are link evidence, not answer prose. Consume
   // balanced parentheses inside URLs, but leave an unmatched ')' in place so
-  // visible text after a Markdown link target remains scoreable.
-  const mentionText = responseText.replace(/https?:\/\/(?:\([^()\s]*\)|[^\s()\]\}'"\x60<>])+/gi, ' ');
+  // visible text after a Markdown link target remains scoreable. Hidden HTML
+  // and sample code must not inflate brand or competitor answer mentions.
+  const answerProse = decodeVisibleHtmlCharacterReferences(
+    parseMarkdownReferenceLinks(omitMarkdownLinkTitles(omitMarkdownImageAssets(
+      omitHtmlTags(omitHtmlCodeExamples(omitMarkdownCodeExamples(responseText)))))).visibleText);
+  const mentionText = answerProse.replace(/https?:\/\/(?:\([^()\s]*\)|[^\s()\]\}'"\x60<>])+/gi, ' ');
   let brandMentioned = mentionsTermSet(mentionText, {
     domain: brand.domain,
     name: brand.name,
@@ -361,8 +500,8 @@ function buildSkippedResult(prompt: Prompt): EnginePromptResult {
   };
 }
 
-function buildFailedResult(prompt: Prompt, err: unknown): EnginePromptResult {
-  const msg = err instanceof Error ? err.message : String(err);
+function buildFailedResult(prompt: Prompt, err: unknown, apiKey?: string): EnginePromptResult {
+  const msg = redactProviderError(err, apiKey);
   console.error('runLive: prompt failed', {
     prompt_id: prompt.id,
     message: msg,
@@ -436,7 +575,7 @@ export async function runLive(
             status: 'ok',
           };
         } catch (err) {
-          results[idx] = buildFailedResult(prompt, err);
+          results[idx] = buildFailedResult(prompt, err, env.OPENAI_API_KEY);
         }
       }),
     );
@@ -451,7 +590,7 @@ export async function runLive(
       results,
     );
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = redactProviderError(err, env.OPENAI_API_KEY);
     console.error('runLive: persistEngineRun failed', {
       run_id: runId,
       message,
@@ -558,7 +697,7 @@ export async function submitBatch(
       throw new Error('OpenAI batch create returned no batch id');
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = redactProviderError(error, env.OPENAI_API_KEY);
     try {
       await env.db.updateRun(runId, {
         status: 'failed',
@@ -568,10 +707,10 @@ export async function submitBatch(
     } catch (persistError) {
       console.error('submitBatch: failed to mark rejected batch submission terminal', {
         run_id: runId,
-        message: persistError instanceof Error ? persistError.message : String(persistError),
+        message: redactProviderError(persistError, env.OPENAI_API_KEY),
       });
     }
-    throw error;
+    throw new Error(message);
   }
 
   await env.db.updateRun(runId, { batch_id: batch.id, status: 'in_progress' });
@@ -636,11 +775,13 @@ async function downloadBatchFile(
 ): Promise<string> {
   const response = await fetchWithTimeout(`${OPENAI_BASE}/files/${fileId}/content`, {
     headers: { Authorization: `Bearer ${requireOpenAiKey(env)}` },
+  }).catch((error: unknown) => {
+    throw new Error(redactProviderError(error, env.OPENAI_API_KEY));
   });
   if (!response.ok) {
     const text = await response.text();
     throw new Error(
-      `OpenAI batch ${source} file failed: ${response.status} ${text}`,
+      `OpenAI batch ${source} file failed: ${response.status} ${redactProviderError(text, env.OPENAI_API_KEY)}`,
     );
   }
   return response.text();
@@ -675,11 +816,11 @@ function assertUniqueBatchCustomIds(
   }
 }
 
-function batchErrorMessage(line: BatchOutputLine): string {
+function batchErrorMessage(line: BatchOutputLine, apiKey?: string): string {
   const message =
     line.error?.message ?? line.response?.body?.error?.message;
   if (typeof message === 'string' && message.length > 0) {
-    return truncateError(message);
+    return truncateError(redactProviderError(message, apiKey));
   }
   if (typeof line.response?.status_code === 'number') {
     return `OpenAI batch request failed with status ${line.response.status_code}`;
@@ -697,10 +838,14 @@ export async function collectBatch(
   }
   const statusResp = await fetchWithTimeout(`${OPENAI_BASE}/batches/${run.batch_id}`, {
     headers: { Authorization: `Bearer ${requireOpenAiKey(env)}` },
+  }).catch((error: unknown) => {
+    throw new Error(redactProviderError(error, env.OPENAI_API_KEY));
   });
   if (!statusResp.ok) {
     const text = await statusResp.text();
-    throw new Error(`OpenAI batch status failed: ${statusResp.status} ${text}`);
+    throw new Error(
+      `OpenAI batch status failed: ${statusResp.status} ${redactProviderError(text, env.OPENAI_API_KEY)}`,
+    );
   }
   const batch = (await statusResp.json()) as OpenAiBatch;
 
@@ -824,7 +969,7 @@ export async function collectBatch(
       content.trim().length === 0
     ) {
       const errorMessage = statusCode !== undefined && (statusCode < 200 || statusCode >= 300)
-        ? batchErrorMessage(parsed)
+        ? batchErrorMessage(parsed, env.OPENAI_API_KEY)
         : finishReason !== 'stop'
           ? `OpenAI batch response incomplete: ${finishReason ?? 'missing finish_reason'}`
           : 'OpenAI batch response missing non-empty content';
@@ -868,7 +1013,7 @@ export async function collectBatch(
       cited_urls: [],
       competitors_mentioned: [],
       status: 'failed',
-      error_message: batchErrorMessage(parsed),
+      error_message: batchErrorMessage(parsed, env.OPENAI_API_KEY),
     });
   }
 

@@ -12,6 +12,7 @@ import type {
   Prompt,
 } from '../db/types.js';
 import { fetchWithTimeout } from './fetch.js';
+import { redactProviderError } from './provider-error.js';
 
 export const MODEL = 'claude-haiku-4-5';
 export const ENGINE = 'claude';
@@ -56,10 +57,10 @@ export async function chatCompletion(
       system: systemPrompt,
       messages: [{ role: 'user', content: userText }],
     }),
-  });
+  }).catch((error: unknown) => { throw new Error(redactProviderError(error, apiKey)); });
   if (!resp.ok) {
     const text = await resp.text();
-    throw new Error(`Anthropic completion failed: ${resp.status} ${text}`);
+    throw new Error(`Anthropic completion failed: ${resp.status} ${redactProviderError(text, apiKey)}`);
   }
   const data = (await resp.json()) as AnthropicMessageResponse;
   // Non-streaming responses have a terminal stop_reason. Never score text
@@ -97,8 +98,8 @@ function buildSkippedResult(prompt: Prompt): EnginePromptResult {
   };
 }
 
-function buildFailedResult(prompt: Prompt, err: unknown): EnginePromptResult {
-  const msg = err instanceof Error ? err.message : String(err);
+function buildFailedResult(prompt: Prompt, err: unknown, apiKey?: string): EnginePromptResult {
+  const msg = redactProviderError(err, apiKey);
   console.error('runLive[claude]: prompt failed', {
     prompt_id: prompt.id,
     message: msg,
@@ -161,7 +162,7 @@ export async function runLive(
             status: 'ok',
           };
         } catch (err) {
-          results[idx] = buildFailedResult(prompt, err);
+          results[idx] = buildFailedResult(prompt, err, env.ANTHROPIC_API_KEY);
         }
       }),
     );
@@ -176,7 +177,7 @@ export async function runLive(
       results,
     );
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = redactProviderError(err, env.ANTHROPIC_API_KEY);
     console.error('runLive[claude]: persistEngineRun failed', {
       run_id: runId,
       message,

@@ -539,8 +539,16 @@ const refreshOutputSchema = z.object({
   brand_id: z.string(),
   message: z.string(),
   run_ids: z.record(z.string(), z.string()),
+  failed_engines: z.array(z.string()).optional(),
   skipped_unconfigured_engines: z.array(z.string()),
   estimated_completion_seconds: z.number(),
+  preview_only: z.boolean().optional(),
+  planned_engines: z.array(z.string()).optional(),
+  active_prompt_count: z.number().optional(),
+  planned_prompt_engine_pairs: z.number().optional(),
+  cost_note: z.string().optional(),
+  ready_to_refresh: z.boolean().optional(),
+  readiness_warnings: z.array(z.string()).optional(),
 });
 
 const trackBrandOutputSchema = z.object({
@@ -684,8 +692,8 @@ export function registerTools(
   const refreshIsAsync = deps.refreshExecution === 'async';
   const refreshCostNote = ' Provider API requests may incur charges. Retries rerun every active prompt, including prior successes.';
   const refreshDescription = refreshIsAsync
-    ? "Start fresh scans on selected engines; returns run IDs immediately." + refreshCostNote + " Example: brand_id='acme', engines=['chatgpt','gemini']."
-    : "Scan selected engines and return after completion." + refreshCostNote + " Example: brand_id='acme', engines=['chatgpt','gemini'].";
+    ? "Start scans; returns run IDs immediately." + refreshCostNote + " Set preview_only=true for a no-call scope preview. Example: brand_id='acme'."
+    : "Scan; return after completion." + refreshCostNote + " Set preview_only=true for a no-call scope preview. Example: brand_id='acme'.";
 
   server.registerTool(
     toolName('check_visibility'),
@@ -2113,6 +2121,8 @@ export function registerTools(
           .min(1)
           .optional()
           .describe('Engines to run (at least one); omit for every configured engine.'),
+        preview_only: z.boolean().default(false)
+          .describe('Preview configured prompt-engine pairs without provider calls; not a billing quote.'),
       },
       outputSchema: refreshOutputSchema,
       annotations: {
@@ -2121,13 +2131,13 @@ export function registerTools(
         openWorldHint: true,
       },
     },
-    async ({ brand_id, engines }) => {
+    async ({ brand_id, engines, preview_only = false }) => {
       const brand = await deps.db.getBrand(brand_id);
       if (!brand) {
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
       }
       const prompts = await deps.db.getActivePrompts(brand_id);
-      if (prompts.length === 0) {
+      if (prompts.length === 0 && !preview_only) {
         throw new Error(
           'Brand has no active prompts. Run the generate_prompts tool (local CLI) or POST /admin/generate-prompts (Workers deployment).',
         );
@@ -2148,7 +2158,7 @@ export function registerTools(
       const skippedUnconfigured = requested && requested.length > 0
         ? uniqueEngineNames(requested).filter((engine) => !filtered.includes(engine))
         : [];
-      if (filtered.length === 0) {
+      if (filtered.length === 0 && !preview_only) {
         if (requested && requested.length > 0) {
           throw new Error(
             `Requested engines are not configured: ${uniqueEngineNames(requested).join(', ')}. Configure the matching provider API key (and SERPAPI_AI_MODE_ENABLED=true for Google AI Mode), or omit engines to refresh every configured engine.`,
@@ -2158,20 +2168,58 @@ export function registerTools(
           'No engines available. Set at least one of OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, PERPLEXITY_API_KEY, XAI_API_KEY, SERPAPI_API_KEY. Google AI Mode additionally requires SERPAPI_AI_MODE_ENABLED=true.',
         );
       }
-      const { run_ids, engines: kicked } = await deps.runEnginesInline(
+      if (preview_only) {
+        const readinessWarnings: string[] = [];
+        const readyToRefresh = prompts.length > 0 && filtered.length > 0;
+        if (prompts.length === 0) {
+          readinessWarnings.push('No active prompts. Add or activate buyer-intent prompts before scanning.');
+        }
+        if (filtered.length === 0) {
+          readinessWarnings.push(requested
+            ? `No requested provider engines configured (${uniqueEngineNames(requested).join(', ')}). Configure their API keys or select available engines.`
+            : 'No provider engines configured. Set at least one supported provider API key before scanning.');
+        }
+        if (filtered.length > 0 && skippedUnconfigured.length > 0) {
+          readinessWarnings.push(`Requested engines without configuration will be skipped: ${skippedUnconfigured.join(', ')}. Configure their API keys to scan the complete requested scope.`);
+        }
+        return toolResult({
+          brand_id: brand.id,
+          message: !readyToRefresh
+            ? `Preview only: scan not ready; no provider requests started. ${readinessWarnings.join(' ')}`
+            : skippedUnconfigured.length > 0
+              ? `Preview only: partial engine scope; no provider requests started. ${readinessWarnings.join(' ')} Ready to scan configured engines only; review provider charges before proceeding.`
+            : 'Preview only: no provider requests started. Run refresh_brand without preview_only only after reviewing the active prompts and provider charges.',
+          run_ids: {},
+          failed_engines: [],
+          skipped_unconfigured_engines: skippedUnconfigured,
+          estimated_completion_seconds: 0,
+          preview_only: true,
+          planned_engines: filtered,
+          active_prompt_count: prompts.length,
+          planned_prompt_engine_pairs: prompts.length * filtered.length,
+          ready_to_refresh: readyToRefresh,
+          readiness_warnings: readinessWarnings,
+          cost_note: 'Logical prompt-engine pairs are not a billing estimate or total cost. Actual API requests, retries, token use and provider charges can differ.',
+        });
+      }
+      const { run_ids, engines: kicked, failed_engines = [] } = await deps.runEnginesInline(
         brand,
         prompts,
         filtered,
       );
       const alreadyRunning = Object.keys(run_ids).length - kicked.length;
+      const completedCount = kicked.length - failed_engines.length;
       const payload = {
         brand_id: brand.id,
-        message: `Refresh ${refreshIsAsync ? 'started' : 'completed'} for ${kicked.length} engine${kicked.length === 1 ? '' : 's'}` +
+        message: (failed_engines.length > 0
+          ? `Refresh partially completed for ${completedCount} engine${completedCount === 1 ? '' : 's'}; failed: ${failed_engines.join(', ')} (check stored run status before retrying; provider calls may incur charges)`
+          : `Refresh ${refreshIsAsync ? 'started' : 'completed'} for ${kicked.length} engine${kicked.length === 1 ? '' : 's'}`) +
           (alreadyRunning > 0
             ? `; ${alreadyRunning} engine${alreadyRunning === 1 ? '' : 's'} already in progress (existing run IDs reused)`
             : '') +
           (skippedUnconfigured.length > 0 ? `; skipped unconfigured: ${skippedUnconfigured.join(', ')}` : ''),
         run_ids,
+        failed_engines,
         skipped_unconfigured_engines: skippedUnconfigured,
         estimated_completion_seconds: refreshIsAsync ? 30 : 0,
       };

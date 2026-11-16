@@ -5,6 +5,7 @@
 // evidence-grounded recommendations if this function throws.
 
 import { chatCompletion as anthropicChat } from './anthropic.js';
+import { normalizeDomainInput } from './domain.js';
 import type { Brand } from '../db/types.js';
 
 export interface AnalysisEnv {
@@ -41,6 +42,19 @@ const VALID_FORMATS = new Set([
   'integration_landing_page',
 ]);
 
+// Common website files are not third-party domains when mentioned as bare
+// filenames in technical AI-discovery recommendations. Absolute URL hosts
+// still go through the stricter provenance check below.
+const SITE_FILENAMES = new Set(['robots.txt', 'sitemap.xml', 'llms.txt', 'security.txt']);
+
+// Include bare IDNA/Unicode hostnames, not only absolute URLs. An ASCII-only
+// scan could otherwise mistake invented international domains for evidence.
+const BARE_DOMAIN_PATTERN = /(?<![\p{L}\p{M}\p{N}_.-])(?:[\p{L}\p{M}\p{N}](?:[\p{L}\p{M}\p{N}-]*[\p{L}\p{M}\p{N}])?[.\u3002\uFF0E\uFF61])+[\p{L}\p{M}][\p{L}\p{M}\p{N}-]{1,62}(?![\p{L}\p{M}\p{N}_-])/giu;
+
+function bareDomains(text: string): Array<string | null> {
+  return [...text.matchAll(BARE_DOMAIN_PATTERN)].map((match) => normalizeDomainInput(match[0]));
+}
+
 const BASE_SYSTEM_PROMPT = [
   'You are a senior SEO/content strategist analyzing why a brand is losing in AI search results.',
   'Given a list of buyer-intent prompts where the brand is NOT cited but its competitors ARE,',
@@ -60,6 +74,8 @@ const BASE_SYSTEM_PROMPT = [
   "3. suggested_format: one of: 'comparison_page', 'listicle', 'how_to_guide', 'faq_page', 'case_study', 'pricing_page', 'integration_landing_page'.",
   '4. Prioritize by impact: prompts where ALL competitors win get higher priority than prompts where only 1 wins.',
   '5. Mix tactical (quick wins) with strategic (longer plays).',
+  '6. Every recommendation must name at least one competitor from the observed losing prompts. Do not invent competitor names.',
+  '7. Do not introduce competitor domains or website URLs absent from the observed losing prompts or the tracked brand domain.',
 ].join('\n');
 
 const STRICT_SUFFIX =
@@ -89,6 +105,71 @@ function inferFallbackFormat(promptText: string): string {
 
 function formatLabel(format: string): string {
   return format.replaceAll('_', ' ');
+}
+
+function mentionsObservedCompetitor(
+  recommendation: ContentGapRecommendation,
+  losingPrompts: LosingPromptSummary[],
+): boolean {
+  const text = `${recommendation.topic} ${recommendation.rationale}`;
+  const mentionedDomains = new Set(bareDomains(text).filter((domain): domain is string => !!domain));
+  for (const prompt of losingPrompts) {
+    for (const competitor of prompt.competitors_winning) {
+      const domain = competitor.trim().toLowerCase().replace(/^www\./, '');
+      if (mentionedDomains.has(domain)) return true;
+      const label = domain.split('.')[0] ?? '';
+      // Names such as Asana may be used instead of asana.com. Short labels
+      // would match unrelated prose, so require their full domain instead.
+      for (const anchor of [domain, ...(label.length >= 4 ? [label] : [])]) {
+        const escaped = anchor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        if (escaped && new RegExp(`(^|[^a-z0-9])${escaped}($|[^a-z0-9])`, 'i').test(text)) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+function referencesUnobservedDomain(
+  recommendation: ContentGapRecommendation,
+  brand: Brand,
+  losingPrompts: LosingPromptSummary[],
+): boolean {
+  const allowed = new Set([
+    brand.domain,
+    ...losingPrompts.flatMap((prompt) => prompt.competitors_winning),
+  ].map((domain) => domain.trim().toLowerCase().replace(/^www\./, '')));
+  // Observing asana.com does not establish that an arbitrary
+  // research.asana.com URL or claim was present in a model response.
+  const isObservedHost = (host: string): boolean =>
+    allowed.has(host.toLowerCase().replace(/^www\./, ''));
+  const text = `${recommendation.topic} ${recommendation.rationale}`;
+  // A valid observed anchor elsewhere in a sentence must not lend provenance
+  // to an invented domain or URL in that same recommendation.
+  // Hostnames in absolute URLs may contain Unicode/IDNA labels, which the
+  // ASCII-only bare-domain scan below cannot see. Parse their actual host first
+  // so an observed competitor cannot legitimize an invented international URL.
+  for (const match of text.matchAll(/https?:\/\/[^\s<>"']+/gi)) {
+    const urlText = match[0].replace(/[.,;:!?)}\]]+$/, '');
+    let host: string | null;
+    try {
+      host = normalizeDomainInput(new URL(urlText).hostname);
+    } catch {
+      return true;
+    }
+    if (!host || !isObservedHost(host)) {
+      return true;
+    }
+  }
+  for (const domain of bareDomains(text)) {
+    if (!domain) return true;
+    if (SITE_FILENAMES.has(domain)) continue;
+    if (!isObservedHost(domain)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // Provider-free fallback used when the analyzer is unavailable. It must stay
@@ -275,7 +356,25 @@ export async function analyzeContentGaps(
       true,
     );
   }
-  // Sort by priority asc and trim to requested count.
+  // Shape-valid model output can still invent an unrelated competitor. Do not
+  // present unanchored advice as scan-grounded, or spend a second provider call
+  // retrying a semantic error. The caller can use its provider-free fallback.
+  recs = recs.filter((rec) =>
+    mentionsObservedCompetitor(rec, losingPrompts) &&
+    !referencesUnobservedDomain(rec, brand, losingPrompts),
+  );
+  if (recs.length === 0) {
+    throw new Error('no recommendation passes observed competitor and domain provenance checks');
+  }
+  // A repeated model topic should not consume multiple capped audit slots.
+  // Different suggested formats remain distinct actions.
   recs.sort((a, b) => a.priority - b.priority);
-  return recs.slice(0, maxRecommendations);
+  const seen = new Set<string>();
+  return recs.filter((rec) => {
+    const normalizedTopic = rec.topic.toLowerCase().replace(/\s+/g, ' ').trim();
+    const key = `${rec.suggested_format}:${normalizedTopic}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, maxRecommendations);
 }

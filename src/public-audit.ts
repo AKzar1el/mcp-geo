@@ -193,9 +193,22 @@ function auditHtml(origin: string): string {
       };
 
       const validate = () => {
-        if (form.reportValidity()) return true;
-        status.textContent = 'Add your brand/domain and category first.';
-        return false;
+        if (!form.reportValidity()) {
+          status.textContent = 'Add your brand/domain and category first.';
+          return false;
+        }
+        const data = new FormData(form);
+        const value = (name) => String(data.get(name) ?? '').trim();
+        if (!value('brand') || !value('category')) {
+          status.textContent = 'Add your brand/domain and category first.';
+          return false;
+        }
+        const competitors = value('competitors').split(/[,;]/).filter((entry) => entry.trim());
+        if (competitors.length > 3) {
+          status.textContent = 'This audit covers up to 3 competitors. Remove extras or email us about a different scope.';
+          return false;
+        }
+        return true;
       };
 
       const mailtoForRequest = () =>

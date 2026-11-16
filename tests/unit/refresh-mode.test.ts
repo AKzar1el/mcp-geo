@@ -32,7 +32,7 @@ const prompt: Prompt = {
 
 type RefreshTool = {
   description: string;
-  handler: (args: { brand_id: string; engines?: EngineName[] }) => Promise<{
+  handler: (args: { brand_id: string; engines?: EngineName[]; preview_only?: boolean }) => Promise<{
     structuredContent: Record<string, unknown>;
   }>;
 };
@@ -44,6 +44,9 @@ function registerRefreshTool(
     OPENAI_API_KEY: 'test-openai-key',
     ANTHROPIC_API_KEY: 'test-anthropic-key',
   },
+  failedEngines: EngineName[] = [],
+  onDispatch?: () => void,
+  activePrompts: Prompt[] = [prompt],
 ): RefreshTool {
   const tools = new Map<string, RefreshTool>();
   const server = {
@@ -60,16 +63,20 @@ function registerRefreshTool(
     {
       db: {
         getBrand: async () => brand,
-        getActivePrompts: async () => [prompt],
+        getActivePrompts: async () => activePrompts,
       } as Db,
       env,
       refreshExecution,
-      runEnginesInline: async (_brand, _prompts, engines) => ({
-        run_ids: Object.fromEntries(
-          engines.map((engine) => [engine, `run-${engine}`]),
-        ),
-        engines,
-      }),
+      runEnginesInline: async (_brand, _prompts, engines) => {
+        onDispatch?.();
+        return {
+          run_ids: Object.fromEntries(
+            engines.map((engine) => [engine, `run-${engine}`]),
+          ),
+          engines,
+          failed_engines: failedEngines,
+        };
+      },
     },
     { namespaced },
   );
@@ -95,6 +102,17 @@ test('sync refresh metadata and result report completed scans', async () => {
 
   const result = await refresh.handler({ brand_id: brand.id });
   assert.equal(result.structuredContent.message, 'Refresh completed for 2 engines');
+  assert.equal(result.structuredContent.estimated_completion_seconds, 0);
+});
+
+test('sync partial refresh discloses failures and preserves successful run IDs without claiming full completion', async () => {
+  const refresh = registerRefreshTool('sync', false, undefined, ['chatgpt']);
+  const result = await refresh.handler({ brand_id: brand.id, engines: ['chatgpt', 'claude'] });
+
+  assert.match(String(result.structuredContent.message), /partially completed for 1 engine; failed: chatgpt/i);
+  assert.match(String(result.structuredContent.message), /provider calls may incur charges/i);
+  assert.deepEqual(result.structuredContent.failed_engines, ['chatgpt']);
+  assert.deepEqual(result.structuredContent.run_ids, { chatgpt: 'run-chatgpt', claude: 'run-claude' });
   assert.equal(result.structuredContent.estimated_completion_seconds, 0);
 });
 
@@ -150,4 +168,68 @@ test('refresh deduplicates explicitly requested engines before dispatch', async 
     chatgpt: 'run-chatgpt',
     claude: 'run-claude',
   });
+});
+
+test('preview_only exposes planned prompt-engine scope without provider dispatch or run IDs', async () => {
+  let dispatches = 0;
+  const refresh = registerRefreshTool('async', true, {
+    OPENAI_API_KEY: 'test-openai-key',
+  }, [], () => { dispatches += 1; });
+
+  const result = await refresh.handler({
+    brand_id: brand.id,
+    engines: ['chatgpt', 'chatgpt', 'claude'],
+    preview_only: true,
+  });
+
+  assert.match(refresh.description, /preview_only=true/i);
+  assert.equal(dispatches, 0);
+  assert.deepEqual(result.structuredContent.run_ids, {});
+  assert.deepEqual(result.structuredContent.planned_engines, ['chatgpt']);
+  assert.deepEqual(result.structuredContent.skipped_unconfigured_engines, ['claude']);
+  assert.equal(result.structuredContent.ready_to_refresh, true);
+  assert.match(String(result.structuredContent.readiness_warnings), /claude.*skipp|skipp.*claude/i);
+  assert.match(String(result.structuredContent.message), /partial.*scope|partial.*engine/i);
+  assert.equal(result.structuredContent.active_prompt_count, 1);
+  assert.equal(result.structuredContent.planned_prompt_engine_pairs, 1);
+  assert.equal(result.structuredContent.preview_only, true);
+  assert.match(String(result.structuredContent.message), /no provider requests/i);
+  assert.match(String(result.structuredContent.cost_note), /not.*bill|not.*cost/i);
+});
+
+test('provider-free preview explains missing provider configuration without dispatching', async () => {
+  let dispatches = 0;
+  const refresh = registerRefreshTool('sync', false, {}, [], () => { dispatches += 1; });
+
+  const preview = await refresh.handler({ brand_id: brand.id, preview_only: true });
+  assert.equal(dispatches, 0);
+  assert.equal(preview.structuredContent.preview_only, true);
+  assert.equal(preview.structuredContent.ready_to_refresh, false);
+  assert.deepEqual(preview.structuredContent.run_ids, {});
+  assert.deepEqual(preview.structuredContent.planned_engines, []);
+  assert.equal(preview.structuredContent.active_prompt_count, 1);
+  assert.equal(preview.structuredContent.planned_prompt_engine_pairs, 0);
+  assert.match(String(preview.structuredContent.readiness_warnings), /provider.*key|api key/i);
+
+  const explicit = await refresh.handler({ brand_id: brand.id, engines: ['claude'], preview_only: true });
+  assert.deepEqual(explicit.structuredContent.skipped_unconfigured_engines, ['claude']);
+  assert.equal(dispatches, 0);
+  await assert.rejects(refresh.handler({ brand_id: brand.id }), /No engines available/i);
+});
+
+test('preview with zero active prompts offers a no-cost readiness diagnosis, not a scan', async () => {
+  let dispatches = 0;
+  const refresh = registerRefreshTool('sync', false, {
+    OPENAI_API_KEY: 'test-openai-key',
+  }, [], () => { dispatches += 1; }, []);
+
+  const preview = await refresh.handler({ brand_id: brand.id, preview_only: true });
+  assert.equal(dispatches, 0);
+  assert.equal(preview.structuredContent.ready_to_refresh, false);
+  assert.deepEqual(preview.structuredContent.run_ids, {});
+  assert.deepEqual(preview.structuredContent.planned_engines, ['chatgpt']);
+  assert.equal(preview.structuredContent.active_prompt_count, 0);
+  assert.equal(preview.structuredContent.planned_prompt_engine_pairs, 0);
+  assert.match(String(preview.structuredContent.readiness_warnings), /active prompts/i);
+  await assert.rejects(refresh.handler({ brand_id: brand.id }), /no active prompts/i);
 });
