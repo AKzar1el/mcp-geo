@@ -42,6 +42,11 @@ const VALID_FORMATS = new Set([
   'integration_landing_page',
 ]);
 
+// Common website files are not third-party domains when mentioned as bare
+// filenames in technical AI-discovery recommendations. Absolute URL hosts
+// still go through the stricter provenance check below.
+const SITE_FILENAMES = new Set(['robots.txt', 'sitemap.xml', 'llms.txt', 'security.txt']);
+
 const BASE_SYSTEM_PROMPT = [
   'You are a senior SEO/content strategist analyzing why a brand is losing in AI search results.',
   'Given a list of buyer-intent prompts where the brand is NOT cited but its competitors ARE,',
@@ -150,6 +155,7 @@ function referencesUnobservedDomain(
   const domainPattern = /\b(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z][a-z0-9-]{1,62}\b/gi;
   for (const match of text.matchAll(domainPattern)) {
     const domain = match[0].toLowerCase().replace(/^www\./, '');
+    if (SITE_FILENAMES.has(domain)) continue;
     if (!isObservedHost(domain)) {
       return true;
     }
