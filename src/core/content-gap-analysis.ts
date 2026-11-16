@@ -125,6 +125,10 @@ function referencesUnobservedDomain(
     brand.domain,
     ...losingPrompts.flatMap((prompt) => prompt.competitors_winning),
   ].map((domain) => domain.trim().toLowerCase().replace(/^www\./, '')));
+  // Observing asana.com does not establish that an arbitrary
+  // research.asana.com URL or claim was present in a model response.
+  const isObservedHost = (host: string): boolean =>
+    allowed.has(host.toLowerCase().replace(/^www\./, ''));
   const text = `${recommendation.topic} ${recommendation.rationale}`;
   // A valid observed anchor elsewhere in a sentence must not lend provenance
   // to an invented domain or URL in that same recommendation.
@@ -139,14 +143,14 @@ function referencesUnobservedDomain(
     } catch {
       return true;
     }
-    if (!host || ![...allowed].some((known) => host === known || host.endsWith(`.${known}`))) {
+    if (!host || !isObservedHost(host)) {
       return true;
     }
   }
   const domainPattern = /\b(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z][a-z0-9-]{1,62}\b/gi;
   for (const match of text.matchAll(domainPattern)) {
     const domain = match[0].toLowerCase().replace(/^www\./, '');
-    if (![...allowed].some((known) => domain === known || domain.endsWith(`.${known}`))) {
+    if (!isObservedHost(domain)) {
       return true;
     }
   }

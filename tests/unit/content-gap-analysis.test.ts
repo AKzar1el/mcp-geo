@@ -771,6 +771,43 @@ test('content-gap analyzer excludes mixed observed and invented competitor domai
   }
 });
 
+test('content-gap analyzer rejects invented subdomain URLs without another paid call', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return Response.json({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify([
+        {
+          priority: 1,
+          topic: 'Acme versus Asana research',
+          rationale: 'Asana is observed, and https://fabricated.asana.com/report is supposedly a cited report',
+          suggested_format: 'comparison_page',
+        },
+        {
+          priority: 2,
+          topic: 'Acme versus Asana integration',
+          rationale: 'Compare with the observed asana.com competitor using its main website https://www.asana.com/',
+          suggested_format: 'integration_landing_page',
+        },
+      ]) }],
+    });
+  };
+  try {
+    const recommendations = await analyzeContentGaps(
+      { ANTHROPIC_API_KEY: 'synthetic-offline-key' },
+      { id: 'acme', name: 'Acme', domain: 'acme.com' } as Brand,
+      [{ prompt_text: 'Compare agency tools', engines_lost_on: ['chatgpt'], competitors_winning: ['asana.com'] }],
+      2,
+    );
+    assert.deepEqual(recommendations.map((rec) => rec.topic), ['Acme versus Asana integration']);
+    assert.equal(calls, 1, 'unobserved subdomain must not trigger another provider request');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('content-gap analyzer falls back when every model recommendation mixes observed and invented domains', async () => {
   const originalFetch = globalThis.fetch;
   let calls = 0;
