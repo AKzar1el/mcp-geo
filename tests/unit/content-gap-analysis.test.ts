@@ -783,6 +783,54 @@ test('content-gap quoted prompt text alone cannot supply the winning competitor 
   }
 });
 
+test('content-gap analyzer preserves recorded buyer questions containing third-party domains', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    return Response.json({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify([
+        {
+          priority: 1,
+          topic: 'Acme versus Asana for "Can Shopify.com connect to Salesforce?"',
+          rationale: 'asana.com won this recorded buyer question about an external integration.',
+          suggested_format: 'integration_landing_page',
+        },
+        {
+          priority: 2,
+          topic: 'Acme versus Asana external integration',
+          rationale: 'asana.com won, and shopify.com independently proves the result.',
+          suggested_format: 'integration_landing_page',
+        },
+        {
+          priority: 3,
+          topic: 'Acme versus Asana fabricated reference',
+          rationale: 'asana.com won and https://invented.example/report proves it.',
+          suggested_format: 'comparison_page',
+        },
+      ]) }],
+    });
+  };
+  try {
+    const recommendations = await analyzeContentGaps(
+      { ANTHROPIC_API_KEY: 'synthetic-offline-key' },
+      { id: 'acme', name: 'Acme', domain: 'acme.com' } as Brand,
+      [{
+        prompt_text: 'Can Shopify.com connect to Salesforce?',
+        engines_lost_on: ['chatgpt'],
+        competitors_winning: ['asana.com'],
+      }],
+      3,
+    );
+    assert.deepEqual(recommendations.map((rec) => rec.priority), [1],
+      'exact observed questions are safe to quote, but do not license external domain claims');
+    assert.equal(calls, 1, 'semantic validation must never retry a paid model');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('content-gap analyzer returns distinct actionable topics instead of duplicate paid-model advice', async () => {
   const originalFetch = globalThis.fetch;
   let calls = 0;

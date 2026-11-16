@@ -107,6 +107,16 @@ function formatLabel(format: string): string {
   return format.replaceAll('_', ' ');
 }
 
+function withoutQuotedObservedPrompts(text: string, losingPrompts: LosingPromptSummary[]): string {
+  let remaining = text.toLowerCase();
+  for (const { prompt_text } of losingPrompts) {
+    const prompt = prompt_text.trim().toLowerCase();
+    if (!prompt) continue;
+    remaining = remaining.replaceAll(`"${prompt}"`, ' ').replaceAll(`'${prompt}'`, ' ');
+  }
+  return remaining;
+}
+
 function mentionsObservedCompetitor(
   recommendation: ContentGapRecommendation,
   losingPrompts: LosingPromptSummary[],
@@ -120,10 +130,7 @@ function mentionsObservedCompetitor(
   });
   // A quoted buyer question can itself contain a winning competitor's name.
   // Require that winner to be named independently of the quoted question.
-  const evidenceText = quotedPrompts.reduce((remaining, { prompt_text }) => {
-    const prompt = prompt_text.trim().toLowerCase();
-    return remaining.replaceAll(`"${prompt}"`, ' ').replaceAll(`'${prompt}'`, ' ');
-  }, quotedText);
+  const evidenceText = withoutQuotedObservedPrompts(quotedText, quotedPrompts);
   const mentionedDomains = new Set(bareDomains(evidenceText).filter((domain): domain is string => !!domain));
   const mentionsCompetitor = (competitor: string): boolean => {
     const domain = competitor.trim().toLowerCase().replace(/^www\./, '');
@@ -162,7 +169,12 @@ function referencesUnobservedDomain(
   // research.asana.com URL or claim was present in a model response.
   const isObservedHost = (host: string): boolean =>
     allowed.has(host.toLowerCase().replace(/^www\./, ''));
-  const text = `${recommendation.topic} ${recommendation.rationale}`;
+  // A verbatim recorded buyer question can mention integration partners that
+  // are not observed competitors. It does not authorize new domain claims.
+  const text = withoutQuotedObservedPrompts(
+    `${recommendation.topic} ${recommendation.rationale}`,
+    losingPrompts,
+  );
   // A valid observed anchor elsewhere in a sentence must not lend provenance
   // to an invented domain or URL in that same recommendation.
   // Hostnames in absolute URLs may contain Unicode/IDNA labels, which the
