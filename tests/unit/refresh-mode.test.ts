@@ -187,6 +187,9 @@ test('preview_only exposes planned prompt-engine scope without provider dispatch
   assert.deepEqual(result.structuredContent.run_ids, {});
   assert.deepEqual(result.structuredContent.planned_engines, ['chatgpt']);
   assert.deepEqual(result.structuredContent.skipped_unconfigured_engines, ['claude']);
+  assert.equal(result.structuredContent.ready_to_refresh, true);
+  assert.match(String(result.structuredContent.readiness_warnings), /claude.*skipp|skipp.*claude/i);
+  assert.match(String(result.structuredContent.message), /partial.*scope|partial.*engine/i);
   assert.equal(result.structuredContent.active_prompt_count, 1);
   assert.equal(result.structuredContent.planned_prompt_engine_pairs, 1);
   assert.equal(result.structuredContent.preview_only, true);
