@@ -547,6 +547,8 @@ const refreshOutputSchema = z.object({
   active_prompt_count: z.number().optional(),
   planned_prompt_engine_pairs: z.number().optional(),
   cost_note: z.string().optional(),
+  ready_to_refresh: z.boolean().optional(),
+  readiness_warnings: z.array(z.string()).optional(),
 });
 
 const trackBrandOutputSchema = z.object({
@@ -2135,7 +2137,7 @@ export function registerTools(
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
       }
       const prompts = await deps.db.getActivePrompts(brand_id);
-      if (prompts.length === 0) {
+      if (prompts.length === 0 && !preview_only) {
         throw new Error(
           'Brand has no active prompts. Run the generate_prompts tool (local CLI) or POST /admin/generate-prompts (Workers deployment).',
         );
@@ -2156,7 +2158,7 @@ export function registerTools(
       const skippedUnconfigured = requested && requested.length > 0
         ? uniqueEngineNames(requested).filter((engine) => !filtered.includes(engine))
         : [];
-      if (filtered.length === 0) {
+      if (filtered.length === 0 && !preview_only) {
         if (requested && requested.length > 0) {
           throw new Error(
             `Requested engines are not configured: ${uniqueEngineNames(requested).join(', ')}. Configure the matching provider API key (and SERPAPI_AI_MODE_ENABLED=true for Google AI Mode), or omit engines to refresh every configured engine.`,
@@ -2167,9 +2169,20 @@ export function registerTools(
         );
       }
       if (preview_only) {
+        const readinessWarnings: string[] = [];
+        if (prompts.length === 0) {
+          readinessWarnings.push('No active prompts. Add or activate buyer-intent prompts before scanning.');
+        }
+        if (filtered.length === 0) {
+          readinessWarnings.push(requested
+            ? `No requested provider engines configured (${uniqueEngineNames(requested).join(', ')}). Configure their API keys or select available engines.`
+            : 'No provider engines configured. Set at least one supported provider API key before scanning.');
+        }
         return toolResult({
           brand_id: brand.id,
-          message: 'Preview only: no provider requests started. Run refresh_brand without preview_only only after reviewing the active prompts and provider charges.',
+          message: readinessWarnings.length > 0
+            ? `Preview only: scan not ready; no provider requests started. ${readinessWarnings.join(' ')}`
+            : 'Preview only: no provider requests started. Run refresh_brand without preview_only only after reviewing the active prompts and provider charges.',
           run_ids: {},
           failed_engines: [],
           skipped_unconfigured_engines: skippedUnconfigured,
@@ -2178,6 +2191,8 @@ export function registerTools(
           planned_engines: filtered,
           active_prompt_count: prompts.length,
           planned_prompt_engine_pairs: prompts.length * filtered.length,
+          ready_to_refresh: readinessWarnings.length === 0,
+          readiness_warnings: readinessWarnings,
           cost_note: 'Logical prompt-engine pairs are not a billing estimate or total cost. Actual API requests, retries, token use and provider charges can differ.',
         });
       }

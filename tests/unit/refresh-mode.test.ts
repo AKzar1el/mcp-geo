@@ -46,6 +46,7 @@ function registerRefreshTool(
   },
   failedEngines: EngineName[] = [],
   onDispatch?: () => void,
+  activePrompts: Prompt[] = [prompt],
 ): RefreshTool {
   const tools = new Map<string, RefreshTool>();
   const server = {
@@ -62,7 +63,7 @@ function registerRefreshTool(
     {
       db: {
         getBrand: async () => brand,
-        getActivePrompts: async () => [prompt],
+        getActivePrompts: async () => activePrompts,
       } as Db,
       env,
       refreshExecution,
@@ -191,4 +192,41 @@ test('preview_only exposes planned prompt-engine scope without provider dispatch
   assert.equal(result.structuredContent.preview_only, true);
   assert.match(String(result.structuredContent.message), /no provider requests/i);
   assert.match(String(result.structuredContent.cost_note), /not.*bill|not.*cost/i);
+});
+
+test('provider-free preview explains missing provider configuration without dispatching', async () => {
+  let dispatches = 0;
+  const refresh = registerRefreshTool('sync', false, {}, [], () => { dispatches += 1; });
+
+  const preview = await refresh.handler({ brand_id: brand.id, preview_only: true });
+  assert.equal(dispatches, 0);
+  assert.equal(preview.structuredContent.preview_only, true);
+  assert.equal(preview.structuredContent.ready_to_refresh, false);
+  assert.deepEqual(preview.structuredContent.run_ids, {});
+  assert.deepEqual(preview.structuredContent.planned_engines, []);
+  assert.equal(preview.structuredContent.active_prompt_count, 1);
+  assert.equal(preview.structuredContent.planned_prompt_engine_pairs, 0);
+  assert.match(String(preview.structuredContent.readiness_warnings), /provider.*key|api key/i);
+
+  const explicit = await refresh.handler({ brand_id: brand.id, engines: ['claude'], preview_only: true });
+  assert.deepEqual(explicit.structuredContent.skipped_unconfigured_engines, ['claude']);
+  assert.equal(dispatches, 0);
+  await assert.rejects(refresh.handler({ brand_id: brand.id }), /No engines available/i);
+});
+
+test('preview with zero active prompts offers a no-cost readiness diagnosis, not a scan', async () => {
+  let dispatches = 0;
+  const refresh = registerRefreshTool('sync', false, {
+    OPENAI_API_KEY: 'test-openai-key',
+  }, [], () => { dispatches += 1; }, []);
+
+  const preview = await refresh.handler({ brand_id: brand.id, preview_only: true });
+  assert.equal(dispatches, 0);
+  assert.equal(preview.structuredContent.ready_to_refresh, false);
+  assert.deepEqual(preview.structuredContent.run_ids, {});
+  assert.deepEqual(preview.structuredContent.planned_engines, ['chatgpt']);
+  assert.equal(preview.structuredContent.active_prompt_count, 0);
+  assert.equal(preview.structuredContent.planned_prompt_engine_pairs, 0);
+  assert.match(String(preview.structuredContent.readiness_warnings), /active prompts/i);
+  await assert.rejects(refresh.handler({ brand_id: brand.id }), /no active prompts/i);
 });
