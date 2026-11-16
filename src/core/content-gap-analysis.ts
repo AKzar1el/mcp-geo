@@ -113,22 +113,34 @@ function mentionsObservedCompetitor(
 ): boolean {
   const text = `${recommendation.topic} ${recommendation.rationale}`;
   const mentionedDomains = new Set(bareDomains(text).filter((domain): domain is string => !!domain));
-  for (const prompt of losingPrompts) {
-    for (const competitor of prompt.competitors_winning) {
-      const domain = competitor.trim().toLowerCase().replace(/^www\./, '');
-      if (mentionedDomains.has(domain)) return true;
-      const label = domain.split('.')[0] ?? '';
-      // Names such as Asana may be used instead of asana.com. Short labels
-      // would match unrelated prose, so require their full domain instead.
-      for (const anchor of [domain, ...(label.length >= 4 ? [label] : [])]) {
-        const escaped = anchor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        if (escaped && new RegExp(`(^|[^a-z0-9])${escaped}($|[^a-z0-9])`, 'i').test(text)) {
-          return true;
-        }
+  const mentionsCompetitor = (competitor: string): boolean => {
+    const domain = competitor.trim().toLowerCase().replace(/^www\./, '');
+    if (mentionedDomains.has(domain)) return true;
+    const label = domain.split('.')[0] ?? '';
+    // Names such as Asana may be used instead of asana.com. Short labels
+    // would match unrelated prose, so require their full domain instead.
+    for (const anchor of [domain, ...(label.length >= 4 ? [label] : [])]) {
+      const escaped = anchor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (escaped && new RegExp(`(^|[^a-z0-9])${escaped}($|[^a-z0-9])`, 'i').test(text)) {
+        return true;
       }
     }
+    return false;
+  };
+  // An exact quoted buyer prompt names a specific observed evidence cohort.
+  // A competitor winning some other prompt cannot substantiate that claim.
+  const quotedText = text.toLowerCase();
+  const quotedPrompts = losingPrompts.filter(({ prompt_text }) => {
+    const prompt = prompt_text.trim().toLowerCase();
+    return prompt.length > 0 &&
+      (quotedText.includes(`"${prompt}"`) || quotedText.includes(`'${prompt}'`));
+  });
+  if (quotedPrompts.length > 0) {
+    return quotedPrompts.every((prompt) =>
+      prompt.competitors_winning.some(mentionsCompetitor));
   }
-  return false;
+  return losingPrompts.some((prompt) =>
+    prompt.competitors_winning.some(mentionsCompetitor));
 }
 
 function referencesUnobservedDomain(
