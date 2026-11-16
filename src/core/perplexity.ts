@@ -16,6 +16,7 @@ import type {
   Prompt,
 } from '../db/types.js';
 import { fetchWithTimeout } from './fetch.js';
+import { normalizeDomainInput } from './domain.js';
 import { redactProviderError } from './provider-error.js';
 
 // Perplexity is retiring fixed Sonar tiers on 2026-09-27. The Agent API
@@ -92,9 +93,10 @@ function extractAgentCitations(data: PerplexityResponse): string[] {
       if (typeof result.url !== 'string') continue;
       try {
         const parsed = new URL(result.url);
-        // Only HTTP(S) search results are valid citation sources.
+        // Search-result metadata must point to a domain-shaped web host,
+        // not a loopback, IP literal, or malformed DNS spelling.
         if ((parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
-            parsed.hostname && !parsed.username && !parsed.password) {
+            normalizeDomainInput(parsed.hostname) && !parsed.username && !parsed.password) {
           urls.push(result.url);
         }
       } catch {
