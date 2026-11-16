@@ -47,6 +47,14 @@ const VALID_FORMATS = new Set([
 // still go through the stricter provenance check below.
 const SITE_FILENAMES = new Set(['robots.txt', 'sitemap.xml', 'llms.txt', 'security.txt']);
 
+// Include bare IDNA/Unicode hostnames, not only absolute URLs. An ASCII-only
+// scan could otherwise mistake invented international domains for evidence.
+const BARE_DOMAIN_PATTERN = /(?<![\p{L}\p{M}\p{N}_.-])(?:[\p{L}\p{M}\p{N}](?:[\p{L}\p{M}\p{N}-]*[\p{L}\p{M}\p{N}])?[.\u3002\uFF0E\uFF61])+[\p{L}\p{M}][\p{L}\p{M}\p{N}-]{1,62}(?![\p{L}\p{M}\p{N}_-])/giu;
+
+function bareDomains(text: string): Array<string | null> {
+  return [...text.matchAll(BARE_DOMAIN_PATTERN)].map((match) => normalizeDomainInput(match[0]));
+}
+
 const BASE_SYSTEM_PROMPT = [
   'You are a senior SEO/content strategist analyzing why a brand is losing in AI search results.',
   'Given a list of buyer-intent prompts where the brand is NOT cited but its competitors ARE,',
@@ -104,9 +112,11 @@ function mentionsObservedCompetitor(
   losingPrompts: LosingPromptSummary[],
 ): boolean {
   const text = `${recommendation.topic} ${recommendation.rationale}`;
+  const mentionedDomains = new Set(bareDomains(text).filter((domain): domain is string => !!domain));
   for (const prompt of losingPrompts) {
     for (const competitor of prompt.competitors_winning) {
       const domain = competitor.trim().toLowerCase().replace(/^www\./, '');
+      if (mentionedDomains.has(domain)) return true;
       const label = domain.split('.')[0] ?? '';
       // Names such as Asana may be used instead of asana.com. Short labels
       // would match unrelated prose, so require their full domain instead.
@@ -152,9 +162,8 @@ function referencesUnobservedDomain(
       return true;
     }
   }
-  const domainPattern = /\b(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z][a-z0-9-]{1,62}\b/gi;
-  for (const match of text.matchAll(domainPattern)) {
-    const domain = match[0].toLowerCase().replace(/^www\./, '');
+  for (const domain of bareDomains(text)) {
+    if (!domain) return true;
     if (SITE_FILENAMES.has(domain)) continue;
     if (!isObservedHost(domain)) {
       return true;
