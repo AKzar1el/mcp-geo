@@ -808,6 +808,44 @@ test('content-gap analyzer rejects invented subdomain URLs without another paid 
   }
 });
 
+test('content-gap analyzer keeps common GEO files without accepting invented domain URLs', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return Response.json({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify([
+        {
+          priority: 1,
+          topic: 'Acme versus Asana AI discovery guidance',
+          rationale: 'Compare observed asana.com with Acme and document robots.txt, sitemap.xml, llms.txt and security.txt readiness',
+          suggested_format: 'how_to_guide',
+        },
+        {
+          priority: 2,
+          topic: 'Acme versus Asana unsupported source',
+          rationale: 'Asana is observed, but https://invented.example/robots.txt is not',
+          suggested_format: 'comparison_page',
+        },
+      ]) }],
+    });
+  };
+  try {
+    const recommendations = await analyzeContentGaps(
+      { ANTHROPIC_API_KEY: 'synthetic-offline-key' },
+      { id: 'acme', name: 'Acme', domain: 'acme.com' } as Brand,
+      [{ prompt_text: 'Compare AI discovery tools', engines_lost_on: ['chatgpt'], competitors_winning: ['asana.com'] }],
+      2,
+    );
+    assert.deepEqual(recommendations.map((rec) => rec.topic),
+      ['Acme versus Asana AI discovery guidance']);
+    assert.equal(calls, 1, 'file-name parsing must not trigger another provider request');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('content-gap analyzer falls back when every model recommendation mixes observed and invented domains', async () => {
   const originalFetch = globalThis.fetch;
   let calls = 0;
