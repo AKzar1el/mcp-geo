@@ -923,6 +923,72 @@ test('content-gap analyzer rejects unobserved Unicode URL hosts beside genuine c
   }
 });
 
+test('content-gap analyzer rejects invented bare internationalized domains without a paid retry', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return Response.json({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify([
+        {
+          priority: 1,
+          topic: 'Acme versus Asana global competitor guide',
+          rationale: 'Asana is observed, but the claimed source \u5047\u5192.\u6d4b\u8bd5 is not an observed competitor',
+          suggested_format: 'comparison_page',
+        },
+        {
+          priority: 2,
+          topic: 'Acme versus Asana observed comparison',
+          rationale: 'Only the observed asana.com website supplies the comparison evidence',
+          suggested_format: 'comparison_page',
+        },
+      ]) }],
+    });
+  };
+  try {
+    const recommendations = await analyzeContentGaps(
+      { ANTHROPIC_API_KEY: 'synthetic-offline-key' },
+      { id: 'acme', name: 'Acme', domain: 'acme.com' } as Brand,
+      [{ prompt_text: 'Compare agency tools', engines_lost_on: ['chatgpt'], competitors_winning: ['asana.com'] }],
+      2,
+    );
+    assert.deepEqual(recommendations.map((rec) => rec.topic), ['Acme versus Asana observed comparison']);
+    assert.equal(calls, 1, 'bare Unicode provenance checking must not trigger a second model request');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('content-gap analyzer recognizes an observed bare Unicode competitor domain by IDNA', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return Response.json({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify([{
+        priority: 1,
+        topic: 'Compare Acme with \u4f8b\u5b50.\u4e2d\u56fd',
+        rationale: 'The observed \u4f8b\u5b50.\u4e2d\u56fd competitor is cited in the source results',
+        suggested_format: 'comparison_page',
+      }]) }],
+    });
+  };
+  try {
+    const recommendations = await analyzeContentGaps(
+      { ANTHROPIC_API_KEY: 'synthetic-offline-key' },
+      { id: 'acme', name: 'Acme', domain: 'acme.com' } as Brand,
+      [{ prompt_text: 'Compare international tools', engines_lost_on: ['chatgpt'], competitors_winning: ['xn--fsqu00a.xn--fiqs8s'] }],
+      1,
+    );
+    assert.deepEqual(recommendations.map((rec) => rec.topic), ['Compare Acme with \u4f8b\u5b50.\u4e2d\u56fd']);
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('content-gap analyzer rejects whitespace-only Anthropic credentials before requests', async () => {
   const originalFetch = globalThis.fetch;
   let fetchCalls = 0;
