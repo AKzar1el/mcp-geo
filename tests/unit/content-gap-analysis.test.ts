@@ -701,6 +701,47 @@ test('content-gap analyzer keeps only recommendations anchored to observed compe
   }
 });
 
+test('content-gap analyzer does not attribute a competitor win to a different quoted buyer prompt', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    return Response.json({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify([
+        {
+          priority: 1,
+          topic: 'Acme versus monday.com for "Best analytics tools for stores"',
+          rationale: 'monday.com supposedly won this exact analytics buyer prompt',
+          suggested_format: 'comparison_page',
+        },
+        {
+          priority: 2,
+          topic: 'Acme versus asana.com for "Best analytics tools for stores"',
+          rationale: 'asana.com won the observed analytics buyer prompt',
+          suggested_format: 'comparison_page',
+        },
+      ]) }],
+    });
+  };
+  try {
+    const recommendations = await analyzeContentGaps(
+      { ANTHROPIC_API_KEY: 'synthetic-offline-key' },
+      { id: 'acme', name: 'Acme', domain: 'acme.com' } as Brand,
+      [
+        { prompt_text: 'Best analytics tools for stores', engines_lost_on: ['chatgpt'], competitors_winning: ['asana.com'] },
+        { prompt_text: 'Best collaboration platforms', engines_lost_on: ['claude'], competitors_winning: ['monday.com'] },
+      ],
+      2,
+    );
+    assert.deepEqual(recommendations.map((rec) => rec.priority), [2],
+      'a real competitor win on another prompt must not substantiate an exact quoted prompt claim');
+    assert.equal(calls, 1, 'evidence rejection must not trigger an additional paid call');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('content-gap analyzer returns distinct actionable topics instead of duplicate paid-model advice', async () => {
   const originalFetch = globalThis.fetch;
   let calls = 0;
