@@ -112,7 +112,19 @@ function mentionsObservedCompetitor(
   losingPrompts: LosingPromptSummary[],
 ): boolean {
   const text = `${recommendation.topic} ${recommendation.rationale}`;
-  const mentionedDomains = new Set(bareDomains(text).filter((domain): domain is string => !!domain));
+  const quotedText = text.toLowerCase();
+  const quotedPrompts = losingPrompts.filter(({ prompt_text }) => {
+    const prompt = prompt_text.trim().toLowerCase();
+    return prompt.length > 0 &&
+      (quotedText.includes(`"${prompt}"`) || quotedText.includes(`'${prompt}'`));
+  });
+  // A quoted buyer question can itself contain a winning competitor's name.
+  // Require that winner to be named independently of the quoted question.
+  const evidenceText = quotedPrompts.reduce((remaining, { prompt_text }) => {
+    const prompt = prompt_text.trim().toLowerCase();
+    return remaining.replaceAll(`"${prompt}"`, ' ').replaceAll(`'${prompt}'`, ' ');
+  }, quotedText);
+  const mentionedDomains = new Set(bareDomains(evidenceText).filter((domain): domain is string => !!domain));
   const mentionsCompetitor = (competitor: string): boolean => {
     const domain = competitor.trim().toLowerCase().replace(/^www\./, '');
     if (mentionedDomains.has(domain)) return true;
@@ -121,7 +133,7 @@ function mentionsObservedCompetitor(
     // would match unrelated prose, so require their full domain instead.
     for (const anchor of [domain, ...(label.length >= 4 ? [label] : [])]) {
       const escaped = anchor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      if (escaped && new RegExp(`(^|[^a-z0-9])${escaped}($|[^a-z0-9])`, 'i').test(text)) {
+      if (escaped && new RegExp(`(^|[^a-z0-9])${escaped}($|[^a-z0-9])`, 'i').test(evidenceText)) {
         return true;
       }
     }
@@ -129,12 +141,6 @@ function mentionsObservedCompetitor(
   };
   // An exact quoted buyer prompt names a specific observed evidence cohort.
   // A competitor winning some other prompt cannot substantiate that claim.
-  const quotedText = text.toLowerCase();
-  const quotedPrompts = losingPrompts.filter(({ prompt_text }) => {
-    const prompt = prompt_text.trim().toLowerCase();
-    return prompt.length > 0 &&
-      (quotedText.includes(`"${prompt}"`) || quotedText.includes(`'${prompt}'`));
-  });
   if (quotedPrompts.length > 0) {
     return quotedPrompts.every((prompt) =>
       prompt.competitors_winning.some(mentionsCompetitor));
