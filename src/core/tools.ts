@@ -2170,6 +2170,7 @@ export function registerTools(
       }
       if (preview_only) {
         const readinessWarnings: string[] = [];
+        const readyToRefresh = prompts.length > 0 && filtered.length > 0;
         if (prompts.length === 0) {
           readinessWarnings.push('No active prompts. Add or activate buyer-intent prompts before scanning.');
         }
@@ -2178,10 +2179,15 @@ export function registerTools(
             ? `No requested provider engines configured (${uniqueEngineNames(requested).join(', ')}). Configure their API keys or select available engines.`
             : 'No provider engines configured. Set at least one supported provider API key before scanning.');
         }
+        if (filtered.length > 0 && skippedUnconfigured.length > 0) {
+          readinessWarnings.push(`Requested engines without configuration will be skipped: ${skippedUnconfigured.join(', ')}. Configure their API keys to scan the complete requested scope.`);
+        }
         return toolResult({
           brand_id: brand.id,
-          message: readinessWarnings.length > 0
+          message: !readyToRefresh
             ? `Preview only: scan not ready; no provider requests started. ${readinessWarnings.join(' ')}`
+            : skippedUnconfigured.length > 0
+              ? `Preview only: partial engine scope; no provider requests started. ${readinessWarnings.join(' ')} Ready to scan configured engines only; review provider charges before proceeding.`
             : 'Preview only: no provider requests started. Run refresh_brand without preview_only only after reviewing the active prompts and provider charges.',
           run_ids: {},
           failed_engines: [],
@@ -2191,7 +2197,7 @@ export function registerTools(
           planned_engines: filtered,
           active_prompt_count: prompts.length,
           planned_prompt_engine_pairs: prompts.length * filtered.length,
-          ready_to_refresh: readinessWarnings.length === 0,
+          ready_to_refresh: readyToRefresh,
           readiness_warnings: readinessWarnings,
           cost_note: 'Logical prompt-engine pairs are not a billing estimate or total cost. Actual API requests, retries, token use and provider charges can differ.',
         });
