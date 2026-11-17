@@ -370,7 +370,11 @@ function parseMarkdownReferenceLinks(text: string): { visibleText: string; urls:
   for (const match of withoutExplicit.matchAll(/(?<!!)\[([^\]\r\n]+)\](?!\s*[\[(])/g)) {
     addReference(match[1]);
   }
-  return { visibleText, urls };
+  // An explicit reference ID is not visible in rendered Markdown. Preserve
+  // only the displayed label once its reference definition is resolved.
+  const renderedText = visibleText.replace(explicit, (full, label: string, id: string) =>
+    definitions.has(normalizeLabel(id || label)) ? label : full);
+  return { visibleText: renderedText, urls };
 }
 
 function decodeVisibleHtmlCharacterReferences(text: string): string {
