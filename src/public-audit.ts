@@ -269,15 +269,17 @@ export function handlePublicAudit(request: Request): Response | null {
     return null;
   }
 
-  if (request.method !== 'GET') {
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
     return new Response('Method Not Allowed', {
       status: 405,
-      headers: { Allow: 'GET' },
+      headers: { Allow: 'GET, HEAD' },
     });
   }
 
+  const isHead = request.method === 'HEAD';
+
   if (url.pathname === '/robots.txt') {
-    return new Response(ROBOTS_BODY, {
+    return new Response(isHead ? null : ROBOTS_BODY, {
       headers: {
         'content-type': 'text/plain; charset=utf-8',
         'x-content-type-options': 'nosniff',
@@ -286,7 +288,7 @@ export function handlePublicAudit(request: Request): Response | null {
   }
 
   if (url.pathname === '/') {
-    return new Response(publicRootText(url.origin), {
+    return new Response(isHead ? null : publicRootText(url.origin), {
       headers: {
         'content-type': 'text/plain; charset=utf-8',
         'x-content-type-options': 'nosniff',
@@ -295,7 +297,7 @@ export function handlePublicAudit(request: Request): Response | null {
   }
 
   if (url.pathname === '/sitemap.xml') {
-    return new Response(SITEMAP_BODY, {
+    return new Response(isHead ? null : SITEMAP_BODY, {
       headers: {
         'content-type': 'application/xml; charset=utf-8',
         'x-content-type-options': 'nosniff',
@@ -304,7 +306,7 @@ export function handlePublicAudit(request: Request): Response | null {
   }
 
   if (url.pathname === '/privacy') {
-    return new Response(PRIVACY_BODY, {
+    return new Response(isHead ? null : PRIVACY_BODY, {
       headers: {
         'cache-control': 'no-store',
         'content-type': 'text/plain; charset=utf-8',
@@ -313,7 +315,7 @@ export function handlePublicAudit(request: Request): Response | null {
     });
   }
 
-  return new Response(auditHtml(url.origin), {
+  return new Response(isHead ? null : auditHtml(url.origin), {
     headers: {
       'cache-control': 'no-store',
       'content-type': 'text/html; charset=utf-8',
