@@ -323,6 +323,17 @@ function omitMarkdownCodeExamples(text: string): string {
       return '';
     }
     blankLines = 0;
+    // CommonMark thematic breaks interrupt paragraphs, and a setext
+    // underline ends its heading. Indented code can start on the next line
+    // without an intervening blank line in either case.
+    const thematicBreak = /^[ \t]{0,3}(?:(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|(?:-[ \t]*){3,})$/.test(line);
+    const setextUnderline = paragraphOpen && /^[ \t]{0,3}(?:=+|-+)[ \t]*$/.test(line);
+    if (thematicBreak || setextUnderline) {
+      indentedCode = false;
+      paragraphOpen = false;
+      listContentIndent = 0;
+      return '';
+    }
     const leading = /^[ \t]*/.exec(line)?.[0] ?? '';
     let indent = 0;
     for (const char of leading) indent += char === '\t' ? 4 - (indent % 4) : 1;
