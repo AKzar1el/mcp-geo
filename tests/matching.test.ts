@@ -120,6 +120,26 @@ test('Pakistani and Thai public suffixes keep competitor names visible in prose'
   );
 });
 
+test('Kenyan, Nigerian, Ugandan and Bangladeshi registrable names are visible evidence', () => {
+  const brand = makeBrand({
+    domain: 'bayleaf.co.ke',
+    name: 'Different legal name',
+    competitors: ['noria.com.ng', 'kampala.co.ug', 'delta.com.bd', 'robin.co.bd'],
+  });
+  const result = extractCitations(
+    brand,
+    'Bayleaf is mentioned alongside Noria, Kampala, Delta and Robin.',
+  );
+  assert.equal(result.brand_mentioned, 1);
+  assert.deepEqual(result.competitors_mentioned, [
+    'noria.com.ng', 'kampala.co.ug', 'delta.com.bd', 'robin.co.bd',
+  ]);
+
+  const unrelated = extractCitations(brand, 'The co and com divisions are separate.');
+  assert.equal(unrelated.brand_mentioned, 0);
+  assert.deepEqual(unrelated.competitors_mentioned, []);
+});
+
 test('subdomain-tracked brands and competitors match their registrable name in answer prose', () => {
   const brand = makeBrand({
     domain: 'portal.acme.com',
