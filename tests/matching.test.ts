@@ -301,3 +301,26 @@ test('hidden Markdown reference IDs do not count as brand or competitor mentions
   assert.equal(visible.brand_mentioned, 1);
   assert.deepEqual(visible.competitors_mentioned, ['rival.com']);
 });
+
+test('nested Markdown image labels and asset URLs are not answer citations or visible mentions', () => {
+  const brand = makeBrand({ domain: 'acme.com', name: 'Acme', competitors: ['rival.com'] });
+  for (const response of [
+    '![A [Acme] logo](https://acme.com/logo.png)',
+    '![The [Acme] and [Rival] logos](https://assets.example/logos.png)',
+    '![A [Rival] diagram][graphic]\n\n[graphic]: https://rival.com/image.svg',
+  ]) {
+    const evidence = extractCitations(brand, response);
+    assert.equal(evidence.brand_mentioned, 0, response);
+    assert.equal(evidence.brand_cited_with_link, 0, response);
+    assert.deepEqual(evidence.competitors_mentioned, [], response);
+    assert.deepEqual(evidence.cited_urls, [], response);
+  }
+
+  const visible = extractCitations(
+    brand,
+    'Acme is compared with Rival. ![The [Acme] and [Rival] logos](https://assets.example/logos.png)',
+  );
+  assert.equal(visible.brand_mentioned, 1);
+  assert.deepEqual(visible.competitors_mentioned, ['rival.com']);
+  assert.deepEqual(visible.cited_urls, []);
+});

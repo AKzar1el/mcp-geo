@@ -326,11 +326,11 @@ function omitHtmlTags(text: string): string {
 
 function omitMarkdownImageAssets(text: string): string {
   // Image alt labels describe assets, not AI recommendations or source links.
-  // This applies to relative and embedded targets as well as web URLs.
+  // This includes one-level bracketed alt text, relative and embedded targets.
   return text.replace(
-    /!\[[^\]\r\n]*\]\(\s*(?:\([^()\s]*\)|[^\s()])+(?:\s+(?:"[^"\r\n]*"|'[^'\r\n]*'))?\s*\)/gi,
+    /!\[(?:[^\[\]\r\n]|\[[^\[\]\r\n]*\])*\]\(\s*(?:\([^()\s]*\)|[^\s()])+(?:\s+(?:"[^"\r\n]*"|'[^'\r\n]*'))?\s*\)/gi,
     ' ',
-  ).replace(/!\[[^\]\r\n]*\](?:\[[^\]\r\n]*\])?/g, ' ');
+  ).replace(/!\[(?:[^\[\]\r\n]|\[[^\[\]\r\n]*\])*\](?:\[[^\]\r\n]*\])?/g, ' ');
 }
 
 function omitMarkdownLinkTitles(text: string): string {
