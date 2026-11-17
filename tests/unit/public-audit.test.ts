@@ -277,7 +277,22 @@ test('audit form refuses blank required values and more than three competitors b
   assert.equal(copied.length, 1, 'a request with three competitors remains copyable');
 });
 
-test('non-GET /audit requests are rejected without entering MCP or admin flows', async () => {
+test('HEAD public resource requests match GET metadata without sending response bodies', async () => {
+  const { handlePublicAudit } = await loadAuditModule();
+  for (const path of ['/', '/audit', '/privacy', '/robots.txt', '/sitemap.xml']) {
+    const url = `https://geo-mcp.digestseo.com${path}`;
+    const get = handlePublicAudit(new Request(url));
+    const head = handlePublicAudit(new Request(url, { method: 'HEAD' }));
+    assert.ok(get);
+    assert.ok(head);
+    assert.equal(head.status, get.status, `${path} HEAD must be successful`);
+    assert.equal(head.headers.get('content-type'), get.headers.get('content-type'));
+    assert.equal(head.headers.get('cache-control'), get.headers.get('cache-control'));
+    assert.equal(await head.text(), '', `${path} HEAD must not return a body`);
+  }
+});
+
+test('unsupported /audit methods are rejected without entering MCP or admin flows', async () => {
   const { handlePublicAudit } = await loadAuditModule();
   const response = handlePublicAudit(
     new Request('https://geo-mcp.digestseo.com/audit', { method: 'POST' }),
@@ -285,7 +300,7 @@ test('non-GET /audit requests are rejected without entering MCP or admin flows',
 
   assert.ok(response);
   assert.equal(response.status, 405);
-  assert.equal(response.headers.get('allow'), 'GET');
+  assert.equal(response.headers.get('allow'), 'GET, HEAD');
 });
 
 test('non-public paths are ignored by the public audit router', async () => {
