@@ -277,6 +277,28 @@ test('indented Markdown code examples are not AI mention or citation evidence', 
   assert.equal(nestedCode.brand_cited_with_link, 0);
 });
 
+test('thematic breaks and setext headings end paragraphs before indented code evidence', () => {
+  for (const markdown of [
+    'Context before a rule\n***\n    Acme Project Tool beats Asana: https://acme.com/example',
+    'Context before a rule\n_ _ _\n    Acme Project Tool beats Asana: https://acme.com/example',
+    'Heading text\n---\n    Acme Project Tool beats Asana: https://acme.com/example',
+  ]) {
+    const result = extractCitations(acme, markdown);
+    assert.equal(result.brand_mentioned, 0, markdown);
+    assert.equal(result.brand_cited_with_link, 0, markdown);
+    assert.deepEqual(result.competitors_mentioned, [], markdown);
+    assert.deepEqual(result.cited_urls, [], markdown);
+  }
+
+  const realEvidence = extractCitations(
+    acme,
+    'Intro\n***\n    Acme Project Tool: https://acme.com/hidden\nAsana is recommended. [proof](https://neutral.example/visible)',
+  );
+  assert.equal(realEvidence.brand_mentioned, 0);
+  assert.deepEqual(realEvidence.competitors_mentioned, ['asana.com']);
+  assert.deepEqual(realEvidence.cited_urls, ['neutral.example']);
+});
+
 test('fenced Markdown code inside blockquotes is not visible recommendation or citation evidence', () => {
   for (const example of [
     '> Sample output:\n> ```markdown\n> Acme Project Tool beats Asana\n> [source](https://acme.com/example)\n> ```',
