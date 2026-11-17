@@ -291,6 +291,10 @@ function omitMarkdownCodeExamples(text: string): string {
   // Example commands and JSON snippets are not sources cited by the answer.
   // Treat an unterminated fence as code through the end of the response.
   let fence: { char: string; length: number } | null = null;
+  let indentedCode = false;
+  let paragraphOpen = false;
+  let listContentIndent = 0;
+  let blankLines = 0;
   return text.split(/\r?\n/).map((line) => {
     const marker = /^[ \t]{0,3}(`+|~+)/.exec(line);
     if (fence) {
@@ -299,12 +303,35 @@ function omitMarkdownCodeExamples(text: string): string {
         marker[1].length >= fence.length &&
         line.slice(marker[0].length).trim() === ''
       ) fence = null;
+      paragraphOpen = false;
       return '';
     }
     if (marker && marker[1].length >= 3) {
       fence = { char: marker[1][0], length: marker[1].length };
+      paragraphOpen = false;
       return '';
     }
+    if (!line.trim()) {
+      paragraphOpen = false;
+      if (++blankLines > 1) listContentIndent = 0;
+      return '';
+    }
+    blankLines = 0;
+    const leading = /^[ \t]*/.exec(line)?.[0] ?? '';
+    let indent = 0;
+    for (const char of leading) indent += char === '\t' ? 4 - (indent % 4) : 1;
+    const listMarker = /^ {0,3}(?:[-+*]|\d{1,9}[.)])[ \t]+(?=\S)/.exec(line);
+    if (listMarker) listContentIndent = listMarker[0].length;
+    else if (indent < listContentIndent) listContentIndent = 0;
+    // CommonMark code indentation cannot interrupt a paragraph (including a
+    // list-item paragraph); list code requires four additional columns.
+    const codeIndent = listContentIndent ? listContentIndent + 4 : 4;
+    if (indent >= codeIndent && (indentedCode || !paragraphOpen)) {
+      indentedCode = true;
+      return '';
+    }
+    indentedCode = false;
+    paragraphOpen = !/^[ \t]{0,3}#{1,6}(?:\s|$)/.test(line);
     return line.replace(/(`+)[^`\r\n]*?\1/g, ' ');
   }).join('\n');
 }

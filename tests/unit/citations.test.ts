@@ -233,6 +233,50 @@ test('URLs in Markdown code examples are not evidence of a linked source', () =>
   assert.deepEqual(withRealLink.cited_urls, ['acme.com']);
 });
 
+test('indented Markdown code examples are not AI mention or citation evidence', () => {
+  for (const sample of [
+    '    Acme Project Tool vs Asana: https://acme.com/example',
+    '\tAcme Project Tool vs Asana: https://acme.com/example',
+    'Example output:\n\n    Acme Project Tool vs Asana\n    [report](https://acme.com/example)',
+  ]) {
+    const result = extractCitations(acme, sample);
+    assert.equal(result.brand_mentioned, 0, sample);
+    assert.equal(result.brand_cited_with_link, 0, sample);
+    assert.deepEqual(result.competitors_mentioned, [], sample);
+    assert.deepEqual(result.cited_urls, [], sample);
+  }
+
+  const visible = extractCitations(
+    acme,
+    'Example:\n\n    Acme Project Tool at https://acme.com/example\n\nVisible: Asana [study](https://neutral.example/report)',
+  );
+  assert.equal(visible.brand_mentioned, 0);
+  assert.equal(visible.brand_cited_with_link, 0);
+  assert.deepEqual(visible.competitors_mentioned, ['asana.com']);
+  assert.deepEqual(visible.cited_urls, ['neutral.example']);
+
+  // Four-space continuation without a blank line remains paragraph text.
+  const paragraph = extractCitations(acme, 'Recommended:\n    Acme Project Tool at https://acme.com');
+  assert.equal(paragraph.brand_mentioned, 1);
+  assert.equal(paragraph.brand_cited_with_link, 1);
+
+  const listContinuation = extractCitations(
+    acme,
+    '- The recommendation is:\n    Acme Project Tool at https://acme.com',
+  );
+  assert.equal(listContinuation.brand_mentioned, 1);
+  assert.equal(listContinuation.brand_cited_with_link, 1);
+
+  // A loose-list paragraph is still rendered, but code indented four extra
+  // columns inside the same list must remain invisible to evidence scoring.
+  const looseList = extractCitations(acme, '- Recommendation:\n\n    Acme Project Tool at https://acme.com');
+  assert.equal(looseList.brand_mentioned, 1);
+  assert.equal(looseList.brand_cited_with_link, 1);
+  const nestedCode = extractCitations(acme, '- Example:\n\n      Acme Project Tool at https://acme.com');
+  assert.equal(nestedCode.brand_mentioned, 0);
+  assert.equal(nestedCode.brand_cited_with_link, 0);
+});
+
 test('HTML code examples and hidden comments are not linked source evidence', () => {
   const examples = [
     '<pre>curl https://acme.com/v1/search</pre>',
