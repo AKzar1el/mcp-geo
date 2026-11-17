@@ -277,6 +277,9 @@ const historyOutputSchema = z.object({
 
 const comparedPromptOutputSchema = z.object({
   prompt: z.string(),
+  you_mentioned_by: z.array(z.string()),
+  competitors_mentioned: z.array(z.string()),
+  // Kept for existing MCP clients; these legacy names describe mentions, not citations.
   you_cited_by: z.array(z.string()),
   competitors_cited: z.array(z.string()),
 });
@@ -286,6 +289,8 @@ const COMPARISON_SEMANTICS =
   'prompts_brand_only and prompts_co_mentioned classify individual engine responses; ' +
   'a prompt can occur in both when engines differ. ' +
   'prompts_won_against_you lists competitor mentions where the tracked brand is absent. ' +
+  'Use you_mentioned_by and competitors_mentioned for actual mention evidence; ' +
+  'legacy you_cited_by and competitors_cited mean mentions, not verified source citations. ' +
   'Counts use the latest successful observation per run, engine and prompt so retries do not inflate shares.';
 
 const COMPARISON_HISTORY_CAVEAT =
@@ -1598,11 +1603,17 @@ export function registerTools(
           a.prompt.localeCompare(b.prompt) ||
           idA.localeCompare(idB))
         .slice(0, 5)
-        .map(([, w]) => ({
-          prompt: w.prompt,
-          you_cited_by: [...w.engines].sort(),
-          competitors_cited: [...w.competitors].sort(),
-        }));
+        .map(([, w]) => {
+          const you_mentioned_by = [...w.engines].sort();
+          const competitors_mentioned = [...w.competitors].sort();
+          return {
+            prompt: w.prompt,
+            you_mentioned_by,
+            competitors_mentioned,
+            you_cited_by: you_mentioned_by,
+            competitors_cited: competitors_mentioned,
+          };
+        });
       const prompts_you_win = topPrompts(winsByPrompt);
       const prompts_brand_only = topPrompts(brandOnlyByPrompt);
       const prompts_co_mentioned = topPrompts(coMentionedByPrompt);
