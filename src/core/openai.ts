@@ -146,6 +146,12 @@ const COMMON_TWO_LABEL_PUBLIC_SUFFIXES = new Set([
   'co.ke', 'com.ng', 'co.ug', 'com.bd', 'co.bd',
 ]);
 
+// The PSL's private section also assigns separate registrable names to
+// hosting tenants. Provider names must not stand in for tenant brands.
+const COMMON_TWO_LABEL_PRIVATE_SUFFIXES = new Set([
+  'github.io', 'pages.dev', 'vercel.app', 'netlify.app', 'blogspot.com',
+]);
+
 function rootTermFromDomain(domain: string): string {
   // 'example.com' -> 'example', 'monday.com' -> 'monday', 'notion.so' -> 'notion'
   const noProto = domain.replace(/^https?:\/\//i, '').replace(/^www\./i, '');
@@ -153,7 +159,8 @@ function rootTermFromDomain(domain: string): string {
   const parts = host.split('.');
   if (parts.length <= 1) return host.toLowerCase();
   const suffix = parts.slice(-2).join('.').toLowerCase();
-  if (parts.length >= 3 && COMMON_TWO_LABEL_PUBLIC_SUFFIXES.has(suffix)) {
+  if (parts.length >= 3 &&
+      (COMMON_TWO_LABEL_PUBLIC_SUFFIXES.has(suffix) || COMMON_TWO_LABEL_PRIVATE_SUFFIXES.has(suffix))) {
     return parts[parts.length - 3]!.toLowerCase();
   }
   // A tracked subdomain (e.g. shop.rival.com) still names the parent brand

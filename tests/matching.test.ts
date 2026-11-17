@@ -140,6 +140,29 @@ test('Kenyan, Nigerian, Ugandan and Bangladeshi registrable names are visible ev
   assert.deepEqual(unrelated.competitors_mentioned, []);
 });
 
+test('independent tenants on private public suffixes count tenant names, not hosting brands', () => {
+  const brand = makeBrand({
+    domain: 'bayleaf.pages.dev',
+    name: 'Different legal name',
+    competitors: [
+      'noria.github.io', 'lumen.vercel.app', 'sprout.netlify.app', 'cedar.blogspot.com',
+    ],
+  });
+  const visible = extractCitations(
+    brand,
+    'Compare Bayleaf with Noria, Lumen, Sprout and Cedar for your next purchase.',
+  );
+  assert.equal(visible.brand_mentioned, 1);
+  assert.deepEqual(visible.competitors_mentioned, brand.competitors);
+
+  const hostingServices = extractCitations(
+    brand,
+    'GitHub, Vercel, Netlify, Blogspot and Pages are hosting platforms.',
+  );
+  assert.equal(hostingServices.brand_mentioned, 0);
+  assert.deepEqual(hostingServices.competitors_mentioned, []);
+});
+
 test('subdomain-tracked brands and competitors match their registrable name in answer prose', () => {
   const brand = makeBrand({
     domain: 'portal.acme.com',
