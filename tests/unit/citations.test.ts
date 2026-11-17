@@ -277,6 +277,51 @@ test('indented Markdown code examples are not AI mention or citation evidence', 
   assert.equal(nestedCode.brand_cited_with_link, 0);
 });
 
+test('fenced Markdown code inside blockquotes is not visible recommendation or citation evidence', () => {
+  for (const example of [
+    '> Sample output:\n> ```markdown\n> Acme Project Tool beats Asana\n> [source](https://acme.com/example)\n> ```',
+    '>> ~~~text\n>> Acme Project Tool and Asana at https://acme.com/example\n>> ~~~',
+  ]) {
+    const result = extractCitations(acme, example);
+    assert.equal(result.brand_mentioned, 0, example);
+    assert.equal(result.brand_cited_with_link, 0, example);
+    assert.deepEqual(result.competitors_mentioned, [], example);
+    assert.deepEqual(result.cited_urls, [], example);
+  }
+
+  const realEvidence = extractCitations(
+    acme,
+    '> ```\n> Acme Project Tool and https://acme.com/hidden\n> ```\n' +
+      '> Asana is genuinely recommended. [report](https://neutral.example/report)\n\n' +
+      'Acme Project Tool is also recommended. [source](https://acme.com/real)',
+  );
+  assert.equal(realEvidence.brand_mentioned, 1);
+  assert.equal(realEvidence.brand_cited_with_link, 1);
+  assert.deepEqual(realEvidence.competitors_mentioned, ['asana.com']);
+  assert.deepEqual(realEvidence.cited_urls, ['neutral.example', 'acme.com']);
+
+  const afterUnclosedQuote = extractCitations(
+    acme,
+    '> ```\n> Acme Project Tool and https://acme.com/hidden\n\n' +
+      'Asana is recommended. [report](https://neutral.example/visible)',
+  );
+  assert.equal(afterUnclosedQuote.brand_mentioned, 0);
+  assert.equal(afterUnclosedQuote.brand_cited_with_link, 0);
+  assert.deepEqual(afterUnclosedQuote.competitors_mentioned, ['asana.com']);
+  assert.deepEqual(afterUnclosedQuote.cited_urls, ['neutral.example']);
+
+  // Quoted-looking fence delimiters inside an ordinary code fence are literal
+  // code and must never close the surrounding fence early.
+  const literalQuoteInsideCode = extractCitations(
+    acme,
+    '```\n> ```\nAcme Project Tool at https://acme.com/hidden\n```\nAsana is visible.',
+  );
+  assert.equal(literalQuoteInsideCode.brand_mentioned, 0);
+  assert.equal(literalQuoteInsideCode.brand_cited_with_link, 0);
+  assert.deepEqual(literalQuoteInsideCode.competitors_mentioned, ['asana.com']);
+  assert.deepEqual(literalQuoteInsideCode.cited_urls, []);
+});
+
 test('HTML code examples and hidden comments are not linked source evidence', () => {
   const examples = [
     '<pre>curl https://acme.com/v1/search</pre>',

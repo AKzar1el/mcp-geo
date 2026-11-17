@@ -290,24 +290,30 @@ export function hasBrandInEngineCitations(
 function omitMarkdownCodeExamples(text: string): string {
   // Example commands and JSON snippets are not sources cited by the answer.
   // Treat an unterminated fence as code through the end of the response.
-  let fence: { char: string; length: number } | null = null;
+  let fence: { char: string; length: number; quoted: boolean } | null = null;
   let indentedCode = false;
   let paragraphOpen = false;
   let listContentIndent = 0;
   let blankLines = 0;
   return text.split(/\r?\n/).map((line) => {
-    const marker = /^[ \t]{0,3}(`+|~+)/.exec(line);
+    // A fenced block may be nested in a Markdown quote. The quote markers
+    // are containers, not part of the code fence itself.
+    const quotePrefix = /^(?:[ \t]{0,3}>[ \t]?)+/.exec(line);
+    const fenceLine = quotePrefix && (!fence || fence.quoted)
+      ? line.slice(quotePrefix[0].length) : line;
+    if (fence?.quoted && !quotePrefix) fence = null;
+    const marker = /^[ \t]{0,3}(`+|~+)/.exec(fenceLine);
     if (fence) {
       if (
         marker && marker[1][0] === fence.char &&
         marker[1].length >= fence.length &&
-        line.slice(marker[0].length).trim() === ''
+        fenceLine.slice(marker[0].length).trim() === ''
       ) fence = null;
       paragraphOpen = false;
       return '';
     }
     if (marker && marker[1].length >= 3) {
-      fence = { char: marker[1][0], length: marker[1].length };
+      fence = { char: marker[1][0], length: marker[1].length, quoted: Boolean(quotePrefix) };
       paragraphOpen = false;
       return '';
     }
