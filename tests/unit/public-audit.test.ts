@@ -292,6 +292,32 @@ test('HEAD public resource requests match GET metadata without sending response 
   }
 });
 
+test('public audit page aliases redirect to canonical paths without entering MCP routes', async () => {
+  const { handlePublicAudit } = await loadAuditModule();
+  for (const path of ['/audit/', '/privacy/']) {
+    for (const method of ['GET', 'HEAD']) {
+      const response = handlePublicAudit(
+        new Request(`https://geo-mcp.digestseo.com${path}?ref=guide`, { method }),
+      );
+      assert.ok(response, `${method} ${path} must be handled`);
+      assert.equal(response.status, 308);
+      assert.equal(
+        response.headers.get('location'),
+        `https://geo-mcp.digestseo.com${path.slice(0, -1)}?ref=guide`,
+      );
+      assert.equal(await response.text(), '');
+    }
+  }
+
+  const post = handlePublicAudit(
+    new Request('https://geo-mcp.digestseo.com/audit/', { method: 'POST' }),
+  );
+  assert.ok(post);
+  assert.equal(post.status, 405);
+  assert.equal(post.headers.get('allow'), 'GET, HEAD');
+  assert.equal(handlePublicAudit(new Request('https://geo-mcp.digestseo.com/audit//')), null);
+});
+
 test('unsupported /audit methods are rejected without entering MCP or admin flows', async () => {
   const { handlePublicAudit } = await loadAuditModule();
   const response = handlePublicAudit(

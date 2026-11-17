@@ -265,7 +265,12 @@ function auditHtml(origin: string): string {
 
 export function handlePublicAudit(request: Request): Response | null {
   const url = new URL(request.url);
-  if (!['/', '/audit', '/privacy', '/robots.txt', '/sitemap.xml'].includes(url.pathname)) {
+  const hasCanonicalSlashAlias =
+    url.pathname === '/audit/' || url.pathname === '/privacy/';
+  if (
+    !hasCanonicalSlashAlias &&
+    !['/', '/audit', '/privacy', '/robots.txt', '/sitemap.xml'].includes(url.pathname)
+  ) {
     return null;
   }
 
@@ -274,6 +279,11 @@ export function handlePublicAudit(request: Request): Response | null {
       status: 405,
       headers: { Allow: 'GET, HEAD' },
     });
+  }
+
+  if (hasCanonicalSlashAlias) {
+    url.pathname = url.pathname.slice(0, -1);
+    return Response.redirect(url.toString(), 308);
   }
 
   const isHead = request.method === 'HEAD';
