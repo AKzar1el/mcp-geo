@@ -199,7 +199,7 @@ test('audit request flow provides form, clipboard, direct-email, and no-JS fallb
   assert.match(body, /<noscript>[\s\S]*mailto:info@tomiseregi\.si/);
 });
 
-test('audit form refuses blank required values and more than three competitors before email or copy', async () => {
+test('audit form validates scope and preserves oversized email requests with the copy fallback', async () => {
   const { handlePublicAudit } = await loadAuditModule();
   const response = handlePublicAudit(new Request('https://geo-mcp.digestseo.com/audit'));
   assert.ok(response);
@@ -275,6 +275,16 @@ test('audit form refuses blank required values and more than three competitors b
   assert.match(location.href, /^mailto:info@tomiseregi\.si\?/);
   await copy();
   assert.equal(copied.length, 1, 'a request with three competitors remains copyable');
+
+  location.href = '';
+  form.values.context = 'Detailed goals: ' + 'long buyer-intent context '.repeat(180);
+  await submit();
+  assert.equal(location.href, '', 'an oversized mailto URL should not be opened silently');
+  assert.equal(copied.length, 2, 'the complete oversized request should be copied instead');
+  assert.match(copied[1], /long buyer-intent context/);
+  assert.match(copied[1], /one.com, two.com, three.com/);
+  assert.match(status.textContent, /too long|email link length/i);
+  assert.match(status.textContent, /copied/i);
 });
 
 test('HEAD public resource requests match GET metadata without sending response bodies', async () => {

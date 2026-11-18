@@ -239,23 +239,39 @@ function auditHtml(origin: string): string {
         if (!copied) throw new Error('copy command failed');
       };
 
-      form.addEventListener('submit', (event) => {
+      const copyRequestDetails = async () => {
+        const payload =
+          'To: ${AUDIT_EMAIL}\\nSubject: ${AUDIT_SUBJECT}\\n\\n' + requestBody();
+        try {
+          await copyText(payload);
+          status.textContent = 'Request copied - email it to ${AUDIT_EMAIL}.';
+          return true;
+        } catch {
+          status.textContent = 'Copy failed. Email ${AUDIT_EMAIL} directly.';
+          return false;
+        }
+      };
+
+      form.addEventListener('submit', async (event) => {
         event.preventDefault();
         if (!validate()) return;
+        const emailLink = mailtoForRequest();
+        // Long mailto URLs can be truncated or rejected by email clients.
+        // Preserve the complete request without sending it to any server.
+        if (emailLink.length > 1800) {
+          const copied = await copyRequestDetails();
+          status.textContent = copied
+            ? 'Email link too long; request copied. Paste it into an email to ${AUDIT_EMAIL}.'
+            : 'Email link too long and copy failed. Email ${AUDIT_EMAIL} directly with your request details.';
+          return;
+        }
         status.textContent = 'Opening your email app. If nothing happens, use Copy request details.';
-        window.location.href = mailtoForRequest();
+        window.location.href = emailLink;
       });
 
       copyButton.addEventListener('click', async () => {
         if (!validate()) return;
-        const copyPayload =
-          'To: ${AUDIT_EMAIL}\\nSubject: ${AUDIT_SUBJECT}\\n\\n' + requestBody();
-        try {
-          await copyText(copyPayload);
-          status.textContent = 'Request copied - email it to ${AUDIT_EMAIL}.';
-        } catch {
-          status.textContent = 'Copy failed. Email ${AUDIT_EMAIL} directly.';
-        }
+        await copyRequestDetails();
       });
     })();
   </script>
