@@ -65,3 +65,13 @@ test('citation excerpts omit credential-bearing URLs without suppressing valid e
   assert.match(excerpt, /\[credential-bearing URL omitted\]/);
   assert.match(excerpt, /https:\/\/example\.com\/docs/);
 });
+
+test('citation excerpts redact secret query values without erasing benign source context', () => {
+  const brand = makeBrand({ domain: 'example.com', name: 'Example' });
+  const response = 'Example research: https://example.com/report?API%5FKEY=SYNTHETIC_SECRET_EXCERPT&ref=ai&access_token=SECOND_SECRET.';
+  const excerpt = buildResponseExcerpt(response, brand);
+  assert.doesNotMatch(excerpt, /SYNTHETIC_SECRET_EXCERPT|SECOND_SECRET/);
+  assert.match(excerpt, /API%5FKEY=\[REDACTED\]/);
+  assert.match(excerpt, /ref=ai/);
+  assert.match(excerpt, /access_token=\[REDACTED\]/);
+});
