@@ -74,6 +74,44 @@ test('malformed repeated-dot domain suffixes do not count as brand or competitor
   assert.equal(mixed.brand_mentioned, 1);
 });
 
+test('HTML hidden subtrees cannot inflate visible mentions or linked citations', () => {
+  const brand = makeBrand({
+    domain: 'acme.com',
+    name: 'Acme',
+    competitors: ['rival.com'],
+  });
+
+  const hidden = extractCitations(brand,
+    '<div hidden><p>Acme recommends rival.com. <a href="https://acme.com/source">Source</a></p></div>');
+  assert.equal(hidden.brand_mentioned, 0);
+  assert.equal(hidden.brand_cited_with_link, 0);
+  assert.deepEqual(hidden.cited_urls, []);
+  assert.deepEqual(hidden.competitors_mentioned, []);
+
+  const inlineStyle = extractCitations(brand,
+    '<section style="color: red; display: none !important"><span>Acme https://acme.com/hidden</span></section>');
+  assert.equal(inlineStyle.brand_mentioned, 0);
+  assert.equal(inlineStyle.brand_cited_with_link, 0);
+  assert.deepEqual(inlineStyle.cited_urls, []);
+
+  const visible = extractCitations(brand,
+    '<div title="some hidden words">Acme <a href="https://acme.com/real">source</a></div>' +
+    '<div hidden><div>rival.com https://rival.com/hidden</div></div>' +
+    '<span>Independent visible text follows.</span>');
+  assert.equal(visible.brand_mentioned, 1);
+  assert.equal(visible.brand_cited_with_link, 1);
+  assert.deepEqual(visible.cited_urls, ['acme.com']);
+  assert.deepEqual(visible.competitors_mentioned, []);
+
+  const afterHidden = extractCitations(brand,
+    '<div hidden>rival.com https://rival.com/hidden</div>' +
+    '<p>Acme remains visible. <a href="https://acme.com/source">Source</a></p>');
+  assert.equal(afterHidden.brand_mentioned, 1);
+  assert.equal(afterHidden.brand_cited_with_link, 1);
+  assert.deepEqual(afterHidden.cited_urls, ['acme.com']);
+  assert.deepEqual(afterHidden.competitors_mentioned, []);
+});
+
 test('root term is not matched inside a larger word', () => {
   const brand = makeBrand({
     domain: 'notion.so',
