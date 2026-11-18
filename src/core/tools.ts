@@ -695,6 +695,7 @@ export function registerTools(
   const toolName = (legacyName: keyof typeof HOSTED_TOOL_NAMES) =>
     options.namespaced ? HOSTED_TOOL_NAMES[legacyName] : legacyName;
   const refreshIsAsync = deps.refreshExecution === 'async';
+  const emptyVisibilityPreviewHint = `Call ${toolName('refresh_brand')} with preview_only=true to review configured engines and active prompts without provider requests. Start a real refresh only after reviewing potential provider charges.`;
   const refreshCostNote = ' Provider API requests may incur charges. Retries rerun every active prompt, including prior successes.';
   const refreshDescription = refreshIsAsync
     ? "Start scans; returns run IDs immediately." + refreshCostNote + " Set preview_only=true for a no-call scope preview. Example: brand_id='acme'."
@@ -795,8 +796,8 @@ export function registerTools(
         }
         throw new Error(
           engines && engines.length > 0
-            ? 'No visibility data yet for the selected engines. Call refresh_brand to populate them.'
-            : 'No visibility data yet for this brand. Call refresh_brand to populate it.',
+            ? `No visibility data yet for the selected engines. ${emptyVisibilityPreviewHint}`
+            : `No visibility data yet for this brand. ${emptyVisibilityPreviewHint}`,
         );
       }
       const activePrompts = await deps.db.getActivePrompts(brand_id);

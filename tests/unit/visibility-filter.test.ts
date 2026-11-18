@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerTools } from '../../src/core/tools.ts';
+import { HOSTED_SERVER_INSTRUCTIONS, LOCAL_SERVER_INSTRUCTIONS } from '../../src/core/server-instructions.ts';
 import type { Brand, Db, Prompt, PromptResponse, Run } from '../../src/db/types.ts';
 import type { EngineName } from '../../src/core/engines.ts';
 
@@ -177,6 +178,7 @@ function registerVisibilityTool(overrides?: {
   activePromptIds?: string[];
   brand?: Brand;
   identityChangedAt?: number;
+  namespaced?: boolean;
 }): VisibilityTool {
   let visibility: VisibilityTool | undefined;
   const runMap: Partial<Record<EngineName, Run>> = { ...runs, ...overrides?.runs };
@@ -186,7 +188,7 @@ function registerVisibilityTool(overrides?: {
   ];
   const server = {
     registerTool(name: string, _config: unknown, handler: unknown) {
-      if (name === 'check_visibility') {
+      if (name === (overrides?.namespaced ? 'visibility.check' : 'check_visibility')) {
         visibility = { handler: handler as VisibilityTool['handler'] };
       }
     },
@@ -212,7 +214,7 @@ function registerVisibilityTool(overrides?: {
     env: {},
     refreshExecution: 'sync',
     runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
-  });
+  }, { namespaced: overrides?.namespaced });
 
   assert.ok(visibility, 'check_visibility tool registration missing');
   return visibility;
@@ -472,6 +474,27 @@ test('check_visibility does not fall back to other engines when the selection ha
     visibility.handler({ brand_id: brand.id, engines: ['gemini'] }),
     /No visibility data yet for the selected engines/,
   );
+});
+
+test('empty visibility results guide local and hosted users to a no-call refresh preview before spending', async () => {
+  const noRuns = { chatgpt: undefined, claude: undefined };
+  const local = registerVisibilityTool({ runs: noRuns });
+  const hosted = registerVisibilityTool({ runs: noRuns, namespaced: true });
+
+  await assert.rejects(
+    local.handler({ brand_id: brand.id }),
+    /refresh_brand[^.]*preview_only=true[\s\S]*provider charges/i,
+  );
+  await assert.rejects(
+    local.handler({ brand_id: brand.id, engines: ['gemini'] }),
+    /refresh_brand[^.]*preview_only=true[\s\S]*provider charges/i,
+  );
+  await assert.rejects(
+    hosted.handler({ brand_id: brand.id }),
+    /visibility\.refresh[^.]*preview_only=true[\s\S]*provider charges/i,
+  );
+  assert.match(LOCAL_SERVER_INSTRUCTIONS, /refresh_brand[^.]*preview_only=true[\s\S]*provider charges/i);
+  assert.match(HOSTED_SERVER_INSTRUCTIONS, /visibility\.refresh[^.]*preview_only=true[\s\S]*provider charges/i);
 });
 
 test('check_visibility identifies explicitly requested engines missing usable scan data', async () => {
