@@ -364,22 +364,27 @@ function omitMarkdownCodeExamples(text: string): string {
 function omitHiddenHtmlSubtrees(text: string): string {
   // Non-rendered HTML is not observable citation or mention evidence. Track
   // nested elements rather than stopping at the first same-name closing tag.
+  // Unlike display:none or opacity:0, visibility:hidden can be overridden by
+  // visibility:visible on a descendant, so preserve its inherited state.
   const tagRe = /<\/?(?!https?:\/\/)[a-z][^>"']*(?:(?:"[^"]*"|'[^']*')[^>"']*)*>/gi;
   const voidTags = new Set([
     'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link',
     'meta', 'param', 'source', 'track', 'wbr',
   ]);
-  const stack: { name: string; hidden: boolean }[] = [];
+  const stack: { name: string; hidden: boolean; visibility: 'visible' | 'hidden' }[] = [];
   let hiddenDepth = 0;
+  const isVisible = () => !hiddenDepth &&
+    (stack.length === 0 || stack[stack.length - 1]!.visibility === 'visible');
   let cursor = 0;
   let visible = '';
   for (const match of text.matchAll(tagRe)) {
     const index = match.index ?? 0;
-    if (!hiddenDepth) visible += text.slice(cursor, index);
+    if (isVisible()) visible += text.slice(cursor, index);
     const tag = match[0];
     const name = /^<\/?([a-z][a-z0-9:-]*)/i.exec(tag)?.[1]?.toLowerCase();
     if (name) {
       if (tag.startsWith('</')) {
+        const wasVisible = isVisible();
         let indexOfOpening = stack.length - 1;
         while (indexOfOpening >= 0 && stack[indexOfOpening]!.name !== name) indexOfOpening--;
         if (indexOfOpening !== -1) {
@@ -387,10 +392,13 @@ function omitHiddenHtmlSubtrees(text: string): string {
             if (entry.hidden) hiddenDepth--;
           }
         }
-        visible += hiddenDepth ? '' : ' ';
+        if (wasVisible || isVisible()) visible += ' ';
       } else {
         const attrs = tag.slice(1 + name.length, -1);
         let hidden = false;
+        let visibility: 'visible' | 'hidden' = stack.length
+          ? stack[stack.length - 1]!.visibility : 'visible';
+        let visibilityImportant = false;
         const attrRe = /([^\s=/>]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
         for (const attr of attrs.matchAll(attrRe)) {
           const key = attr[1]!.toLowerCase();
@@ -402,19 +410,34 @@ function omitHiddenHtmlSubtrees(text: string): string {
           ))) {
             hidden = true;
           }
+          if (key === 'style') {
+            for (const declaration of value.matchAll(
+              /(?:^|;)\s*visibility\s*:\s*(visible|hidden|collapse)\s*(!important)?\s*(?=;|$)/gi
+            )) {
+              const important = !!declaration[2];
+              if (!visibilityImportant || important) {
+                visibility = declaration[1]!.toLowerCase() === 'visible' ? 'visible' : 'hidden';
+                visibilityImportant = important;
+              }
+            }
+          }
         }
         const selfClosing = /\/\s*>$/.test(tag) || voidTags.has(name);
+        const wasVisible = isVisible();
         if (!selfClosing) {
-          stack.push({ name, hidden });
+          stack.push({ name, hidden, visibility });
           if (hidden) hiddenDepth++;
         }
-        if (!hiddenDepth && !hidden) visible += tag;
-        else if (hidden && hiddenDepth === 1) visible += ' ';
+        if ((selfClosing ? wasVisible && visibility === 'visible' : isVisible()) && !hidden) {
+          visible += tag;
+        } else if (wasVisible) {
+          visible += ' ';
+        }
       }
     }
     cursor = index + tag.length;
   }
-  if (!hiddenDepth) visible += text.slice(cursor);
+  if (isVisible()) visible += text.slice(cursor);
   return visible;
 }
 

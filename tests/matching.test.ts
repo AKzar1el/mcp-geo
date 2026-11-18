@@ -135,6 +135,30 @@ test('fully transparent and skipped CSS subtrees cannot supply mention or citati
   assert.deepEqual(visible.competitors_mentioned, ['rival.com']);
 });
 
+test('CSS visibility excludes hidden evidence but preserves explicitly visible descendants', () => {
+  const brand = makeBrand({ domain: 'acme.com', name: 'Acme', competitors: ['rival.com'] });
+  const hidden = extractCitations(brand,
+    '<div style="visibility: hidden">Acme and rival.com ' +
+    '<a href="https://acme.com/hidden">Source</a><span>Acme</span></div>' +
+    '<section style="visibility: collapse">Acme ' +
+    '<a href="https://rival.com/collapsed">Source</a></section>');
+  assert.equal(hidden.brand_mentioned, 0);
+  assert.equal(hidden.brand_cited_with_link, 0);
+  assert.deepEqual(hidden.competitors_mentioned, []);
+  assert.deepEqual(hidden.cited_urls, []);
+
+  const restored = extractCitations(brand,
+    '<div style="visibility:hidden">Acme ' +
+    '<span style="visibility:visible">rival.com ' +
+    '<a href="https://rival.com/visible">Source</a></span>' +
+    '<span>Acme <a href="https://acme.com/hidden">Source</a></span></div>' +
+    '<p>Acme <a href="https://acme.com/outside">Source</a></p>');
+  assert.equal(restored.brand_mentioned, 1);
+  assert.equal(restored.brand_cited_with_link, 1);
+  assert.deepEqual(restored.competitors_mentioned, ['rival.com']);
+  assert.deepEqual(restored.cited_urls.sort(), ['acme.com', 'rival.com']);
+});
+
 test('root term is not matched inside a larger word', () => {
   const brand = makeBrand({
     domain: 'notion.so',
