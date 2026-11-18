@@ -192,6 +192,7 @@ test('audit request flow provides form, clipboard, direct-email, and no-JS fallb
   assert.match(body, /name="context"/);
   assert.match(body, /type="submit"[^>]*>Request the EUR 99 audit</);
   assert.match(body, /id="copy-request"[^>]*>Copy request details</);
+  assert.match(body, /id="download-request"[^>]*>Download request details</);
   assert.match(body, /navigator\.clipboard\.writeText/);
   assert.match(body, /document\.execCommand\('copy'\)/);
   assert.match(body, /aria-live="polite"/);
@@ -229,25 +230,64 @@ test('audit form validates scope and preserves oversized email requests with the
   }
   const form = new FakeForm();
   const button = new FakeButton();
+  const downloadButton = new FakeButton();
   const status = { textContent: '' };
   const location = { href: '' };
   const copied: string[] = [];
+  const downloads: Array<{ filename: string; href: string }> = [];
+  const blobs: Array<{ parts: string[]; options: { type: string } }> = [];
+  const revoked: string[] = [];
+  let clipboardAllowed = true;
+  let downloadAvailable = true;
   runInNewContext(script, {
     document: {
       getElementById(id: string) {
-        return id === 'audit-request-form' ? form : id === 'copy-request' ? button : status;
+        return id === 'audit-request-form' ? form
+          : id === 'copy-request' ? button
+          : id === 'download-request' ? downloadButton
+          : status;
       },
+      body: { appendChild() {} },
+      createElement(tag: string) {
+        if (tag === 'a') {
+          return {
+            href: '', download: '',
+            click() { downloads.push({ filename: this.download, href: this.href }); },
+            remove() {},
+          };
+        }
+        return {
+          value: '', style: {}, setAttribute() {}, select() {}, remove() {},
+        };
+      },
+      execCommand() { return false; },
     },
     HTMLFormElement: FakeForm,
     HTMLButtonElement: FakeButton,
     FormData: FakeFormData,
-    navigator: { clipboard: { writeText: async (value: string) => { copied.push(value); } } },
+    navigator: { clipboard: { writeText: async (value: string) => {
+      if (!clipboardAllowed) throw new Error('clipboard denied');
+      copied.push(value);
+    } } },
+    Blob: class {
+      constructor(parts: string[], options: { type: string }) {
+        blobs.push({ parts, options });
+      }
+    },
+    URL: {
+      createObjectURL() {
+        if (!downloadAvailable) throw new Error('blob URLs blocked');
+        return 'blob:audit-request';
+      },
+      revokeObjectURL(value: string) { revoked.push(value); },
+    },
     window: { location },
     encodeURIComponent,
   });
 
   const submit = () => form.handlers.get('submit')?.({ preventDefault() {} });
   const copy = () => button.handlers.get('click')?.({ preventDefault() {} });
+  const download = () => downloadButton.handlers.get('click')?.({ preventDefault() {} });
 
   form.values.brand = '   ';
   submit();
@@ -285,6 +325,25 @@ test('audit form validates scope and preserves oversized email requests with the
   assert.match(copied[1], /one.com, two.com, three.com/);
   assert.match(status.textContent, /too long|email link length/i);
   assert.match(status.textContent, /copied/i);
+
+  clipboardAllowed = false;
+  await copy();
+  assert.match(status.textContent, /copy failed/i);
+  await download();
+  assert.equal(downloads.length, 1, 'download should work without clipboard permission');
+  assert.equal(downloads[0]?.filename, 'mcp-geo-audit-request.txt');
+  assert.equal(downloads[0]?.href, 'blob:audit-request');
+  assert.equal(blobs[0]?.options.type, 'text/plain;charset=utf-8');
+  assert.match(blobs[0]?.parts.join(''), /To: info@tomiseregi\.si/);
+  assert.match(blobs[0]?.parts.join(''), /Subject: mcp-geo AI Visibility Audit - EUR 99/);
+  assert.match(blobs[0]?.parts.join(''), /long buyer-intent context/);
+  assert.deepEqual(revoked, ['blob:audit-request'], 'download object URL must be released');
+  assert.equal(location.href, '', 'download must not submit or navigate');
+
+  downloadAvailable = false;
+  await download();
+  assert.match(status.textContent, /download failed/i);
+  assert.equal(downloads.length, 1, 'blocked downloads must not produce a false success');
 });
 
 test('HEAD public resource requests match GET metadata without sending response bodies', async () => {

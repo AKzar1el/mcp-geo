@@ -156,6 +156,7 @@ function auditHtml(origin: string): string {
       <div class="actions">
         <button class="cta" type="submit">Request the EUR 99 audit</button>
         <button class="secondary" type="button" id="copy-request">Copy request details</button>
+        <button class="secondary" type="button" id="download-request">Download request details</button>
       </div>
       <p id="request-status" class="status" role="status" aria-live="polite"></p>
     </form>
@@ -172,8 +173,11 @@ function auditHtml(origin: string): string {
     (() => {
       const form = document.getElementById('audit-request-form');
       const copyButton = document.getElementById('copy-request');
+      const downloadButton = document.getElementById('download-request');
       const status = document.getElementById('request-status');
-      if (!(form instanceof HTMLFormElement) || !(copyButton instanceof HTMLButtonElement) || !status) return;
+      if (!(form instanceof HTMLFormElement) ||
+          !(copyButton instanceof HTMLButtonElement) ||
+          !(downloadButton instanceof HTMLButtonElement) || !status) return;
 
       const requestBody = () => {
         const data = new FormData(form);
@@ -217,6 +221,9 @@ function auditHtml(origin: string): string {
         '&body=' +
         encodeURIComponent(requestBody());
 
+      const requestMessage = () =>
+        'To: ${AUDIT_EMAIL}\\nSubject: ${AUDIT_SUBJECT}\\n\\n' + requestBody();
+
       const copyText = async (text) => {
         if (navigator.clipboard && navigator.clipboard.writeText) {
           try {
@@ -240,15 +247,33 @@ function auditHtml(origin: string): string {
       };
 
       const copyRequestDetails = async () => {
-        const payload =
-          'To: ${AUDIT_EMAIL}\\nSubject: ${AUDIT_SUBJECT}\\n\\n' + requestBody();
         try {
-          await copyText(payload);
+          await copyText(requestMessage());
           status.textContent = 'Request copied - email it to ${AUDIT_EMAIL}.';
           return true;
         } catch {
-          status.textContent = 'Copy failed. Email ${AUDIT_EMAIL} directly.';
+          status.textContent = 'Copy failed. Use Download request details to save the complete request, then email it to ${AUDIT_EMAIL}.';
           return false;
+        }
+      };
+
+      const downloadRequestDetails = () => {
+        let blobUrl;
+        let link;
+        try {
+          const blob = new Blob([requestMessage()], { type: 'text/plain;charset=utf-8' });
+          blobUrl = URL.createObjectURL(blob);
+          link = document.createElement('a');
+          link.href = blobUrl;
+          link.download = 'mcp-geo-audit-request.txt';
+          document.body.appendChild(link);
+          link.click();
+          status.textContent = 'Request file downloaded. Email its contents to ${AUDIT_EMAIL}; downloading does not submit the request.';
+        } catch {
+          status.textContent = 'Download failed. Email ${AUDIT_EMAIL} directly with your request details.';
+        } finally {
+          if (link) link.remove();
+          if (blobUrl) URL.revokeObjectURL(blobUrl);
         }
       };
 
@@ -262,16 +287,20 @@ function auditHtml(origin: string): string {
           const copied = await copyRequestDetails();
           status.textContent = copied
             ? 'Email link too long; request copied. Paste it into an email to ${AUDIT_EMAIL}.'
-            : 'Email link too long and copy failed. Email ${AUDIT_EMAIL} directly with your request details.';
+            : 'Email link too long and copy failed. Use Download request details, then email the saved request to ${AUDIT_EMAIL}.';
           return;
         }
-        status.textContent = 'Opening your email app. If nothing happens, use Copy request details.';
+        status.textContent = 'Opening your email app. If nothing happens, use Copy or Download request details.';
         window.location.href = emailLink;
       });
 
       copyButton.addEventListener('click', async () => {
         if (!validate()) return;
         await copyRequestDetails();
+      });
+      downloadButton.addEventListener('click', () => {
+        if (!validate()) return;
+        downloadRequestDetails();
       });
     })();
   </script>
