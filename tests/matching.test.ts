@@ -195,6 +195,39 @@ test('closed HTML details score only the first visible summary, not undisclosed 
   assert.deepEqual(nested.competitors_mentioned, []);
 });
 
+test('closed HTML dialogs do not supply brand, competitor or linked citation evidence', () => {
+  const brand = makeBrand({ domain: 'acme.com', name: 'Acme', competitors: ['rival.com'] });
+  const closed = extractCitations(brand,
+    '<dialog><p>Acme recommends rival.com ' +
+    '<a href="https://acme.com/closed">Source</a></p></dialog>');
+  assert.equal(closed.brand_mentioned, 0);
+  assert.equal(closed.brand_cited_with_link, 0);
+  assert.deepEqual(closed.competitors_mentioned, []);
+  assert.deepEqual(closed.cited_urls, []);
+
+  const open = extractCitations(brand,
+    '<dialog open><p>Acme recommends rival.com ' +
+    '<a href="https://acme.com/open">Source</a></p></dialog>');
+  assert.equal(open.brand_mentioned, 1);
+  assert.equal(open.brand_cited_with_link, 1);
+  assert.deepEqual(open.competitors_mentioned, ['rival.com']);
+  assert.deepEqual(open.cited_urls, ['acme.com']);
+
+  const booleanOpen = extractCitations(brand,
+    '<dialog open="false">Acme <a href="https://acme.com/boolean">Source</a></dialog>');
+  assert.equal(booleanOpen.brand_mentioned, 1);
+  assert.equal(booleanOpen.brand_cited_with_link, 1);
+
+  const nested = extractCitations(brand,
+    '<dialog><div><dialog open>rival.com ' +
+    '<a href="https://rival.com/hidden">Source</a></dialog></div></dialog>' +
+    '<p>Acme <a href="https://acme.com/visible">Source</a></p>');
+  assert.equal(nested.brand_mentioned, 1);
+  assert.equal(nested.brand_cited_with_link, 1);
+  assert.deepEqual(nested.competitors_mentioned, []);
+  assert.deepEqual(nested.cited_urls, ['acme.com']);
+});
+
 test('root term is not matched inside a larger word', () => {
   const brand = makeBrand({
     domain: 'notion.so',

@@ -409,12 +409,14 @@ function omitHiddenHtmlSubtrees(text: string): string {
         let visibility: 'visible' | 'hidden' = stack.length
           ? stack[stack.length - 1]!.visibility : 'visible';
         let visibilityImportant = false;
-        let detailsOpen = false;
+        let hasOpenAttribute = false;
         const attrRe = /([^\s=/>]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
         for (const attr of attrs.matchAll(attrRe)) {
           const key = attr[1]!.toLowerCase();
           const value = attr[2] ?? attr[3] ?? attr[4] ?? '';
-          if (name === 'details' && key === 'open') detailsOpen = true;
+          if ((name === 'details' || name === 'dialog') && key === 'open') {
+            hasOpenAttribute = true;
+          }
           if (key === 'hidden' || (key === 'style' && (
             /(?:^|;)\s*display\s*:\s*none\s*(?:!important)?\s*(?:;|$)/i.test(value) ||
             /(?:^|;)\s*content-visibility\s*:\s*hidden\s*(?:!important)?\s*(?:;|$)/i.test(value) ||
@@ -445,10 +447,12 @@ function omitHiddenHtmlSubtrees(text: string): string {
             parent.summarySeen = true;
             contentVisible = stack.length > 1 ? stack[stack.length - 2]!.contentVisible : true;
           }
-          if (name === 'details' && !detailsOpen) contentVisible = false;
+          if ((name === 'details' || name === 'dialog') && !hasOpenAttribute) {
+            contentVisible = false;
+          }
           stack.push({
             name, hidden, visibility, contentVisible,
-            detailsOpen: name === 'details' && detailsOpen,
+            detailsOpen: name === 'details' && hasOpenAttribute,
             summarySeen: false,
           });
           if (hidden) hiddenDepth++;
