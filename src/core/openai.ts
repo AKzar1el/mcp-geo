@@ -361,13 +361,68 @@ function omitMarkdownCodeExamples(text: string): string {
   }).join('\n');
 }
 
+function omitHiddenHtmlSubtrees(text: string): string {
+  // Hidden HTML is not rendered, so neither its words nor its links are
+  // observable evidence. Track nested elements rather than stopping at the
+  // first closing tag of the same kind.
+  const tagRe = /<\/?(?!https?:\/\/)[a-z][^>"']*(?:(?:"[^"]*"|'[^']*')[^>"']*)*>/gi;
+  const voidTags = new Set([
+    'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link',
+    'meta', 'param', 'source', 'track', 'wbr',
+  ]);
+  const stack: { name: string; hidden: boolean }[] = [];
+  let hiddenDepth = 0;
+  let cursor = 0;
+  let visible = '';
+  for (const match of text.matchAll(tagRe)) {
+    const index = match.index ?? 0;
+    if (!hiddenDepth) visible += text.slice(cursor, index);
+    const tag = match[0];
+    const name = /^<\/?([a-z][a-z0-9:-]*)/i.exec(tag)?.[1]?.toLowerCase();
+    if (name) {
+      if (tag.startsWith('</')) {
+        let indexOfOpening = stack.length - 1;
+        while (indexOfOpening >= 0 && stack[indexOfOpening]!.name !== name) indexOfOpening--;
+        if (indexOfOpening !== -1) {
+          for (const entry of stack.splice(indexOfOpening)) {
+            if (entry.hidden) hiddenDepth--;
+          }
+        }
+        visible += hiddenDepth ? '' : ' ';
+      } else {
+        const attrs = tag.slice(1 + name.length, -1);
+        let hidden = false;
+        const attrRe = /([^\s=/>]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
+        for (const attr of attrs.matchAll(attrRe)) {
+          const key = attr[1]!.toLowerCase();
+          const value = attr[2] ?? attr[3] ?? attr[4] ?? '';
+          if (key === 'hidden' || (key === 'style' &&
+            /(?:^|;)\s*display\s*:\s*none\s*(?:!important)?\s*(?:;|$)/i.test(value))) {
+            hidden = true;
+          }
+        }
+        const selfClosing = /\/\s*>$/.test(tag) || voidTags.has(name);
+        if (!selfClosing) {
+          stack.push({ name, hidden });
+          if (hidden) hiddenDepth++;
+        }
+        if (!hiddenDepth && !hidden) visible += tag;
+        else if (hidden && hiddenDepth === 1) visible += ' ';
+      }
+    }
+    cursor = index + tag.length;
+  }
+  if (!hiddenDepth) visible += text.slice(cursor);
+  return visible;
+}
+
 function omitHtmlCodeExamples(text: string): string {
   // Comments, document-head metadata, inert templates, scripts, styles, and
   // code samples are not visible evidence. Exclude unclosed blocks to the end.
-  return text
+  return omitHiddenHtmlSubtrees(text
     .replace(/<!--[\s\S]*?(?:-->|$)/g, ' ')
     .replace(/<(pre|code|script|style|head|template)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, ' ')
-    .replace(/<(pre|code|script|style|head|template)\b[^>]*>[\s\S]*$/gi, ' ');
+    .replace(/<(pre|code|script|style|head|template)\b[^>]*>[\s\S]*$/gi, ' '));
 }
 
 function omitHtmlTags(text: string): string {
