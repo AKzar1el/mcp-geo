@@ -112,6 +112,29 @@ test('HTML hidden subtrees cannot inflate visible mentions or linked citations',
   assert.deepEqual(afterHidden.competitors_mentioned, []);
 });
 
+test('fully transparent and skipped CSS subtrees cannot supply mention or citation evidence', () => {
+  const brand = makeBrand({ domain: 'acme.com', name: 'Acme', competitors: ['rival.com'] });
+  const invisible = extractCitations(brand,
+    '<div style="opacity: 0"><p>Acme recommends rival.com ' +
+    '<a href="https://acme.com/hidden">Source</a></p>' +
+    '<span style="opacity:1">Acme is still transparent</span></div>' +
+    '<section style="content-visibility: hidden !important">rival.com ' +
+    '<a href="https://rival.com/skipped">Source</a></section>');
+  assert.equal(invisible.brand_mentioned, 0);
+  assert.equal(invisible.brand_cited_with_link, 0);
+  assert.deepEqual(invisible.cited_urls, []);
+  assert.deepEqual(invisible.competitors_mentioned, []);
+
+  const visible = extractCitations(brand,
+    '<div style="opacity: 0.5">Acme ' +
+    '<a href="https://acme.com/visible">Source</a></div>' +
+    '<section style="content-visibility:auto">rival.com remains visible</section>');
+  assert.equal(visible.brand_mentioned, 1);
+  assert.equal(visible.brand_cited_with_link, 1);
+  assert.deepEqual(visible.cited_urls, ['acme.com']);
+  assert.deepEqual(visible.competitors_mentioned, ['rival.com']);
+});
+
 test('root term is not matched inside a larger word', () => {
   const brand = makeBrand({
     domain: 'notion.so',

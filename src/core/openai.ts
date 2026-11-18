@@ -362,9 +362,8 @@ function omitMarkdownCodeExamples(text: string): string {
 }
 
 function omitHiddenHtmlSubtrees(text: string): string {
-  // Hidden HTML is not rendered, so neither its words nor its links are
-  // observable evidence. Track nested elements rather than stopping at the
-  // first closing tag of the same kind.
+  // Non-rendered HTML is not observable citation or mention evidence. Track
+  // nested elements rather than stopping at the first same-name closing tag.
   const tagRe = /<\/?(?!https?:\/\/)[a-z][^>"']*(?:(?:"[^"]*"|'[^']*')[^>"']*)*>/gi;
   const voidTags = new Set([
     'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link',
@@ -396,8 +395,11 @@ function omitHiddenHtmlSubtrees(text: string): string {
         for (const attr of attrs.matchAll(attrRe)) {
           const key = attr[1]!.toLowerCase();
           const value = attr[2] ?? attr[3] ?? attr[4] ?? '';
-          if (key === 'hidden' || (key === 'style' &&
-            /(?:^|;)\s*display\s*:\s*none\s*(?:!important)?\s*(?:;|$)/i.test(value))) {
+          if (key === 'hidden' || (key === 'style' && (
+            /(?:^|;)\s*display\s*:\s*none\s*(?:!important)?\s*(?:;|$)/i.test(value) ||
+            /(?:^|;)\s*content-visibility\s*:\s*hidden\s*(?:!important)?\s*(?:;|$)/i.test(value) ||
+            /(?:^|;)\s*opacity\s*:\s*(?:0+(?:\.0+)?|\.0+)%?\s*(?:!important)?\s*(?:;|$)/i.test(value)
+          ))) {
             hidden = true;
           }
         }
