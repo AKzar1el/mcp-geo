@@ -2254,6 +2254,8 @@ export function registerLocalManagementTools(
   server: McpServer,
   deps: ManagementDeps,
 ): void {
+  const previewNextStep = (brandId: string) =>
+    `Call refresh_brand with brand_id '${brandId}', preview_only=true to review active prompts and configured engines without provider requests. Run without preview_only only after reviewing the scope and potential provider charges.`;
   server.registerTool(
     'track_brand',
     {
@@ -2364,9 +2366,9 @@ export function registerLocalManagementTools(
         next_steps =
           result.prompt_source === 'fallback'
             ? category?.trim()
-              ? `Tracked with ${result.prompts_inserted} provider-free category-anchored starter prompts. Review list_prompts and customize with set_prompts for representative buyer questions before interpreting scores. Call refresh_brand with brand_id '${result.brand_id}' for a starter scan; paid generate_prompts remains optional.`
-              : `Tracked with ${result.prompts_inserted} limited starter prompts. No category was supplied, so these prompts use your brand name and can bias visibility scores. Set a category with update_brand and supply independent category prompts with set_prompts before refresh_brand.`
-            : `Call refresh_brand with brand_id '${result.brand_id}' to run the first scan, then check_visibility for the results.`;
+              ? `Tracked with ${result.prompts_inserted} provider-free category-anchored starter prompts. Review list_prompts and customize with set_prompts for representative buyer questions before interpreting scores. ${previewNextStep(result.brand_id)} Paid generate_prompts remains optional.`
+              : `Tracked with ${result.prompts_inserted} limited starter prompts. No category was supplied, so these prompts use your brand name and can bias visibility scores. Set a category with update_brand and supply independent category prompts with set_prompts before a real scan. ${previewNextStep(result.brand_id)}`
+            : `${previewNextStep(result.brand_id)} Then check_visibility for the results after a real scan.`;
       } else if (result.reason === 'already exists') {
         next_steps = `Brand '${result.brand_id}' is already tracked — nothing was changed. Use list_brands to inspect it, update_brand to correct its metadata, or generate_prompts to refresh its prompt set.`;
       } else {
@@ -2469,8 +2471,9 @@ export function registerLocalManagementTools(
         },
         next_steps: [
           result.prompt_set_review_recommended
-            ? `Category changed, but active prompts and historical runs were preserved. Review list_prompts and use set_prompts to replace outdated buyer-intent prompts before calling refresh_brand for '${brand_id}'. generate_prompts uses a paid API and is optional.`
-            : `Call refresh_brand with brand_id '${brand_id}' to scan using the updated metadata. Active prompts and historical runs were preserved.`,
+            ? 'Category changed, but active prompts and historical runs were preserved. Review list_prompts and use set_prompts to replace outdated buyer-intent prompts before a new scan. generate_prompts uses a paid API and is optional.'
+            : 'Active prompts and historical runs were preserved.',
+          previewNextStep(brand_id),
           ...(result.historical_attribution_review_recommended
             ? ['Brand matching identity changed. Historical visibility scores were measured under the previous name/domain/aliases/exclusions and must not be treated as directly comparable to new scans; retain prior evidence and establish a new baseline.']
             : []),
@@ -2611,7 +2614,7 @@ export function registerLocalManagementTools(
       const payload = {
         brand_id,
         ...result,
-        next_steps: `Call refresh_brand with brand_id '${brand_id}' to scan this prompt set.`,
+        next_steps: previewNextStep(brand_id),
       };
       return toolResult(payload);
     },
@@ -2663,7 +2666,7 @@ export function registerLocalManagementTools(
         prompts_inserted: generated.length,
         prompt_source: 'generated' as const,
         prompts: generated.map((p) => p.text),
-        next_steps: `Call refresh_brand with brand_id '${brand_id}' to scan the new prompt set.`,
+        next_steps: previewNextStep(brand_id),
       };
       return toolResult(payload);
     },
