@@ -239,6 +239,9 @@ test('audit form validates scope and preserves oversized email requests with the
   const revoked: string[] = [];
   let clipboardAllowed = true;
   let downloadAvailable = true;
+  let legacyCopyThrows = false;
+  let appendedLegacyTextareas = 0;
+  let removedLegacyTextareas = 0;
   runInNewContext(script, {
     document: {
       getElementById(id: string) {
@@ -247,7 +250,9 @@ test('audit form validates scope and preserves oversized email requests with the
           : id === 'download-request' ? downloadButton
           : status;
       },
-      body: { appendChild() {} },
+      body: { appendChild(node: { select?: () => void }) {
+        if (node.select) appendedLegacyTextareas++;
+      } },
       createElement(tag: string) {
         if (tag === 'a') {
           return {
@@ -257,10 +262,14 @@ test('audit form validates scope and preserves oversized email requests with the
           };
         }
         return {
-          value: '', style: {}, setAttribute() {}, select() {}, remove() {},
+          value: '', style: {}, setAttribute() {}, select() {},
+          remove() { removedLegacyTextareas++; },
         };
       },
-      execCommand() { return false; },
+      execCommand() {
+        if (legacyCopyThrows) throw new Error('synthetic legacy clipboard denial');
+        return false;
+      },
     },
     HTMLFormElement: FakeForm,
     HTMLButtonElement: FakeButton,
@@ -329,6 +338,13 @@ test('audit form validates scope and preserves oversized email requests with the
   clipboardAllowed = false;
   await copy();
   assert.match(status.textContent, /copy failed/i);
+  legacyCopyThrows = true;
+  await copy();
+  assert.equal(
+    removedLegacyTextareas,
+    appendedLegacyTextareas,
+    'a throwing legacy clipboard API must not leave buyer request text in the DOM',
+  );
   await download();
   assert.equal(downloads.length, 1, 'download should work without clipboard permission');
   assert.equal(downloads[0]?.filename, 'mcp-geo-audit-request.txt');
