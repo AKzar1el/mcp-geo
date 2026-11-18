@@ -195,8 +195,9 @@ function domainMatchIndex(text: string, domain: string): number {
 
   // Match the exact host or one of its subdomains, never a lookalike host
   // that merely contains the configured domain as a suffix or prefix.
+  // Repeated-dot pseudo-hosts must not count as a domain mention either.
   const re = new RegExp(
-    `(?:^|[^\\p{L}\\p{N}-])((?:[a-z0-9-]+\\.)*${escapeRegExp(fullDomain)})(?=$|[^\\p{L}\\p{N}.-]|\\.(?![\\p{L}\\p{N}-]))`,
+    `(?:^|[^\\p{L}\\p{N}-])((?:[a-z0-9-]+\\.)*${escapeRegExp(fullDomain)})(?!\\.+[\\p{L}\\p{N}-])(?=$|[^\\p{L}\\p{N}.-]|\\.(?![\\p{L}\\p{N}-]))`,
     'iu',
   );
   const match = re.exec(text);

@@ -52,6 +52,28 @@ test('full domain still counts even when the bare word is excluded', () => {
   assert.equal(brand_mentioned, 1);
 });
 
+test('malformed repeated-dot domain suffixes do not count as brand or competitor mentions', () => {
+  const brand = makeBrand({
+    domain: 'acme.com',
+    name: 'Different legal name',
+    competitors: ['rival.com'],
+    exclude_terms: ['acme'],
+  });
+  const malformed = extractCitations(
+    brand,
+    'Misleading hosts include acme.com..attacker.test and shop.rival.com..fake.example.',
+  );
+  assert.equal(malformed.brand_mentioned, 0);
+  assert.deepEqual(malformed.competitors_mentioned, []);
+
+  const valid = extractCitations(brand, 'See acme.com. Then compare docs.rival.com...');
+  assert.equal(valid.brand_mentioned, 1);
+  assert.deepEqual(valid.competitors_mentioned, ['rival.com']);
+
+  const mixed = extractCitations(brand, 'Not acme.com..fake.test, but acme.com is referenced.');
+  assert.equal(mixed.brand_mentioned, 1);
+});
+
 test('root term is not matched inside a larger word', () => {
   const brand = makeBrand({
     domain: 'notion.so',
