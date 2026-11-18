@@ -497,6 +497,27 @@ test('empty visibility results guide local and hosted users to a no-call refresh
   assert.match(HOSTED_SERVER_INSTRUCTIONS, /visibility\.refresh[^.]*preview_only=true[\s\S]*provider charges/i);
 });
 
+test('stale and filtered visibility empty states offer a no-call preview before scans', async () => {
+  const previewHint = /(?:refresh_brand|visibility\.refresh)[^.]*preview_only=true[\s\S]*provider charges/i;
+  for (const namespaced of [false, true]) {
+    const staleIdentity = registerVisibilityTool({
+      namespaced,
+      identityChangedAt: Date.UTC(2026, 0, 3),
+    });
+    await assert.rejects(staleIdentity.handler({ brand_id: brand.id }), previewHint);
+
+    const filteredMode = registerVisibilityTool({ namespaced });
+    await assert.rejects(filteredMode.handler({
+      brand_id: brand.id, measurement_mode: 'search_requested', run_mode: 'batch',
+    }), previewHint);
+
+    const retiredPrompts = registerVisibilityTool({ namespaced, activePromptIds: [] });
+    await assert.rejects(retiredPrompts.handler({
+      brand_id: brand.id, active_prompts_only: true,
+    }), previewHint);
+  }
+});
+
 test('check_visibility identifies explicitly requested engines missing usable scan data', async () => {
   const visibility = registerVisibilityTool();
   const result = await visibility.handler({

@@ -789,10 +789,10 @@ export function registerTools(
       }
       if (selectedResponses.length === 0) {
         if (staleIdentityEngines.length > 0) {
-          throw new Error('No current-identity visibility data for the selected engines. Stored scans predate the last brand name, domain, alias, or exclusion change; call refresh_brand to measure the current identity (provider charges may apply). Historical runs remain available in get_visibility_history.');
+          throw new Error(`No current-identity visibility data for the selected engines. Stored scans predate the last brand name, domain, alias, or exclusion change. Historical runs remain available in get_visibility_history. ${emptyVisibilityPreviewHint}`);
         }
         if (measurement_mode) {
-          throw new Error('No usable stored visibility observations match the selected measurement_mode and run_mode for these engines. Missing evidence is unmeasured, not zero; a new provider scan may incur charges.');
+          throw new Error(`No usable stored visibility observations match the selected measurement_mode and run_mode for these engines. Missing evidence is unmeasured, not zero. ${emptyVisibilityPreviewHint}`);
         }
         throw new Error(
           engines && engines.length > 0
@@ -808,7 +808,7 @@ export function registerTools(
       const scored = computeOverallScore(brand, scoredResponses);
       // A snapshot containing only retired questions is not a measured zero.
       if (active_prompts_only && scored.per_engine.length === 0) {
-        throw new Error('No successful stored observations for currently active buyer prompts in the selected engines. A new scan may incur provider charges; historical results remain available without active_prompts_only.');
+        throw new Error(`No successful stored observations for currently active buyer prompts in the selected engines. Historical results remain available without active_prompts_only. ${emptyVisibilityPreviewHint}`);
       }
       const scoredEngines = new Set(scored.per_engine.map(({ engine }) => engine));
       // An explicit multi-engine request must disclose engines whose latest
