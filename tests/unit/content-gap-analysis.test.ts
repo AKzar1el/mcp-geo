@@ -938,6 +938,58 @@ test('content-gap analyzer rejects invented subdomain URLs without another paid 
   }
 });
 
+test('content-gap analyzer does not present invented competitor page URLs as observed sources', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return Response.json({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify([
+        {
+          priority: 1,
+          topic: 'Acme versus Asana invented study',
+          rationale: 'Asana is observed and https://asana.com/research/market-report supposedly proves the claim',
+          suggested_format: 'comparison_page',
+        },
+        {
+          priority: 2,
+          topic: 'Acme versus Asana tracking claim',
+          rationale: 'Asana is observed, but https://asana.com/?source=unverified was not supplied as evidence',
+          suggested_format: 'comparison_page',
+        },
+        {
+          priority: 3,
+          topic: 'Acme versus Asana homepages',
+          rationale: 'Compare Acme with the observed Asana competitor at https://www.asana.com/',
+          suggested_format: 'comparison_page',
+        },
+        {
+          priority: 4,
+          topic: 'Acme versus Asana pricing guide',
+          rationale: 'Create a proposed pricing guide at https://acme.com/pricing to address the Asana competitor',
+          suggested_format: 'pricing_page',
+        },
+      ]) }],
+    });
+  };
+  try {
+    const recommendations = await analyzeContentGaps(
+      { ANTHROPIC_API_KEY: 'synthetic-offline-key' },
+      { id: 'acme', name: 'Acme', domain: 'acme.com' } as Brand,
+      [{ prompt_text: 'Compare team tools', engines_lost_on: ['chatgpt'], competitors_winning: ['asana.com'] }],
+      4,
+    );
+    assert.deepEqual(recommendations.map((rec) => rec.topic), [
+      'Acme versus Asana homepages',
+      'Acme versus Asana pricing guide',
+    ]);
+    assert.equal(calls, 1, 'grounding rejection must not trigger another provider call');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('content-gap analyzer keeps common GEO files without accepting invented domain URLs', async () => {
   const originalFetch = globalThis.fetch;
   let calls = 0;
@@ -1024,13 +1076,13 @@ test('content-gap analyzer rejects unobserved Unicode URL hosts beside genuine c
         {
           priority: 2,
           topic: 'Acme versus Asana for agencies',
-          rationale: 'Asana is observed at https://www.asana.com/teams',
+          rationale: 'Asana is observed at its homepage https://www.asana.com/',
           suggested_format: 'comparison_page',
         },
         {
           priority: 3,
           topic: 'Acme versus Asana and observed international vendor',
-          rationale: 'Asana and https://\u4f8b\u5b50.\u4e2d\u56fd/teams are both observed competitors',
+          rationale: 'Asana and https://\u4f8b\u5b50.\u4e2d\u56fd/ are both observed competitors',
           suggested_format: 'comparison_page',
         },
       ]) }],

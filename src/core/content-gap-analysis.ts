@@ -178,17 +178,25 @@ function referencesUnobservedDomain(
   // A valid observed anchor elsewhere in a sentence must not lend provenance
   // to an invented domain or URL in that same recommendation.
   // Hostnames in absolute URLs may contain Unicode/IDNA labels, which the
-  // ASCII-only bare-domain scan below cannot see. Parse their actual host first
-  // so an observed competitor cannot legitimize an invented international URL.
+  // ASCII-only bare-domain scan below cannot see. A competitor mention grounds
+  // its homepage host, not an arbitrary report path, query or source URL.
+  // The tracked brand may still propose paths for its own future content.
   for (const match of text.matchAll(/https?:\/\/[^\s<>"']+/gi)) {
     const urlText = match[0].replace(/[.,;:!?)}\]]+$/, '');
     let host: string | null;
+    let url: URL;
     try {
-      host = normalizeDomainInput(new URL(urlText).hostname);
+      url = new URL(urlText);
+      host = normalizeDomainInput(url.hostname);
     } catch {
       return true;
     }
     if (!host || !isObservedHost(host)) {
+      return true;
+    }
+    if (host !== brand.domain.toLowerCase().replace(/^www\./, '') &&
+        (url.pathname !== '/' || url.search || url.hash || url.port ||
+          url.username || url.password)) {
       return true;
     }
   }
