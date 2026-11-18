@@ -509,6 +509,17 @@ test('get_citations preserves an actual answer-authored brand URL when no native
   assert.equal(result.structuredContent.citations[0].url_source, 'answer_text');
 });
 
+test('get_citations preserves balanced source-link URL paths instead of truncating them', async () => {
+  const fullUrl = 'https://docs.acme.com/wiki/Guide_(2026)';
+  const citation = registerCitationTool(citationRow({
+    raw_response: `See [the guide](${fullUrl}) for details.`,
+    engine_citations_json: JSON.stringify([]),
+  }));
+  const result = await citation.handler({ brand_id: brand.id });
+  assert.equal(result.structuredContent.citations[0].cited_url, fullUrl);
+  assert.equal(result.structuredContent.citations[0].url_source, 'answer_text');
+});
+
 test('credential-bearing source and answer URLs cannot become brand citation evidence', async () => {
   const citation = registerCitationTool(citationRow({
     raw_response: 'Acme appears at https://reporter:secret@acme.com/private',

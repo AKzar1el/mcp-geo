@@ -6,7 +6,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractCitations, hasBrandInEngineCitations, hostMatchesDomain } from '../../src/core/openai.ts';
+import { extractCitations, extractUrls, hasBrandInEngineCitations, hostMatchesDomain } from '../../src/core/openai.ts';
 import type { Brand } from '../../src/db/types.ts';
 
 const acme: Brand = {
@@ -559,6 +559,13 @@ test('parenthesized URL path fragments are not answer-prose brand or competitor 
     '[source](https://neutral.example)Acme Project Tool is recommended.',
   );
   assert.equal(visibleAfterLink.brand_mentioned, 1);
+});
+
+test('source extraction preserves balanced parentheses in linked and bare URL paths', () => {
+  const complete = 'https://docs.acme.com/wiki/Guide_(2026)';
+  assert.ok(extractUrls(`[guide](${complete})`).includes(complete));
+  assert.ok(extractUrls(`Reference: ${complete} for details.`).includes(complete));
+  assert.ok(!extractUrls(`Reference: ${complete})`).includes(`${complete})`));
 });
 
 test('www link counts as linked citation', () => {

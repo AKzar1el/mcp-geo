@@ -585,8 +585,10 @@ export function extractUrls(text: string): string[] {
     .replace(/<img\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi, ' ')));
   const { visibleText: sourceText, urls: referenceUrls } =
     parseMarkdownReferenceLinks(omitHtmlTags(htmlSource));
-  const markdownRe = /\[[^\]]+\]\((https?:\/\/[^\s)]+)\)/gi;
-  const plainRe = /https?:\/\/[^\s)\]\}'"`<>]+/gi;
+  // Balanced path parentheses belong to the source URL, but an unmatched
+  // closing parenthesis belongs to the surrounding Markdown or prose.
+  const markdownRe = /\[[^\]]+\]\((https?:\/\/(?:\([^()\s]*\)|[^\s()\]\}'"`<>])+)\)/gi;
+  const plainRe = /https?:\/\/(?:\([^()\s]*\)|[^\s()\]\}'"`<>])+/gi;
   const urls = [...extractHtmlAnchorHrefs(htmlSource), ...referenceUrls];
   let m: RegExpExecArray | null;
   while ((m = markdownRe.exec(sourceText)) !== null) {
