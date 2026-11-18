@@ -531,6 +531,25 @@ test('top source samples reject credential-bearing URLs without hiding safe cita
   assert.deepEqual(sources.map((source) => source.sample_url), ['https://news.example/safe-report']);
 });
 
+test('get_citations redacts repeated and encoded query credentials at all client-facing evidence boundaries', async () => {
+  const citation = registerCitationTool(citationRow({
+    raw_response: 'Acme is at https://acme.com/report?token=ANSWER_SECRET&ref=answer',
+    engine_citations_json: JSON.stringify([
+      'https://acme.com/report?API%5FKEY=NATIVE_SECRET&ref=provider&access_token=TOKEN_ONE&access_token=TOKEN_TWO',
+    ]),
+  }), [promptResponse({ engine_citations: [
+    'https://research.example/article?client_secret=SOURCE_SECRET&page=2&KEY=ANOTHER_SECRET',
+  ] })]);
+  const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.equal(result.citations[0].cited_url,
+    'https://acme.com/report?API%5FKEY=[REDACTED]&ref=provider&access_token=[REDACTED]&access_token=[REDACTED]');
+  assert.equal(result.citations[0].url_source, 'provider_source');
+  assert.equal(result.top_sources[0].sample_url,
+    'https://research.example/article?client_secret=[REDACTED]&page=2&KEY=[REDACTED]');
+  assert.match(result.citations[0].response_excerpt, /token=\[REDACTED\]/);
+  assert.doesNotMatch(JSON.stringify(result), /NATIVE_SECRET|TOKEN_ONE|TOKEN_TWO|SOURCE_SECRET|ANOTHER_SECRET|ANSWER_SECRET/);
+});
+
 test('top source rankings exclude localhost, IP addresses and malformed DNS hosts', async () => {
   const citation = registerCitationTool(citationRow(), [
     promptResponse({ engine_citations: [

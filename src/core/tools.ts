@@ -1742,7 +1742,7 @@ export function registerTools(
             ? { identity_scope: citationIdentityScope(row.run_started_at, identityBoundary) }
             : {}),
           response_excerpt: buildResponseExcerpt(row.raw_response, brand),
-          cited_url: brandUrl?.url ?? null,
+          cited_url: brandUrl ? redactCitationUrlQuery(brandUrl.url) : null,
           url_source: brandUrl?.source ?? null,
         };
       });
@@ -2787,7 +2787,7 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
       engines: [...source.engines].sort(),
       measurement_modes: [...source.measurement_modes].sort(),
       ...(identityBoundary !== null ? { identity_scopes: [...source.identity_scopes].sort() } : {}),
-      sample_url: source.sample_url,
+      sample_url: redactCitationUrlQuery(source.sample_url),
       is_brand_domain: hostMatchesDomain(domain, brand.domain),
     }))
     .sort(
@@ -2799,6 +2799,35 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
     .slice(0, 10);
 }
 
+// Source URLs can contain access-bearing query values even without URL userinfo.
+// Redact only named credential parameters at the output boundary; retain the
+// original URL spelling and harmless query fields for provenance.
+function redactCitationUrlQuery(rawUrl: string): string {
+  const queryStart = rawUrl.indexOf('?');
+  if (queryStart === -1) return rawUrl;
+  const fragmentStart = rawUrl.indexOf('#', queryStart);
+  const queryEnd = fragmentStart === -1 ? rawUrl.length : fragmentStart;
+  const query = rawUrl.slice(queryStart + 1, queryEnd);
+  const secretNames = new Set([
+    'apikey', 'key', 'token', 'accesstoken', 'refreshtoken', 'authtoken',
+    'clientsecret', 'apisecret', 'secret', 'password', 'passwd',
+    'signature', 'authorization', 'auth',
+  ]);
+  const redacted = query.split(/([&;])/).map((piece) => {
+    const equals = piece.indexOf('=');
+    if (equals < 0) return piece;
+    let name = piece.slice(0, equals);
+    try {
+      name = decodeURIComponent(name.replace(/\+/g, ' '));
+    } catch {
+      // An invalid encoded name is not interpreted as a credential key.
+    }
+    const normalized = name.toLowerCase().replace(/[-_.\s]/g, '');
+    return secretNames.has(normalized) ? `${piece.slice(0, equals)}=[REDACTED]` : piece;
+  }).join('');
+  return `${rawUrl.slice(0, queryStart + 1)}${redacted}${rawUrl.slice(queryEnd)}`;
+}
+
 export function buildResponseExcerpt(text: string, brand: Brand): string {
   if (!text) return '';
   if (text === '[NO_AI_OVERVIEW]') return text;
@@ -2807,7 +2836,8 @@ export function buildResponseExcerpt(text: string, brand: Brand): string {
   const safeText = text.replace(/https?:\/\/[^\s<>"'`\])}]+/gi, (rawUrl) => {
     try {
       const parsed = new URL(rawUrl.replace(/[.,;!]+$/, ''));
-      return parsed.username || parsed.password ? '[credential-bearing URL omitted]' : rawUrl;
+      return parsed.username || parsed.password
+        ? '[credential-bearing URL omitted]' : redactCitationUrlQuery(rawUrl);
     } catch {
       return rawUrl;
     }
