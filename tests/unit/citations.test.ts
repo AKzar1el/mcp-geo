@@ -6,7 +6,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractCitations, hasBrandInEngineCitations, hostMatchesDomain } from '../../src/core/openai.ts';
+import { extractCitations, extractUrls, hasBrandInEngineCitations, hostMatchesDomain } from '../../src/core/openai.ts';
 import type { Brand } from '../../src/db/types.ts';
 
 const acme: Brand = {
@@ -433,6 +433,20 @@ test('HTML script and style resources are not cited sources but visible anchors 
   );
   assert.equal(visibleSource.brand_cited_with_link, 1);
   assert.deepEqual(visibleSource.cited_urls, ['acme.com']);
+});
+
+test('HTML anchor href character references preserve the actual linked source URL', () => {
+  for (const [entity, decoded] of [
+    ['&amp;', '&'],
+    ['&#38;', '&'],
+    ['&#x26;', '&'],
+    ['&amp;amp;', '&amp;'],
+  ]) {
+    const answer = `<a href="https://docs.acme.com/guide?q=ai${entity}lang=en">Source</a>`;
+    assert.deepEqual(extractUrls(answer), [`https://docs.acme.com/guide?q=ai${decoded}lang=en`], answer);
+  }
+  assert.deepEqual(extractUrls('<div hidden><a href="https://acme.com/?q=x&amp;y=z">Hidden</a></div>'), []);
+  assert.deepEqual(extractUrls('https://docs.acme.com/?literal=&amp;'), ['https://docs.acme.com/?literal=&amp;']);
 });
 
 test('hidden markup and example code do not count as brand or competitor answer mentions', () => {
