@@ -371,10 +371,20 @@ function omitHiddenHtmlSubtrees(text: string): string {
     'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link',
     'meta', 'param', 'source', 'track', 'wbr',
   ]);
-  const stack: { name: string; hidden: boolean; visibility: 'visible' | 'hidden' }[] = [];
+  const stack: {
+    name: string;
+    hidden: boolean;
+    visibility: 'visible' | 'hidden';
+    contentVisible: boolean;
+    detailsOpen: boolean;
+    summarySeen: boolean;
+  }[] = [];
   let hiddenDepth = 0;
   const isVisible = () => !hiddenDepth &&
-    (stack.length === 0 || stack[stack.length - 1]!.visibility === 'visible');
+    (stack.length === 0 || (
+      stack[stack.length - 1]!.visibility === 'visible' &&
+      stack[stack.length - 1]!.contentVisible
+    ));
   let cursor = 0;
   let visible = '';
   for (const match of text.matchAll(tagRe)) {
@@ -399,10 +409,12 @@ function omitHiddenHtmlSubtrees(text: string): string {
         let visibility: 'visible' | 'hidden' = stack.length
           ? stack[stack.length - 1]!.visibility : 'visible';
         let visibilityImportant = false;
+        let detailsOpen = false;
         const attrRe = /([^\s=/>]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
         for (const attr of attrs.matchAll(attrRe)) {
           const key = attr[1]!.toLowerCase();
           const value = attr[2] ?? attr[3] ?? attr[4] ?? '';
+          if (name === 'details' && key === 'open') detailsOpen = true;
           if (key === 'hidden' || (key === 'style' && (
             /(?:^|;)\s*display\s*:\s*none\s*(?:!important)?\s*(?:;|$)/i.test(value) ||
             /(?:^|;)\s*content-visibility\s*:\s*hidden\s*(?:!important)?\s*(?:;|$)/i.test(value) ||
@@ -425,7 +437,20 @@ function omitHiddenHtmlSubtrees(text: string): string {
         const selfClosing = /\/\s*>$/.test(tag) || voidTags.has(name);
         const wasVisible = isVisible();
         if (!selfClosing) {
-          stack.push({ name, hidden, visibility });
+          const parent = stack[stack.length - 1];
+          let contentVisible = parent?.contentVisible ?? true;
+          if (name === 'summary' && parent?.name === 'details' &&
+              !parent.detailsOpen && !parent.summarySeen) {
+            // A closed disclosure displays only its first direct summary.
+            parent.summarySeen = true;
+            contentVisible = stack.length > 1 ? stack[stack.length - 2]!.contentVisible : true;
+          }
+          if (name === 'details' && !detailsOpen) contentVisible = false;
+          stack.push({
+            name, hidden, visibility, contentVisible,
+            detailsOpen: name === 'details' && detailsOpen,
+            summarySeen: false,
+          });
           if (hidden) hiddenDepth++;
         }
         if ((selfClosing ? wasVisible && visibility === 'visible' : isVisible()) && !hidden) {
