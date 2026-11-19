@@ -372,6 +372,8 @@ const citationsOutputSchema = z.object({
     per_engine: z.array(z.object({
       engine: z.string(),
       successful_observation_count: z.number().int().nonnegative(),
+      distinct_prompt_count: z.number().int().nonnegative(),
+      last_observed_at: z.string().nullable(),
     })),
     note: z.string(),
   }),
@@ -1659,7 +1661,7 @@ export function registerTools(
     {
       title: 'Get AI citation evidence',
       description:
-        "Page stored citations with full-window row count and top sources. engines and measurement_mode scope evidence before pagination. Defaults retain history; no provider scans. Example: brand_id='acme'.",
+        "Page stored citations with full-window row count, per-engine prompt coverage/freshness and top sources. engines and measurement_mode scope evidence before pagination. Defaults retain history; no provider scans. Example: brand_id='acme'.",
       inputSchema: {
         brand_id: z
           .string()
@@ -1736,13 +1738,28 @@ export function registerTools(
       const sourceResponses = await deps.db.getCitationSourceRows(
         brand_id, since, until, engineSelection, minRunStartedAt, active_prompts_only, measurement_mode,
       );
-      const observationCounts = new Map<string, number>();
+      const observationEvidence = new Map<string, {
+        count: number;
+        prompts: Set<string>;
+        latestCapturedAt: number;
+      }>();
       for (const response of sourceResponses) {
-        observationCounts.set(response.engine, (observationCounts.get(response.engine) ?? 0) + 1);
+        const evidence = observationEvidence.get(response.engine);
+        if (evidence) {
+          evidence.count++;
+          evidence.prompts.add(response.prompt_id);
+          evidence.latestCapturedAt = Math.max(evidence.latestCapturedAt, response.captured_at);
+        } else {
+          observationEvidence.set(response.engine, {
+            count: 1,
+            prompts: new Set([response.prompt_id]),
+            latestCapturedAt: response.captured_at,
+          });
+        }
       }
       const scopedEngineNames = requestedEngines.length
         ? [...requestedEngines].sort()
-        : [...observationCounts.keys()].sort();
+        : [...observationEvidence.keys()].sort();
 
       const citations = results.map((row) => {
         const engineHosts = parseStringArray(row.engine_citations_json);
@@ -1783,11 +1800,16 @@ export function registerTools(
           note: 'Citation pages and source rankings use only the requested stored engines before limits and aggregation. Missing successful responses in this window are not measured zero, proof a provider was configured, or proof a scan was attempted.',
         },
         observation_coverage: {
-          per_engine: scopedEngineNames.map((engineName) => ({
-            engine: engineName,
-            successful_observation_count: observationCounts.get(engineName) ?? 0,
-          })),
-          note: 'Latest successful stored observation per run and prompt in the selected window, before citation pagination. These counts are not brand mentions, source citations, distinct prompts, completed scans, or visibility scores. Zero for a requested engine means unmeasured here, not zero visibility.',
+          per_engine: scopedEngineNames.map((engineName) => {
+            const evidence = observationEvidence.get(engineName);
+            return {
+              engine: engineName,
+              successful_observation_count: evidence?.count ?? 0,
+              distinct_prompt_count: evidence?.prompts.size ?? 0,
+              last_observed_at: evidence ? new Date(evidence.latestCapturedAt).toISOString() : null,
+            };
+          }),
+          note: 'Latest successful stored observation per run and prompt in the selected window, before citation pagination. Distinct prompts count stored prompt IDs, not unique question texts; last_observed_at is response capture time, not proof of a fresh scan or current brand identity. Counts are not brand mentions, source citations, completed scans, or visibility scores. Zero for a requested engine means unmeasured here, not zero visibility.',
         },
         identity_attribution: identityBoundary === null ? null : {
           identity_changed_at: new Date(identityBoundary).toISOString(),

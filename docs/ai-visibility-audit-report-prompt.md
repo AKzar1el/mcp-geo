@@ -79,6 +79,8 @@ Brand/competitor | Observed mentions | Share of voice
 Use `your_mentions` for the tracked brand and each competitor's `mentions` value from `compare_competitors`; do not infer counts from rounded percentages. Then identify the 3 most important winning or losing prompt patterns. Do not imply exclusivity when a response mentions multiple brands.
 
 ## 5. Citation/source evidence
+Before presenting linked sources, summarize `get_citations.observation_coverage.per_engine`: successful stored observations, distinct stored prompt IDs, and `last_observed_at` for each selected AI surface. These figures cover the full selected evidence window, not just the displayed citation page. A selected engine with zero observations and `last_observed_at=null` is unmeasured, not invisible. A repeated prompt may contribute multiple observations but only one distinct prompt ID; matching prompt IDs do not prove unique question wording. The latest response capture time does not establish when a scan was started, a synchronized cross-engine snapshot, or evidence of present-day brand visibility. Do not turn these counts into a citation rate or sales claim.
+
 Start with the recurring source landscape from `top_sources` when it is available:
 Domain | Citations | Prompts | Engines | Evidence modes | Brand domain?
 
