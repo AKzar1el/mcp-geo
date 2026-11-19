@@ -102,3 +102,16 @@ test('citation excerpts redact credential parameters after square-bracket URL pa
   assert.match(query, /\[2026\]\?access_token=\[REDACTED\]&view=public/);
   assert.match(fragment, /\[2026\]#id_token=\[REDACTED\]&section=1/);
 });
+
+test('citation excerpts omit malformed URLs rather than expose credentials on parse failure', () => {
+  const brand = makeBrand({ domain: 'example.com', name: 'Example' });
+  const response =
+    'Example cites https://example.com:invalid/docs?access_token=QUERY_INVALID_SECRET ' +
+    'and https://alice:PRIVATE_USERINFO@example.com:bad/?id_token=SECOND_INVALID_SECRET. ' +
+    'The public evidence is https://example.com/public?view=1.';
+  const excerpt = buildResponseExcerpt(response, brand);
+
+  assert.doesNotMatch(excerpt, /QUERY_INVALID_SECRET|PRIVATE_USERINFO|SECOND_INVALID_SECRET/);
+  assert.match(excerpt, /\[unparseable URL omitted\]/);
+  assert.match(excerpt, /https:\/\/example\.com\/public\?view=1/);
+});
