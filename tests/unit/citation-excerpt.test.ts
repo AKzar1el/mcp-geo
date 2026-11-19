@@ -75,3 +75,14 @@ test('citation excerpts redact secret query values without erasing benign source
   assert.match(excerpt, /ref=ai/);
   assert.match(excerpt, /access_token=\[REDACTED\]/);
 });
+
+test('citation excerpts redact credentials after balanced parentheses in a URL path', () => {
+  const brand = makeBrand({ domain: 'example.com', name: 'Example' });
+  const response =
+    'Example cites https://example.com/wiki/Guide_(2026)?access_token=QUERY_SENTINEL&view=public ' +
+    'and https://example.com/wiki/Report_(2026)#id_token=FRAGMENT_SENTINEL&section=1.';
+  const excerpt = buildResponseExcerpt(response, brand);
+  assert.doesNotMatch(excerpt, /QUERY_SENTINEL|FRAGMENT_SENTINEL/);
+  assert.match(excerpt, /Guide_\(2026\)\?access_token=\[REDACTED\]&view=public/);
+  assert.match(excerpt, /Report_\(2026\)#id_token=\[REDACTED\]&section=1/);
+});
