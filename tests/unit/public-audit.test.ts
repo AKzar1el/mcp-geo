@@ -293,12 +293,12 @@ test('audit form validates scope and preserves oversized email requests with the
         blobs.push({ parts, options });
       }
     },
-    URL: {
-      createObjectURL() {
+    URL: class extends URL {
+      static createObjectURL() {
         if (!downloadAvailable) throw new Error('blob URLs blocked');
         return 'blob:audit-request';
-      },
-      revokeObjectURL(value: string) { revoked.push(value); },
+      }
+      static revokeObjectURL(value: string) { revoked.push(value); }
     },
     window: { location },
     encodeURIComponent,
@@ -351,6 +351,18 @@ test('audit form validates scope and preserves oversized email requests with the
   assert.equal(location.href, '', 'a port-suffixed URL for the brand is not an independent competitor');
   assert.match(status.textContent, /brand|distinct/i);
 
+  form.values.competitors = 'https://alice:private@example.com/pricing';
+  submit();
+  assert.equal(location.href, '', 'URL userinfo must not bypass brand self-comparison');
+  assert.match(status.textContent, /brand|distinct/i);
+
+  form.values.brand = 'https://user:secret@example.com:badport/private?access_token=bad';
+  form.values.competitors = 'one.com';
+  submit();
+  assert.equal(location.href, '', 'malformed credential-bearing URLs must not be emailed');
+  assert.match(status.textContent, /valid.*(?:domain|URL)/i);
+  form.values.brand = 'example.com';
+
   form.values.competitors = 'one.com, two.com, three.com';
   submit();
   assert.match(location.href, /^mailto:info@tomiseregi\.si\?/);
@@ -399,6 +411,26 @@ test('audit form validates scope and preserves oversized email requests with the
   await download();
   assert.match(status.textContent, /download failed/i);
   assert.equal(downloads.length, 1, 'blocked downloads must not produce a false success');
+
+  // The advertised audit covers domains, not private URLs or their credentials.
+  clipboardAllowed = true;
+  legacyCopyThrows = false;
+  downloadAvailable = true;
+  form.values.brand = 'https://admin:brand-secret@Example.com/private?access_token=brand-token#id_token=hidden';
+  form.values.competitors =
+    'https://one.com/pricing?api_key=competitor-token, https://alice:competitor-secret@two.com/reports';
+  form.values.context = '';
+  location.href = '';
+  await submit();
+  assert.match(location.href, /^mailto:info@tomiseregi\.si\?/);
+  const domainOnlyRequest = new URL(location.href).searchParams.get('body') ?? '';
+  assert.match(domainOnlyRequest, /Brand\/domain: example\.com/);
+  assert.match(domainOnlyRequest, /Competitors \(up to 3\): one\.com, two\.com/);
+  assert.doesNotMatch(domainOnlyRequest, /brand-secret|brand-token|hidden|competitor-token|competitor-secret|\/private|\/pricing|\/reports/);
+  await copy();
+  assert.doesNotMatch(copied.at(-1) ?? '', /brand-secret|brand-token|competitor-token|competitor-secret/);
+  await download();
+  assert.doesNotMatch(blobs.at(-1)?.parts.join('') ?? '', /brand-secret|brand-token|competitor-token|competitor-secret/);
 });
 
 test('HEAD public resource requests match GET metadata without sending response bodies', async () => {

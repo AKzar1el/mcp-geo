@@ -149,6 +149,7 @@ function auditHtml(origin: string): string {
         Competitors (up to 3)
         <input name="competitors" type="text" placeholder="competitor-one.com, competitor-two.com">
       </label>
+      <p class="fine">Pasted URLs are reduced to domain names in the request, so paths, login details and tracking parameters are not emailed. Add relevant page details in Context instead.</p>
       <label>
         Context or priority (optional)
         <textarea name="context" placeholder="What market, product, or buyer journey matters most?"></textarea>
@@ -179,17 +180,33 @@ function auditHtml(origin: string): string {
           !(copyButton instanceof HTMLButtonElement) ||
           !(downloadButton instanceof HTMLButtonElement) || !status) return;
 
+      const domainForRequest = (input) => {
+        const raw = input.trim();
+        const isUrl = raw.includes('://');
+        try {
+          const candidate = isUrl ? raw : 'https://' + raw;
+          const url = new URL(candidate);
+          if ((url.protocol === 'https:' || url.protocol === 'http:') && url.hostname.includes('.')) {
+            return url.hostname.toLowerCase().replace(/^www[.]/, '').replace(/[.]$/, '');
+          }
+        } catch {
+          // Preserve free-form brand names rather than turning them into invalid domains.
+        }
+        return isUrl ? '' : raw;
+      };
+
       const requestBody = () => {
         const data = new FormData(form);
         const value = (name) => String(data.get(name) ?? '').trim();
+        const competitors = value('competitors').split(/[,;]/).filter((entry) => entry.trim());
         return [
           'Hi Tomi,',
           '',
           "I'd like the EUR 99 mcp-geo AI Visibility Audit.",
           '',
-          'Brand/domain: ' + value('brand'),
+          'Brand/domain: ' + domainForRequest(value('brand')),
           'Category / product type: ' + value('category'),
-          'Competitors (up to 3): ' + value('competitors'),
+          'Competitors (up to 3): ' + competitors.map(domainForRequest).join(', '),
           'Context or priority (optional): ' + value('context'),
           '',
           'Source: mcp-geo audit page',
@@ -212,16 +229,12 @@ function auditHtml(origin: string): string {
           status.textContent = 'This audit covers up to 3 competitors. Remove extras or email us about a different scope.';
           return false;
         }
-        // URL schemes, paths and optional ports do not distinguish audit domains.
-        const comparisonDomain = (entry) => {
-          let host = entry.trim().toLowerCase();
-          if (host.startsWith('https://')) host = host.slice(8);
-          else if (host.startsWith('http://')) host = host.slice(7);
-          host = host.split('/')[0].split('?')[0].split('#')[0];
-          host = host.replace(/:\\d+$/, '');
-          if (host.startsWith('www.')) host = host.slice(4);
-          return host.endsWith('.') ? host.slice(0, -1) : host;
-        };
+        if ([value('brand'), ...competitors].some((entry) => entry.includes('://') && !domainForRequest(entry))) {
+          status.textContent = 'Enter a valid public domain or HTTP(S) URL for the brand and each competitor.';
+          return false;
+        }
+        // Compare the same canonical domain that goes into the request.
+        const comparisonDomain = (entry) => domainForRequest(entry).toLowerCase();
         const competitorDomains = competitors.map(comparisonDomain);
         if (new Set(competitorDomains).size !== competitorDomains.length ||
             competitorDomains.includes(comparisonDomain(value('brand')))) {
