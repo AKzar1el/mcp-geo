@@ -489,6 +489,16 @@ test('audit form validates scope and preserves oversized email requests with the
   assert.match(queriedUrlRequest, /Competitors \(up to 3\): one\.com, two\.com/);
   assert.doesNotMatch(queriedUrlRequest, /secret-tail|another-secret|access_token|session|tag=/);
 
+  // A pasted scheme-less URL has the same query-separator ambiguity.
+  form.values.competitors =
+    'one.com/pricing?access_token=first,secret-tail;session=second, two.com';
+  location.href = '';
+  await submit();
+  assert.match(location.href, /^mailto:info@tomiseregi\.si\?/);
+  const schemelessUrlRequest = new URL(location.href).searchParams.get('body') ?? '';
+  assert.match(schemelessUrlRequest, /Competitors \(up to 3\): one\.com, two\.com/);
+  assert.doesNotMatch(schemelessUrlRequest, /secret-tail|access_token|session=/);
+
   form.values.competitors = 'one.com,two.com,three.com';
   location.href = '';
   await submit();
