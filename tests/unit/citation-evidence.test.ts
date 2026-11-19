@@ -50,6 +50,7 @@ type CitationResult = {
     engines: string[];
     measurement_modes: Array<'model_only' | 'search_requested'>;
     sample_url: string;
+    url_redacted: boolean;
     is_brand_domain: boolean;
     identity_scopes?: Array<'current' | 'historical' | 'unattributed'>;
   }>;
@@ -67,6 +68,7 @@ type CitationResult = {
   citations: Array<{
     id: string;
     cited_url: string | null;
+    url_redacted: boolean;
     citation_type: string;
     url_source: 'provider_source' | 'answer_text' | null;
     measurement_mode: 'model_only' | 'search_requested';
@@ -586,6 +588,35 @@ test('get_citations redacts cloud signed-URL capabilities from all client-facing
   assert.doesNotMatch(JSON.stringify(result), /GOOGLE_SENTINEL|GOOGLE_ID_SENTINEL|AWS_ID_SENTINEL|AWS_SIG_SENTINEL|AWS_SESSION_SENTINEL|AZURE_SIG_SENTINEL/);
 });
 
+test('get_citations discloses masked citation links separately from unchanged URLs', async () => {
+  const signed = 'https://acme.com/report?X-Amz-Signature=PRIVATE&X-Amz-Expires=300';
+  const publicUrl = 'https://acme.com/guide?ref=public';
+  const tool = registerCitationTool([
+    citationRow({ response_id: 'signed', run_id: 'signed-run', prompt_id: 'p1',
+      raw_response: 'Acme signed source', engine_citations_json: JSON.stringify([signed]) }),
+    citationRow({ response_id: 'public', run_id: 'public-run', prompt_id: 'p2',
+      raw_response: 'Acme public source', engine_citations_json: JSON.stringify([publicUrl]) }),
+    citationRow({ response_id: 'none', run_id: 'none-run', prompt_id: 'p3',
+      raw_response: 'Acme without linked source', engine_citations_json: '[]' }),
+  ], [
+    promptResponse({ id: 'provider-signed', run_id: 'signed-run', prompt_id: 'p1',
+      engine_citations: ['https://signed.example/document?sig=PRIVATE'] }),
+    promptResponse({ id: 'provider-public', run_id: 'public-run', prompt_id: 'p2',
+      engine_citations: ['https://public.example/document?ref=public'] }),
+  ]);
+  const result = (await tool.handler({ brand_id: brand.id })).structuredContent;
+  const rows = new Map(result.citations.map((row) => [row.id, row]));
+  assert.equal(rows.get('cit_signed')?.url_redacted, true);
+  assert.equal(rows.get('cit_public')?.url_redacted, false);
+  assert.equal(rows.get('cit_none')?.url_redacted, false);
+  const sources = new Map(result.top_sources.map((source) => [source.domain, source]));
+  assert.equal(sources.get('signed.example')?.url_redacted, true);
+  assert.equal(sources.get('public.example')?.url_redacted, false);
+  assert.equal(sources.get('signed.example')?.sample_url.includes('PRIVATE'), false);
+  assert.equal(sources.get('public.example')?.sample_url,
+    'https://public.example/document?ref=public');
+});
+
 test('top source rankings exclude localhost, IP addresses and malformed DNS hosts', async () => {
   const citation = registerCitationTool(citationRow(), [
     promptResponse({ engine_citations: [
@@ -670,6 +701,7 @@ test('get_citations ranks engine-native source domains across the requested wind
       engines: ['chatgpt', 'perplexity'],
       measurement_modes: ['search_requested'],
       sample_url: 'https://www.g2.com/categories/project-management',
+      url_redacted: false,
       is_brand_domain: false,
     },
     {
@@ -679,6 +711,7 @@ test('get_citations ranks engine-native source domains across the requested wind
       engines: ['chatgpt'],
       measurement_modes: ['search_requested'],
       sample_url: 'https://acme.com/guides/project-management',
+      url_redacted: false,
       is_brand_domain: true,
     },
     {
@@ -688,6 +721,7 @@ test('get_citations ranks engine-native source domains across the requested wind
       engines: ['gemini'],
       measurement_modes: ['model_only'],
       sample_url: 'https://example.org/pm-tools',
+      url_redacted: false,
       is_brand_domain: false,
     },
   ]);

@@ -394,6 +394,7 @@ const citationsOutputSchema = z.object({
       engines: z.array(z.string()),
       measurement_modes: z.array(z.enum(['model_only', 'search_requested'])),
       sample_url: z.string(),
+      url_redacted: z.boolean().describe('True when credential parameters were masked; the displayed sample may not be navigable.'),
       is_brand_domain: z.boolean(),
       identity_scopes: z.array(z.enum(['current', 'historical', 'unattributed'])).optional(),
     }),
@@ -409,6 +410,7 @@ const citationsOutputSchema = z.object({
       identity_scope: z.enum(['current', 'historical', 'unattributed']).optional(),
       response_excerpt: z.string(),
       cited_url: z.string().nullable(),
+      url_redacted: z.boolean().describe('True when credential parameters were masked; the displayed citation URL may not be navigable.'),
       url_source: z.enum(['provider_source', 'answer_text']).nullable(),
     }),
   ),
@@ -1726,6 +1728,7 @@ export function registerTools(
       const citations = results.map((row) => {
         const engineHosts = parseStringArray(row.engine_citations_json);
         const brandUrl = pickBrandUrl(brand, engineHosts, row.raw_response);
+        const citedUrl = brandUrl ? redactCitationUrlQuery(brandUrl.url) : null;
         return {
           id: citationId(row.response_id),
           engine: row.engine,
@@ -1742,7 +1745,8 @@ export function registerTools(
             ? { identity_scope: citationIdentityScope(row.run_started_at, identityBoundary) }
             : {}),
           response_excerpt: buildResponseExcerpt(row.raw_response, brand),
-          cited_url: brandUrl ? redactCitationUrlQuery(brandUrl.url) : null,
+          cited_url: citedUrl,
+          url_redacted: brandUrl !== null && citedUrl !== brandUrl.url,
           url_source: brandUrl?.source ?? null,
         };
       });
@@ -2780,16 +2784,20 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
   }
 
   return [...sources.entries()]
-    .map(([domain, source]) => ({
-      domain,
-      citation_count: source.citation_count,
-      prompt_count: source.prompts.size,
-      engines: [...source.engines].sort(),
-      measurement_modes: [...source.measurement_modes].sort(),
-      ...(identityBoundary !== null ? { identity_scopes: [...source.identity_scopes].sort() } : {}),
-      sample_url: redactCitationUrlQuery(source.sample_url),
-      is_brand_domain: hostMatchesDomain(domain, brand.domain),
-    }))
+    .map(([domain, source]) => {
+      const sampleUrl = redactCitationUrlQuery(source.sample_url);
+      return {
+        domain,
+        citation_count: source.citation_count,
+        prompt_count: source.prompts.size,
+        engines: [...source.engines].sort(),
+        measurement_modes: [...source.measurement_modes].sort(),
+        ...(identityBoundary !== null ? { identity_scopes: [...source.identity_scopes].sort() } : {}),
+        sample_url: sampleUrl,
+        url_redacted: sampleUrl !== source.sample_url,
+        is_brand_domain: hostMatchesDomain(domain, brand.domain),
+      };
+    })
     .sort(
       (a, b) =>
         b.citation_count - a.citation_count ||
