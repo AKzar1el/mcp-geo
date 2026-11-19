@@ -86,3 +86,19 @@ test('citation excerpts redact credentials after balanced parentheses in a URL p
   assert.match(excerpt, /Guide_\(2026\)\?access_token=\[REDACTED\]&view=public/);
   assert.match(excerpt, /Report_\(2026\)#id_token=\[REDACTED\]&section=1/);
 });
+
+test('citation excerpts redact credential parameters after square-bracket URL paths', () => {
+  const brand = makeBrand({ domain: 'example.com', name: 'Example' });
+  const query = buildResponseExcerpt(
+    'Example cites https://example.com/docs/[2026]?access_token=QUERY_BRACKET_SECRET&view=public.',
+    brand,
+  );
+  const fragment = buildResponseExcerpt(
+    'Example cites https://example.com/docs/[2026]#id_token=FRAGMENT_BRACKET_SECRET&section=1.',
+    brand,
+  );
+  assert.doesNotMatch(query, /QUERY_BRACKET_SECRET/);
+  assert.doesNotMatch(fragment, /FRAGMENT_BRACKET_SECRET/);
+  assert.match(query, /\[2026\]\?access_token=\[REDACTED\]&view=public/);
+  assert.match(fragment, /\[2026\]#id_token=\[REDACTED\]&section=1/);
+});
