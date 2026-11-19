@@ -368,4 +368,11 @@ export interface Db {
     engine?: string | string[],
     page?: CitationPageOptions,
   ): Promise<CitationRow[]>;
+  // Full-window count before the cursor anchor/limit; historical retries remain distinct.
+  countCitationRows(
+    brandId: string,
+    since: number,
+    engine?: string | string[],
+    page?: CitationPageOptions,
+  ): Promise<number>;
 }
