@@ -431,6 +431,22 @@ test('audit form validates scope and preserves oversized email requests with the
   assert.doesNotMatch(copied.at(-1) ?? '', /brand-secret|brand-token|competitor-token|competitor-secret/);
   await download();
   assert.doesNotMatch(blobs.at(-1)?.parts.join('') ?? '', /brand-secret|brand-token|competitor-token|competitor-secret/);
+
+  // Delimiters inside a pasted URL's query are data, not extra competitor slots.
+  form.values.brand = 'example.com';
+  form.values.competitors =
+    'https://one.com/pricing?access_token=first,secret-tail;session=second;another-secret, https://two.com/?tag=a,b';
+  location.href = '';
+  await submit();
+  assert.match(location.href, /^mailto:info@tomiseregi\.si\?/);
+  const queriedUrlRequest = new URL(location.href).searchParams.get('body') ?? '';
+  assert.match(queriedUrlRequest, /Competitors \(up to 3\): one\.com, two\.com/);
+  assert.doesNotMatch(queriedUrlRequest, /secret-tail|another-secret|access_token|session|tag=/);
+
+  form.values.competitors = 'one.com,two.com,three.com';
+  location.href = '';
+  await submit();
+  assert.match(new URL(location.href).searchParams.get('body') ?? '', /one\.com, two\.com, three\.com/);
 });
 
 test('HEAD public resource requests match GET metadata without sending response bodies', async () => {
