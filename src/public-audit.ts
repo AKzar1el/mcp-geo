@@ -111,6 +111,7 @@ function auditHtml(origin: string): string {
     .cta, .secondary { display: inline-block; border: 0; padding: 14px 20px; border-radius: 8px; font: inherit; font-weight: 800; text-decoration: none; cursor: pointer; }
     .cta { background: #f4f6f8; color: #0b0d10; }
     .secondary { border: 1px solid #343b45; background: transparent; color: #f4f6f8; }
+    .request-preview { max-height: 280px; overflow: auto; margin: 0; padding: 16px; border: 1px solid #343b45; border-radius: 8px; background: #0b0d10; color: #dce2e8; font: 13px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
     .status { min-height: 22px; margin: 0; color: #c4ccd4; font-size: 14px; line-height: 1.5; }
     .fine { margin-top: 18px; color: #929daa; font-size: 14px; line-height: 1.6; }
     .oss { margin-top: 56px; padding-top: 24px; border-top: 1px solid #252a31; color: #aeb8c2; line-height: 1.65; }
@@ -158,7 +159,9 @@ function auditHtml(origin: string): string {
         <button class="cta" type="submit">Request the EUR 99 audit</button>
         <button class="secondary" type="button" id="copy-request">Copy request details</button>
         <button class="secondary" type="button" id="download-request">Download request details</button>
+        <button class="secondary" type="button" id="preview-request" aria-controls="request-preview-body" aria-expanded="false">Preview request details</button>
       </div>
+      <pre id="request-preview-body" class="request-preview" hidden aria-label="Prepared email request"></pre>
       <p id="request-status" class="status" role="status" aria-live="polite"></p>
     </form>
 
@@ -175,10 +178,13 @@ function auditHtml(origin: string): string {
       const form = document.getElementById('audit-request-form');
       const copyButton = document.getElementById('copy-request');
       const downloadButton = document.getElementById('download-request');
+      const previewButton = document.getElementById('preview-request');
+      const previewBody = document.getElementById('request-preview-body');
       const status = document.getElementById('request-status');
       if (!(form instanceof HTMLFormElement) ||
           !(copyButton instanceof HTMLButtonElement) ||
-          !(downloadButton instanceof HTMLButtonElement) || !status) return;
+          !(downloadButton instanceof HTMLButtonElement) ||
+          !(previewButton instanceof HTMLButtonElement) || !previewBody || !status) return;
 
       const domainForRequest = (input) => {
         const raw = input.trim();
@@ -270,6 +276,24 @@ function auditHtml(origin: string): string {
 
       const requestMessage = () =>
         'To: ${AUDIT_EMAIL}\\nSubject: ${AUDIT_SUBJECT}\\n\\n' + requestBody();
+
+      const hidePreview = () => {
+        previewBody.hidden = true;
+        previewBody.textContent = '';
+        previewButton.setAttribute('aria-expanded', 'false');
+      };
+      // Never leave a previously prepared email visible after the inputs change.
+      form.addEventListener('input', hidePreview);
+      previewButton.addEventListener('click', () => {
+        if (!previewBody.hidden) {
+          hidePreview();
+          return;
+        }
+        if (!validate()) return;
+        previewBody.textContent = requestMessage();
+        previewBody.hidden = false;
+        previewButton.setAttribute('aria-expanded', 'true');
+      });
 
       const copyText = async (text) => {
         if (navigator.clipboard && navigator.clipboard.writeText) {
