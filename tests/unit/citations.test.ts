@@ -6,7 +6,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractCitations, hasBrandInEngineCitations, hostMatchesDomain } from '../../src/core/openai.ts';
+import { extractCitations, extractUrls, hasBrandInEngineCitations, hostMatchesDomain } from '../../src/core/openai.ts';
 import type { Brand } from '../../src/db/types.ts';
 
 const acme: Brand = {
@@ -559,6 +559,21 @@ test('parenthesized URL path fragments are not answer-prose brand or competitor 
     '[source](https://neutral.example)Acme Project Tool is recommended.',
   );
   assert.equal(visibleAfterLink.brand_mentioned, 1);
+});
+
+test('full citation URLs retain balanced path punctuation without Markdown wrapper closers', () => {
+  const urls = extractUrls(
+    'References: [guide](https://acme.com/wiki/Guide_(2026)?view=public) ' +
+    'and https://acme.com/docs/[release]?ref=source ' +
+    'also [plain](https://asana.com/report) and https://acme.com/news',
+  );
+  assert.ok(urls.includes('https://acme.com/wiki/Guide_(2026)?view=public'));
+  assert.ok(urls.includes('https://acme.com/docs/[release]?ref=source'));
+  assert.ok(urls.includes('https://asana.com/report'));
+  assert.ok(urls.includes('https://acme.com/news'));
+  assert.ok(!urls.includes('https://acme.com/wiki/Guide_(2026'));
+  assert.ok(!urls.includes('https://acme.com/docs/[release'));
+  assert.ok(!urls.some((url) => url.endsWith(')') && !url.includes('Guide_(2026)')));
 });
 
 test('www link counts as linked citation', () => {

@@ -585,17 +585,29 @@ export function extractUrls(text: string): string[] {
     .replace(/<img\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi, ' ')));
   const { visibleText: sourceText, urls: referenceUrls } =
     parseMarkdownReferenceLinks(omitHtmlTags(htmlSource));
-  const markdownRe = /\[[^\]]+\]\((https?:\/\/[^\s)]+)\)/gi;
-  const plainRe = /https?:\/\/[^\s)\]\}'"`<>]+/gi;
+  // The same URL scanner covers Markdown link targets and plain source URLs.
+  // Balanced path punctuation belongs to the URL, but an unmatched closing
+  // bracket/parenthesis terminates a surrounding Markdown wrapper.
+  const plainRe = /https?:\/\/[^\s\}'"`<>]+/gi;
   const urls = [...extractHtmlAnchorHrefs(htmlSource), ...referenceUrls];
   let m: RegExpExecArray | null;
-  while ((m = markdownRe.exec(sourceText)) !== null) {
-    urls.push(m[1]);
-  }
-  // Run plain after markdown — plainRe also catches the URL inside the
-  // markdown link, which is fine: we dedupe by hostname below.
   while ((m = plainRe.exec(sourceText)) !== null) {
-    urls.push(m[0]);
+    let parentheses = 0;
+    let brackets = 0;
+    let end = m[0].length;
+    for (let i = 0; i < m[0].length; i++) {
+      const char = m[0][i];
+      if (char === '(') parentheses++;
+      else if (char === '[') brackets++;
+      else if (char === ')') {
+        if (parentheses === 0) { end = i; break; }
+        parentheses--;
+      } else if (char === ']') {
+        if (brackets === 0) { end = i; break; }
+        brackets--;
+      }
+    }
+    urls.push(m[0].slice(0, end));
   }
   return urls;
 }
