@@ -2840,9 +2840,9 @@ export function buildResponseExcerpt(text: string, brand: Brand): string {
   if (text === '[NO_AI_OVERVIEW]') return text;
   // Provider text is untrusted. Even a URL rejected as citation evidence can
   // otherwise expose authority credentials in the user-facing excerpt.
-  // A closing parenthesis can be part of a URL path before a token-bearing
-  // query or fragment. Do not stop the redaction scan at that character.
-  const safeText = text.replace(/https?:\/\/[^\s<>"'`\]]+/gi, (rawUrl) => {
+  // Closing parentheses and square brackets can occur in URL paths before
+  // token-bearing query or fragment values. Keep scanning to redact them.
+  const safeText = text.replace(/https?:\/\/[^\s<>"'`]+/gi, (rawUrl) => {
     try {
       const parsed = new URL(rawUrl.replace(/[.,;!]+$/, ''));
       return parsed.username || parsed.password
