@@ -2848,7 +2848,9 @@ export function buildResponseExcerpt(text: string, brand: Brand): string {
       return parsed.username || parsed.password
         ? '[credential-bearing URL omitted]' : redactCitationUrlQuery(rawUrl);
     } catch {
-      return rawUrl;
+      // Malformed provider URLs may still contain access-bearing query or
+      // userinfo text. They cannot establish valid citation evidence.
+      return '[unparseable URL omitted]';
     }
   });
   const idx = findTermSetMatchIndex(safeText, {
