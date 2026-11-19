@@ -15,6 +15,7 @@ Scope and evidence rules:
 - If this is an authorized fresh audit run, confirm the active prompt set is exactly 20 before refreshing. If it is not exactly 20, stop and report the mismatch instead of silently continuing.
 - Where local `list_prompts` is available, inspect its `prompt_review` warning for missing category or brand-named questions before any authorized provider-backed refresh. Verify the actual prompt wording and count; an advisory is not proof of representativeness. Hosted clients without this tool must obtain prompt-set evidence through their authorized admin workflow, not assume that 20 prompts were configured.
 - If a fresh provider run is not authorized, use the latest completed usable data and say that explicitly.
+- `get_citations` returns paged stored evidence (default `limit=50`, maximum 100); a full page is not proof that only that many citation rows exist. For a complete review of the selected audit cohort, follow `has_more` and pass `next_cursor` back as `cursor` until `has_more` is false. Keep the same `brand_id`, `days`, `engines`, `measurement_mode`, `current_identity_only`, and `active_prompts_only` across all pages; changing the selected prompt roster can invalidate a cursor. Pagination reads stored data only and does not trigger provider calls.
 - Never invent missing citations, provider results, competitor mentions, or recommendations.
 - Failed or skipped provider responses are unavailable observations, not zero-visibility observations.
 - If an engine has no usable responses, list it as unavailable rather than filling in a score.
@@ -81,6 +82,8 @@ Start with the recurring source landscape from `top_sources` when it is availabl
 Domain | Citations | Prompts | Engines | Evidence modes | Brand domain?
 
 Use the reported `citation_count`, `prompt_count`, `engines`, `measurement_modes`, and `is_brand_domain` values as returned. Disclose model-only versus search-requested evidence for each recurring source. For a separate search-requested-only evidence view, call `get_citations(measurement_mode='search_requested')` with the same selected engines, identity, active-prompt and time-window filters, and label its smaller denominator rather than mixing it with the full-window summary. The default remains unfiltered; neither request mode alone verifies that a source was actually cited. Do not infer a citation share or source category that mcp-geo did not report.
+
+`top_sources` aggregates the full selected window independently of the citation page size. Do not sum repeated `top_sources` summaries from different pages. Review subsequent citation pages when a complete evidence survey matters, but keep the final report selective and decision-focused. If stopping with `has_more=true`, label the displayed examples as partial citation examples, state how many rows were reviewed, and never claim that unreviewed pages contain no additional relevant source evidence.
 
 List the strongest concrete citation examples returned by the engines:
 Prompt | Engine | Source/domain | What the evidence shows
