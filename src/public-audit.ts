@@ -195,10 +195,28 @@ function auditHtml(origin: string): string {
         return isUrl ? '' : raw;
       };
 
+      const parseCompetitors = (input) => {
+        const entries = [];
+        let start = 0;
+        for (let index = 0; index < input.length; index++) {
+          if (input[index] !== ',' && input[index] !== ';') continue;
+          const segment = input.slice(start, index).trim();
+          // URL paths, queries and fragments can contain list punctuation.
+          // Without a space or another URL prefix, keep it inside the URL.
+          const isUrlData = /^https?:\\/\\/[^/?#]+[/?#]/i.test(segment);
+          const startsNextEntry = /^\\s|^https?:\\/\\//i.test(input.slice(index + 1));
+          if (isUrlData && !startsNextEntry) continue;
+          entries.push(segment);
+          start = index + 1;
+        }
+        entries.push(input.slice(start).trim());
+        return entries.filter(Boolean);
+      };
+
       const requestBody = () => {
         const data = new FormData(form);
         const value = (name) => String(data.get(name) ?? '').trim();
-        const competitors = value('competitors').split(/[,;]/).filter((entry) => entry.trim());
+        const competitors = parseCompetitors(value('competitors'));
         return [
           'Hi Tomi,',
           '',
@@ -224,7 +242,7 @@ function auditHtml(origin: string): string {
           status.textContent = 'Add your brand/domain and category first.';
           return false;
         }
-        const competitors = value('competitors').split(/[,;]/).filter((entry) => entry.trim());
+        const competitors = parseCompetitors(value('competitors'));
         if (competitors.length > 3) {
           status.textContent = 'This audit covers up to 3 competitors. Remove extras or email us about a different scope.';
           return false;
