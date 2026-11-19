@@ -319,6 +319,18 @@ test('audit form validates scope and preserves oversized email requests with the
   submit();
   assert.equal(location.href, '', 'semicolon-separated extras must be rejected too');
 
+  form.values.competitors = 'one.com, https://www.ONE.com/services, two.com';
+  submit();
+  assert.equal(location.href, '', 'the same competitor domain must not occupy two audit slots');
+  assert.match(status.textContent, /distinct|duplicate/i);
+  await copy();
+  assert.equal(copied.length, 0, 'invalid competitor cohorts must not be copyable as ready requests');
+
+  form.values.competitors = 'https://www.example.com/products, two.com';
+  submit();
+  assert.equal(location.href, '', 'the tracked brand cannot also be its own competitor');
+  assert.match(status.textContent, /brand|distinct/i);
+
   form.values.competitors = 'one.com, two.com, three.com';
   submit();
   assert.match(location.href, /^mailto:info@tomiseregi\.si\?/);

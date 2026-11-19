@@ -212,6 +212,21 @@ function auditHtml(origin: string): string {
           status.textContent = 'This audit covers up to 3 competitors. Remove extras or email us about a different scope.';
           return false;
         }
+        // A domain with a URL prefix, www or a path still represents one audit competitor.
+        const comparisonDomain = (entry) => {
+          let host = entry.trim().toLowerCase();
+          if (host.startsWith('https://')) host = host.slice(8);
+          else if (host.startsWith('http://')) host = host.slice(7);
+          host = host.split('/')[0].split('?')[0].split('#')[0];
+          if (host.startsWith('www.')) host = host.slice(4);
+          return host.endsWith('.') ? host.slice(0, -1) : host;
+        };
+        const competitorDomains = competitors.map(comparisonDomain);
+        if (new Set(competitorDomains).size !== competitorDomains.length ||
+            competitorDomains.includes(comparisonDomain(value('brand')))) {
+          status.textContent = 'Use distinct competitor domains that differ from your own brand/domain.';
+          return false;
+        }
         return true;
       };
 
