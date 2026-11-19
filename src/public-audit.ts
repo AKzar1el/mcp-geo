@@ -310,7 +310,12 @@ function auditHtml(origin: string): string {
           return;
         }
         status.textContent = 'Opening your email app. If nothing happens, use Copy or Download request details.';
-        window.location.href = emailLink;
+        try {
+          window.location.href = emailLink;
+        } catch {
+          // Some embedded or locked-down browsers reject external mail handlers.
+          status.textContent = 'Could not open your email app. Use Copy or Download request details, then email the request to ${AUDIT_EMAIL}.';
+        }
       });
 
       copyButton.addEventListener('click', async () => {
