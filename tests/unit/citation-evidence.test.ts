@@ -550,6 +550,24 @@ test('get_citations redacts repeated and encoded query credentials at all client
   assert.doesNotMatch(JSON.stringify(result), /NATIVE_SECRET|TOKEN_ONE|TOKEN_TWO|SOURCE_SECRET|ANOTHER_SECRET|ANSWER_SECRET/);
 });
 
+test('get_citations redacts URL fragment credentials without changing public query and anchor context', async () => {
+  const citation = registerCitationTool(citationRow({
+    raw_response: 'Acme is at https://acme.com/report#access_token=EXCERPT_SECRET&section=summary',
+    engine_citations_json: JSON.stringify([
+      'https://acme.com/report?ref=native#id_token=NATIVE_ID&view=detail',
+    ]),
+  }), [promptResponse({ engine_citations: [
+    'https://research.example/article#state=public&access_token=SOURCE_HASH',
+  ] })]);
+  const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.equal(result.citations[0].cited_url,
+    'https://acme.com/report?ref=native#id_token=[REDACTED]&view=detail');
+  assert.equal(result.top_sources[0].sample_url,
+    'https://research.example/article#state=public&access_token=[REDACTED]');
+  assert.match(result.citations[0].response_excerpt, /#access_token=\[REDACTED\]&section=summary/);
+  assert.doesNotMatch(JSON.stringify(result), /NATIVE_ID|SOURCE_HASH|EXCERPT_SECRET/);
+});
+
 test('top source rankings exclude localhost, IP addresses and malformed DNS hosts', async () => {
   const citation = registerCitationTool(citationRow(), [
     promptResponse({ engine_citations: [

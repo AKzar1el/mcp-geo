@@ -2799,21 +2799,20 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
     .slice(0, 10);
 }
 
-// Source URLs can contain access-bearing query values even without URL userinfo.
-// Redact only named credential parameters at the output boundary; retain the
-// original URL spelling and harmless query fields for provenance.
+// Source URLs can contain access-bearing query or fragment values without URL
+// userinfo. Redact named credentials at the output boundary while preserving
+// the original URL spelling and nonsecret source context.
 function redactCitationUrlQuery(rawUrl: string): string {
-  const queryStart = rawUrl.indexOf('?');
-  if (queryStart === -1) return rawUrl;
-  const fragmentStart = rawUrl.indexOf('#', queryStart);
-  const queryEnd = fragmentStart === -1 ? rawUrl.length : fragmentStart;
-  const query = rawUrl.slice(queryStart + 1, queryEnd);
+  const fragmentStart = rawUrl.indexOf('#');
+  const address = fragmentStart === -1 ? rawUrl : rawUrl.slice(0, fragmentStart);
+  const fragment = fragmentStart === -1 ? null : rawUrl.slice(fragmentStart + 1);
+  const queryStart = address.indexOf('?');
   const secretNames = new Set([
     'apikey', 'key', 'token', 'accesstoken', 'refreshtoken', 'authtoken',
-    'clientsecret', 'apisecret', 'secret', 'password', 'passwd',
+    'idtoken', 'clientsecret', 'apisecret', 'secret', 'password', 'passwd',
     'signature', 'authorization', 'auth',
   ]);
-  const redacted = query.split(/([&;])/).map((piece) => {
+  const redactParameters = (parameters: string): string => parameters.split(/([&;])/).map((piece) => {
     const equals = piece.indexOf('=');
     if (equals < 0) return piece;
     let name = piece.slice(0, equals);
@@ -2825,7 +2824,15 @@ function redactCitationUrlQuery(rawUrl: string): string {
     const normalized = name.toLowerCase().replace(/[-_.\s]/g, '');
     return secretNames.has(normalized) ? `${piece.slice(0, equals)}=[REDACTED]` : piece;
   }).join('');
-  return `${rawUrl.slice(0, queryStart + 1)}${redacted}${rawUrl.slice(queryEnd)}`;
+  const safeAddress = queryStart === -1 ? address
+    : `${address.slice(0, queryStart + 1)}${redactParameters(address.slice(queryStart + 1))}`;
+  if (fragment === null) return safeAddress;
+  // OAuth fragments commonly encode key/value pairs directly; hash routers
+  // also place their own query string after a route or anchor prefix.
+  const hashQueryStart = fragment.indexOf('?');
+  const safeFragment = hashQueryStart === -1 ? redactParameters(fragment)
+    : `${fragment.slice(0, hashQueryStart + 1)}${redactParameters(fragment.slice(hashQueryStart + 1))}`;
+  return `${safeAddress}#${safeFragment}`;
 }
 
 export function buildResponseExcerpt(text: string, brand: Brand): string {
