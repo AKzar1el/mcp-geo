@@ -341,6 +341,16 @@ test('audit form validates scope and preserves oversized email requests with the
   assert.equal(location.href, '', 'the tracked brand cannot also be its own competitor');
   assert.match(status.textContent, /brand|distinct/i);
 
+  form.values.competitors = 'one.com, https://www.ONE.com:443/services';
+  submit();
+  assert.equal(location.href, '', 'a port-suffixed URL is still the same competitor domain');
+  assert.match(status.textContent, /distinct|duplicate/i);
+
+  form.values.competitors = 'http://www.example.com:8080/products';
+  submit();
+  assert.equal(location.href, '', 'a port-suffixed URL for the brand is not an independent competitor');
+  assert.match(status.textContent, /brand|distinct/i);
+
   form.values.competitors = 'one.com, two.com, three.com';
   submit();
   assert.match(location.href, /^mailto:info@tomiseregi\.si\?/);

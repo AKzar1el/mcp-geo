@@ -212,12 +212,13 @@ function auditHtml(origin: string): string {
           status.textContent = 'This audit covers up to 3 competitors. Remove extras or email us about a different scope.';
           return false;
         }
-        // A domain with a URL prefix, www or a path still represents one audit competitor.
+        // URL schemes, paths and optional ports do not distinguish audit domains.
         const comparisonDomain = (entry) => {
           let host = entry.trim().toLowerCase();
           if (host.startsWith('https://')) host = host.slice(8);
           else if (host.startsWith('http://')) host = host.slice(7);
           host = host.split('/')[0].split('?')[0].split('#')[0];
+          host = host.replace(/:\\d+$/, '');
           if (host.startsWith('www.')) host = host.slice(4);
           return host.endsWith('.') ? host.slice(0, -1) : host;
         };
