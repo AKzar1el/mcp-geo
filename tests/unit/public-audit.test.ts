@@ -193,6 +193,8 @@ test('audit request flow provides form, clipboard, direct-email, and no-JS fallb
   assert.match(body, /type="submit"[^>]*>Request the EUR 99 audit</);
   assert.match(body, /id="copy-request"[^>]*>Copy request details</);
   assert.match(body, /id="download-request"[^>]*>Download request details</);
+  assert.match(body, /id="preview-request"[^>]*>Preview request details</);
+  assert.match(body, /id="request-preview-body"[^>]*hidden/);
   assert.match(body, /navigator\.clipboard\.writeText/);
   assert.match(body, /document\.execCommand\('copy'\)/);
   assert.match(body, /aria-live="polite"/);
@@ -222,7 +224,10 @@ test('audit form validates scope and preserves oversized email requests with the
   }
   class FakeButton {
     handlers = new Map<string, Handler>();
+    attributes = new Map<string, string>();
     addEventListener(name: string, callback: Handler) { this.handlers.set(name, callback); }
+    setAttribute(name: string, value: string) { this.attributes.set(name, value); }
+    getAttribute(name: string) { return this.attributes.get(name); }
   }
   class FakeFormData {
     constructor(private readonly form: FakeForm) {}
@@ -231,6 +236,8 @@ test('audit form validates scope and preserves oversized email requests with the
   const form = new FakeForm();
   const button = new FakeButton();
   const downloadButton = new FakeButton();
+  const previewButton = new FakeButton();
+  const previewBody = { hidden: true, textContent: '' };
   const status = { textContent: '' };
   let rejectEmailNavigation = false;
   let navigatedTo = '';
@@ -258,6 +265,8 @@ test('audit form validates scope and preserves oversized email requests with the
         return id === 'audit-request-form' ? form
           : id === 'copy-request' ? button
           : id === 'download-request' ? downloadButton
+          : id === 'preview-request' ? previewButton
+          : id === 'request-preview-body' ? previewBody
           : status;
       },
       body: { appendChild(node: { select?: () => void }) {
@@ -307,6 +316,7 @@ test('audit form validates scope and preserves oversized email requests with the
   const submit = () => form.handlers.get('submit')?.({ preventDefault() {} });
   const copy = () => button.handlers.get('click')?.({ preventDefault() {} });
   const download = () => downloadButton.handlers.get('click')?.({ preventDefault() {} });
+  const preview = () => previewButton.handlers.get('click')?.({ preventDefault() {} });
 
   form.values.brand = '   ';
   submit();
@@ -427,10 +437,24 @@ test('audit form validates scope and preserves oversized email requests with the
   assert.match(domainOnlyRequest, /Brand\/domain: example\.com/);
   assert.match(domainOnlyRequest, /Competitors \(up to 3\): one\.com, two\.com/);
   assert.doesNotMatch(domainOnlyRequest, /brand-secret|brand-token|hidden|competitor-token|competitor-secret|\/private|\/pricing|\/reports/);
+  location.href = '';
+  await preview();
+  assert.equal(location.href, '', 'preview must not navigate or submit the request');
+  assert.equal(previewBody.hidden, false);
+  assert.equal(previewButton.getAttribute('aria-expanded'), 'true');
+  assert.match(previewBody.textContent, /Brand\/domain: example\.com/);
+  assert.match(previewBody.textContent, /Competitors \(up to 3\): one\.com, two\.com/);
+  assert.doesNotMatch(previewBody.textContent, /brand-secret|brand-token|hidden|competitor-token|competitor-secret|\/private|\/pricing|\/reports/);
   await copy();
+  assert.equal(copied.at(-1), previewBody.textContent, 'the reviewed request must equal the text copied to email');
   assert.doesNotMatch(copied.at(-1) ?? '', /brand-secret|brand-token|competitor-token|competitor-secret/);
   await download();
   assert.doesNotMatch(blobs.at(-1)?.parts.join('') ?? '', /brand-secret|brand-token|competitor-token|competitor-secret/);
+  form.values.context = 'Changed after preview';
+  form.handlers.get('input')?.({ preventDefault() {} });
+  assert.equal(previewBody.hidden, true, 'editing the form must invalidate a stale preview');
+  assert.equal(previewBody.textContent, '', 'stale buyer data must not remain in hidden preview DOM');
+  assert.equal(previewButton.getAttribute('aria-expanded'), 'false');
 
   // Delimiters inside a pasted URL's query are data, not extra competitor slots.
   form.values.brand = 'example.com';
