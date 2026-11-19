@@ -2810,7 +2810,10 @@ function redactCitationUrlQuery(rawUrl: string): string {
   const secretNames = new Set([
     'apikey', 'key', 'token', 'accesstoken', 'refreshtoken', 'authtoken',
     'idtoken', 'clientsecret', 'apisecret', 'secret', 'password', 'passwd',
-    'signature', 'authorization', 'auth',
+    'signature', 'authorization', 'auth', 'sig',
+    // Cloud presigned URLs use bearer capabilities under provider-specific keys.
+    'awsaccesskeyid', 'xamzcredential', 'xamzsignature', 'xamzsecuritytoken',
+    'xgoogcredential', 'xgoogsignature', 'xgoogsecuritytoken',
   ]);
   const redactParameters = (parameters: string): string => parameters.split(/([&;])/).map((piece) => {
     const equals = piece.indexOf('=');

@@ -568,6 +568,24 @@ test('get_citations redacts URL fragment credentials without changing public que
   assert.doesNotMatch(JSON.stringify(result), /NATIVE_ID|SOURCE_HASH|EXCERPT_SECRET/);
 });
 
+test('get_citations redacts cloud signed-URL capabilities from all client-facing evidence', async () => {
+  const citation = registerCitationTool(citationRow({
+    raw_response: 'Acme cites https://acme.com/report?X-Goog-Signature=GOOGLE_SENTINEL&X-Goog-Credential=GOOGLE_ID_SENTINEL&X-Goog-Date=20261119T000000Z',
+    engine_citations_json: JSON.stringify([
+      'https://acme.com/report?X-Amz-Credential=AWS_ID_SENTINEL&X-Amz-Signature=AWS_SIG_SENTINEL&X-Amz-Security-Token=AWS_SESSION_SENTINEL&X-Amz-Expires=300',
+    ]),
+  }), [promptResponse({ engine_citations: [
+    'https://research.example/article?sig=AZURE_SIG_SENTINEL&sp=r&sv=2022-11-02',
+  ] })]);
+  const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.equal(result.citations[0].cited_url,
+    'https://acme.com/report?X-Amz-Credential=[REDACTED]&X-Amz-Signature=[REDACTED]&X-Amz-Security-Token=[REDACTED]&X-Amz-Expires=300');
+  assert.equal(result.top_sources[0].sample_url,
+    'https://research.example/article?sig=[REDACTED]&sp=r&sv=2022-11-02');
+  assert.match(result.citations[0].response_excerpt, /X-Goog-Signature=\[REDACTED\]&X-Goog-Credential=\[REDACTED\]&X-Goog-Date=20261119T000000Z/);
+  assert.doesNotMatch(JSON.stringify(result), /GOOGLE_SENTINEL|GOOGLE_ID_SENTINEL|AWS_ID_SENTINEL|AWS_SIG_SENTINEL|AWS_SESSION_SENTINEL|AZURE_SIG_SENTINEL/);
+});
+
 test('top source rankings exclude localhost, IP addresses and malformed DNS hosts', async () => {
   const citation = registerCitationTool(citationRow(), [
     promptResponse({ engine_citations: [
