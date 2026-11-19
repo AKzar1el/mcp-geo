@@ -198,7 +198,11 @@ function auditHtml(origin: string): string {
         } catch {
           // Preserve free-form brand names rather than turning them into invalid domains.
         }
-        return isUrl ? '' : raw;
+        // A broken scheme-less URL can otherwise leak paths or credential values
+        // into mailto, preview, clipboard, and downloaded request details.
+        const hasUrlSyntax = isUrl || /[?#@]/.test(raw) ||
+          (raw.includes('.') && /[/:]/.test(raw));
+        return hasUrlSyntax ? '' : raw;
       };
 
       const parseCompetitors = (input) => {
@@ -253,8 +257,8 @@ function auditHtml(origin: string): string {
           status.textContent = 'This audit covers up to 3 competitors. Remove extras or email us about a different scope.';
           return false;
         }
-        if ([value('brand'), ...competitors].some((entry) => entry.includes('://') && !domainForRequest(entry))) {
-          status.textContent = 'Enter a valid public domain or HTTP(S) URL for the brand and each competitor.';
+        if ([value('brand'), ...competitors].some((entry) => !domainForRequest(entry))) {
+          status.textContent = 'Enter a valid brand name, public domain or HTTP(S) URL for the brand and each competitor.';
           return false;
         }
         // Compare the same canonical domain that goes into the request.
