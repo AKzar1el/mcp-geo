@@ -30,6 +30,7 @@ type CitationResult = {
   has_more: boolean;
   next_cursor: string | null;
   limit: number;
+  total_matching_rows: number;
   measurement_mode_filter: 'model_only' | 'search_requested' | null;
   engine_scope: {
     selection: 'selected' | 'all_stored';
@@ -112,6 +113,17 @@ function registerCitationTool(
         id, brand_id: trackedBrand.id, text: id, intent_stage: null,
         shape: null, active: 1, created_at: 0,
       })),
+      countCitationRows: async (_brandId, _since, engine, page) =>
+        (Array.isArray(row) ? row : [row])
+          .filter((item) => !engine ||
+            (Array.isArray(engine) ? engine.length === 0 || engine.includes(item.engine) : item.engine === engine))
+          .filter((item) => !page?.measurementMode ||
+            ((item.mode === 'batch' || item.engine === 'claude' || item.engine === 'gemini'
+              ? 'model_only' : 'search_requested') === page.measurementMode))
+          .filter((item) => item.captured_at <= (page?.until ?? Number.MAX_SAFE_INTEGER))
+          .filter((item) => page?.minRunStartedAt === undefined ||
+            (typeof item.run_started_at === 'number' && item.run_started_at >= page.minRunStartedAt))
+          .filter((item) => !page?.activePromptsOnly || activeIds.includes(item.prompt_id)).length,
       getCitationRows: async (_brandId, _since, engine, page) => {
         const rows = (Array.isArray(row) ? row : [row])
           .filter((item) => !engine ||
@@ -324,6 +336,7 @@ test('current-identity citation pages and top sources exclude historical and una
   );
   const full = (await tool.handler({ brand_id: brand.id })).structuredContent;
   assert.equal(full.citations.length, 4);
+  assert.equal(full.total_matching_rows, 4);
   assert.equal(full.identity_filter.selection, 'full_history');
   assert.equal(full.top_sources.length, 3);
 
@@ -331,6 +344,7 @@ test('current-identity citation pages and top sources exclude historical and una
   assert.equal(first.identity_filter.selection, 'current_identity_only');
   assert.equal(first.identity_filter.applied, true);
   assert.equal(first.citations.length, 1);
+  assert.equal(first.total_matching_rows, 2);
   assert.equal(first.citations[0].identity_scope, 'current');
   assert.equal(first.has_more, true);
   assert.ok(first.next_cursor);
@@ -341,6 +355,7 @@ test('current-identity citation pages and top sources exclude historical and una
   })).structuredContent;
   assert.equal(second.has_more, false);
   assert.equal(second.citations.length, 1);
+  assert.equal(second.total_matching_rows, 2);
   assert.equal(second.citations[0].identity_scope, 'current');
   assert.notEqual(second.citations[0].id, first.citations[0].id);
 
@@ -379,11 +394,13 @@ test('active buyer-prompt citation pages and sources exclude newer retired-promp
   const tool = registerCitationTool(rows, sources, brand, ['new-question']);
   const historical = (await tool.handler({ brand_id: brand.id, limit: 1 })).structuredContent;
   assert.equal(historical.has_more, true);
+  assert.equal(historical.total_matching_rows, 2);
   assert.equal(historical.top_sources.length, 2);
   assert.equal(historical.prompt_set_scope.selection, 'full_history');
 
   const active = (await tool.handler({ brand_id: brand.id, active_prompts_only: true, limit: 1 })).structuredContent;
   assert.equal(active.citations.length, 1);
+  assert.equal(active.total_matching_rows, 1);
   assert.equal(active.citations[0].id, 'cit_current');
   assert.equal(active.has_more, false);
   assert.equal(active.prompt_set_scope.selection, 'active_only');
@@ -393,6 +410,7 @@ test('active buyer-prompt citation pages and sources exclude newer retired-promp
   const noActive = registerCitationTool(rows, sources, brand, []);
   const empty = (await noActive.handler({ brand_id: brand.id, active_prompts_only: true })).structuredContent;
   assert.equal(empty.citations.length, 0);
+  assert.equal(empty.total_matching_rows, 0);
   assert.deepEqual(empty.top_sources, []);
   assert.equal(empty.prompt_set_scope.active_prompt_count, 0);
 });

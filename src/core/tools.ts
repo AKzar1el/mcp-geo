@@ -384,6 +384,8 @@ const citationsOutputSchema = z.object({
     note: z.string(),
   }),
   limit: z.number().int(),
+  total_matching_rows: z.number().int().nonnegative(),
+  total_matching_rows_note: z.string(),
   has_more: z.boolean(),
   next_cursor: z.string().nullable(),
   top_sources: z.array(
@@ -1650,7 +1652,7 @@ export function registerTools(
     {
       title: 'Get AI citation evidence',
       description:
-        "Page stored citations and source rankings. engines selects audit surfaces; measurement_mode selects model-only or search-requested evidence before pagination. Defaults retain history. No provider scans. Example: brand_id='acme'.",
+        "Page stored citations with full-window row count and top sources. engines and measurement_mode scope evidence before pagination. Defaults retain history; no provider scans. Example: brand_id='acme'.",
       inputSchema: {
         brand_id: z
           .string()
@@ -1721,6 +1723,9 @@ export function registerTools(
       });
       const hasMore = rows.length > limit;
       const results = rows.slice(0, limit);
+      const totalMatchingRows = await deps.db.countCitationRows(brand_id, since, engineSelection, {
+        until, minRunStartedAt, activePromptsOnly: active_prompts_only, measurementMode: measurement_mode,
+      });
       const sourceResponses = await deps.db.getCitationSourceRows(
         brand_id, since, until, engineSelection, minRunStartedAt, active_prompts_only, measurement_mode,
       );
@@ -1791,6 +1796,8 @@ export function registerTools(
           ...results.map(({ engine: citationEngine }) => citationEngine),
         ]),
         limit,
+        total_matching_rows: totalMatchingRows,
+        total_matching_rows_note: 'Full selected window before pagination: all successful brand mentions or source links, including historical retries. This is not a unique prompt count, total scanned prompts, or number of verified source citations.',
         has_more: hasMore,
         next_cursor: hasMore && results.length > 0
           ? encodeURIComponent(JSON.stringify({
