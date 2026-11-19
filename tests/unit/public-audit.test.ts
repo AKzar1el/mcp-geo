@@ -371,6 +371,28 @@ test('audit form validates scope and preserves oversized email requests with the
   submit();
   assert.equal(location.href, '', 'malformed credential-bearing URLs must not be emailed');
   assert.match(status.textContent, /valid.*(?:domain|URL)/i);
+
+  form.values.brand = 'example.com:badport/private?access_token=brand-secret';
+  location.href = '';
+  submit();
+  assert.equal(location.href, '', 'malformed scheme-less brand URLs must not leak their paths or credentials');
+  assert.match(status.textContent, /valid.*(?:domain|URL)/i);
+  form.values.brand = 'example.com';
+
+  form.values.competitors = 'one.com:badport/private?api_key=competitor-secret';
+  location.href = '';
+  submit();
+  assert.equal(location.href, '', 'malformed scheme-less competitor URLs must not leak into requests');
+  assert.match(status.textContent, /valid.*(?:domain|URL)/i);
+  const copiedBeforeMalformed = copied.length;
+  await copy();
+  assert.equal(copied.length, copiedBeforeMalformed, 'invalid scheme-less URLs must also be blocked in copy flows');
+
+  form.values.brand = 'Acme Design Studio';
+  form.values.competitors = 'one.com';
+  location.href = '';
+  await submit();
+  assert.match(new URL(location.href).searchParams.get('body') ?? '', /Brand\/domain: Acme Design Studio/, 'ordinary free-form brand names remain supported');
   form.values.brand = 'example.com';
 
   form.values.competitors = 'one.com, two.com, three.com';
