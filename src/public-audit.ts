@@ -213,7 +213,7 @@ function auditHtml(origin: string): string {
           const segment = input.slice(start, index).trim();
           // URL paths, queries and fragments can contain list punctuation.
           // Without a space or another URL prefix, keep it inside the URL.
-          const isUrlData = /^https?:\\/\\/[^/?#]+[/?#]/i.test(segment);
+          const isUrlData = /^(?:https?:\\/\\/)?(?:[^/?#\\s,;]+[.])+[^/?#\\s,;]+[/?#]/i.test(segment);
           const startsNextEntry = /^\\s|^https?:\\/\\//i.test(input.slice(index + 1));
           if (isUrlData && !startsNextEntry) continue;
           entries.push(segment);
