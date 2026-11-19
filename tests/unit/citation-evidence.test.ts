@@ -38,6 +38,10 @@ type CitationResult = {
     not_observed_engines: string[];
     note: string;
   };
+  observation_coverage: {
+    per_engine: Array<{ engine: string; successful_observation_count: number }>;
+    note: string;
+  };
   google_search_sampling: null | {
     engines: string[];
     country: 'us';
@@ -858,6 +862,8 @@ test('get_citations selected engines filter before pagination and source ranking
       engine_citations: ['https://chat.example/a'], captured_at: at + 2 }),
     promptResponse({ id: 'claude-source', run_id: 'r-claude', engine: 'claude',
       engine_citations: ['https://claude.example/a'], captured_at: at + 1 }),
+    promptResponse({ id: 'claude-unmentioned', run_id: 'r-claude-unmentioned', prompt_id: 'p-other',
+      engine: 'claude', engine_citations: [], captured_at: at + 1 }),
     promptResponse({ id: 'perp-source', run_id: 'r-perp', engine: 'perplexity',
       engine_citations: ['https://perplexity.example/a'], captured_at: at }),
   ]);
@@ -869,15 +875,25 @@ test('get_citations selected engines filter before pagination and source ranking
     ['claude.example', 'perplexity.example']);
   assert.deepEqual(first.engine_scope.requested_engines, ['claude', 'perplexity']);
   assert.deepEqual(first.engine_scope.not_observed_engines, []);
+  assert.deepEqual(first.observation_coverage.per_engine, [
+    { engine: 'claude', successful_observation_count: 2 },
+    { engine: 'perplexity', successful_observation_count: 1 },
+  ]);
+  assert.match(first.observation_coverage.note, /not.*citation|not.*visibility/i);
   const withMissing = (await tool.handler({
     brand_id: brand.id, engines: ['ai_mode', 'claude'],
   })).structuredContent;
   assert.deepEqual(withMissing.engine_scope.not_observed_engines, ['ai_mode']);
+  assert.deepEqual(withMissing.observation_coverage.per_engine, [
+    { engine: 'ai_mode', successful_observation_count: 0 },
+    { engine: 'claude', successful_observation_count: 2 },
+  ]);
   const second = (await tool.handler({
     brand_id: brand.id, engines: ['claude', 'perplexity'], limit: 1, cursor: first.next_cursor!,
   })).structuredContent;
   assert.equal(second.citations.length, 1);
   assert.equal(second.has_more, false);
+  assert.deepEqual(second.observation_coverage, first.observation_coverage);
   assert.notEqual(first.citations[0].id, second.citations[0].id);
   await assert.rejects(tool.handler({
     brand_id: brand.id, engines: ['claude'], cursor: first.next_cursor!,
@@ -888,6 +904,11 @@ test('get_citations selected engines filter before pagination and source ranking
   const all = (await tool.handler({ brand_id: brand.id, engines: [] })).structuredContent;
   assert.equal(all.citations.length, 3);
   assert.equal(all.engine_scope.selection, 'all_stored');
+  assert.deepEqual(all.observation_coverage.per_engine, [
+    { engine: 'chatgpt', successful_observation_count: 1 },
+    { engine: 'claude', successful_observation_count: 2 },
+    { engine: 'perplexity', successful_observation_count: 1 },
+  ]);
 });
 
 test('get_citations provides stable cursor pages for tied observation timestamps', async () => {
