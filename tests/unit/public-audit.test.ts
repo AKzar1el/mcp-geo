@@ -232,7 +232,17 @@ test('audit form validates scope and preserves oversized email requests with the
   const button = new FakeButton();
   const downloadButton = new FakeButton();
   const status = { textContent: '' };
-  const location = { href: '' };
+  let rejectEmailNavigation = false;
+  let navigatedTo = '';
+  const location = {
+    get href() { return navigatedTo; },
+    set href(value: string) {
+      if (rejectEmailNavigation && value.startsWith('mailto:')) {
+        throw new Error('synthetic mailto scheme navigation denial');
+      }
+      navigatedTo = value;
+    },
+  };
   const copied: string[] = [];
   const downloads: Array<{ filename: string; href: string }> = [];
   const blobs: Array<{ parts: string[]; options: { type: string } }> = [];
@@ -336,6 +346,13 @@ test('audit form validates scope and preserves oversized email requests with the
   assert.match(location.href, /^mailto:info@tomiseregi\.si\?/);
   await copy();
   assert.equal(copied.length, 1, 'a request with three competitors remains copyable');
+
+  location.href = '';
+  rejectEmailNavigation = true;
+  await submit();
+  assert.equal(location.href, '', 'a blocked mailto navigation must not lose the form');
+  assert.match(status.textContent, /could not open.*email app/i);
+  rejectEmailNavigation = false;
 
   location.href = '';
   form.values.context = 'Detailed goals: ' + 'long buyer-intent context '.repeat(180);
