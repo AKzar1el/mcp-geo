@@ -400,7 +400,8 @@ const citationsOutputSchema = z.object({
   top_sources: z.array(
     z.object({
       domain: z.string(),
-      citation_count: z.number(),
+      citation_count: z.number().describe('Stored responses listing this domain, at most once per response; not unique URLs.'),
+      distinct_cited_path_count: z.number().int().nonnegative().describe('Distinct cited URL pathnames for this domain, ignoring query and fragment; not verified live pages.'),
       prompt_count: z.number(),
       last_observed_at: z.string().describe('Latest stored source observation capture time; not proof the URL is currently live.'),
       engines: z.array(z.string()),
@@ -2769,6 +2770,7 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
     string,
     {
       citation_count: number;
+      citedPaths: Set<string>;
       prompts: Set<string>;
       engines: Set<string>;
       measurement_modes: Set<'model_only' | 'search_requested'>;
@@ -2781,6 +2783,7 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
 
   for (const response of responses) {
     const domainsForResponse = new Map<string, string>();
+    const pathsForResponse = new Map<string, Set<string>>();
     const identityScope = identityBoundary === null
       ? null : citationIdentityScope(response.run_started_at, identityBoundary);
     for (const rawUrl of response.engine_citations) {
@@ -2793,6 +2796,9 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
         const domain = normalizeDomainInput(parsed.hostname);
         if (!domain) continue;
         if (!domainsForResponse.has(domain)) domainsForResponse.set(domain, rawUrl);
+        const citedPaths = pathsForResponse.get(domain) ?? new Set<string>();
+        citedPaths.add(parsed.pathname);
+        pathsForResponse.set(domain, citedPaths);
       } catch {
         // Provider-native citation payloads are external data. Ignore malformed
         // entries rather than letting one bad source hide the usable evidence.
@@ -2804,6 +2810,7 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
       const measurementMode = visibilityMeasurementMode(response.engine, response.mode ?? 'live');
       if (existing) {
         existing.citation_count += 1;
+        for (const path of pathsForResponse.get(domain) ?? []) existing.citedPaths.add(path);
         existing.prompts.add(response.prompt_id);
         existing.engines.add(response.engine);
         existing.measurement_modes.add(measurementMode);
@@ -2822,6 +2829,7 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
       } else {
         sources.set(domain, {
           citation_count: 1,
+          citedPaths: new Set(pathsForResponse.get(domain) ?? []),
           prompts: new Set([response.prompt_id]),
           engines: new Set([response.engine]),
           measurement_modes: new Set([measurementMode]),
@@ -2840,6 +2848,7 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
       return {
         domain,
         citation_count: source.citation_count,
+        distinct_cited_path_count: source.citedPaths.size,
         prompt_count: source.prompts.size,
         last_observed_at: new Date(source.sample_captured_at).toISOString(),
         engines: [...source.engines].sort(),

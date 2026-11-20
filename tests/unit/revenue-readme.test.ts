@@ -169,20 +169,22 @@ test('audit methodology exposes the score formulas buyers need to verify', () =>
     /\[Use the reusable evidence-first report prompt\]\(\.\/ai-visibility-audit-report-prompt\.md\)/,
   );
 });
-test('audit report prompt uses the shipped citation source summary without inventing derived metrics', () => {
+test('audit report prompt distinguishes cited source paths from response-domain observations', () => {
   assert.match(
     reportPrompt,
     /get_citations[\s\S]*`top_sources` summary[\s\S]*recurring cited domains/,
   );
   assert.match(
     reportPrompt,
-    /Domain \| Citations \| Prompts \| Last observed \| Engines \| Evidence modes \| Brand domain\?/,
+    /Domain \| Response-domain observations \| Distinct cited paths \| Prompts \| Last observed \| Engines \| Evidence modes \| Brand domain\?/,
   );
   assert.match(
     reportPrompt,
     /`citation_count`[\s\S]*`prompt_count`[\s\S]*`engines`[\s\S]*`is_brand_domain`/,
   );
   assert.match(reportPrompt, /Do not infer a citation share or source category/);
+  assert.match(reportPrompt, /`distinct_cited_path_count`[\s\S]*ignoring query strings and fragments/);
+  assert.match(reportPrompt, /`citation_count` counts stored responses listing that domain/);
   assert.match(reportPrompt, /`measurement_modes`[\s\S]*model-only versus search-requested evidence/);
   assert.match(reportPrompt, /neither request mode alone verifies that a source was actually cited/);
   assert.match(

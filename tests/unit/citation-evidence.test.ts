@@ -56,6 +56,7 @@ type CitationResult = {
   top_sources: Array<{
     domain: string;
     citation_count: number;
+    distinct_cited_path_count: number;
     prompt_count: number;
     last_observed_at: string;
     engines: string[];
@@ -726,6 +727,7 @@ test('get_citations ranks engine-native source domains across the requested wind
     {
       domain: 'g2.com',
       citation_count: 2,
+      distinct_cited_path_count: 2,
       prompt_count: 2,
       last_observed_at: observedAt,
       engines: ['chatgpt', 'perplexity'],
@@ -737,6 +739,7 @@ test('get_citations ranks engine-native source domains across the requested wind
     {
       domain: 'acme.com',
       citation_count: 1,
+      distinct_cited_path_count: 1,
       prompt_count: 1,
       last_observed_at: observedAt,
       engines: ['chatgpt'],
@@ -748,6 +751,7 @@ test('get_citations ranks engine-native source domains across the requested wind
     {
       domain: 'example.org',
       citation_count: 1,
+      distinct_cited_path_count: 1,
       prompt_count: 1,
       last_observed_at: observedAt,
       engines: ['gemini'],
@@ -770,6 +774,29 @@ test('top source summaries distinguish mixed model-only and search-requested obs
   const result = await citation.handler({ brand_id: brand.id });
   assert.equal(result.structuredContent.top_sources[0].citation_count, 3);
   assert.deepEqual(result.structuredContent.top_sources[0].measurement_modes, ['model_only', 'search_requested']);
+});
+
+test('source path breadth counts distinct cited paths without inflating response-domain observations', async () => {
+  const citation = registerCitationTool(citationRow(), [
+    promptResponse({
+      id: 'path-one', prompt_id: 'prompt-1',
+      engine_citations: [
+        'https://research.example/guide?utm_source=one',
+        'https://research.example/guide#section',
+        'https://research.example/report?token=fixture',
+      ],
+    }),
+    promptResponse({
+      id: 'path-two', run_id: 'run-two', prompt_id: 'prompt-2',
+      engine_citations: ['https://www.research.example/guide?utm_source=two'],
+    }),
+  ]);
+
+  const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.equal(result.top_sources[0].domain, 'research.example');
+  assert.equal(result.top_sources[0].citation_count, 2);
+  assert.equal(result.top_sources[0].distinct_cited_path_count, 2);
+  assert.equal(result.top_sources[0].prompt_count, 2);
 });
 
 test('get_citations aggregates sources without fetching full AI response bodies', async () => {
