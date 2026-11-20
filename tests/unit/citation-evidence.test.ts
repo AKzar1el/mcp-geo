@@ -57,6 +57,7 @@ type CitationResult = {
     domain: string;
     citation_count: number;
     per_engine_citation_count: Record<string, number>;
+    per_engine_distinct_prompt_count: Record<string, number>;
     distinct_cited_path_count: number;
     prompt_count: number;
     last_observed_at: string;
@@ -729,6 +730,7 @@ test('get_citations ranks engine-native source domains across the requested wind
       domain: 'g2.com',
       citation_count: 2,
       per_engine_citation_count: { chatgpt: 1, perplexity: 1 },
+      per_engine_distinct_prompt_count: { chatgpt: 1, perplexity: 1 },
       distinct_cited_path_count: 2,
       prompt_count: 2,
       last_observed_at: observedAt,
@@ -742,6 +744,7 @@ test('get_citations ranks engine-native source domains across the requested wind
       domain: 'acme.com',
       citation_count: 1,
       per_engine_citation_count: { chatgpt: 1 },
+      per_engine_distinct_prompt_count: { chatgpt: 1 },
       distinct_cited_path_count: 1,
       prompt_count: 1,
       last_observed_at: observedAt,
@@ -755,6 +758,7 @@ test('get_citations ranks engine-native source domains across the requested wind
       domain: 'example.org',
       citation_count: 1,
       per_engine_citation_count: { gemini: 1 },
+      per_engine_distinct_prompt_count: { gemini: 1 },
       distinct_cited_path_count: 1,
       prompt_count: 1,
       last_observed_at: observedAt,
@@ -806,6 +810,37 @@ test('top sources count each engine once per response-domain and honor engine an
     .structuredContent.top_sources[0];
   assert.equal(model.citation_count, 1);
   assert.deepEqual(model.per_engine_citation_count, { claude: 1 });
+});
+
+test('source prompt breadth per engine does not count repeated observations as new prompts', async () => {
+  const url = 'https://research.example/guide';
+  const citation = registerCitationTool(citationRow(), [
+    promptResponse({ id: 'chat-1', run_id: 'chat-run-1', prompt_id: 'shared',
+      engine: 'chatgpt', engine_citations: [url, url] }),
+    promptResponse({ id: 'chat-2', run_id: 'chat-run-2', prompt_id: 'shared',
+      engine: 'chatgpt', engine_citations: [url] }),
+    promptResponse({ id: 'chat-3', run_id: 'chat-run-3', prompt_id: 'unique',
+      engine: 'chatgpt', engine_citations: [url] }),
+    promptResponse({ id: 'claude-1', run_id: 'claude-run', prompt_id: 'shared',
+      engine: 'claude', engine_citations: [url] }),
+    promptResponse({ id: 'perplexity-1', run_id: 'perplexity-run', prompt_id: 'third',
+      engine: 'perplexity', engine_citations: [url] }),
+  ]);
+
+  const all = (await citation.handler({ brand_id: brand.id })).structuredContent.top_sources[0];
+  assert.equal(all.citation_count, 5);
+  assert.deepEqual(all.per_engine_citation_count, { chatgpt: 3, claude: 1, perplexity: 1 });
+  assert.deepEqual(all.per_engine_distinct_prompt_count, { chatgpt: 2, claude: 1, perplexity: 1 });
+  assert.equal(all.prompt_count, 3, 'global prompt IDs are not the sum of per-engine breadth');
+
+  const scoped = (await citation.handler({ brand_id: brand.id, engines: ['chatgpt', 'claude'] }))
+    .structuredContent.top_sources[0];
+  assert.deepEqual(scoped.per_engine_distinct_prompt_count, { chatgpt: 2, claude: 1 });
+  assert.equal(scoped.prompt_count, 2);
+
+  const modelOnly = (await citation.handler({ brand_id: brand.id, measurement_mode: 'model_only' }))
+    .structuredContent.top_sources[0];
+  assert.deepEqual(modelOnly.per_engine_distinct_prompt_count, { claude: 1 });
 });
 
 test('source path breadth counts distinct cited paths without inflating response-domain observations', async () => {
