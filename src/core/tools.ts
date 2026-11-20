@@ -397,6 +397,9 @@ const citationsOutputSchema = z.object({
   total_matching_rows_note: z.string(),
   has_more: z.boolean(),
   next_cursor: z.string().nullable(),
+  top_sources_limit: z.number().int().min(1).max(50).describe('Maximum ranked source domains returned; default 10, maximum 50.'),
+  total_source_domains: z.number().int().nonnegative().describe('All distinct valid cited source domains in the selected stored evidence window, before the top-sources cap.'),
+  top_sources_truncated: z.boolean().describe('True when ranked source domains are omitted by top_sources_limit; citation pagination does not expand this summary.'),
   top_sources: z.array(
     z.object({
       domain: z.string(),
@@ -1691,6 +1694,8 @@ export function registerTools(
           .describe('Filter pages and top_sources by request mode; search_requested does not verify source links.'),
         limit: z.number().int().min(1).max(100).default(50)
           .describe('Citation rows per page, 1-100 (default 50).'),
+        top_sources_limit: z.number().int().min(1).max(50).default(10)
+          .describe('Ranked source domains, 1-50 (default 10); independent of citation page size.'),
         current_identity_only: z.boolean().default(false)
           .describe('Filter citations and source rankings to current-brand runs when the identity boundary is known.'),
         active_prompts_only: z.boolean().default(false)
@@ -1705,7 +1710,7 @@ export function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ brand_id, days = 14, engine, engines, measurement_mode, limit = 50, current_identity_only = false,
+    async ({ brand_id, days = 14, engine, engines, measurement_mode, limit = 50, top_sources_limit = 10, current_identity_only = false,
       active_prompts_only = false, cursor }) => {
       const selectedEngines = [...new Set(engines ?? [])].sort();
       if (engine && selectedEngines.length) {
@@ -1747,6 +1752,7 @@ export function registerTools(
       const sourceResponses = await deps.db.getCitationSourceRows(
         brand_id, since, until, engineSelection, minRunStartedAt, active_prompts_only, measurement_mode,
       );
+      const rankedSources = buildTopSources(sourceResponses, brand, identityBoundary);
       const observationEvidence = new Map<string, {
         count: number;
         prompts: Set<string>;
@@ -1873,7 +1879,10 @@ export function registerTools(
               },
             }))
           : null,
-        top_sources: buildTopSources(sourceResponses, brand, identityBoundary),
+        top_sources_limit,
+        total_source_domains: rankedSources.length,
+        top_sources_truncated: rankedSources.length > top_sources_limit,
+        top_sources: rankedSources.slice(0, top_sources_limit),
         citations,
       };
       return toolResult(payload);
@@ -2909,8 +2918,7 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
         b.citation_count - a.citation_count ||
         b.prompt_count - a.prompt_count ||
         a.domain.localeCompare(b.domain),
-    )
-    .slice(0, 10);
+    );
 }
 
 // Source URLs can contain access-bearing query or fragment values without URL
