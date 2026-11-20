@@ -176,7 +176,7 @@ test('audit report prompt uses the shipped citation source summary without inven
   );
   assert.match(
     reportPrompt,
-    /Domain \| Citations \| Prompts \| Engines \| Evidence modes \| Brand domain\?/,
+    /Domain \| Citations \| Prompts \| Last observed \| Engines \| Evidence modes \| Brand domain\?/,
   );
   assert.match(
     reportPrompt,
