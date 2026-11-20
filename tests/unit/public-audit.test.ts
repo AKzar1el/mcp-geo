@@ -255,6 +255,7 @@ test('audit form validates scope and preserves oversized email requests with the
   const blobs: Array<{ parts: string[]; options: { type: string } }> = [];
   const revoked: string[] = [];
   let clipboardAllowed = true;
+  let clipboardPending: Promise<void> | null = null;
   let downloadAvailable = true;
   let legacyCopyThrows = false;
   let appendedLegacyTextareas = 0;
@@ -295,6 +296,7 @@ test('audit form validates scope and preserves oversized email requests with the
     FormData: FakeFormData,
     navigator: { clipboard: { writeText: async (value: string) => {
       if (!clipboardAllowed) throw new Error('clipboard denied');
+      if (clipboardPending) await clipboardPending;
       copied.push(value);
     } } },
     Blob: class {
@@ -527,6 +529,32 @@ test('audit form validates scope and preserves oversized email requests with the
   location.href = '';
   await submit();
   assert.match(new URL(location.href).searchParams.get('body') ?? '', /one\.com, two\.com, three\.com/);
+
+  // A clipboard permission prompt may resolve after the buyer edits the form.
+  // A stale snapshot must not be announced as the currently prepared request.
+  let releaseClipboard!: () => void;
+  clipboardPending = new Promise<void>((resolve) => { releaseClipboard = resolve; });
+  const pendingCopy = copy();
+  form.values.context = 'Updated while clipboard permission is pending';
+  form.handlers.get('input')?.({ preventDefault() {} });
+  releaseClipboard();
+  await pendingCopy;
+  clipboardPending = null;
+  assert.doesNotMatch(copied.at(-1) ?? '', /Updated while clipboard permission is pending/);
+  assert.match(status.textContent, /changed.*copy again/i,
+    'an older clipboard snapshot must not be presented as the latest request');
+
+  // Oversized-mailto fallback must not override the stale-copy warning.
+  form.values.context = 'Long buyer context '.repeat(180);
+  clipboardPending = new Promise<void>((resolve) => { releaseClipboard = resolve; });
+  const pendingSubmit = submit();
+  form.values.context += ' Changed during copy';
+  form.handlers.get('input')?.({ preventDefault() {} });
+  releaseClipboard();
+  await pendingSubmit;
+  clipboardPending = null;
+  assert.match(status.textContent, /changed.*copy again/i,
+    'the submit fallback must not falsely claim a current request was copied');
 });
 
 test('HEAD public resource requests match GET metadata without sending response bodies', async () => {
