@@ -503,6 +503,23 @@ test('audit form validates scope and preserves oversized email requests with the
   location.href = '';
   await submit();
   assert.match(new URL(location.href).searchParams.get('body') ?? '', /one\.com, two\.com, three\.com/);
+
+  // A URL path followed by an unspaced bare-domain list item is two domains,
+  // not one URL whose path swallowed the next competitor.
+  form.values.competitors = 'https://one.com/pricing,two.com';
+  location.href = '';
+  await submit();
+  assert.match(new URL(location.href).searchParams.get('body') ?? '', /Competitors \(up to 3\): one\.com, two\.com/);
+
+  form.values.competitors = 'one.com/pricing;two.com';
+  location.href = '';
+  await submit();
+  assert.match(new URL(location.href).searchParams.get('body') ?? '', /Competitors \(up to 3\): one\.com, two\.com/);
+
+  form.values.competitors = 'https://one.com/pricing?tag=alpha,two.com';
+  location.href = '';
+  await submit();
+  assert.match(new URL(location.href).searchParams.get('body') ?? '', /Competitors \(up to 3\): one\.com\n/);
 });
 
 test('HEAD public resource requests match GET metadata without sending response bodies', async () => {
