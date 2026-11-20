@@ -58,6 +58,7 @@ type CitationResult = {
     citation_count: number;
     per_engine_citation_count: Record<string, number>;
     per_engine_distinct_prompt_count: Record<string, number>;
+    per_engine_last_observed_at: Record<string, string>;
     distinct_cited_path_count: number;
     prompt_count: number;
     last_observed_at: string;
@@ -731,6 +732,7 @@ test('get_citations ranks engine-native source domains across the requested wind
       citation_count: 2,
       per_engine_citation_count: { chatgpt: 1, perplexity: 1 },
       per_engine_distinct_prompt_count: { chatgpt: 1, perplexity: 1 },
+      per_engine_last_observed_at: { chatgpt: observedAt, perplexity: observedAt },
       distinct_cited_path_count: 2,
       prompt_count: 2,
       last_observed_at: observedAt,
@@ -745,6 +747,7 @@ test('get_citations ranks engine-native source domains across the requested wind
       citation_count: 1,
       per_engine_citation_count: { chatgpt: 1 },
       per_engine_distinct_prompt_count: { chatgpt: 1 },
+      per_engine_last_observed_at: { chatgpt: observedAt },
       distinct_cited_path_count: 1,
       prompt_count: 1,
       last_observed_at: observedAt,
@@ -759,6 +762,7 @@ test('get_citations ranks engine-native source domains across the requested wind
       citation_count: 1,
       per_engine_citation_count: { gemini: 1 },
       per_engine_distinct_prompt_count: { gemini: 1 },
+      per_engine_last_observed_at: { gemini: observedAt },
       distinct_cited_path_count: 1,
       prompt_count: 1,
       last_observed_at: observedAt,
@@ -841,6 +845,38 @@ test('source prompt breadth per engine does not count repeated observations as n
   const modelOnly = (await citation.handler({ brand_id: brand.id, measurement_mode: 'model_only' }))
     .structuredContent.top_sources[0];
   assert.deepEqual(modelOnly.per_engine_distinct_prompt_count, { claude: 1 });
+});
+
+test('source freshness is scoped by engine and measurement mode rather than inherited from the newest engine', async () => {
+  const recent = Date.now() - 60_000;
+  const older = recent - 2 * 86_400_000;
+  const middle = recent - 86_400_000;
+  const source = 'https://research.example/guide';
+  const citation = registerCitationTool(citationRow({ captured_at: recent }), [
+    { ...promptResponse({ id: 'chat-batch', run_id: 'chat-batch', prompt_id: 'a',
+      captured_at: older, engine: 'chatgpt', engine_citations: [source] }), mode: 'batch' },
+    promptResponse({ id: 'perplexity', run_id: 'perplexity', prompt_id: 'b',
+      captured_at: middle, engine: 'perplexity', engine_citations: [source] }),
+    promptResponse({ id: 'chat-live', run_id: 'chat-live', prompt_id: 'c',
+      captured_at: recent, engine: 'chatgpt', engine_citations: [source] }),
+  ]);
+
+  const all = (await citation.handler({ brand_id: brand.id })).structuredContent.top_sources[0];
+  assert.equal(all.last_observed_at, new Date(recent).toISOString());
+  assert.deepEqual(all.per_engine_last_observed_at, {
+    chatgpt: new Date(recent).toISOString(),
+    perplexity: new Date(middle).toISOString(),
+  });
+
+  const model = (await citation.handler({ brand_id: brand.id, measurement_mode: 'model_only' }))
+    .structuredContent.top_sources[0];
+  assert.deepEqual(model.per_engine_last_observed_at, { chatgpt: new Date(older).toISOString() });
+  assert.equal(model.last_observed_at, new Date(older).toISOString());
+
+  const selected = (await citation.handler({ brand_id: brand.id, engines: ['perplexity'] }))
+    .structuredContent.top_sources[0];
+  assert.deepEqual(selected.per_engine_last_observed_at, { perplexity: new Date(middle).toISOString() });
+  assert.equal(selected.last_observed_at, new Date(middle).toISOString());
 });
 
 test('source path breadth counts distinct cited paths without inflating response-domain observations', async () => {
