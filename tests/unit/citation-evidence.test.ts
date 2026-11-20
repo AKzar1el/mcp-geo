@@ -57,6 +57,7 @@ type CitationResult = {
     domain: string;
     citation_count: number;
     prompt_count: number;
+    last_observed_at: string;
     engines: string[];
     measurement_modes: Array<'model_only' | 'search_requested'>;
     sample_url: string;
@@ -690,6 +691,7 @@ test('get_citations does not attach unrelated or lookalike URLs to mention-only 
 });
 
 test('get_citations ranks engine-native source domains across the requested window', async () => {
+  const observedAt = new Date(Date.UTC(2026, 8, 20)).toISOString();
   const citation = registerCitationTool(citationRow(), [
     promptResponse({
       id: 'response-1',
@@ -725,6 +727,7 @@ test('get_citations ranks engine-native source domains across the requested wind
       domain: 'g2.com',
       citation_count: 2,
       prompt_count: 2,
+      last_observed_at: observedAt,
       engines: ['chatgpt', 'perplexity'],
       measurement_modes: ['search_requested'],
       sample_url: 'https://www.g2.com/categories/project-management',
@@ -735,6 +738,7 @@ test('get_citations ranks engine-native source domains across the requested wind
       domain: 'acme.com',
       citation_count: 1,
       prompt_count: 1,
+      last_observed_at: observedAt,
       engines: ['chatgpt'],
       measurement_modes: ['search_requested'],
       sample_url: 'https://acme.com/guides/project-management',
@@ -745,6 +749,7 @@ test('get_citations ranks engine-native source domains across the requested wind
       domain: 'example.org',
       citation_count: 1,
       prompt_count: 1,
+      last_observed_at: observedAt,
       engines: ['gemini'],
       measurement_modes: ['model_only'],
       sample_url: 'https://example.org/pm-tools',
@@ -809,6 +814,7 @@ test('top source evidence spans the complete window on every cursor page', async
   assert.deepEqual(first.structuredContent.top_sources, second.structuredContent.top_sources);
   assert.equal(first.structuredContent.top_sources[0].citation_count, 2);
   assert.equal(first.structuredContent.top_sources[0].prompt_count, 2);
+  assert.equal(first.structuredContent.top_sources[0].last_observed_at, new Date(observed).toISOString());
 });
 
 test('top source sample links use the latest observation regardless of database row order', async () => {
@@ -827,6 +833,7 @@ test('top source sample links use the latest observation regardless of database 
     const result = await tool.handler({ brand_id: brand.id });
     assert.equal(result.structuredContent.top_sources[0].citation_count, 2);
     assert.equal(result.structuredContent.top_sources[0].sample_url, 'https://research.example/new-report');
+    assert.equal(result.structuredContent.top_sources[0].last_observed_at, new Date(newer.captured_at).toISOString());
   }
 });
 
