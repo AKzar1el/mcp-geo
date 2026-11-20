@@ -115,3 +115,44 @@ test('citation excerpts omit malformed URLs rather than expose credentials on pa
   assert.match(excerpt, /\[unparseable URL omitted\]/);
   assert.match(excerpt, /https:\/\/example\.com\/public\?view=1/);
 });
+
+test('citation excerpts redact standalone authorization secrets without hiding public citations', () => {
+  const brand = makeBrand({ domain: 'example.com', name: 'Example' });
+  const response =
+    'Example cites https://example.com/report?view=public. ' +
+    'Authorization: Bearer SYNTHETIC_BEARER_SECRET ' +
+    'access_token=SYNTHETIC_PLAINTEXT_SECRET; public context remains.';
+
+  const excerpt = buildResponseExcerpt(response, brand);
+  assert.doesNotMatch(excerpt, /SYNTHETIC_BEARER_SECRET|SYNTHETIC_PLAINTEXT_SECRET/);
+  assert.match(excerpt, /Authorization: Bearer \[REDACTED\]/);
+  assert.match(excerpt, /access_token=\[REDACTED\]/);
+  assert.match(excerpt, /https:\/\/example\.com\/report\?view=public/);
+});
+
+test('citation excerpts mask Basic authorization and quoted API keys in provider prose', () => {
+  const brand = makeBrand({ domain: 'example.com', name: 'Example' });
+  const excerpt = buildResponseExcerpt(
+    'Example: https://example.com/docs. AUTHORIZATION: Basic SYNTHETIC_BASIC_SECRET ' +
+    'API-KEY="SYNTHETIC_API_SECRET"; the documentation remains public.',
+    brand,
+  );
+  assert.doesNotMatch(excerpt, /SYNTHETIC_BASIC_SECRET|SYNTHETIC_API_SECRET/);
+  assert.match(excerpt, /AUTHORIZATION: Basic \[REDACTED\]/);
+  assert.match(excerpt, /API-KEY=\[REDACTED\]/);
+  assert.match(excerpt, /https:\/\/example\.com\/docs/);
+});
+
+test('citation excerpts hide entire quoted credential values containing spaces', () => {
+  const brand = makeBrand({ domain: 'example.com', name: 'Example' });
+  const excerpt = buildResponseExcerpt(
+    'Example cites https://example.com/public. ' +
+    'Authorization: Bearer "SYNTHETIC BEARER SECRET"; ' +
+    "api_key='SYNTHETIC API KEY SECRET'; visible context remains.",
+    brand,
+  );
+  assert.doesNotMatch(excerpt, /SYNTHETIC|BEARER SECRET|API KEY SECRET/);
+  assert.match(excerpt, /Authorization: Bearer \[REDACTED\]/);
+  assert.match(excerpt, /api_key=\[REDACTED\]/);
+  assert.match(excerpt, /https:\/\/example\.com\/public/);
+});
