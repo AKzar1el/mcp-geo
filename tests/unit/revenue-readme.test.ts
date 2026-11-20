@@ -184,6 +184,7 @@ test('audit report prompt distinguishes cited source paths from response-domain 
   );
   assert.match(reportPrompt, /Do not infer a citation share or source category/);
   assert.match(reportPrompt, /`distinct_cited_path_count`[\s\S]*ignoring query strings and fragments/);
+  assert.match(reportPrompt, /`top_cited_paths`[\s\S]*up to five pathnames[\s\S]*path counts can sum to more than the domain's `citation_count`/);
   assert.match(reportPrompt, /`citation_count` counts stored responses listing that domain/);
   assert.match(reportPrompt, /`per_engine_citation_count` breaks those same response-domain observations down by engine/);
   assert.match(reportPrompt, /`per_engine_source_observation_percent` divides that source's per-engine response count by the same engine's `observation_coverage\.per_engine\.successful_observation_count`/);

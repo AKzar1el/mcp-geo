@@ -65,6 +65,7 @@ type CitationResult = {
     per_engine_last_observed_at: Record<string, string>;
     per_engine_examples: Record<string, { sample_url: string; url_redacted: boolean }>;
     distinct_cited_path_count: number;
+    top_cited_paths: Array<{ path: string; response_count: number }>;
     prompt_count: number;
     last_observed_at: string;
     engines: string[];
@@ -764,6 +765,10 @@ test('get_citations ranks engine-native source domains across the requested wind
         perplexity: { sample_url: 'https://g2.com/reports/project-management', url_redacted: false },
       },
       distinct_cited_path_count: 2,
+      top_cited_paths: [
+        { path: '/categories/project-management', response_count: 1 },
+        { path: '/reports/project-management', response_count: 1 },
+      ],
       prompt_count: 2,
       last_observed_at: observedAt,
       engines: ['chatgpt', 'perplexity'],
@@ -783,6 +788,7 @@ test('get_citations ranks engine-native source domains across the requested wind
         chatgpt: { sample_url: 'https://acme.com/guides/project-management', url_redacted: false },
       },
       distinct_cited_path_count: 1,
+      top_cited_paths: [{ path: '/guides/project-management', response_count: 1 }],
       prompt_count: 1,
       last_observed_at: observedAt,
       engines: ['chatgpt'],
@@ -802,6 +808,7 @@ test('get_citations ranks engine-native source domains across the requested wind
         gemini: { sample_url: 'https://example.org/pm-tools', url_redacted: false },
       },
       distinct_cited_path_count: 1,
+      top_cited_paths: [{ path: '/pm-tools', response_count: 1 }],
       prompt_count: 1,
       last_observed_at: observedAt,
       engines: ['gemini'],
@@ -998,6 +1005,7 @@ test('source path breadth counts distinct cited paths without inflating response
         'https://research.example/guide?utm_source=one',
         'https://research.example/guide#section',
         'https://research.example/report?token=fixture',
+        'https://research.example/analysis',
       ],
     }),
     promptResponse({
@@ -1009,8 +1017,26 @@ test('source path breadth counts distinct cited paths without inflating response
   const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
   assert.equal(result.top_sources[0].domain, 'research.example');
   assert.equal(result.top_sources[0].citation_count, 2);
-  assert.equal(result.top_sources[0].distinct_cited_path_count, 2);
+  assert.equal(result.top_sources[0].distinct_cited_path_count, 3);
+  assert.deepEqual(result.top_sources[0].top_cited_paths, [
+    { path: '/guide', response_count: 2 },
+    { path: '/analysis', response_count: 1 },
+    { path: '/report', response_count: 1 },
+  ]);
   assert.equal(result.top_sources[0].prompt_count, 2);
+});
+
+test('top cited source paths are bounded and tie-broken deterministically', async () => {
+  const tool = registerCitationTool(citationRow(), [
+    promptResponse({
+      engine_citations: ['z', 'a', 'e', 'c', 'b', 'd'].map((path) => `https://research.example/${path}`),
+    }),
+  ]);
+  const source = (await tool.handler({ brand_id: brand.id })).structuredContent.top_sources[0];
+  assert.equal(source.distinct_cited_path_count, 6);
+  assert.deepEqual(source.top_cited_paths, ['a', 'b', 'c', 'd', 'e'].map((path) => ({
+    path: `/${path}`, response_count: 1,
+  })));
 });
 
 test('get_citations aggregates sources without fetching full AI response bodies', async () => {
