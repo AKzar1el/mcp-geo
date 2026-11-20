@@ -176,7 +176,7 @@ test('audit report prompt distinguishes cited source paths from response-domain 
   );
   assert.match(
     reportPrompt,
-    /Domain \| Response-domain observations \| Per-engine observations \| Distinct cited paths \| Prompts \| Last observed \| Engines \| Evidence modes \| Brand domain\?/,
+    /Domain \| Response-domain observations \| Per-engine observations \| Per-engine distinct prompts \| Distinct cited paths \| Prompts \| Last observed \| Engines \| Evidence modes \| Brand domain\?/,
   );
   assert.match(
     reportPrompt,
@@ -186,6 +186,8 @@ test('audit report prompt distinguishes cited source paths from response-domain 
   assert.match(reportPrompt, /`distinct_cited_path_count`[\s\S]*ignoring query strings and fragments/);
   assert.match(reportPrompt, /`citation_count` counts stored responses listing that domain/);
   assert.match(reportPrompt, /`per_engine_citation_count` breaks those same response-domain observations down by engine/);
+  assert.match(reportPrompt, /`per_engine_distinct_prompt_count` shows how many different stored prompt IDs cited that domain on each engine/);
+  assert.match(reportPrompt, /must not be summed to infer global `prompt_count`/);
   assert.match(reportPrompt, /`measurement_modes`[\s\S]*model-only versus search-requested evidence/);
   assert.match(reportPrompt, /neither request mode alone verifies that a source was actually cited/);
   assert.match(
