@@ -56,6 +56,7 @@ type CitationResult = {
   top_sources: Array<{
     domain: string;
     citation_count: number;
+    per_engine_citation_count: Record<string, number>;
     distinct_cited_path_count: number;
     prompt_count: number;
     last_observed_at: string;
@@ -727,6 +728,7 @@ test('get_citations ranks engine-native source domains across the requested wind
     {
       domain: 'g2.com',
       citation_count: 2,
+      per_engine_citation_count: { chatgpt: 1, perplexity: 1 },
       distinct_cited_path_count: 2,
       prompt_count: 2,
       last_observed_at: observedAt,
@@ -739,6 +741,7 @@ test('get_citations ranks engine-native source domains across the requested wind
     {
       domain: 'acme.com',
       citation_count: 1,
+      per_engine_citation_count: { chatgpt: 1 },
       distinct_cited_path_count: 1,
       prompt_count: 1,
       last_observed_at: observedAt,
@@ -751,6 +754,7 @@ test('get_citations ranks engine-native source domains across the requested wind
     {
       domain: 'example.org',
       citation_count: 1,
+      per_engine_citation_count: { gemini: 1 },
       distinct_cited_path_count: 1,
       prompt_count: 1,
       last_observed_at: observedAt,
@@ -774,6 +778,34 @@ test('top source summaries distinguish mixed model-only and search-requested obs
   const result = await citation.handler({ brand_id: brand.id });
   assert.equal(result.structuredContent.top_sources[0].citation_count, 3);
   assert.deepEqual(result.structuredContent.top_sources[0].measurement_modes, ['model_only', 'search_requested']);
+});
+
+test('top sources count each engine once per response-domain and honor engine and mode selection', async () => {
+  const citation = registerCitationTool(citationRow(), [
+    promptResponse({ id: 'chat-a', run_id: 'chat-a', prompt_id: 'a', engine: 'chatgpt',
+      engine_citations: ['https://research.example/one', 'https://www.research.example/two'] }),
+    promptResponse({ id: 'chat-b', run_id: 'chat-b', prompt_id: 'b', engine: 'chatgpt',
+      engine_citations: ['https://research.example/one'] }),
+    promptResponse({ id: 'perplexity', run_id: 'perplexity', prompt_id: 'c', engine: 'perplexity',
+      engine_citations: ['https://research.example/three', 'https://research.example/three?ref=repeat'] }),
+    promptResponse({ id: 'claude', run_id: 'claude', prompt_id: 'd', engine: 'claude',
+      engine_citations: ['https://research.example/four'] }),
+  ]);
+
+  const all = (await citation.handler({ brand_id: brand.id })).structuredContent.top_sources[0];
+  assert.equal(all.citation_count, 4);
+  assert.deepEqual(all.per_engine_citation_count, { chatgpt: 2, claude: 1, perplexity: 1 });
+  assert.equal(Object.values(all.per_engine_citation_count).reduce((sum, count) => sum + count, 0), all.citation_count);
+
+  const selected = (await citation.handler({ brand_id: brand.id, engines: ['perplexity', 'chatgpt'] }))
+    .structuredContent.top_sources[0];
+  assert.equal(selected.citation_count, 3);
+  assert.deepEqual(selected.per_engine_citation_count, { chatgpt: 2, perplexity: 1 });
+
+  const model = (await citation.handler({ brand_id: brand.id, measurement_mode: 'model_only' }))
+    .structuredContent.top_sources[0];
+  assert.equal(model.citation_count, 1);
+  assert.deepEqual(model.per_engine_citation_count, { claude: 1 });
 });
 
 test('source path breadth counts distinct cited paths without inflating response-domain observations', async () => {
