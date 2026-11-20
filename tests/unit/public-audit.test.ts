@@ -428,6 +428,14 @@ test('audit form validates scope and preserves oversized email requests with the
   assert.match(location.href, /^mailto:info@tomiseregi\.si\?/);
   await copy();
   assert.equal(copied.length, 1, 'a request with three competitors remains copyable');
+  assert.match(status.textContent, /request copied/i);
+  form.values.context = 'Updated after copying';
+  form.handlers.get('input')?.({ preventDefault() {} });
+  assert.match(status.textContent, /request changed.*copy or download/i,
+    'editing a successfully copied request must invalidate its stale success confirmation');
+  await copy();
+  assert.match(status.textContent, /request copied/i,
+    'copying the revised request should restore a truthful success confirmation');
 
   location.href = '';
   rejectEmailNavigation = true;
@@ -440,9 +448,9 @@ test('audit form validates scope and preserves oversized email requests with the
   form.values.context = 'Detailed goals: ' + 'long buyer-intent context '.repeat(180);
   await submit();
   assert.equal(location.href, '', 'an oversized mailto URL should not be opened silently');
-  assert.equal(copied.length, 2, 'the complete oversized request should be copied instead');
-  assert.match(copied[1], /long buyer-intent context/);
-  assert.match(copied[1], /one.com, two.com, three.com/);
+  assert.equal(copied.length, 3, 'the complete oversized request should be copied instead');
+  assert.match(copied[2], /long buyer-intent context/);
+  assert.match(copied[2], /one.com, two.com, three.com/);
   assert.match(status.textContent, /too long|email link length/i);
   assert.match(status.textContent, /copied/i);
 
@@ -466,6 +474,11 @@ test('audit form validates scope and preserves oversized email requests with the
   assert.match(blobs[0]?.parts.join(''), /long buyer-intent context/);
   assert.deepEqual(revoked, ['blob:audit-request'], 'download object URL must be released');
   assert.equal(location.href, '', 'download must not submit or navigate');
+  form.values.category = 'Updated after downloading';
+  form.handlers.get('input')?.({ preventDefault() {} });
+  assert.match(status.textContent, /request changed.*copy or download/i,
+    'editing after a successful download must warn that the saved file is outdated');
+  form.values.category = 'Project management';
 
   downloadAvailable = false;
   await download();
