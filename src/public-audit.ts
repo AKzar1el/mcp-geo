@@ -228,11 +228,16 @@ function auditHtml(origin: string): string {
             start = index + 1;
             continue;
           }
-          // URL paths, queries and fragments can contain list punctuation.
-          // Without a space or another URL prefix, keep it inside the URL.
+          // Query/hash punctuation can be URL data; a bare domain immediately
+          // after path punctuation can instead start another competitor.
           const isUrlData = /^(?:https?:\\/\\/)?(?:[^/?#\\s,;]+[.])+[^/?#\\s,;]+[/?#]/i.test(segment);
-          const startsNextEntry = /^\\s|^https?:\\/\\//i.test(input.slice(index + 1));
-          if (isUrlData && !startsNextEntry) continue;
+          const following = input.slice(index + 1);
+          const startsNextEntry = /^\\s|^https?:\\/\\//i.test(following);
+          // An adjacent bare domain after a URL path is a second competitor.
+          // Preserve commas inside URL query strings and fragments as data.
+          const nextBareDomain = /^(?:[a-z0-9-]+[.])+[a-z0-9-]+(?=$|[,;\\s/?#])/i.test(following);
+          if (isUrlData && !startsNextEntry &&
+              (/[?#]/.test(segment) || !nextBareDomain)) continue;
           entries.push(segment);
           start = index + 1;
         }

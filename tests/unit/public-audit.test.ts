@@ -541,6 +541,13 @@ test('audit form validates scope and preserves oversized email requests with the
   assert.match(queriedUrlRequest, /Competitors \(up to 3\): one\.com, two\.com/);
   assert.doesNotMatch(queriedUrlRequest, /secret-tail|another-secret|access_token|session|tag=/);
 
+  form.values.competitors = 'https://one.com/pricing?tag=two.com,three.com, https://four.com';
+  location.href = '';
+  await submit();
+  assert.match(new URL(location.href).searchParams.get('body') ?? '',
+    /Competitors \(up to 3\): one\.com, four\.com/,
+    'a hostname-looking value within URL query data must not consume a competitor slot');
+
   // A pasted scheme-less URL has the same query-separator ambiguity.
   form.values.competitors =
     'one.com/pricing?access_token=first,secret-tail;session=second, two.com';
@@ -555,6 +562,19 @@ test('audit form validates scope and preserves oversized email requests with the
   location.href = '';
   await submit();
   assert.match(new URL(location.href).searchParams.get('body') ?? '', /one\.com, two\.com, three\.com/);
+
+  // Pasted URL paths followed immediately by comma-delimited bare domains
+  // must not silently drop the additional competitor slots.
+  form.values.competitors = 'https://one.com/pricing,two.com,three.com';
+  location.href = '';
+  await submit();
+  assert.match(new URL(location.href).searchParams.get('body') ?? '',
+    /Competitors \(up to 3\): one\.com, two\.com, three\.com/);
+  form.values.competitors = 'https://one.com/pricing,two.com,three.com,four.com';
+  location.href = '';
+  await submit();
+  assert.equal(location.href, '', 'adjacent bare-domain competitors must still enforce the three-competitor limit');
+  assert.match(status.textContent, /up to 3 competitors/i);
 
   form.values.competitors = 'https://one.com/pricing?ref=campaign\r\nhttps://two.com/docs\nthree.com';
   location.href = '';
