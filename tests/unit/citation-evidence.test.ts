@@ -39,7 +39,12 @@ type CitationResult = {
     note: string;
   };
   observation_coverage: {
-    per_engine: Array<{ engine: string; successful_observation_count: number }>;
+    per_engine: Array<{
+      engine: string;
+      successful_observation_count: number;
+      distinct_prompt_count: number;
+      last_observed_at: string | null;
+    }>;
     note: string;
   };
   google_search_sampling: null | {
@@ -860,6 +865,9 @@ test('get_citations selected engines filter before pagination and source ranking
   ], [
     promptResponse({ id: 'chat-source', run_id: 'r-chat', engine: 'chatgpt',
       engine_citations: ['https://chat.example/a'], captured_at: at + 2 }),
+    // Newest response first: freshness must not depend on source-row iteration order.
+    promptResponse({ id: 'claude-repeat', run_id: 'r-claude-repeat', prompt_id: 'prompt-1',
+      engine: 'claude', engine_citations: [], captured_at: at + 3 }),
     promptResponse({ id: 'claude-source', run_id: 'r-claude', engine: 'claude',
       engine_citations: ['https://claude.example/a'], captured_at: at + 1 }),
     promptResponse({ id: 'claude-unmentioned', run_id: 'r-claude-unmentioned', prompt_id: 'p-other',
@@ -876,17 +884,22 @@ test('get_citations selected engines filter before pagination and source ranking
   assert.deepEqual(first.engine_scope.requested_engines, ['claude', 'perplexity']);
   assert.deepEqual(first.engine_scope.not_observed_engines, []);
   assert.deepEqual(first.observation_coverage.per_engine, [
-    { engine: 'claude', successful_observation_count: 2 },
-    { engine: 'perplexity', successful_observation_count: 1 },
+    { engine: 'claude', successful_observation_count: 3, distinct_prompt_count: 2,
+      last_observed_at: new Date(at + 3).toISOString() },
+    { engine: 'perplexity', successful_observation_count: 1, distinct_prompt_count: 1,
+      last_observed_at: new Date(at).toISOString() },
   ]);
   assert.match(first.observation_coverage.note, /not.*citation|not.*visibility/i);
+  assert.match(first.observation_coverage.note, /distinct.*prompt|last.*observed/i);
   const withMissing = (await tool.handler({
     brand_id: brand.id, engines: ['ai_mode', 'claude'],
   })).structuredContent;
   assert.deepEqual(withMissing.engine_scope.not_observed_engines, ['ai_mode']);
   assert.deepEqual(withMissing.observation_coverage.per_engine, [
-    { engine: 'ai_mode', successful_observation_count: 0 },
-    { engine: 'claude', successful_observation_count: 2 },
+    { engine: 'ai_mode', successful_observation_count: 0, distinct_prompt_count: 0,
+      last_observed_at: null },
+    { engine: 'claude', successful_observation_count: 3, distinct_prompt_count: 2,
+      last_observed_at: new Date(at + 3).toISOString() },
   ]);
   const second = (await tool.handler({
     brand_id: brand.id, engines: ['claude', 'perplexity'], limit: 1, cursor: first.next_cursor!,
@@ -905,9 +918,12 @@ test('get_citations selected engines filter before pagination and source ranking
   assert.equal(all.citations.length, 3);
   assert.equal(all.engine_scope.selection, 'all_stored');
   assert.deepEqual(all.observation_coverage.per_engine, [
-    { engine: 'chatgpt', successful_observation_count: 1 },
-    { engine: 'claude', successful_observation_count: 2 },
-    { engine: 'perplexity', successful_observation_count: 1 },
+    { engine: 'chatgpt', successful_observation_count: 1, distinct_prompt_count: 1,
+      last_observed_at: new Date(at + 2).toISOString() },
+    { engine: 'claude', successful_observation_count: 3, distinct_prompt_count: 2,
+      last_observed_at: new Date(at + 3).toISOString() },
+    { engine: 'perplexity', successful_observation_count: 1, distinct_prompt_count: 1,
+      last_observed_at: new Date(at).toISOString() },
   ]);
 });
 
