@@ -148,9 +148,9 @@ function auditHtml(origin: string): string {
       </label>
       <label>
         Competitors (up to 3)
-        <input name="competitors" type="text" placeholder="competitor-one.com, competitor-two.com">
+        <textarea name="competitors" rows="3" placeholder="competitor-one.com, competitor-two.com"></textarea>
       </label>
-      <p class="fine">Pasted URLs are reduced to domain names in the request, so paths, login details and tracking parameters are not emailed. Add relevant page details in Context instead.</p>
+      <p class="fine">Separate competitors with commas, semicolons or new lines. Pasted URLs are reduced to domain names in the request, so paths, login details and tracking parameters are not emailed. Add relevant page details in Context instead.</p>
       <label>
         Context or priority (optional)
         <textarea name="context" placeholder="What market, product, or buyer journey matters most?"></textarea>
@@ -218,8 +218,15 @@ function auditHtml(origin: string): string {
         const entries = [];
         let start = 0;
         for (let index = 0; index < input.length; index++) {
-          if (input[index] !== ',' && input[index] !== ';') continue;
+          const delimiter = input[index];
+          if (delimiter !== ',' && delimiter !== ';' && delimiter !== '\\r' && delimiter !== '\\n') continue;
           const segment = input.slice(start, index).trim();
+          // Literal line breaks separate pasted competitors, never URL query data.
+          if (delimiter === '\\r' || delimiter === '\\n') {
+            entries.push(segment);
+            start = index + 1;
+            continue;
+          }
           // URL paths, queries and fragments can contain list punctuation.
           // Without a space or another URL prefix, keep it inside the URL.
           const isUrlData = /^(?:https?:\\/\\/)?(?:[^/?#\\s,;]+[.])+[^/?#\\s,;]+[/?#]/i.test(segment);
