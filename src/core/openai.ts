@@ -539,10 +539,9 @@ function parseMarkdownReferenceLinks(text: string): { visibleText: string; urls:
   return { visibleText: renderedText, urls };
 }
 
-function decodeVisibleHtmlCharacterReferences(text: string): string {
-  // AI answers may contain HTML-escaped visible labels. Decode only after
-  // removing hidden markup, and only for mention text: encoded URL text is not
-  // independent source-link evidence.
+function decodeHtmlCharacterReferences(text: string): string {
+  // Decode only rendered labels and actual HTML anchor href attributes.
+  // Encoded URL text elsewhere is not independent source-link evidence.
   const named: Record<string, string> = {
     amp: '&', quot: '"', apos: "'", lt: '<', gt: '>', nbsp: ' ',
   };
@@ -570,7 +569,7 @@ function extractHtmlAnchorHrefs(text: string): string[] {
     for (const attr of attrs.matchAll(attrRe)) {
       if (attr[1].toLowerCase() === 'href') {
         const href = attr[2] ?? attr[3] ?? attr[4];
-        if (href) urls.push(href);
+        if (href) urls.push(decodeHtmlCharacterReferences(href));
         break;
       }
     }
@@ -621,7 +620,7 @@ export function extractCitations(
   // balanced parentheses inside URLs, but leave an unmatched ')' in place so
   // visible text after a Markdown link target remains scoreable. Hidden HTML
   // and sample code must not inflate brand or competitor answer mentions.
-  const answerProse = decodeVisibleHtmlCharacterReferences(
+  const answerProse = decodeHtmlCharacterReferences(
     parseMarkdownReferenceLinks(omitMarkdownLinkTitles(omitMarkdownImageAssets(
       omitHtmlTags(omitHtmlCodeExamples(omitMarkdownCodeExamples(responseText)))))).visibleText);
   const mentionText = answerProse.replace(/https?:\/\/(?:\([^()\s]*\)|[^\s()\]\}'"\x60<>])+/gi, ' ');
