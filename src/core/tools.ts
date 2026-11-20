@@ -413,6 +413,10 @@ const citationsOutputSchema = z.object({
         url_redacted: z.boolean(),
       })).describe('One deterministic URL cited for this domain on each observed engine, from its latest stored response; sensitive parameters masked, not a verified live link.'),
       distinct_cited_path_count: z.number().int().nonnegative().describe('Distinct cited URL pathnames for this domain, ignoring query and fragment; not verified live pages.'),
+      top_cited_paths: z.array(z.object({
+        path: z.string(),
+        response_count: z.number().int().nonnegative(),
+      })).max(5).describe('Up to five observed URL pathnames for this domain by stored response count, then path. One count per pathname per response; multiple different paths in one response can count separately. Query and fragment excluded; not verified live pages.'),
       prompt_count: z.number(),
       last_observed_at: z.string().describe('Latest stored source observation capture time; not proof the URL is currently live.'),
       engines: z.array(z.string()),
@@ -2795,7 +2799,7 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
       enginePrompts: Map<string, Set<string>>;
       engineLastCapturedAt: Map<string, number>;
       engineSamples: Map<string, { url: string; capturedAt: number; responseId: string }>;
-      citedPaths: Set<string>;
+      pathResponseCounts: Map<string, number>;
       prompts: Set<string>;
       engines: Set<string>;
       measurement_modes: Set<'model_only' | 'search_requested'>;
@@ -2849,7 +2853,9 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
             url: sampleUrl, capturedAt: response.captured_at, responseId: response.id,
           });
         }
-        for (const path of pathsForResponse.get(domain) ?? []) existing.citedPaths.add(path);
+        for (const path of pathsForResponse.get(domain) ?? []) {
+          existing.pathResponseCounts.set(path, (existing.pathResponseCounts.get(path) ?? 0) + 1);
+        }
         existing.prompts.add(response.prompt_id);
         existing.engines.add(response.engine);
         existing.measurement_modes.add(measurementMode);
@@ -2874,7 +2880,8 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
           engineSamples: new Map([[response.engine, {
             url: sampleUrl, capturedAt: response.captured_at, responseId: response.id,
           }]]),
-          citedPaths: new Set(pathsForResponse.get(domain) ?? []),
+          pathResponseCounts: new Map([...(pathsForResponse.get(domain) ?? [])]
+            .map((path): [string, number] => [path, 1])),
           prompts: new Set([response.prompt_id]),
           engines: new Set([response.engine]),
           measurement_modes: new Set([measurementMode]),
@@ -2911,7 +2918,10 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
             return [engine, { sample_url: safeUrl, url_redacted: safeUrl !== sample.url }];
           }),
         ),
-        distinct_cited_path_count: source.citedPaths.size,
+        distinct_cited_path_count: source.pathResponseCounts.size,
+        top_cited_paths: [...source.pathResponseCounts.entries()]
+          .sort(([pathA, countA], [pathB, countB]) => countB - countA || pathA.localeCompare(pathB))
+          .slice(0, 5).map(([path, response_count]) => ({ path, response_count })),
         prompt_count: source.prompts.size,
         last_observed_at: new Date(source.sample_captured_at).toISOString(),
         engines: [...source.engines].sort(),
