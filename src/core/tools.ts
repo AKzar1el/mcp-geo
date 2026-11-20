@@ -401,6 +401,7 @@ const citationsOutputSchema = z.object({
     z.object({
       domain: z.string(),
       citation_count: z.number().describe('Stored responses listing this domain, at most once per response; not unique URLs.'),
+      per_engine_citation_count: z.record(z.string(), z.number().int().nonnegative()).describe('Stored response-domain observations by engine, counted once per response and summing to citation_count; not unique links or verified live citations.'),
       distinct_cited_path_count: z.number().int().nonnegative().describe('Distinct cited URL pathnames for this domain, ignoring query and fragment; not verified live pages.'),
       prompt_count: z.number(),
       last_observed_at: z.string().describe('Latest stored source observation capture time; not proof the URL is currently live.'),
@@ -2770,6 +2771,7 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
     string,
     {
       citation_count: number;
+      engineCitationCounts: Map<string, number>;
       citedPaths: Set<string>;
       prompts: Set<string>;
       engines: Set<string>;
@@ -2810,6 +2812,7 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
       const measurementMode = visibilityMeasurementMode(response.engine, response.mode ?? 'live');
       if (existing) {
         existing.citation_count += 1;
+        existing.engineCitationCounts.set(response.engine, (existing.engineCitationCounts.get(response.engine) ?? 0) + 1);
         for (const path of pathsForResponse.get(domain) ?? []) existing.citedPaths.add(path);
         existing.prompts.add(response.prompt_id);
         existing.engines.add(response.engine);
@@ -2829,6 +2832,7 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
       } else {
         sources.set(domain, {
           citation_count: 1,
+          engineCitationCounts: new Map([[response.engine, 1]]),
           citedPaths: new Set(pathsForResponse.get(domain) ?? []),
           prompts: new Set([response.prompt_id]),
           engines: new Set([response.engine]),
@@ -2848,6 +2852,7 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
       return {
         domain,
         citation_count: source.citation_count,
+        per_engine_citation_count: Object.fromEntries([...source.engineCitationCounts].sort(([a], [b]) => a.localeCompare(b))),
         distinct_cited_path_count: source.citedPaths.size,
         prompt_count: source.prompts.size,
         last_observed_at: new Date(source.sample_captured_at).toISOString(),
