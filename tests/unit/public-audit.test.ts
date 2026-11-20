@@ -388,6 +388,30 @@ test('audit form validates scope and preserves oversized email requests with the
   await copy();
   assert.equal(copied.length, copiedBeforeMalformed, 'invalid scheme-less URLs must also be blocked in copy flows');
 
+  // WHATWG URL accepts malformed DNS labels; an email request cannot treat
+  // those as valid, measurable public brand or competitor domains.
+  for (const invalid of ['one..com', 'one..site', 'https://-bad.com', 'https://localhost.', 'https://one.com..', '127.0.0.1']) {
+    form.values.brand = invalid;
+    form.values.competitors = 'two.com';
+    location.href = '';
+    await submit();
+    assert.equal(location.href, '', `invalid brand host ${invalid} must not open an email`);
+    assert.match(status.textContent, /valid.*(?:domain|URL)/i);
+  }
+  form.values.brand = 'example.com';
+  form.values.competitors = 'https://one..com';
+  location.href = '';
+  await submit();
+  assert.equal(location.href, '', 'an invalid competitor DNS label must not open an email');
+  assert.match(status.textContent, /valid.*(?:domain|URL)/i);
+
+  form.values.brand = 'https://www.EXAMPLE.com./pricing';
+  form.values.competitors = 'https://münchen.de';
+  await submit();
+  const canonicalIdnRequest = new URL(location.href).searchParams.get('body') ?? '';
+  assert.match(canonicalIdnRequest, /Brand\/domain: example\.com/);
+  assert.match(canonicalIdnRequest, /Competitors \(up to 3\): xn--mnchen-3ya\.de/);
+
   form.values.brand = 'Acme Design Studio';
   form.values.competitors = 'one.com';
   location.href = '';
