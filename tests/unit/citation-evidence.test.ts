@@ -30,11 +30,24 @@ type CitationResult = {
   has_more: boolean;
   next_cursor: string | null;
   limit: number;
+  total_matching_rows: number;
+  top_sources_limit: number;
+  total_source_domains: number;
+  top_sources_truncated: boolean;
   measurement_mode_filter: 'model_only' | 'search_requested' | null;
   engine_scope: {
     selection: 'selected' | 'all_stored';
     requested_engines: string[];
     not_observed_engines: string[];
+    note: string;
+  };
+  observation_coverage: {
+    per_engine: Array<{
+      engine: string;
+      successful_observation_count: number;
+      distinct_prompt_count: number;
+      last_observed_at: string | null;
+    }>;
     note: string;
   };
   google_search_sampling: null | {
@@ -46,10 +59,18 @@ type CitationResult = {
   top_sources: Array<{
     domain: string;
     citation_count: number;
+    per_engine_citation_count: Record<string, number>;
+    per_engine_source_observation_percent: Record<string, number>;
+    per_engine_distinct_prompt_count: Record<string, number>;
+    per_engine_last_observed_at: Record<string, string>;
+    per_engine_examples: Record<string, { sample_url: string; url_redacted: boolean }>;
+    distinct_cited_path_count: number;
     prompt_count: number;
+    last_observed_at: string;
     engines: string[];
     measurement_modes: Array<'model_only' | 'search_requested'>;
     sample_url: string;
+    url_redacted: boolean;
     is_brand_domain: boolean;
     identity_scopes?: Array<'current' | 'historical' | 'unattributed'>;
   }>;
@@ -67,6 +88,7 @@ type CitationResult = {
   citations: Array<{
     id: string;
     cited_url: string | null;
+    url_redacted: boolean;
     citation_type: string;
     url_source: 'provider_source' | 'answer_text' | null;
     measurement_mode: 'model_only' | 'search_requested';
@@ -81,6 +103,7 @@ type CitationTool = {
     engine?: 'chatgpt' | 'claude' | 'perplexity' | 'gemini' | 'ai_overviews' | 'ai_mode';
     engines?: Array<'chatgpt' | 'claude' | 'perplexity' | 'gemini' | 'ai_overviews' | 'ai_mode'>;
     limit?: number;
+    top_sources_limit?: number;
     cursor?: string;
     current_identity_only?: boolean;
     active_prompts_only?: boolean;
@@ -110,6 +133,17 @@ function registerCitationTool(
         id, brand_id: trackedBrand.id, text: id, intent_stage: null,
         shape: null, active: 1, created_at: 0,
       })),
+      countCitationRows: async (_brandId, _since, engine, page) =>
+        (Array.isArray(row) ? row : [row])
+          .filter((item) => !engine ||
+            (Array.isArray(engine) ? engine.length === 0 || engine.includes(item.engine) : item.engine === engine))
+          .filter((item) => !page?.measurementMode ||
+            ((item.mode === 'batch' || item.engine === 'claude' || item.engine === 'gemini'
+              ? 'model_only' : 'search_requested') === page.measurementMode))
+          .filter((item) => item.captured_at <= (page?.until ?? Number.MAX_SAFE_INTEGER))
+          .filter((item) => page?.minRunStartedAt === undefined ||
+            (typeof item.run_started_at === 'number' && item.run_started_at >= page.minRunStartedAt))
+          .filter((item) => !page?.activePromptsOnly || activeIds.includes(item.prompt_id)).length,
       getCitationRows: async (_brandId, _since, engine, page) => {
         const rows = (Array.isArray(row) ? row : [row])
           .filter((item) => !engine ||
@@ -322,6 +356,7 @@ test('current-identity citation pages and top sources exclude historical and una
   );
   const full = (await tool.handler({ brand_id: brand.id })).structuredContent;
   assert.equal(full.citations.length, 4);
+  assert.equal(full.total_matching_rows, 4);
   assert.equal(full.identity_filter.selection, 'full_history');
   assert.equal(full.top_sources.length, 3);
 
@@ -329,6 +364,7 @@ test('current-identity citation pages and top sources exclude historical and una
   assert.equal(first.identity_filter.selection, 'current_identity_only');
   assert.equal(first.identity_filter.applied, true);
   assert.equal(first.citations.length, 1);
+  assert.equal(first.total_matching_rows, 2);
   assert.equal(first.citations[0].identity_scope, 'current');
   assert.equal(first.has_more, true);
   assert.ok(first.next_cursor);
@@ -339,6 +375,7 @@ test('current-identity citation pages and top sources exclude historical and una
   })).structuredContent;
   assert.equal(second.has_more, false);
   assert.equal(second.citations.length, 1);
+  assert.equal(second.total_matching_rows, 2);
   assert.equal(second.citations[0].identity_scope, 'current');
   assert.notEqual(second.citations[0].id, first.citations[0].id);
 
@@ -377,11 +414,13 @@ test('active buyer-prompt citation pages and sources exclude newer retired-promp
   const tool = registerCitationTool(rows, sources, brand, ['new-question']);
   const historical = (await tool.handler({ brand_id: brand.id, limit: 1 })).structuredContent;
   assert.equal(historical.has_more, true);
+  assert.equal(historical.total_matching_rows, 2);
   assert.equal(historical.top_sources.length, 2);
   assert.equal(historical.prompt_set_scope.selection, 'full_history');
 
   const active = (await tool.handler({ brand_id: brand.id, active_prompts_only: true, limit: 1 })).structuredContent;
   assert.equal(active.citations.length, 1);
+  assert.equal(active.total_matching_rows, 1);
   assert.equal(active.citations[0].id, 'cit_current');
   assert.equal(active.has_more, false);
   assert.equal(active.prompt_set_scope.selection, 'active_only');
@@ -391,6 +430,7 @@ test('active buyer-prompt citation pages and sources exclude newer retired-promp
   const noActive = registerCitationTool(rows, sources, brand, []);
   const empty = (await noActive.handler({ brand_id: brand.id, active_prompts_only: true })).structuredContent;
   assert.equal(empty.citations.length, 0);
+  assert.equal(empty.total_matching_rows, 0);
   assert.deepEqual(empty.top_sources, []);
   assert.equal(empty.prompt_set_scope.active_prompt_count, 0);
 });
@@ -531,6 +571,90 @@ test('top source samples reject credential-bearing URLs without hiding safe cita
   assert.deepEqual(sources.map((source) => source.sample_url), ['https://news.example/safe-report']);
 });
 
+test('get_citations redacts repeated and encoded query credentials at all client-facing evidence boundaries', async () => {
+  const citation = registerCitationTool(citationRow({
+    raw_response: 'Acme is at https://acme.com/report?token=ANSWER_SECRET&ref=answer',
+    engine_citations_json: JSON.stringify([
+      'https://acme.com/report?API%5FKEY=NATIVE_SECRET&ref=provider&access_token=TOKEN_ONE&access_token=TOKEN_TWO',
+    ]),
+  }), [promptResponse({ engine_citations: [
+    'https://research.example/article?client_secret=SOURCE_SECRET&page=2&KEY=ANOTHER_SECRET',
+  ] })]);
+  const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.equal(result.citations[0].cited_url,
+    'https://acme.com/report?API%5FKEY=[REDACTED]&ref=provider&access_token=[REDACTED]&access_token=[REDACTED]');
+  assert.equal(result.citations[0].url_source, 'provider_source');
+  assert.equal(result.top_sources[0].sample_url,
+    'https://research.example/article?client_secret=[REDACTED]&page=2&KEY=[REDACTED]');
+  assert.match(result.citations[0].response_excerpt, /token=\[REDACTED\]/);
+  assert.doesNotMatch(JSON.stringify(result), /NATIVE_SECRET|TOKEN_ONE|TOKEN_TWO|SOURCE_SECRET|ANOTHER_SECRET|ANSWER_SECRET/);
+});
+
+test('get_citations redacts URL fragment credentials without changing public query and anchor context', async () => {
+  const citation = registerCitationTool(citationRow({
+    raw_response: 'Acme is at https://acme.com/report#access_token=EXCERPT_SECRET&section=summary',
+    engine_citations_json: JSON.stringify([
+      'https://acme.com/report?ref=native#id_token=NATIVE_ID&view=detail',
+    ]),
+  }), [promptResponse({ engine_citations: [
+    'https://research.example/article#state=public&access_token=SOURCE_HASH',
+  ] })]);
+  const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.equal(result.citations[0].cited_url,
+    'https://acme.com/report?ref=native#id_token=[REDACTED]&view=detail');
+  assert.equal(result.top_sources[0].sample_url,
+    'https://research.example/article#state=public&access_token=[REDACTED]');
+  assert.match(result.citations[0].response_excerpt, /#access_token=\[REDACTED\]&section=summary/);
+  assert.doesNotMatch(JSON.stringify(result), /NATIVE_ID|SOURCE_HASH|EXCERPT_SECRET/);
+});
+
+test('get_citations redacts cloud signed-URL capabilities from all client-facing evidence', async () => {
+  const citation = registerCitationTool(citationRow({
+    raw_response: 'Acme cites https://acme.com/report?X-Goog-Signature=GOOGLE_SENTINEL&X-Goog-Credential=GOOGLE_ID_SENTINEL&X-Goog-Date=20261119T000000Z',
+    engine_citations_json: JSON.stringify([
+      'https://acme.com/report?X-Amz-Credential=AWS_ID_SENTINEL&X-Amz-Signature=AWS_SIG_SENTINEL&X-Amz-Security-Token=AWS_SESSION_SENTINEL&X-Amz-Expires=300',
+    ]),
+  }), [promptResponse({ engine_citations: [
+    'https://research.example/article?sig=AZURE_SIG_SENTINEL&sp=r&sv=2022-11-02',
+  ] })]);
+  const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.equal(result.citations[0].cited_url,
+    'https://acme.com/report?X-Amz-Credential=[REDACTED]&X-Amz-Signature=[REDACTED]&X-Amz-Security-Token=[REDACTED]&X-Amz-Expires=300');
+  assert.equal(result.top_sources[0].sample_url,
+    'https://research.example/article?sig=[REDACTED]&sp=r&sv=2022-11-02');
+  assert.match(result.citations[0].response_excerpt, /X-Goog-Signature=\[REDACTED\]&X-Goog-Credential=\[REDACTED\]&X-Goog-Date=20261119T000000Z/);
+  assert.doesNotMatch(JSON.stringify(result), /GOOGLE_SENTINEL|GOOGLE_ID_SENTINEL|AWS_ID_SENTINEL|AWS_SIG_SENTINEL|AWS_SESSION_SENTINEL|AZURE_SIG_SENTINEL/);
+});
+
+test('get_citations discloses masked citation links separately from unchanged URLs', async () => {
+  const signed = 'https://acme.com/report?X-Amz-Signature=PRIVATE&X-Amz-Expires=300';
+  const publicUrl = 'https://acme.com/guide?ref=public';
+  const tool = registerCitationTool([
+    citationRow({ response_id: 'signed', run_id: 'signed-run', prompt_id: 'p1',
+      raw_response: 'Acme signed source', engine_citations_json: JSON.stringify([signed]) }),
+    citationRow({ response_id: 'public', run_id: 'public-run', prompt_id: 'p2',
+      raw_response: 'Acme public source', engine_citations_json: JSON.stringify([publicUrl]) }),
+    citationRow({ response_id: 'none', run_id: 'none-run', prompt_id: 'p3',
+      raw_response: 'Acme without linked source', engine_citations_json: '[]' }),
+  ], [
+    promptResponse({ id: 'provider-signed', run_id: 'signed-run', prompt_id: 'p1',
+      engine_citations: ['https://signed.example/document?sig=PRIVATE'] }),
+    promptResponse({ id: 'provider-public', run_id: 'public-run', prompt_id: 'p2',
+      engine_citations: ['https://public.example/document?ref=public'] }),
+  ]);
+  const result = (await tool.handler({ brand_id: brand.id })).structuredContent;
+  const rows = new Map(result.citations.map((row) => [row.id, row]));
+  assert.equal(rows.get('cit_signed')?.url_redacted, true);
+  assert.equal(rows.get('cit_public')?.url_redacted, false);
+  assert.equal(rows.get('cit_none')?.url_redacted, false);
+  const sources = new Map(result.top_sources.map((source) => [source.domain, source]));
+  assert.equal(sources.get('signed.example')?.url_redacted, true);
+  assert.equal(sources.get('public.example')?.url_redacted, false);
+  assert.equal(sources.get('signed.example')?.sample_url.includes('PRIVATE'), false);
+  assert.equal(sources.get('public.example')?.sample_url,
+    'https://public.example/document?ref=public');
+});
+
 test('top source rankings exclude localhost, IP addresses and malformed DNS hosts', async () => {
   const citation = registerCitationTool(citationRow(), [
     promptResponse({ engine_citations: [
@@ -576,7 +700,27 @@ test('get_citations does not attach unrelated or lookalike URLs to mention-only 
   assert.equal(result.structuredContent.citations[0].url_source, null);
 });
 
+test('get_citations discloses truncated source rankings and supports a bounded wider audit view', async () => {
+  const domains = Array.from({ length: 13 }, (_, index) =>
+    `https://source-${String(index + 1).padStart(2, '0')}.example/report`);
+  const tool = registerCitationTool(citationRow(), [promptResponse({ engine_citations: domains })]);
+  const defaultView = (await tool.handler({ brand_id: brand.id, limit: 1 })).structuredContent;
+  assert.equal(defaultView.top_sources_limit, 10);
+  assert.equal(defaultView.total_source_domains, 13);
+  assert.equal(defaultView.top_sources_truncated, true);
+  assert.equal(defaultView.top_sources.length, 10);
+  const extended = (await tool.handler({ brand_id: brand.id, limit: 1, top_sources_limit: 20 })).structuredContent;
+  assert.equal(extended.top_sources_limit, 20);
+  assert.equal(extended.total_source_domains, 13);
+  assert.equal(extended.top_sources_truncated, false);
+  assert.equal(extended.top_sources.length, 13);
+  assert.equal(extended.top_sources[12].domain, 'source-13.example');
+  assert.equal(extended.total_matching_rows, defaultView.total_matching_rows);
+  assert.deepEqual(extended.citations, defaultView.citations);
+});
+
 test('get_citations ranks engine-native source domains across the requested window', async () => {
+  const observedAt = new Date(Date.UTC(2026, 8, 20)).toISOString();
   const citation = registerCitationTool(citationRow(), [
     promptResponse({
       id: 'response-1',
@@ -611,28 +755,59 @@ test('get_citations ranks engine-native source domains across the requested wind
     {
       domain: 'g2.com',
       citation_count: 2,
+      per_engine_citation_count: { chatgpt: 1, perplexity: 1 },
+      per_engine_source_observation_percent: { chatgpt: 100, perplexity: 100 },
+      per_engine_distinct_prompt_count: { chatgpt: 1, perplexity: 1 },
+      per_engine_last_observed_at: { chatgpt: observedAt, perplexity: observedAt },
+      per_engine_examples: {
+        chatgpt: { sample_url: 'https://www.g2.com/categories/project-management', url_redacted: false },
+        perplexity: { sample_url: 'https://g2.com/reports/project-management', url_redacted: false },
+      },
+      distinct_cited_path_count: 2,
       prompt_count: 2,
+      last_observed_at: observedAt,
       engines: ['chatgpt', 'perplexity'],
       measurement_modes: ['search_requested'],
       sample_url: 'https://www.g2.com/categories/project-management',
+      url_redacted: false,
       is_brand_domain: false,
     },
     {
       domain: 'acme.com',
       citation_count: 1,
+      per_engine_citation_count: { chatgpt: 1 },
+      per_engine_source_observation_percent: { chatgpt: 100 },
+      per_engine_distinct_prompt_count: { chatgpt: 1 },
+      per_engine_last_observed_at: { chatgpt: observedAt },
+      per_engine_examples: {
+        chatgpt: { sample_url: 'https://acme.com/guides/project-management', url_redacted: false },
+      },
+      distinct_cited_path_count: 1,
       prompt_count: 1,
+      last_observed_at: observedAt,
       engines: ['chatgpt'],
       measurement_modes: ['search_requested'],
       sample_url: 'https://acme.com/guides/project-management',
+      url_redacted: false,
       is_brand_domain: true,
     },
     {
       domain: 'example.org',
       citation_count: 1,
+      per_engine_citation_count: { gemini: 1 },
+      per_engine_source_observation_percent: { gemini: 100 },
+      per_engine_distinct_prompt_count: { gemini: 1 },
+      per_engine_last_observed_at: { gemini: observedAt },
+      per_engine_examples: {
+        gemini: { sample_url: 'https://example.org/pm-tools', url_redacted: false },
+      },
+      distinct_cited_path_count: 1,
       prompt_count: 1,
+      last_observed_at: observedAt,
       engines: ['gemini'],
       measurement_modes: ['model_only'],
       sample_url: 'https://example.org/pm-tools',
+      url_redacted: false,
       is_brand_domain: false,
     },
   ]);
@@ -649,6 +824,193 @@ test('top source summaries distinguish mixed model-only and search-requested obs
   const result = await citation.handler({ brand_id: brand.id });
   assert.equal(result.structuredContent.top_sources[0].citation_count, 3);
   assert.deepEqual(result.structuredContent.top_sources[0].measurement_modes, ['model_only', 'search_requested']);
+});
+
+test('top sources count each engine once per response-domain and honor engine and mode selection', async () => {
+  const citation = registerCitationTool(citationRow(), [
+    promptResponse({ id: 'chat-a', run_id: 'chat-a', prompt_id: 'a', engine: 'chatgpt',
+      engine_citations: ['https://research.example/one', 'https://www.research.example/two'] }),
+    promptResponse({ id: 'chat-b', run_id: 'chat-b', prompt_id: 'b', engine: 'chatgpt',
+      engine_citations: ['https://research.example/one'] }),
+    promptResponse({ id: 'perplexity', run_id: 'perplexity', prompt_id: 'c', engine: 'perplexity',
+      engine_citations: ['https://research.example/three', 'https://research.example/three?ref=repeat'] }),
+    promptResponse({ id: 'claude', run_id: 'claude', prompt_id: 'd', engine: 'claude',
+      engine_citations: ['https://research.example/four'] }),
+  ]);
+
+  const all = (await citation.handler({ brand_id: brand.id })).structuredContent.top_sources[0];
+  assert.equal(all.citation_count, 4);
+  assert.deepEqual(all.per_engine_citation_count, { chatgpt: 2, claude: 1, perplexity: 1 });
+  assert.equal(Object.values(all.per_engine_citation_count).reduce((sum, count) => sum + count, 0), all.citation_count);
+
+  const selected = (await citation.handler({ brand_id: brand.id, engines: ['perplexity', 'chatgpt'] }))
+    .structuredContent.top_sources[0];
+  assert.equal(selected.citation_count, 3);
+  assert.deepEqual(selected.per_engine_citation_count, { chatgpt: 2, perplexity: 1 });
+
+  const model = (await citation.handler({ brand_id: brand.id, measurement_mode: 'model_only' }))
+    .structuredContent.top_sources[0];
+  assert.equal(model.citation_count, 1);
+  assert.deepEqual(model.per_engine_citation_count, { claude: 1 });
+});
+
+test('source prompt breadth per engine does not count repeated observations as new prompts', async () => {
+  const url = 'https://research.example/guide';
+  const citation = registerCitationTool(citationRow(), [
+    promptResponse({ id: 'chat-1', run_id: 'chat-run-1', prompt_id: 'shared',
+      engine: 'chatgpt', engine_citations: [url, url] }),
+    promptResponse({ id: 'chat-2', run_id: 'chat-run-2', prompt_id: 'shared',
+      engine: 'chatgpt', engine_citations: [url] }),
+    promptResponse({ id: 'chat-3', run_id: 'chat-run-3', prompt_id: 'unique',
+      engine: 'chatgpt', engine_citations: [url] }),
+    promptResponse({ id: 'claude-1', run_id: 'claude-run', prompt_id: 'shared',
+      engine: 'claude', engine_citations: [url] }),
+    promptResponse({ id: 'perplexity-1', run_id: 'perplexity-run', prompt_id: 'third',
+      engine: 'perplexity', engine_citations: [url] }),
+  ]);
+
+  const all = (await citation.handler({ brand_id: brand.id })).structuredContent.top_sources[0];
+  assert.equal(all.citation_count, 5);
+  assert.deepEqual(all.per_engine_citation_count, { chatgpt: 3, claude: 1, perplexity: 1 });
+  assert.deepEqual(all.per_engine_distinct_prompt_count, { chatgpt: 2, claude: 1, perplexity: 1 });
+  assert.equal(all.prompt_count, 3, 'global prompt IDs are not the sum of per-engine breadth');
+
+  const scoped = (await citation.handler({ brand_id: brand.id, engines: ['chatgpt', 'claude'] }))
+    .structuredContent.top_sources[0];
+  assert.deepEqual(scoped.per_engine_distinct_prompt_count, { chatgpt: 2, claude: 1 });
+  assert.equal(scoped.prompt_count, 2);
+
+  const modelOnly = (await citation.handler({ brand_id: brand.id, measurement_mode: 'model_only' }))
+    .structuredContent.top_sources[0];
+  assert.deepEqual(modelOnly.per_engine_distinct_prompt_count, { claude: 1 });
+});
+
+test('source freshness is scoped by engine and measurement mode rather than inherited from the newest engine', async () => {
+  const recent = Date.now() - 60_000;
+  const older = recent - 2 * 86_400_000;
+  const middle = recent - 86_400_000;
+  const source = 'https://research.example/guide';
+  const citation = registerCitationTool(citationRow({ captured_at: recent }), [
+    { ...promptResponse({ id: 'chat-batch', run_id: 'chat-batch', prompt_id: 'a',
+      captured_at: older, engine: 'chatgpt', engine_citations: [source] }), mode: 'batch' },
+    promptResponse({ id: 'perplexity', run_id: 'perplexity', prompt_id: 'b',
+      captured_at: middle, engine: 'perplexity', engine_citations: [source] }),
+    promptResponse({ id: 'chat-live', run_id: 'chat-live', prompt_id: 'c',
+      captured_at: recent, engine: 'chatgpt', engine_citations: [source] }),
+  ]);
+
+  const all = (await citation.handler({ brand_id: brand.id })).structuredContent.top_sources[0];
+  assert.equal(all.last_observed_at, new Date(recent).toISOString());
+  assert.deepEqual(all.per_engine_last_observed_at, {
+    chatgpt: new Date(recent).toISOString(),
+    perplexity: new Date(middle).toISOString(),
+  });
+
+  const model = (await citation.handler({ brand_id: brand.id, measurement_mode: 'model_only' }))
+    .structuredContent.top_sources[0];
+  assert.deepEqual(model.per_engine_last_observed_at, { chatgpt: new Date(older).toISOString() });
+  assert.equal(model.last_observed_at, new Date(older).toISOString());
+
+  const selected = (await citation.handler({ brand_id: brand.id, engines: ['perplexity'] }))
+    .structuredContent.top_sources[0];
+  assert.deepEqual(selected.per_engine_last_observed_at, { perplexity: new Date(middle).toISOString() });
+  assert.equal(selected.last_observed_at, new Date(middle).toISOString());
+});
+
+test('top source examples keep separate latest cited URLs by engine, with stable ties and credential masking', async () => {
+  const latest = Date.now() - 60_000;
+  const older = latest - 2 * 86_400_000;
+  const middle = latest - 86_400_000;
+  const citation = registerCitationTool(citationRow({ captured_at: latest }), [
+    { ...promptResponse({ id: 'chat-older', run_id: 'chat-older', prompt_id: 'a', engine: 'chatgpt',
+      captured_at: older, engine_citations: ['https://research.example/old-chat'] }), mode: 'batch' },
+    promptResponse({ id: 'perplexity', run_id: 'perplexity', prompt_id: 'b', engine: 'perplexity',
+      captured_at: middle, engine_citations: ['https://research.example/perplexity?ref=public'] }),
+    promptResponse({ id: 'chat-z', run_id: 'chat-z', prompt_id: 'c', engine: 'chatgpt',
+      captured_at: latest, engine_citations: ['https://research.example/chat-z?token=secret-z'] }),
+    promptResponse({ id: 'chat-a', run_id: 'chat-a', prompt_id: 'd', engine: 'chatgpt',
+      captured_at: latest, engine_citations: ['https://research.example/chat-a?access_token=secret-a&ref=public'] }),
+  ]);
+
+  const all = (await citation.handler({ brand_id: brand.id })).structuredContent.top_sources[0];
+  assert.deepEqual(all.per_engine_examples, {
+    chatgpt: { sample_url: 'https://research.example/chat-a?access_token=[REDACTED]&ref=public', url_redacted: true },
+    perplexity: { sample_url: 'https://research.example/perplexity?ref=public', url_redacted: false },
+  });
+  assert.equal(all.sample_url, all.per_engine_examples.chatgpt.sample_url);
+
+  const modelOnly = (await citation.handler({ brand_id: brand.id, measurement_mode: 'model_only' }))
+    .structuredContent.top_sources[0];
+  assert.deepEqual(modelOnly.per_engine_examples, {
+    chatgpt: { sample_url: 'https://research.example/old-chat', url_redacted: false },
+  });
+
+  const selected = (await citation.handler({ brand_id: brand.id, engines: ['perplexity'] }))
+    .structuredContent.top_sources[0];
+  assert.deepEqual(selected.per_engine_examples, {
+    perplexity: { sample_url: 'https://research.example/perplexity?ref=public', url_redacted: false },
+  });
+});
+
+test('source observation percentages use full-window per-engine successful response denominators', async () => {
+  const recent = Date.now() - 60_000;
+  const cited = 'https://research.example/guide';
+  const citation = registerCitationTool(citationRow({ captured_at: recent }), [
+    promptResponse({ id: 'chat-1', run_id: 'chat-1', prompt_id: 'a', engine: 'chatgpt',
+      captured_at: recent, engine_citations: [cited, cited] }),
+    promptResponse({ id: 'chat-2', run_id: 'chat-2', prompt_id: 'b', engine: 'chatgpt',
+      captured_at: recent, engine_citations: [] }),
+    promptResponse({ id: 'chat-3', run_id: 'chat-3', prompt_id: 'a', engine: 'chatgpt',
+      captured_at: recent, engine_citations: [cited] }),
+    { ...promptResponse({ id: 'chat-batch', run_id: 'chat-batch', prompt_id: 'c', engine: 'chatgpt',
+      captured_at: recent, engine_citations: [cited] }), mode: 'batch' },
+    promptResponse({ id: 'perp-1', run_id: 'perp-1', prompt_id: 'a', engine: 'perplexity',
+      captured_at: recent, engine_citations: [cited] }),
+    promptResponse({ id: 'perp-2', run_id: 'perp-2', prompt_id: 'b', engine: 'perplexity',
+      captured_at: recent, engine_citations: ['https://other.example/'] }),
+    promptResponse({ id: 'gemini-1', run_id: 'gemini-1', prompt_id: 'c', engine: 'gemini',
+      captured_at: recent, engine_citations: [] }),
+  ]);
+
+  const all = (await citation.handler({ brand_id: brand.id, limit: 1 })).structuredContent;
+  const research = all.top_sources.find((source) => source.domain === 'research.example');
+  assert.ok(research);
+  assert.deepEqual(research.per_engine_source_observation_percent, { chatgpt: 75, perplexity: 50 });
+  assert.equal(all.observation_coverage.per_engine.find((entry) => entry.engine === 'chatgpt')?.successful_observation_count, 4);
+  assert.equal(research.citation_count, 4);
+
+  const searchOnly = (await citation.handler({ brand_id: brand.id, measurement_mode: 'search_requested' }))
+    .structuredContent.top_sources.find((source) => source.domain === 'research.example');
+  assert.deepEqual(searchOnly?.per_engine_source_observation_percent, { chatgpt: 66.7, perplexity: 50 });
+  const modelOnly = (await citation.handler({ brand_id: brand.id, measurement_mode: 'model_only' }))
+    .structuredContent.top_sources.find((source) => source.domain === 'research.example');
+  assert.deepEqual(modelOnly?.per_engine_source_observation_percent, { chatgpt: 100 });
+  const selected = (await citation.handler({ brand_id: brand.id, engines: ['perplexity'] }))
+    .structuredContent.top_sources.find((source) => source.domain === 'research.example');
+  assert.deepEqual(selected?.per_engine_source_observation_percent, { perplexity: 50 });
+});
+
+test('source path breadth counts distinct cited paths without inflating response-domain observations', async () => {
+  const citation = registerCitationTool(citationRow(), [
+    promptResponse({
+      id: 'path-one', prompt_id: 'prompt-1',
+      engine_citations: [
+        'https://research.example/guide?utm_source=one',
+        'https://research.example/guide#section',
+        'https://research.example/report?token=fixture',
+      ],
+    }),
+    promptResponse({
+      id: 'path-two', run_id: 'run-two', prompt_id: 'prompt-2',
+      engine_citations: ['https://www.research.example/guide?utm_source=two'],
+    }),
+  ]);
+
+  const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.equal(result.top_sources[0].domain, 'research.example');
+  assert.equal(result.top_sources[0].citation_count, 2);
+  assert.equal(result.top_sources[0].distinct_cited_path_count, 2);
+  assert.equal(result.top_sources[0].prompt_count, 2);
 });
 
 test('get_citations aggregates sources without fetching full AI response bodies', async () => {
@@ -693,6 +1055,7 @@ test('top source evidence spans the complete window on every cursor page', async
   assert.deepEqual(first.structuredContent.top_sources, second.structuredContent.top_sources);
   assert.equal(first.structuredContent.top_sources[0].citation_count, 2);
   assert.equal(first.structuredContent.top_sources[0].prompt_count, 2);
+  assert.equal(first.structuredContent.top_sources[0].last_observed_at, new Date(observed).toISOString());
 });
 
 test('top source sample links use the latest observation regardless of database row order', async () => {
@@ -711,6 +1074,7 @@ test('top source sample links use the latest observation regardless of database 
     const result = await tool.handler({ brand_id: brand.id });
     assert.equal(result.structuredContent.top_sources[0].citation_count, 2);
     assert.equal(result.structuredContent.top_sources[0].sample_url, 'https://research.example/new-report');
+    assert.equal(result.structuredContent.top_sources[0].last_observed_at, new Date(newer.captured_at).toISOString());
   }
 });
 
@@ -749,8 +1113,13 @@ test('get_citations selected engines filter before pagination and source ranking
   ], [
     promptResponse({ id: 'chat-source', run_id: 'r-chat', engine: 'chatgpt',
       engine_citations: ['https://chat.example/a'], captured_at: at + 2 }),
+    // Newest response first: freshness must not depend on source-row iteration order.
+    promptResponse({ id: 'claude-repeat', run_id: 'r-claude-repeat', prompt_id: 'prompt-1',
+      engine: 'claude', engine_citations: [], captured_at: at + 3 }),
     promptResponse({ id: 'claude-source', run_id: 'r-claude', engine: 'claude',
       engine_citations: ['https://claude.example/a'], captured_at: at + 1 }),
+    promptResponse({ id: 'claude-unmentioned', run_id: 'r-claude-unmentioned', prompt_id: 'p-other',
+      engine: 'claude', engine_citations: [], captured_at: at + 1 }),
     promptResponse({ id: 'perp-source', run_id: 'r-perp', engine: 'perplexity',
       engine_citations: ['https://perplexity.example/a'], captured_at: at }),
   ]);
@@ -762,15 +1131,30 @@ test('get_citations selected engines filter before pagination and source ranking
     ['claude.example', 'perplexity.example']);
   assert.deepEqual(first.engine_scope.requested_engines, ['claude', 'perplexity']);
   assert.deepEqual(first.engine_scope.not_observed_engines, []);
+  assert.deepEqual(first.observation_coverage.per_engine, [
+    { engine: 'claude', successful_observation_count: 3, distinct_prompt_count: 2,
+      last_observed_at: new Date(at + 3).toISOString() },
+    { engine: 'perplexity', successful_observation_count: 1, distinct_prompt_count: 1,
+      last_observed_at: new Date(at).toISOString() },
+  ]);
+  assert.match(first.observation_coverage.note, /not.*citation|not.*visibility/i);
+  assert.match(first.observation_coverage.note, /distinct.*prompt|last.*observed/i);
   const withMissing = (await tool.handler({
     brand_id: brand.id, engines: ['ai_mode', 'claude'],
   })).structuredContent;
   assert.deepEqual(withMissing.engine_scope.not_observed_engines, ['ai_mode']);
+  assert.deepEqual(withMissing.observation_coverage.per_engine, [
+    { engine: 'ai_mode', successful_observation_count: 0, distinct_prompt_count: 0,
+      last_observed_at: null },
+    { engine: 'claude', successful_observation_count: 3, distinct_prompt_count: 2,
+      last_observed_at: new Date(at + 3).toISOString() },
+  ]);
   const second = (await tool.handler({
     brand_id: brand.id, engines: ['claude', 'perplexity'], limit: 1, cursor: first.next_cursor!,
   })).structuredContent;
   assert.equal(second.citations.length, 1);
   assert.equal(second.has_more, false);
+  assert.deepEqual(second.observation_coverage, first.observation_coverage);
   assert.notEqual(first.citations[0].id, second.citations[0].id);
   await assert.rejects(tool.handler({
     brand_id: brand.id, engines: ['claude'], cursor: first.next_cursor!,
@@ -781,6 +1165,14 @@ test('get_citations selected engines filter before pagination and source ranking
   const all = (await tool.handler({ brand_id: brand.id, engines: [] })).structuredContent;
   assert.equal(all.citations.length, 3);
   assert.equal(all.engine_scope.selection, 'all_stored');
+  assert.deepEqual(all.observation_coverage.per_engine, [
+    { engine: 'chatgpt', successful_observation_count: 1, distinct_prompt_count: 1,
+      last_observed_at: new Date(at + 2).toISOString() },
+    { engine: 'claude', successful_observation_count: 3, distinct_prompt_count: 2,
+      last_observed_at: new Date(at + 3).toISOString() },
+    { engine: 'perplexity', successful_observation_count: 1, distinct_prompt_count: 1,
+      last_observed_at: new Date(at).toISOString() },
+  ]);
 });
 
 test('get_citations provides stable cursor pages for tied observation timestamps', async () => {

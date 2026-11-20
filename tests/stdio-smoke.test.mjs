@@ -45,6 +45,83 @@ function rpc(child, body) {
   child.stdin.write(JSON.stringify(body) + '\n');
 }
 
+function observeRpcChild(child, responsesById, stderrText) {
+  let childClose = null;
+  let childError = null;
+  child.once('close', (code, signal) => {
+    childClose = { code, signal };
+  });
+  child.once('error', (error) => {
+    childError = error.message;
+  });
+
+  const waitFor = (id, timeoutMs = 15_000) =>
+    new Promise((resolvePromise, rejectPromise) => {
+      const startedAt = Date.now();
+      const tick = () => {
+        if (responsesById.has(id)) return resolvePromise(responsesById.get(id));
+        if (childError !== null) {
+          return rejectPromise(new Error(`stdio child process error: ${childError}`));
+        }
+        // 'close' follows stdout drain, so no further JSON-RPC response can arrive.
+        if (childClose !== null) {
+          return rejectPromise(
+            new Error(
+              `stdio child closed before JSON-RPC response id=${id}; ` +
+                `exit=${childClose.code}, signal=${childClose.signal}; stderr:\n${stderrText()}`,
+            ),
+          );
+        }
+        if (Date.now() - startedAt > timeoutMs) {
+          return rejectPromise(
+            new Error(
+              `timed out waiting for JSON-RPC response id=${id}; ` +
+                `child pid=${child.pid ?? 'unknown'} still open, ` +
+                `received ${responsesById.size} responses; stderr so far:\n${stderrText()}`,
+            ),
+          );
+        }
+        setTimeout(tick, 25);
+      };
+      tick();
+    });
+
+  const stop = async () => {
+    if (childClose === null) {
+      child.kill();
+      await new Promise((resolvePromise) => child.once('close', resolvePromise));
+    }
+  };
+  return { waitFor, stop };
+}
+
+test('stdio smoke harness reports an early CLI exit without waiting for the RPC timeout', async () => {
+  const child = spawn(process.execPath, ['-e', 'process.exit(17)'], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  const { waitFor, stop } = observeRpcChild(child, new Map(), () => '');
+  try {
+    await assert.rejects(waitFor(1), /child closed before JSON-RPC response id=1; exit=17/);
+  } finally {
+    await stop();
+  }
+});
+
+test('stdio smoke harness distinguishes an unresponsive live CLI from an exited child', async () => {
+  const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  const { waitFor, stop } = observeRpcChild(child, new Map(), () => '');
+  try {
+    await assert.rejects(
+      waitFor(1, 500),
+      /timed out waiting for JSON-RPC response id=1; child pid=\d+ still open, received 0 responses/,
+    );
+  } finally {
+    await stop();
+  }
+});
+
 test('stdio CLI: initialize + tools/list returns all twelve tools, local brand/prompt management works offline, stdout stays pure JSON', async () => {
   assert.ok(
     existsSync(CLI_PATH),
@@ -73,6 +150,7 @@ test('stdio CLI: initialize + tools/list returns all twelve tools, local brand/p
   const responsesById = new Map();
   let stdoutBuffer = '';
   let stderrText = '';
+  const { waitFor, stop } = observeRpcChild(child, responsesById, () => stderrText);
 
   child.stdout.on('data', (chunk) => {
     stdoutBuffer += chunk.toString('utf8');
@@ -93,23 +171,6 @@ test('stdio CLI: initialize + tools/list returns all twelve tools, local brand/p
   child.stderr.on('data', (chunk) => {
     stderrText += chunk.toString('utf8');
   });
-
-  const waitFor = (id, timeoutMs = 15_000) =>
-    new Promise((resolvePromise, rejectPromise) => {
-      const startedAt = Date.now();
-      const tick = () => {
-        if (responsesById.has(id)) return resolvePromise(responsesById.get(id));
-        if (Date.now() - startedAt > timeoutMs) {
-          return rejectPromise(
-            new Error(
-              `timed out waiting for JSON-RPC response id=${id}; stderr so far:\n${stderrText}`,
-            ),
-          );
-        }
-        setTimeout(tick, 25);
-      };
-      tick();
-    });
 
   try {
     rpc(child, {
@@ -343,8 +404,7 @@ test('stdio CLI: initialize + tools/list returns all twelve tools, local brand/p
       );
     }
   } finally {
-    child.kill();
-    await new Promise((r) => child.once('close', r));
+    await stop();
     rmSync(tmp, { recursive: true, force: true });
   }
 });
@@ -369,6 +429,7 @@ test('stdio CLI: zero engine keys still responds to MCP discovery', async () => 
   child.stderr.on('data', (c) => (stderrText += c.toString('utf8')));
   let stdoutBuffer = '';
   const responsesById = new Map();
+  const { waitFor, stop } = observeRpcChild(child, responsesById, () => stderrText);
   child.stdout.on('data', (chunk) => {
     stdoutBuffer += chunk.toString('utf8');
     let nl;
@@ -380,23 +441,6 @@ test('stdio CLI: zero engine keys still responds to MCP discovery', async () => 
       if (message.id !== undefined) responsesById.set(message.id, message);
     }
   });
-
-  const waitFor = (id, timeoutMs = 15_000) =>
-    new Promise((resolvePromise, rejectPromise) => {
-      const startedAt = Date.now();
-      const tick = () => {
-        if (responsesById.has(id)) return resolvePromise(responsesById.get(id));
-        if (Date.now() - startedAt > timeoutMs) {
-          return rejectPromise(
-            new Error(
-              `timed out waiting for JSON-RPC response id=${id}; stderr so far:\n${stderrText}`,
-            ),
-          );
-        }
-        setTimeout(tick, 25);
-      };
-      tick();
-    });
 
   try {
     rpc(child, {
@@ -420,8 +464,7 @@ test('stdio CLI: zero engine keys still responds to MCP discovery', async () => 
     assert.equal(list.result?.tools?.length, EXPECTED_TOOLS.length);
     assert.match(stderrText, /no engine API keys configured/i);
   } finally {
-    child.kill();
-    await new Promise((resolvePromise) => child.once('close', resolvePromise));
+    await stop();
     rmSync(tmp, { recursive: true, force: true });
   }
 });

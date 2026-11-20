@@ -1747,6 +1747,10 @@ test('SQLite and D1 scope multi-engine citation pages and source rankings before
     for (const adapter of [db, hosted]) {
       const all = await adapter.getCitationRows('acme', 0, undefined, { until, limit: 10 });
       assert.equal(all.length, 3);
+      assert.equal(await adapter.countCitationRows('acme', 0, undefined, { until, limit: 1 }), 3);
+      assert.equal(await adapter.countCitationRows('acme', 0, selected, { until, limit: 1 }), 2);
+      assert.equal(await adapter.countCitationRows('acme', 0, undefined, { until, measurementMode: 'model_only' }), 1);
+      assert.equal(await adapter.countCitationRows('acme', 0, undefined, { until, measurementMode: 'search_requested' }), 2);
       const modelOnly = await adapter.getCitationRows('acme', 0, undefined, {
         until, limit: 1, measurementMode: 'model_only',
       });
@@ -1942,6 +1946,7 @@ test('citation row pagination preserves repeated observations of the same run an
     const until = Date.now();
     const first = await db.getCitationRows('acme', 0, undefined, { limit: 1, until });
     assert.equal(first.length, 1);
+    assert.equal(await db.countCitationRows('acme', 0, undefined, { until, limit: 1 }), 2);
     const second = await db.getCitationRows('acme', 0, undefined, {
       limit: 1, until,
       before: {
@@ -1953,6 +1958,10 @@ test('citation row pagination preserves repeated observations of the same run an
     });
     assert.equal(second.length, 1);
     assert.notEqual(first[0].response_id, second[0].response_id);
+    assert.equal(await db.countCitationRows('acme', 0, undefined, { until, limit: 1, before: {
+      captured_at: first[0].captured_at, run_id: first[0].run_id,
+      prompt_id: first[0].prompt_id, response_id: first[0].response_id,
+    } }), 2, 'historical retry evidence count is unchanged by pagination');
     assert.equal((await db.getCitationRows('acme', 0, undefined, {
       limit: 1, until,
       before: {

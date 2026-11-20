@@ -368,6 +368,15 @@ const citationsOutputSchema = z.object({
     not_observed_engines: z.array(z.string()),
     note: z.string(),
   }),
+  observation_coverage: z.object({
+    per_engine: z.array(z.object({
+      engine: z.string(),
+      successful_observation_count: z.number().int().nonnegative(),
+      distinct_prompt_count: z.number().int().nonnegative(),
+      last_observed_at: z.string().nullable(),
+    })),
+    note: z.string(),
+  }),
   google_search_sampling: googleSearchSamplingSchema,
   identity_attribution: z.object({
     identity_changed_at: z.string(),
@@ -384,16 +393,32 @@ const citationsOutputSchema = z.object({
     note: z.string(),
   }),
   limit: z.number().int(),
+  total_matching_rows: z.number().int().nonnegative(),
+  total_matching_rows_note: z.string(),
   has_more: z.boolean(),
   next_cursor: z.string().nullable(),
+  top_sources_limit: z.number().int().min(1).max(50).describe('Maximum ranked source domains returned; default 10, maximum 50.'),
+  total_source_domains: z.number().int().nonnegative().describe('All distinct valid cited source domains in the selected stored evidence window, before the top-sources cap.'),
+  top_sources_truncated: z.boolean().describe('True when ranked source domains are omitted by top_sources_limit; citation pagination does not expand this summary.'),
   top_sources: z.array(
     z.object({
       domain: z.string(),
-      citation_count: z.number(),
+      citation_count: z.number().describe('Stored responses listing this domain, at most once per response; not unique URLs.'),
+      per_engine_citation_count: z.record(z.string(), z.number().int().nonnegative()).describe('Stored response-domain observations by engine, counted once per response and summing to citation_count; not unique links or verified live citations.'),
+      per_engine_source_observation_percent: z.record(z.string(), z.number().min(0).max(100)).describe('Percent of successful stored responses on each cited engine that list this source domain, before page limits; not a brand visibility score or verified live citation rate.'),
+      per_engine_distinct_prompt_count: z.record(z.string(), z.number().int().nonnegative()).describe('Distinct stored prompt IDs citing this domain on each engine; repeated observations of the same prompt count once per engine. Not unique question wording or a citation rate.'),
+      per_engine_last_observed_at: z.record(z.string(), z.string()).describe('Latest stored capture time citing this source domain on each engine within the selected evidence scope; not independent proof that links remain live or still cited.'),
+      per_engine_examples: z.record(z.string(), z.object({
+        sample_url: z.string(),
+        url_redacted: z.boolean(),
+      })).describe('One deterministic URL cited for this domain on each observed engine, from its latest stored response; sensitive parameters masked, not a verified live link.'),
+      distinct_cited_path_count: z.number().int().nonnegative().describe('Distinct cited URL pathnames for this domain, ignoring query and fragment; not verified live pages.'),
       prompt_count: z.number(),
+      last_observed_at: z.string().describe('Latest stored source observation capture time; not proof the URL is currently live.'),
       engines: z.array(z.string()),
       measurement_modes: z.array(z.enum(['model_only', 'search_requested'])),
       sample_url: z.string(),
+      url_redacted: z.boolean().describe('True when credential parameters were masked; the displayed sample may not be navigable.'),
       is_brand_domain: z.boolean(),
       identity_scopes: z.array(z.enum(['current', 'historical', 'unattributed'])).optional(),
     }),
@@ -409,6 +434,7 @@ const citationsOutputSchema = z.object({
       identity_scope: z.enum(['current', 'historical', 'unattributed']).optional(),
       response_excerpt: z.string(),
       cited_url: z.string().nullable(),
+      url_redacted: z.boolean().describe('True when credential parameters were masked; the displayed citation URL may not be navigable.'),
       url_source: z.enum(['provider_source', 'answer_text']).nullable(),
     }),
   ),
@@ -1648,7 +1674,7 @@ export function registerTools(
     {
       title: 'Get AI citation evidence',
       description:
-        "Page stored citations and source rankings. engines selects audit surfaces; measurement_mode selects model-only or search-requested evidence before pagination. Defaults retain history. No provider scans. Example: brand_id='acme'.",
+        "Page stored citations with full-window row count, per-engine prompt coverage/freshness and top sources. engines and measurement_mode scope evidence before pagination. Defaults retain history; no provider scans. Example: brand_id='acme'.",
       inputSchema: {
         brand_id: z
           .string()
@@ -1669,6 +1695,8 @@ export function registerTools(
           .describe('Filter pages and top_sources by request mode; search_requested does not verify source links.'),
         limit: z.number().int().min(1).max(100).default(50)
           .describe('Citation rows per page, 1-100 (default 50).'),
+        top_sources_limit: z.number().int().min(1).max(50).default(10)
+          .describe('Ranked source domains, 1-50 (default 10); independent of citation page size.'),
         current_identity_only: z.boolean().default(false)
           .describe('Filter citations and source rankings to current-brand runs when the identity boundary is known.'),
         active_prompts_only: z.boolean().default(false)
@@ -1683,7 +1711,7 @@ export function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ brand_id, days = 14, engine, engines, measurement_mode, limit = 50, current_identity_only = false,
+    async ({ brand_id, days = 14, engine, engines, measurement_mode, limit = 50, top_sources_limit = 10, current_identity_only = false,
       active_prompts_only = false, cursor }) => {
       const selectedEngines = [...new Set(engines ?? [])].sort();
       if (engine && selectedEngines.length) {
@@ -1719,13 +1747,40 @@ export function registerTools(
       });
       const hasMore = rows.length > limit;
       const results = rows.slice(0, limit);
+      const totalMatchingRows = await deps.db.countCitationRows(brand_id, since, engineSelection, {
+        until, minRunStartedAt, activePromptsOnly: active_prompts_only, measurementMode: measurement_mode,
+      });
       const sourceResponses = await deps.db.getCitationSourceRows(
         brand_id, since, until, engineSelection, minRunStartedAt, active_prompts_only, measurement_mode,
       );
+      const rankedSources = buildTopSources(sourceResponses, brand, identityBoundary);
+      const observationEvidence = new Map<string, {
+        count: number;
+        prompts: Set<string>;
+        latestCapturedAt: number;
+      }>();
+      for (const response of sourceResponses) {
+        const evidence = observationEvidence.get(response.engine);
+        if (evidence) {
+          evidence.count++;
+          evidence.prompts.add(response.prompt_id);
+          evidence.latestCapturedAt = Math.max(evidence.latestCapturedAt, response.captured_at);
+        } else {
+          observationEvidence.set(response.engine, {
+            count: 1,
+            prompts: new Set([response.prompt_id]),
+            latestCapturedAt: response.captured_at,
+          });
+        }
+      }
+      const scopedEngineNames = requestedEngines.length
+        ? [...requestedEngines].sort()
+        : [...observationEvidence.keys()].sort();
 
       const citations = results.map((row) => {
         const engineHosts = parseStringArray(row.engine_citations_json);
         const brandUrl = pickBrandUrl(brand, engineHosts, row.raw_response);
+        const citedUrl = brandUrl ? redactCitationUrlQuery(brandUrl.url) : null;
         return {
           id: citationId(row.response_id),
           engine: row.engine,
@@ -1742,7 +1797,8 @@ export function registerTools(
             ? { identity_scope: citationIdentityScope(row.run_started_at, identityBoundary) }
             : {}),
           response_excerpt: buildResponseExcerpt(row.raw_response, brand),
-          cited_url: brandUrl?.url ?? null,
+          cited_url: citedUrl,
+          url_redacted: brandUrl !== null && citedUrl !== brandUrl.url,
           url_source: brandUrl?.source ?? null,
         };
       });
@@ -1758,6 +1814,18 @@ export function registerTools(
           not_observed_engines: requestedEngines.filter((selected) =>
             !sourceResponses.some((response) => response.engine === selected)),
           note: 'Citation pages and source rankings use only the requested stored engines before limits and aggregation. Missing successful responses in this window are not measured zero, proof a provider was configured, or proof a scan was attempted.',
+        },
+        observation_coverage: {
+          per_engine: scopedEngineNames.map((engineName) => {
+            const evidence = observationEvidence.get(engineName);
+            return {
+              engine: engineName,
+              successful_observation_count: evidence?.count ?? 0,
+              distinct_prompt_count: evidence?.prompts.size ?? 0,
+              last_observed_at: evidence ? new Date(evidence.latestCapturedAt).toISOString() : null,
+            };
+          }),
+          note: 'Latest successful stored observation per run and prompt in the selected window, before citation pagination. Distinct prompts count stored prompt IDs, not unique question texts; last_observed_at is response capture time, not proof of a fresh scan or current brand identity. Counts are not brand mentions, source citations, completed scans, or visibility scores. Zero for a requested engine means unmeasured here, not zero visibility.',
         },
         identity_attribution: identityBoundary === null ? null : {
           identity_changed_at: new Date(identityBoundary).toISOString(),
@@ -1787,6 +1855,8 @@ export function registerTools(
           ...results.map(({ engine: citationEngine }) => citationEngine),
         ]),
         limit,
+        total_matching_rows: totalMatchingRows,
+        total_matching_rows_note: 'Full selected window before pagination: all successful brand mentions or source links, including historical retries. This is not a unique prompt count, total scanned prompts, or number of verified source citations.',
         has_more: hasMore,
         next_cursor: hasMore && results.length > 0
           ? encodeURIComponent(JSON.stringify({
@@ -1810,7 +1880,10 @@ export function registerTools(
               },
             }))
           : null,
-        top_sources: buildTopSources(sourceResponses, brand, identityBoundary),
+        top_sources_limit,
+        total_source_domains: rankedSources.length,
+        top_sources_truncated: rankedSources.length > top_sources_limit,
+        top_sources: rankedSources.slice(0, top_sources_limit),
         citations,
       };
       return toolResult(payload);
@@ -2710,10 +2783,19 @@ function citationIdentityScope(startedAt: number | null | undefined, boundary: n
 }
 
 function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityBoundary: number | null = null) {
+  const engineObservationCounts = new Map<string, number>();
+  for (const response of responses) {
+    engineObservationCounts.set(response.engine, (engineObservationCounts.get(response.engine) ?? 0) + 1);
+  }
   const sources = new Map<
     string,
     {
       citation_count: number;
+      engineCitationCounts: Map<string, number>;
+      enginePrompts: Map<string, Set<string>>;
+      engineLastCapturedAt: Map<string, number>;
+      engineSamples: Map<string, { url: string; capturedAt: number; responseId: string }>;
+      citedPaths: Set<string>;
       prompts: Set<string>;
       engines: Set<string>;
       measurement_modes: Set<'model_only' | 'search_requested'>;
@@ -2726,6 +2808,7 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
 
   for (const response of responses) {
     const domainsForResponse = new Map<string, string>();
+    const pathsForResponse = new Map<string, Set<string>>();
     const identityScope = identityBoundary === null
       ? null : citationIdentityScope(response.run_started_at, identityBoundary);
     for (const rawUrl of response.engine_citations) {
@@ -2738,6 +2821,9 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
         const domain = normalizeDomainInput(parsed.hostname);
         if (!domain) continue;
         if (!domainsForResponse.has(domain)) domainsForResponse.set(domain, rawUrl);
+        const citedPaths = pathsForResponse.get(domain) ?? new Set<string>();
+        citedPaths.add(parsed.pathname);
+        pathsForResponse.set(domain, citedPaths);
       } catch {
         // Provider-native citation payloads are external data. Ignore malformed
         // entries rather than letting one bad source hide the usable evidence.
@@ -2749,6 +2835,21 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
       const measurementMode = visibilityMeasurementMode(response.engine, response.mode ?? 'live');
       if (existing) {
         existing.citation_count += 1;
+        existing.engineCitationCounts.set(response.engine, (existing.engineCitationCounts.get(response.engine) ?? 0) + 1);
+        const enginePrompts = existing.enginePrompts.get(response.engine) ?? new Set<string>();
+        enginePrompts.add(response.prompt_id);
+        existing.enginePrompts.set(response.engine, enginePrompts);
+        existing.engineLastCapturedAt.set(response.engine, Math.max(
+          existing.engineLastCapturedAt.get(response.engine) ?? -Infinity, response.captured_at,
+        ));
+        const engineSample = existing.engineSamples.get(response.engine);
+        if (!engineSample || response.captured_at > engineSample.capturedAt ||
+          (response.captured_at === engineSample.capturedAt && response.id < engineSample.responseId)) {
+          existing.engineSamples.set(response.engine, {
+            url: sampleUrl, capturedAt: response.captured_at, responseId: response.id,
+          });
+        }
+        for (const path of pathsForResponse.get(domain) ?? []) existing.citedPaths.add(path);
         existing.prompts.add(response.prompt_id);
         existing.engines.add(response.engine);
         existing.measurement_modes.add(measurementMode);
@@ -2767,6 +2868,13 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
       } else {
         sources.set(domain, {
           citation_count: 1,
+          engineCitationCounts: new Map([[response.engine, 1]]),
+          enginePrompts: new Map([[response.engine, new Set([response.prompt_id])]]),
+          engineLastCapturedAt: new Map([[response.engine, response.captured_at]]),
+          engineSamples: new Map([[response.engine, {
+            url: sampleUrl, capturedAt: response.captured_at, responseId: response.id,
+          }]]),
+          citedPaths: new Set(pathsForResponse.get(domain) ?? []),
           prompts: new Set([response.prompt_id]),
           engines: new Set([response.engine]),
           measurement_modes: new Set([measurementMode]),
@@ -2780,23 +2888,85 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
   }
 
   return [...sources.entries()]
-    .map(([domain, source]) => ({
-      domain,
-      citation_count: source.citation_count,
-      prompt_count: source.prompts.size,
-      engines: [...source.engines].sort(),
-      measurement_modes: [...source.measurement_modes].sort(),
-      ...(identityBoundary !== null ? { identity_scopes: [...source.identity_scopes].sort() } : {}),
-      sample_url: source.sample_url,
-      is_brand_domain: hostMatchesDomain(domain, brand.domain),
-    }))
+    .map(([domain, source]) => {
+      const sampleUrl = redactCitationUrlQuery(source.sample_url);
+      return {
+        domain,
+        citation_count: source.citation_count,
+        per_engine_citation_count: Object.fromEntries([...source.engineCitationCounts].sort(([a], [b]) => a.localeCompare(b))),
+        per_engine_source_observation_percent: Object.fromEntries(
+          [...source.engineCitationCounts].sort(([a], [b]) => a.localeCompare(b))
+            .map(([engine, count]) => [engine, Math.round(1000 * count / (engineObservationCounts.get(engine) ?? 1)) / 10]),
+        ),
+        per_engine_distinct_prompt_count: Object.fromEntries(
+          [...source.enginePrompts].sort(([a], [b]) => a.localeCompare(b)).map(([engine, prompts]) => [engine, prompts.size]),
+        ),
+        per_engine_last_observed_at: Object.fromEntries(
+          [...source.engineLastCapturedAt].sort(([a], [b]) => a.localeCompare(b))
+            .map(([engine, capturedAt]) => [engine, new Date(capturedAt).toISOString()]),
+        ),
+        per_engine_examples: Object.fromEntries(
+          [...source.engineSamples].sort(([a], [b]) => a.localeCompare(b)).map(([engine, sample]) => {
+            const safeUrl = redactCitationUrlQuery(sample.url);
+            return [engine, { sample_url: safeUrl, url_redacted: safeUrl !== sample.url }];
+          }),
+        ),
+        distinct_cited_path_count: source.citedPaths.size,
+        prompt_count: source.prompts.size,
+        last_observed_at: new Date(source.sample_captured_at).toISOString(),
+        engines: [...source.engines].sort(),
+        measurement_modes: [...source.measurement_modes].sort(),
+        ...(identityBoundary !== null ? { identity_scopes: [...source.identity_scopes].sort() } : {}),
+        sample_url: sampleUrl,
+        url_redacted: sampleUrl !== source.sample_url,
+        is_brand_domain: hostMatchesDomain(domain, brand.domain),
+      };
+    })
     .sort(
       (a, b) =>
         b.citation_count - a.citation_count ||
         b.prompt_count - a.prompt_count ||
         a.domain.localeCompare(b.domain),
-    )
-    .slice(0, 10);
+    );
+}
+
+// Source URLs can contain access-bearing query or fragment values without URL
+// userinfo. Redact named credentials at the output boundary while preserving
+// the original URL spelling and nonsecret source context.
+function redactCitationUrlQuery(rawUrl: string): string {
+  const fragmentStart = rawUrl.indexOf('#');
+  const address = fragmentStart === -1 ? rawUrl : rawUrl.slice(0, fragmentStart);
+  const fragment = fragmentStart === -1 ? null : rawUrl.slice(fragmentStart + 1);
+  const queryStart = address.indexOf('?');
+  const secretNames = new Set([
+    'apikey', 'key', 'token', 'accesstoken', 'refreshtoken', 'authtoken',
+    'idtoken', 'clientsecret', 'apisecret', 'secret', 'password', 'passwd',
+    'signature', 'authorization', 'auth', 'sig',
+    // Cloud presigned URLs use bearer capabilities under provider-specific keys.
+    'awsaccesskeyid', 'xamzcredential', 'xamzsignature', 'xamzsecuritytoken',
+    'xgoogcredential', 'xgoogsignature', 'xgoogsecuritytoken',
+  ]);
+  const redactParameters = (parameters: string): string => parameters.split(/([&;])/).map((piece) => {
+    const equals = piece.indexOf('=');
+    if (equals < 0) return piece;
+    let name = piece.slice(0, equals);
+    try {
+      name = decodeURIComponent(name.replace(/\+/g, ' '));
+    } catch {
+      // An invalid encoded name is not interpreted as a credential key.
+    }
+    const normalized = name.toLowerCase().replace(/[-_.\s]/g, '');
+    return secretNames.has(normalized) ? `${piece.slice(0, equals)}=[REDACTED]` : piece;
+  }).join('');
+  const safeAddress = queryStart === -1 ? address
+    : `${address.slice(0, queryStart + 1)}${redactParameters(address.slice(queryStart + 1))}`;
+  if (fragment === null) return safeAddress;
+  // OAuth fragments commonly encode key/value pairs directly; hash routers
+  // also place their own query string after a route or anchor prefix.
+  const hashQueryStart = fragment.indexOf('?');
+  const safeFragment = hashQueryStart === -1 ? redactParameters(fragment)
+    : `${fragment.slice(0, hashQueryStart + 1)}${redactParameters(fragment.slice(hashQueryStart + 1))}`;
+  return `${safeAddress}#${safeFragment}`;
 }
 
 export function buildResponseExcerpt(text: string, brand: Brand): string {
@@ -2804,14 +2974,25 @@ export function buildResponseExcerpt(text: string, brand: Brand): string {
   if (text === '[NO_AI_OVERVIEW]') return text;
   // Provider text is untrusted. Even a URL rejected as citation evidence can
   // otherwise expose authority credentials in the user-facing excerpt.
-  const safeText = text.replace(/https?:\/\/[^\s<>"'`\])}]+/gi, (rawUrl) => {
+  // Closing parentheses and square brackets can occur in URL paths before
+  // token-bearing query or fragment values. Keep scanning to redact them.
+  const urlSafeText = text.replace(/https?:\/\/[^\s<>"'`]+/gi, (rawUrl) => {
     try {
       const parsed = new URL(rawUrl.replace(/[.,;!]+$/, ''));
-      return parsed.username || parsed.password ? '[credential-bearing URL omitted]' : rawUrl;
+      return parsed.username || parsed.password
+        ? '[credential-bearing URL omitted]' : redactCitationUrlQuery(rawUrl);
     } catch {
-      return rawUrl;
+      // Malformed provider URLs may still contain access-bearing query or
+      // userinfo text. They cannot establish valid citation evidence.
+      return '[unparseable URL omitted]';
     }
   });
+  // Provider prose can contain standalone credential assignments and auth
+  // headers, not just URLs. Mask their values before selecting an excerpt;
+  // raw stored observations remain unchanged for forensic provenance.
+  const safeText = urlSafeText
+    .replace(/\b(Authorization\s*:\s*(?:Bearer|Basic)\s+)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;]+)/gi, '$1[REDACTED]')
+    .replace(/\b((?:access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|client[_-]?secret)\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s&,;]+)/gi, '$1[REDACTED]');
   const idx = findTermSetMatchIndex(safeText, {
     domain: brand.domain,
     name: brand.name,

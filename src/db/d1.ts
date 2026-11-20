@@ -909,6 +909,43 @@ export function createD1Db(d1: D1Database): Db {
       return results ?? [];
     },
 
+    async countCitationRows(
+      brandId: string,
+      since: number,
+      engine?: string | string[],
+      page?: CitationPageOptions,
+    ): Promise<number> {
+      let sql = `SELECT COUNT(*) AS total
+                   FROM prompt_responses pr
+                   JOIN runs r ON r.id = pr.run_id
+                   JOIN prompts p ON p.id = pr.prompt_id
+                  WHERE r.brand_id = ? AND pr.captured_at >= ?
+                    AND (pr.brand_mentioned = 1 OR pr.brand_cited_with_link = 1)
+                    AND pr.status = 'ok'`;
+      const params: unknown[] = [brandId, since];
+      if (page?.minRunStartedAt !== undefined) {
+        sql += ' AND r.started_at >= ?';
+        params.push(page.minRunStartedAt);
+      }
+      if (page?.activePromptsOnly) sql += ' AND p.active = 1';
+      if (page?.measurementMode === 'model_only') {
+        sql += " AND (r.mode = 'batch' OR r.engine IN ('claude', 'gemini'))";
+      } else if (page?.measurementMode === 'search_requested') {
+        sql += " AND r.mode <> 'batch' AND r.engine NOT IN ('claude', 'gemini')";
+      }
+      const selectedEngines = Array.isArray(engine) ? [...new Set(engine)] : engine ? [engine] : [];
+      if (selectedEngines.length) {
+        sql += ` AND r.engine IN (${selectedEngines.map(() => '?').join(', ')})`;
+        params.push(...selectedEngines);
+      }
+      if (page?.until !== undefined) {
+        sql += ' AND pr.captured_at <= ?';
+        params.push(page.until);
+      }
+      const { results } = await d1.prepare(sql).bind(...params).all<{ total: number }>();
+      return results?.[0]?.total ?? 0;
+    },
+
     async getCitationRows(
       brandId: string,
       since: number,
