@@ -168,7 +168,7 @@ function auditHtml(origin: string): string {
     <p class="fine">After you email the request, Tomi will confirm fit and scope by email, then use the existing invoice and payment process. This page does not collect payment details.</p>
     <p class="fine">Implementation is not included; the prioritized action memo is intended for your own team or existing provider to execute.</p>
     <p class="fine">Email <a href="mailto:${AUDIT_EMAIL}">${AUDIT_EMAIL}</a> directly if your browser does not open an email app. No subscription, no sales call required. The audit does not guarantee rankings, citations, traffic, or commercial outcomes.</p>
-    <a class="cta" href="${mailto}">Email the EUR 99 audit request</a>
+    <a class="cta" href="${mailto}" id="email-audit-request">Email the EUR 99 audit request</a>
     <noscript><p class="fine">JavaScript is optional. You can still <a href="${mailto}">email the prefilled audit request</a> directly.</p></noscript>
 
     <p class="oss">Prefer to run it yourself? <strong>mcp-geo remains free and open-source under MIT.</strong> Use the local npm package, or follow the self-hosting instructions to deploy your own configured Worker. Source and setup instructions are on <a href="https://github.com/AKzar1el/mcp-geo">GitHub</a>.</p>
@@ -179,6 +179,7 @@ function auditHtml(origin: string): string {
       const copyButton = document.getElementById('copy-request');
       const downloadButton = document.getElementById('download-request');
       const previewButton = document.getElementById('preview-request');
+      const directEmailLink = document.getElementById('email-audit-request');
       const previewBody = document.getElementById('request-preview-body');
       const status = document.getElementById('request-status');
       if (!(form instanceof HTMLFormElement) ||
@@ -227,11 +228,16 @@ function auditHtml(origin: string): string {
             start = index + 1;
             continue;
           }
-          // URL paths, queries and fragments can contain list punctuation.
-          // Without a space or another URL prefix, keep it inside the URL.
+          // Query/hash punctuation can be URL data; a bare domain immediately
+          // after path punctuation can instead start another competitor.
           const isUrlData = /^(?:https?:\\/\\/)?(?:[^/?#\\s,;]+[.])+[^/?#\\s,;]+[/?#]/i.test(segment);
-          const startsNextEntry = /^\\s|^https?:\\/\\//i.test(input.slice(index + 1));
-          if (isUrlData && !startsNextEntry) continue;
+          const following = input.slice(index + 1);
+          const startsNextEntry = /^\\s|^https?:\\/\\//i.test(following);
+          // An adjacent bare domain after a URL path is a second competitor.
+          // Preserve commas inside URL query strings and fragments as data.
+          const nextBareDomain = /^(?:[a-z0-9-]+[.])+[a-z0-9-]+(?=$|[,;\\s/?#])/i.test(following);
+          if (isUrlData && !startsNextEntry &&
+              (/[?#]/.test(segment) || !nextBareDomain)) continue;
           entries.push(segment);
           start = index + 1;
         }
@@ -387,7 +393,7 @@ function auditHtml(origin: string): string {
         }
       };
 
-      form.addEventListener('submit', async (event) => {
+      const submitAuditRequest = async (event) => {
         event.preventDefault();
         if (!validate()) return;
         const emailLink = mailtoForRequest();
@@ -409,7 +415,10 @@ function auditHtml(origin: string): string {
           // Some embedded or locked-down browsers reject external mail handlers.
           status.textContent = 'Could not open your email app. Use Copy or Download request details, then email the request to ${AUDIT_EMAIL}.';
         }
-      });
+      };
+      form.addEventListener('submit', submitAuditRequest);
+      // Keep the no-JS mailto fallback, but use the completed form when JS runs.
+      directEmailLink?.addEventListener('click', submitAuditRequest);
 
       copyButton.addEventListener('click', async () => {
         if (!validate()) return;

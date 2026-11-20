@@ -202,6 +202,7 @@ test('audit request flow provides form, clipboard, direct-email, and no-JS fallb
   assert.match(body, /aria-live="polite"/);
   assert.match(body, /Email <a href="mailto:info@tomiseregi\.si"/);
   assert.match(body, /<noscript>[\s\S]*mailto:info@tomiseregi\.si/);
+  assert.match(body, /href="mailto:info@tomiseregi\.si[^>]*id="email-audit-request"/, 'static fallback link needs an addressable target for the filled-form handler');
 });
 
 test('audit form validates scope and preserves oversized email requests with the copy fallback', async () => {
@@ -237,6 +238,7 @@ test('audit form validates scope and preserves oversized email requests with the
   }
   const form = new FakeForm();
   const button = new FakeButton();
+  const emailButton = new FakeButton();
   const downloadButton = new FakeButton();
   const previewButton = new FakeButton();
   const previewBody = { hidden: true, textContent: '' };
@@ -267,6 +269,7 @@ test('audit form validates scope and preserves oversized email requests with the
       getElementById(id: string) {
         return id === 'audit-request-form' ? form
           : id === 'copy-request' ? button
+          : id === 'email-audit-request' ? emailButton
           : id === 'download-request' ? downloadButton
           : id === 'preview-request' ? previewButton
           : id === 'request-preview-body' ? previewBody
@@ -319,6 +322,7 @@ test('audit form validates scope and preserves oversized email requests with the
 
   const submit = () => form.handlers.get('submit')?.({ preventDefault() {} });
   const copy = () => button.handlers.get('click')?.({ preventDefault() {} });
+  const email = () => emailButton.handlers.get('click')?.({ preventDefault() {} });
   const download = () => downloadButton.handlers.get('click')?.({ preventDefault() {} });
   const preview = () => previewButton.handlers.get('click')?.({ preventDefault() {} });
 
@@ -426,6 +430,13 @@ test('audit form validates scope and preserves oversized email requests with the
   form.values.competitors = 'one.com, two.com, three.com';
   submit();
   assert.match(location.href, /^mailto:info@tomiseregi\.si\?/);
+  location.href = '';
+  form.values.context = 'Use the completed form from the bottom email link';
+  await email();
+  assert.match(location.href, /^mailto:info@tomiseregi\.si\?/, 'the bottom email action must not silently use its blank static template');
+  assert.match(new URL(location.href).searchParams.get('body') ?? '', /Use the completed form from the bottom email link/);
+  assert.match(new URL(location.href).searchParams.get('body') ?? '', /one\.com, two\.com, three\.com/);
+  form.values.context = '';
   await copy();
   assert.equal(copied.length, 1, 'a request with three competitors remains copyable');
   assert.match(status.textContent, /request copied/i);
@@ -530,6 +541,13 @@ test('audit form validates scope and preserves oversized email requests with the
   assert.match(queriedUrlRequest, /Competitors \(up to 3\): one\.com, two\.com/);
   assert.doesNotMatch(queriedUrlRequest, /secret-tail|another-secret|access_token|session|tag=/);
 
+  form.values.competitors = 'https://one.com/pricing?tag=two.com,three.com, https://four.com';
+  location.href = '';
+  await submit();
+  assert.match(new URL(location.href).searchParams.get('body') ?? '',
+    /Competitors \(up to 3\): one\.com, four\.com/,
+    'a hostname-looking value within URL query data must not consume a competitor slot');
+
   // A pasted scheme-less URL has the same query-separator ambiguity.
   form.values.competitors =
     'one.com/pricing?access_token=first,secret-tail;session=second, two.com';
@@ -544,6 +562,19 @@ test('audit form validates scope and preserves oversized email requests with the
   location.href = '';
   await submit();
   assert.match(new URL(location.href).searchParams.get('body') ?? '', /one\.com, two\.com, three\.com/);
+
+  // Pasted URL paths followed immediately by comma-delimited bare domains
+  // must not silently drop the additional competitor slots.
+  form.values.competitors = 'https://one.com/pricing,two.com,three.com';
+  location.href = '';
+  await submit();
+  assert.match(new URL(location.href).searchParams.get('body') ?? '',
+    /Competitors \(up to 3\): one\.com, two\.com, three\.com/);
+  form.values.competitors = 'https://one.com/pricing,two.com,three.com,four.com';
+  location.href = '';
+  await submit();
+  assert.equal(location.href, '', 'adjacent bare-domain competitors must still enforce the three-competitor limit');
+  assert.match(status.textContent, /up to 3 competitors/i);
 
   form.values.competitors = 'https://one.com/pricing?ref=campaign\r\nhttps://two.com/docs\nthree.com';
   location.href = '';

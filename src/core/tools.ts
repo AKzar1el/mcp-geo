@@ -2986,7 +2986,7 @@ export function buildResponseExcerpt(text: string, brand: Brand): string {
   // otherwise expose authority credentials in the user-facing excerpt.
   // Closing parentheses and square brackets can occur in URL paths before
   // token-bearing query or fragment values. Keep scanning to redact them.
-  const safeText = text.replace(/https?:\/\/[^\s<>"'`]+/gi, (rawUrl) => {
+  const urlSafeText = text.replace(/https?:\/\/[^\s<>"'`]+/gi, (rawUrl) => {
     try {
       const parsed = new URL(rawUrl.replace(/[.,;!]+$/, ''));
       return parsed.username || parsed.password
@@ -2997,6 +2997,12 @@ export function buildResponseExcerpt(text: string, brand: Brand): string {
       return '[unparseable URL omitted]';
     }
   });
+  // Provider prose can contain standalone credential assignments and auth
+  // headers, not just URLs. Mask their values before selecting an excerpt;
+  // raw stored observations remain unchanged for forensic provenance.
+  const safeText = urlSafeText
+    .replace(/\b(Authorization\s*:\s*(?:Bearer|Basic)\s+)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;]+)/gi, '$1[REDACTED]')
+    .replace(/\b((?:access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|client[_-]?secret)\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s&,;]+)/gi, '$1[REDACTED]');
   const idx = findTermSetMatchIndex(safeText, {
     domain: brand.domain,
     name: brand.name,
