@@ -193,7 +193,16 @@ function auditHtml(origin: string): string {
           const candidate = isUrl ? raw : 'https://' + raw;
           const url = new URL(candidate);
           if ((url.protocol === 'https:' || url.protocol === 'http:') && url.hostname.includes('.')) {
-            return url.hostname.toLowerCase().replace(/^www[.]/, '').replace(/[.]$/, '');
+            const host = url.hostname.toLowerCase().replace(/[.]$/, '').replace(/^www[.]/, '');
+            const labels = host.split('.');
+            // WHATWG URL accepts repeated dots, invalid DNS labels and numeric IPs.
+            // Match the backend's public-domain requirements before offering an audit.
+            const isIpv4 = /^(?:[0-9]{1,3}[.]){3}[0-9]{1,3}$/.test(host);
+            if (host.length <= 253 && labels.length >= 2 && !isIpv4 &&
+                labels.every((label) => label.length <= 63 &&
+                  /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label))) {
+              return host;
+            }
           }
         } catch {
           // Preserve free-form brand names rather than turning them into invalid domains.
@@ -201,7 +210,7 @@ function auditHtml(origin: string): string {
         // A broken scheme-less URL can otherwise leak paths or credential values
         // into mailto, preview, clipboard, and downloaded request details.
         const hasUrlSyntax = isUrl || /[?#@]/.test(raw) ||
-          (raw.includes('.') && /[/:]/.test(raw));
+          (raw.includes('.') && (/[/:]/.test(raw) || !/\\s/.test(raw)));
         return hasUrlSyntax ? '' : raw;
       };
 
