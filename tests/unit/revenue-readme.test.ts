@@ -176,7 +176,7 @@ test('audit report prompt distinguishes cited source paths from response-domain 
   );
   assert.match(
     reportPrompt,
-    /Domain \| Response-domain observations \| Per-engine observations \| Per-engine distinct prompts \| Per-engine last observed \| Per-engine source example \| Distinct cited paths \| Prompts \| Last observed \| Engines \| Evidence modes \| Brand domain\?/,
+    /Domain \| Response-domain observations \| Per-engine observations \| Per-engine source observation % \| Per-engine distinct prompts \| Per-engine last observed \| Per-engine source example \| Distinct cited paths \| Prompts \| Last observed \| Engines \| Evidence modes \| Brand domain\?/,
   );
   assert.match(
     reportPrompt,
@@ -186,6 +186,8 @@ test('audit report prompt distinguishes cited source paths from response-domain 
   assert.match(reportPrompt, /`distinct_cited_path_count`[\s\S]*ignoring query strings and fragments/);
   assert.match(reportPrompt, /`citation_count` counts stored responses listing that domain/);
   assert.match(reportPrompt, /`per_engine_citation_count` breaks those same response-domain observations down by engine/);
+  assert.match(reportPrompt, /`per_engine_source_observation_percent` divides that source's per-engine response count by the same engine's `observation_coverage\.per_engine\.successful_observation_count`/);
+  assert.match(reportPrompt, /not a brand visibility score, a representative population estimate/);
   assert.match(reportPrompt, /`per_engine_distinct_prompt_count` shows how many different stored prompt IDs cited that domain on each engine/);
   assert.match(reportPrompt, /`per_engine_last_observed_at` is the latest stored response capture citing \*\*that source on that engine\*\*/);
   assert.match(reportPrompt, /`top_sources\.per_engine_examples`[\s\S]*`url_redacted` flag/);
