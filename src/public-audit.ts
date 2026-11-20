@@ -335,13 +335,18 @@ function auditHtml(origin: string): string {
       };
 
       const copyRequestDetails = async () => {
+        const preparedRequest = requestMessage();
         try {
-          await copyText(requestMessage());
+          await copyText(preparedRequest);
+          if (preparedRequest !== requestMessage()) {
+            status.textContent = 'Request changed while copying. Copy again before emailing the updated details.';
+            return 'stale';
+          }
           status.textContent = 'Request copied - email it to ${AUDIT_EMAIL}.';
-          return true;
+          return 'copied';
         } catch {
           status.textContent = 'Copy failed. Use Download request details to save the complete request, then email it to ${AUDIT_EMAIL}.';
-          return false;
+          return 'failed';
         }
       };
 
@@ -372,10 +377,12 @@ function auditHtml(origin: string): string {
         // Long mailto URLs can be truncated or rejected by email clients.
         // Preserve the complete request without sending it to any server.
         if (emailLink.length > 1800) {
-          const copied = await copyRequestDetails();
-          status.textContent = copied
+          const copyResult = await copyRequestDetails();
+          status.textContent = copyResult === 'copied'
             ? 'Email link too long; request copied. Paste it into an email to ${AUDIT_EMAIL}.'
-            : 'Email link too long and copy failed. Use Download request details, then email the saved request to ${AUDIT_EMAIL}.';
+            : copyResult === 'stale'
+              ? 'Email link too long; request changed while copying. Copy again before emailing the updated details.'
+              : 'Email link too long and copy failed. Use Download request details, then email the saved request to ${AUDIT_EMAIL}.';
           return;
         }
         status.textContent = 'Opening your email app. If nothing happens, use Copy or Download request details.';
