@@ -59,6 +59,7 @@ type CitationResult = {
     per_engine_citation_count: Record<string, number>;
     per_engine_distinct_prompt_count: Record<string, number>;
     per_engine_last_observed_at: Record<string, string>;
+    per_engine_examples: Record<string, { sample_url: string; url_redacted: boolean }>;
     distinct_cited_path_count: number;
     prompt_count: number;
     last_observed_at: string;
@@ -733,6 +734,10 @@ test('get_citations ranks engine-native source domains across the requested wind
       per_engine_citation_count: { chatgpt: 1, perplexity: 1 },
       per_engine_distinct_prompt_count: { chatgpt: 1, perplexity: 1 },
       per_engine_last_observed_at: { chatgpt: observedAt, perplexity: observedAt },
+      per_engine_examples: {
+        chatgpt: { sample_url: 'https://www.g2.com/categories/project-management', url_redacted: false },
+        perplexity: { sample_url: 'https://g2.com/reports/project-management', url_redacted: false },
+      },
       distinct_cited_path_count: 2,
       prompt_count: 2,
       last_observed_at: observedAt,
@@ -748,6 +753,9 @@ test('get_citations ranks engine-native source domains across the requested wind
       per_engine_citation_count: { chatgpt: 1 },
       per_engine_distinct_prompt_count: { chatgpt: 1 },
       per_engine_last_observed_at: { chatgpt: observedAt },
+      per_engine_examples: {
+        chatgpt: { sample_url: 'https://acme.com/guides/project-management', url_redacted: false },
+      },
       distinct_cited_path_count: 1,
       prompt_count: 1,
       last_observed_at: observedAt,
@@ -763,6 +771,9 @@ test('get_citations ranks engine-native source domains across the requested wind
       per_engine_citation_count: { gemini: 1 },
       per_engine_distinct_prompt_count: { gemini: 1 },
       per_engine_last_observed_at: { gemini: observedAt },
+      per_engine_examples: {
+        gemini: { sample_url: 'https://example.org/pm-tools', url_redacted: false },
+      },
       distinct_cited_path_count: 1,
       prompt_count: 1,
       last_observed_at: observedAt,
@@ -877,6 +888,41 @@ test('source freshness is scoped by engine and measurement mode rather than inhe
     .structuredContent.top_sources[0];
   assert.deepEqual(selected.per_engine_last_observed_at, { perplexity: new Date(middle).toISOString() });
   assert.equal(selected.last_observed_at, new Date(middle).toISOString());
+});
+
+test('top source examples keep separate latest cited URLs by engine, with stable ties and credential masking', async () => {
+  const latest = Date.now() - 60_000;
+  const older = latest - 2 * 86_400_000;
+  const middle = latest - 86_400_000;
+  const citation = registerCitationTool(citationRow({ captured_at: latest }), [
+    { ...promptResponse({ id: 'chat-older', run_id: 'chat-older', prompt_id: 'a', engine: 'chatgpt',
+      captured_at: older, engine_citations: ['https://research.example/old-chat'] }), mode: 'batch' },
+    promptResponse({ id: 'perplexity', run_id: 'perplexity', prompt_id: 'b', engine: 'perplexity',
+      captured_at: middle, engine_citations: ['https://research.example/perplexity?ref=public'] }),
+    promptResponse({ id: 'chat-z', run_id: 'chat-z', prompt_id: 'c', engine: 'chatgpt',
+      captured_at: latest, engine_citations: ['https://research.example/chat-z?token=secret-z'] }),
+    promptResponse({ id: 'chat-a', run_id: 'chat-a', prompt_id: 'd', engine: 'chatgpt',
+      captured_at: latest, engine_citations: ['https://research.example/chat-a?access_token=secret-a&ref=public'] }),
+  ]);
+
+  const all = (await citation.handler({ brand_id: brand.id })).structuredContent.top_sources[0];
+  assert.deepEqual(all.per_engine_examples, {
+    chatgpt: { sample_url: 'https://research.example/chat-a?access_token=[REDACTED]&ref=public', url_redacted: true },
+    perplexity: { sample_url: 'https://research.example/perplexity?ref=public', url_redacted: false },
+  });
+  assert.equal(all.sample_url, all.per_engine_examples.chatgpt.sample_url);
+
+  const modelOnly = (await citation.handler({ brand_id: brand.id, measurement_mode: 'model_only' }))
+    .structuredContent.top_sources[0];
+  assert.deepEqual(modelOnly.per_engine_examples, {
+    chatgpt: { sample_url: 'https://research.example/old-chat', url_redacted: false },
+  });
+
+  const selected = (await citation.handler({ brand_id: brand.id, engines: ['perplexity'] }))
+    .structuredContent.top_sources[0];
+  assert.deepEqual(selected.per_engine_examples, {
+    perplexity: { sample_url: 'https://research.example/perplexity?ref=public', url_redacted: false },
+  });
 });
 
 test('source path breadth counts distinct cited paths without inflating response-domain observations', async () => {
