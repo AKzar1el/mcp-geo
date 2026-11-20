@@ -405,6 +405,7 @@ const citationsOutputSchema = z.object({
       domain: z.string(),
       citation_count: z.number().describe('Stored responses listing this domain, at most once per response; not unique URLs.'),
       per_engine_citation_count: z.record(z.string(), z.number().int().nonnegative()).describe('Stored response-domain observations by engine, counted once per response and summing to citation_count; not unique links or verified live citations.'),
+      per_engine_source_observation_percent: z.record(z.string(), z.number().min(0).max(100)).describe('Percent of successful stored responses on each cited engine that list this source domain, before page limits; not a brand visibility score or verified live citation rate.'),
       per_engine_distinct_prompt_count: z.record(z.string(), z.number().int().nonnegative()).describe('Distinct stored prompt IDs citing this domain on each engine; repeated observations of the same prompt count once per engine. Not unique question wording or a citation rate.'),
       per_engine_last_observed_at: z.record(z.string(), z.string()).describe('Latest stored capture time citing this source domain on each engine within the selected evidence scope; not independent proof that links remain live or still cited.'),
       per_engine_examples: z.record(z.string(), z.object({
@@ -2782,6 +2783,10 @@ function citationIdentityScope(startedAt: number | null | undefined, boundary: n
 }
 
 function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityBoundary: number | null = null) {
+  const engineObservationCounts = new Map<string, number>();
+  for (const response of responses) {
+    engineObservationCounts.set(response.engine, (engineObservationCounts.get(response.engine) ?? 0) + 1);
+  }
   const sources = new Map<
     string,
     {
@@ -2889,6 +2894,10 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
         domain,
         citation_count: source.citation_count,
         per_engine_citation_count: Object.fromEntries([...source.engineCitationCounts].sort(([a], [b]) => a.localeCompare(b))),
+        per_engine_source_observation_percent: Object.fromEntries(
+          [...source.engineCitationCounts].sort(([a], [b]) => a.localeCompare(b))
+            .map(([engine, count]) => [engine, Math.round(1000 * count / (engineObservationCounts.get(engine) ?? 1)) / 10]),
+        ),
         per_engine_distinct_prompt_count: Object.fromEntries(
           [...source.enginePrompts].sort(([a], [b]) => a.localeCompare(b)).map(([engine, prompts]) => [engine, prompts.size]),
         ),

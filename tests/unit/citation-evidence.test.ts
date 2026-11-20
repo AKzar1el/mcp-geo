@@ -60,6 +60,7 @@ type CitationResult = {
     domain: string;
     citation_count: number;
     per_engine_citation_count: Record<string, number>;
+    per_engine_source_observation_percent: Record<string, number>;
     per_engine_distinct_prompt_count: Record<string, number>;
     per_engine_last_observed_at: Record<string, string>;
     per_engine_examples: Record<string, { sample_url: string; url_redacted: boolean }>;
@@ -755,6 +756,7 @@ test('get_citations ranks engine-native source domains across the requested wind
       domain: 'g2.com',
       citation_count: 2,
       per_engine_citation_count: { chatgpt: 1, perplexity: 1 },
+      per_engine_source_observation_percent: { chatgpt: 100, perplexity: 100 },
       per_engine_distinct_prompt_count: { chatgpt: 1, perplexity: 1 },
       per_engine_last_observed_at: { chatgpt: observedAt, perplexity: observedAt },
       per_engine_examples: {
@@ -774,6 +776,7 @@ test('get_citations ranks engine-native source domains across the requested wind
       domain: 'acme.com',
       citation_count: 1,
       per_engine_citation_count: { chatgpt: 1 },
+      per_engine_source_observation_percent: { chatgpt: 100 },
       per_engine_distinct_prompt_count: { chatgpt: 1 },
       per_engine_last_observed_at: { chatgpt: observedAt },
       per_engine_examples: {
@@ -792,6 +795,7 @@ test('get_citations ranks engine-native source domains across the requested wind
       domain: 'example.org',
       citation_count: 1,
       per_engine_citation_count: { gemini: 1 },
+      per_engine_source_observation_percent: { gemini: 100 },
       per_engine_distinct_prompt_count: { gemini: 1 },
       per_engine_last_observed_at: { gemini: observedAt },
       per_engine_examples: {
@@ -946,6 +950,44 @@ test('top source examples keep separate latest cited URLs by engine, with stable
   assert.deepEqual(selected.per_engine_examples, {
     perplexity: { sample_url: 'https://research.example/perplexity?ref=public', url_redacted: false },
   });
+});
+
+test('source observation percentages use full-window per-engine successful response denominators', async () => {
+  const recent = Date.now() - 60_000;
+  const cited = 'https://research.example/guide';
+  const citation = registerCitationTool(citationRow({ captured_at: recent }), [
+    promptResponse({ id: 'chat-1', run_id: 'chat-1', prompt_id: 'a', engine: 'chatgpt',
+      captured_at: recent, engine_citations: [cited, cited] }),
+    promptResponse({ id: 'chat-2', run_id: 'chat-2', prompt_id: 'b', engine: 'chatgpt',
+      captured_at: recent, engine_citations: [] }),
+    promptResponse({ id: 'chat-3', run_id: 'chat-3', prompt_id: 'a', engine: 'chatgpt',
+      captured_at: recent, engine_citations: [cited] }),
+    { ...promptResponse({ id: 'chat-batch', run_id: 'chat-batch', prompt_id: 'c', engine: 'chatgpt',
+      captured_at: recent, engine_citations: [cited] }), mode: 'batch' },
+    promptResponse({ id: 'perp-1', run_id: 'perp-1', prompt_id: 'a', engine: 'perplexity',
+      captured_at: recent, engine_citations: [cited] }),
+    promptResponse({ id: 'perp-2', run_id: 'perp-2', prompt_id: 'b', engine: 'perplexity',
+      captured_at: recent, engine_citations: ['https://other.example/'] }),
+    promptResponse({ id: 'gemini-1', run_id: 'gemini-1', prompt_id: 'c', engine: 'gemini',
+      captured_at: recent, engine_citations: [] }),
+  ]);
+
+  const all = (await citation.handler({ brand_id: brand.id, limit: 1 })).structuredContent;
+  const research = all.top_sources.find((source) => source.domain === 'research.example');
+  assert.ok(research);
+  assert.deepEqual(research.per_engine_source_observation_percent, { chatgpt: 75, perplexity: 50 });
+  assert.equal(all.observation_coverage.per_engine.find((entry) => entry.engine === 'chatgpt')?.successful_observation_count, 4);
+  assert.equal(research.citation_count, 4);
+
+  const searchOnly = (await citation.handler({ brand_id: brand.id, measurement_mode: 'search_requested' }))
+    .structuredContent.top_sources.find((source) => source.domain === 'research.example');
+  assert.deepEqual(searchOnly?.per_engine_source_observation_percent, { chatgpt: 66.7, perplexity: 50 });
+  const modelOnly = (await citation.handler({ brand_id: brand.id, measurement_mode: 'model_only' }))
+    .structuredContent.top_sources.find((source) => source.domain === 'research.example');
+  assert.deepEqual(modelOnly?.per_engine_source_observation_percent, { chatgpt: 100 });
+  const selected = (await citation.handler({ brand_id: brand.id, engines: ['perplexity'] }))
+    .structuredContent.top_sources.find((source) => source.domain === 'research.example');
+  assert.deepEqual(selected?.per_engine_source_observation_percent, { perplexity: 50 });
 });
 
 test('source path breadth counts distinct cited paths without inflating response-domain observations', async () => {
