@@ -302,8 +302,15 @@ function auditHtml(origin: string): string {
         previewBody.textContent = '';
         previewButton.setAttribute('aria-expanded', 'false');
       };
-      // Never leave a previously prepared email visible after the inputs change.
-      form.addEventListener('input', hidePreview);
+      let lastPreparedRequest = null;
+      // A copied clipboard or downloaded file cannot follow later edits to the form.
+      form.addEventListener('input', () => {
+        hidePreview();
+        if (lastPreparedRequest !== null && lastPreparedRequest !== requestMessage()) {
+          lastPreparedRequest = null;
+          status.textContent = 'Request changed since last copy or download. Copy or download updated details before emailing.';
+        }
+      });
       previewButton.addEventListener('click', () => {
         if (!previewBody.hidden) {
           hidePreview();
@@ -349,6 +356,7 @@ function auditHtml(origin: string): string {
             status.textContent = 'Request changed while copying. Copy again before emailing the updated details.';
             return 'stale';
           }
+          lastPreparedRequest = preparedRequest;
           status.textContent = 'Request copied - email it to ${AUDIT_EMAIL}.';
           return 'copied';
         } catch {
@@ -361,13 +369,15 @@ function auditHtml(origin: string): string {
         let blobUrl;
         let link;
         try {
-          const blob = new Blob([requestMessage()], { type: 'text/plain;charset=utf-8' });
+          const preparedRequest = requestMessage();
+          const blob = new Blob([preparedRequest], { type: 'text/plain;charset=utf-8' });
           blobUrl = URL.createObjectURL(blob);
           link = document.createElement('a');
           link.href = blobUrl;
           link.download = 'mcp-geo-audit-request.txt';
           document.body.appendChild(link);
           link.click();
+          lastPreparedRequest = preparedRequest;
           status.textContent = 'Request file downloaded. Email its contents to ${AUDIT_EMAIL}; downloading does not submit the request.';
         } catch {
           status.textContent = 'Download failed. Email ${AUDIT_EMAIL} directly with your request details.';
