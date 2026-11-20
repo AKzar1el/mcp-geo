@@ -189,6 +189,8 @@ test('audit request flow provides form, clipboard, direct-email, and no-JS fallb
   assert.match(body, /name="category"[^>]*required/);
   assert.match(body, /Category \/ product type/);
   assert.match(body, /name="competitors"/);
+  assert.match(body, /<textarea name="competitors"[^>]*>/,
+    'buyers must be able to paste competitors on separate lines without losing line breaks');
   assert.match(body, /name="context"/);
   assert.match(body, /type="submit"[^>]*>Request the EUR 99 audit</);
   assert.match(body, /id="copy-request"[^>]*>Copy request details</);
@@ -529,6 +531,19 @@ test('audit form validates scope and preserves oversized email requests with the
   location.href = '';
   await submit();
   assert.match(new URL(location.href).searchParams.get('body') ?? '', /one\.com, two\.com, three\.com/);
+
+  form.values.competitors = 'https://one.com/pricing?ref=campaign\r\nhttps://two.com/docs\nthree.com';
+  location.href = '';
+  await submit();
+  assert.match(new URL(location.href).searchParams.get('body') ?? '',
+    /Competitors \(up to 3\): one\.com, two\.com, three\.com/,
+    'pasted multiline competitor URLs must remain distinct after domain-only normalization');
+  form.values.competitors = 'one.com\ntwo.com\nthree.com\nfour.com';
+  location.href = '';
+  await submit();
+  assert.equal(location.href, '', 'four newline-separated competitors must not bypass the audit limit');
+  assert.match(status.textContent, /up to 3 competitors/i);
+  form.values.competitors = 'one.com\ntwo.com\nthree.com';
 
   // A clipboard permission prompt may resolve after the buyer edits the form.
   // A stale snapshot must not be announced as the currently prepared request.
