@@ -31,6 +31,9 @@ type CitationResult = {
   next_cursor: string | null;
   limit: number;
   total_matching_rows: number;
+  top_sources_limit: number;
+  total_source_domains: number;
+  top_sources_truncated: boolean;
   measurement_mode_filter: 'model_only' | 'search_requested' | null;
   engine_scope: {
     selection: 'selected' | 'all_stored';
@@ -99,6 +102,7 @@ type CitationTool = {
     engine?: 'chatgpt' | 'claude' | 'perplexity' | 'gemini' | 'ai_overviews' | 'ai_mode';
     engines?: Array<'chatgpt' | 'claude' | 'perplexity' | 'gemini' | 'ai_overviews' | 'ai_mode'>;
     limit?: number;
+    top_sources_limit?: number;
     cursor?: string;
     current_identity_only?: boolean;
     active_prompts_only?: boolean;
@@ -693,6 +697,25 @@ test('get_citations does not attach unrelated or lookalike URLs to mention-only 
   assert.equal(result.structuredContent.citations[0].citation_type, 'mention_without_link');
   assert.equal(result.structuredContent.citations[0].cited_url, null);
   assert.equal(result.structuredContent.citations[0].url_source, null);
+});
+
+test('get_citations discloses truncated source rankings and supports a bounded wider audit view', async () => {
+  const domains = Array.from({ length: 13 }, (_, index) =>
+    `https://source-${String(index + 1).padStart(2, '0')}.example/report`);
+  const tool = registerCitationTool(citationRow(), [promptResponse({ engine_citations: domains })]);
+  const defaultView = (await tool.handler({ brand_id: brand.id, limit: 1 })).structuredContent;
+  assert.equal(defaultView.top_sources_limit, 10);
+  assert.equal(defaultView.total_source_domains, 13);
+  assert.equal(defaultView.top_sources_truncated, true);
+  assert.equal(defaultView.top_sources.length, 10);
+  const extended = (await tool.handler({ brand_id: brand.id, limit: 1, top_sources_limit: 20 })).structuredContent;
+  assert.equal(extended.top_sources_limit, 20);
+  assert.equal(extended.total_source_domains, 13);
+  assert.equal(extended.top_sources_truncated, false);
+  assert.equal(extended.top_sources.length, 13);
+  assert.equal(extended.top_sources[12].domain, 'source-13.example');
+  assert.equal(extended.total_matching_rows, defaultView.total_matching_rows);
+  assert.deepEqual(extended.citations, defaultView.citations);
 });
 
 test('get_citations ranks engine-native source domains across the requested window', async () => {
