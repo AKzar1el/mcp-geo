@@ -598,6 +598,7 @@ const contentGapsOutputSchema = z.object({
         engine: z.string(),
         run_id: z.string(),
         response_id: z.string(),
+        measurement_mode: z.enum(['model_only', 'search_requested']),
         captured_at_ms: z.number(),
         competitors_mentioned: z.array(z.string()),
       })),
@@ -2139,6 +2140,7 @@ export function registerTools(
             engine: string;
             run_id: string;
             response_id: string;
+            measurement_mode: 'model_only' | 'search_requested';
             captured_at_ms: number;
             competitors_mentioned: string[];
           }>;
@@ -2217,14 +2219,16 @@ export function registerTools(
           if (currentMentions.length === 0) continue;
           // Identifiers only: these are traceable stored observations, not
           // independently verified source citations or copied model answers.
+          const observationMode = visibilityMeasurementMode(engine, run.mode ?? 'live');
           const observation = {
             engine: r.engine,
             run_id: run.id,
             response_id: r.id,
+            measurement_mode: observationMode,
             captured_at_ms: r.captured_at,
             competitors_mentioned: [...new Set(currentMentions)].sort(),
           };
-          lossModeByEngine.set(engine, visibilityMeasurementMode(engine, run.mode ?? 'live'));
+          lossModeByEngine.set(engine, observationMode);
           const existing = losingByPrompt.get(r.prompt_id);
           if (existing) {
             existing.engines.add(r.engine);
@@ -2259,7 +2263,7 @@ export function registerTools(
         )
         .slice(0, 15);
       const losing_prompt_evidence = {
-        note: 'These are stored response record references for observed competitor-only mentions in the current active prompt set, not independently verified source citations. No raw model answers are included; inspect stored responses before quoting any evidence in a client audit.',
+        note: 'These are stored response record references for observed competitor-only mentions in the current active prompt set, not independently verified source citations. Each observation records its model-only or search-requested request mode; neither mode proves a citation. No raw model answers are included; inspect stored responses before quoting any evidence in a client audit.',
         prompts: losingPrompts.map(({ prompt_id, prompt_text, observations }) => ({
           prompt_id, prompt_text, observations,
         })),
