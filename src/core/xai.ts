@@ -41,6 +41,8 @@ interface XAiOutputText {
     type?: string;
     url?: unknown;
     url_citation?: { url?: unknown };
+    start_index?: number;
+    end_index?: number;
   }>;
 }
 
@@ -52,7 +54,6 @@ interface XAiOutputItem {
 interface XAiResponse {
   status?: string;
   output?: XAiOutputItem[];
-  citations?: unknown[];
 }
 
 export interface XAiCompletion {
@@ -92,19 +93,22 @@ function extractResponseCitations(data: XAiResponse): string[] {
     urls.push(url.href);
   };
 
-  for (const citation of data.citations ?? []) {
-    if (typeof citation === 'string') {
-      add(citation);
-    } else if (citation && typeof citation === 'object' && 'url' in citation) {
-      add((citation as { url?: unknown }).url);
-    }
-  }
+  // xAI's top-level `citations` lists *every source visited* by web search,
+  // including pages never referenced in the answer. Only positioned inline
+  // URL citations can substantiate an answer-linked brand/source observation.
   for (const item of data.output ?? []) {
-    if (!Array.isArray(item.content)) continue;
+    if (item.type !== 'message' || !Array.isArray(item.content)) continue;
     for (const part of item.content) {
+      if (part.type !== 'output_text') continue;
       for (const annotation of part.annotations ?? []) {
-        add(annotation.url);
-        add(annotation.url_citation?.url);
+        // Without offsets, annotations can also describe merely encountered
+        // sources when inline citations are disabled.
+        if (annotation.type !== 'url_citation' ||
+            !Number.isInteger(annotation.start_index) ||
+            !Number.isInteger(annotation.end_index) ||
+            (annotation.start_index ?? -1) < 0 ||
+            (annotation.end_index ?? 0) <= (annotation.start_index ?? 0)) continue;
+        add(annotation.url ?? annotation.url_citation?.url);
       }
     }
   }
