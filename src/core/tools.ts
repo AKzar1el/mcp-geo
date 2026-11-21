@@ -129,6 +129,14 @@ const visibilityOutputSchema = z.object({
     minimum: z.number(),
     maximum: z.number(),
     partial_engines: z.array(z.string()),
+    by_engine: z.array(z.object({
+      engine: z.string(),
+      observed_score: z.number(),
+      minimum: z.number(),
+      maximum: z.number(),
+      usable_prompts: z.number(),
+      expected_prompts: z.number(),
+    })),
     note: z.string(),
   }),
   missing_requested_engines: z.array(z.string()),
@@ -919,8 +927,11 @@ export function registerTools(
         const hits = engine.prompts_appeared_in;
         return {
           engine: engine.engine,
+          observed_score: engine.score,
           minimum: expected === 0 ? 0 : Math.round(100 * hits / expected),
           maximum: expected === 0 ? 0 : Math.round(100 * (hits + missing) / expected),
+          usable_prompts: engine.coverage.usable_prompts,
+          expected_prompts: expected,
           partial: missing > 0,
         };
       });
@@ -934,7 +945,9 @@ export function registerTools(
         maximum: averageExtreme('maximum'),
         partial_engines: possiblePerEngineScores.filter((engine) => engine.partial)
           .map((engine) => engine.engine).sort(),
-        note: 'These are deterministic best/worst-case bounds if every missing prompt in each scored engine were a brand mention or a non-mention, not a confidence interval or a forecast. Only scored engines contribute; unmeasured engines are excluded. Historical or changed prompt sets may not be directly comparable. No provider calls were made.',
+        by_engine: possiblePerEngineScores.map(({ partial, ...engine }) => engine)
+          .sort((a, b) => a.engine.localeCompare(b.engine)),
+        note: 'These are deterministic best/worst-case bounds if every missing prompt in each scored engine were a brand mention or a non-mention, not a confidence interval or a forecast. by_engine identifies the observed and possible scores for each measured surface. Only scored engines contribute; unmeasured engines are excluded. Historical or changed prompt sets may not be directly comparable. No provider calls were made.',
       };
 
       const measurementGroup = (mode: 'search_requested' | 'model_only') => {
