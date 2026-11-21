@@ -2129,10 +2129,20 @@ export function registerTools(
         if (latestOkByPrompt.size > 0) usableEngines.add(engine);
         // Report the denominator independently of whether any competitor won.
         // An observed loss on one prompt is not evidence of complete coverage.
-        const refreshedAtMs = run.completed_at ?? run.started_at;
+        // Completion may lag the actual answers by days. Use successful
+        // active-prompt capture times, not a late status update or a retired
+        // prompt. Only legacy successes lacking capture times use the run date.
+        const latestCaptureMs = [...latestOkByPrompt.values()].reduce<number | null>(
+          (latest, row) => Number.isFinite(row.captured_at) && row.captured_at > 0 &&
+            row.captured_at <= 8.64e15 && (latest === null || row.captured_at > latest)
+            ? row.captured_at : latest,
+          null,
+        );
+        const refreshedAtMs = latestOkByPrompt.size === 0 ? null :
+          (latestCaptureMs ?? run.completed_at ?? run.started_at);
         perEngineCoverage.push({
           engine, run_id: run.id,
-          refreshed_at: Number.isFinite(refreshedAtMs) &&
+          refreshed_at: refreshedAtMs !== null && Number.isFinite(refreshedAtMs) &&
             Math.abs(refreshedAtMs) <= 8.64e15
             ? new Date(refreshedAtMs).toISOString() : null,
           usable_prompt_count: latestOkByPrompt.size,
@@ -2207,7 +2217,7 @@ export function registerTools(
         unmeasured_engines: selectedEngines.filter(
           (engine) => !perEngineCoverage.some(
             (entry) => entry.engine === engine && entry.usable_prompt_count > 0)),
-        note: 'Counts are unique active prompts with a successful stored response in the selected engine/request-mode cohort after recorded identity changes, not verified citations or a confidence score. Per-engine refreshed_at is the run completion time (or start if unfinished), not proof all prompts succeeded. unmeasured_engines include engines without an eligible selected-mode run, with stale identity or zero usable active-prompt responses; others may be unconfigured or unscanned. Refreshing incomplete engines may incur provider charges.',
+        note: 'Counts are unique active prompts with a successful stored response in the selected engine/request-mode cohort after recorded identity changes, not verified citations or a confidence score. Per-engine refreshed_at is the latest successful active-prompt capture time (run completion/start only for legacy successes without capture time); null means no usable dated observations. It does not prove all prompts succeeded. unmeasured_engines include engines without an eligible selected-mode run, with stale identity or zero usable active-prompt responses; others may be unconfigured or unscanned. Refreshing incomplete engines may incur provider charges.',
       };
       const engine_scope = {
         selection: requestedEngines ? 'selected' as const : 'all_stored' as const,
