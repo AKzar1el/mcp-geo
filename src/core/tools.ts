@@ -322,6 +322,8 @@ const comparisonEvidenceSampleSchema = z.object({
   run_id: z.string(),
   response_id: z.string(),
   prompt_id: z.string(),
+  prompt: z.string(),
+  measurement_mode: z.enum(['model_only', 'search_requested']),
   captured_at: z.string(),
 });
 
@@ -1641,6 +1643,8 @@ export function registerTools(
         run_id: row.run_id,
         response_id: row.id,
         prompt_id: row.prompt_id,
+        prompt: row.prompt_text,
+        measurement_mode: visibilityMeasurementMode(row.engine, row.mode ?? 'live'),
         captured_at: new Date(row.captured_at).toISOString(),
       });
       const mention_evidence_samples = {
@@ -1651,7 +1655,7 @@ export function registerTools(
           samples: sampleRows.filter((row) => row.competitors_mentioned.includes(domain))
             .slice(0, 5).map(sampleReference),
         })),
-        note: 'Up to five latest stored response references for each counted brand or competitor mention, after all comparison scopes and retry deduplication. Mentions are not verified source citations; references contain no raw AI answers. Counts use all eligible observations, not only these samples.',
+        note: 'Up to five latest stored response references, with buyer question and request mode, for each counted brand or competitor mention after all comparison scopes and retry deduplication. Mentions are not verified source citations; references contain no raw AI answers. Counts use all eligible observations, not only these samples.',
       };
       const usableEngines = new Set(allResponses.map((row) => row.engine));
       const engine_scope = {

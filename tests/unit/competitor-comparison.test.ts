@@ -92,10 +92,10 @@ type ComparisonResult = {
     note: string;
   };
   mention_evidence_samples: {
-    brand: Array<{ engine: string; run_id: string; response_id: string; prompt_id: string; captured_at: string }>;
+    brand: Array<{ engine: string; run_id: string; response_id: string; prompt_id: string; prompt: string; measurement_mode: string; captured_at: string }>;
     competitors: Array<{
       domain: string;
-      samples: Array<{ engine: string; run_id: string; response_id: string; prompt_id: string; captured_at: string }>;
+      samples: Array<{ engine: string; run_id: string; response_id: string; prompt_id: string; prompt: string; measurement_mode: string; captured_at: string }>;
     }>;
     note: string;
   };
@@ -822,7 +822,10 @@ test('comparison exposes bounded, scoped stored-response references for audit sa
   assert.deepEqual(result.mention_evidence_samples.competitors[1]?.samples, []);
   assert.deepEqual(result.mention_evidence_samples.brand[0], {
     engine: 'chatgpt', run_id: 'run-b6', response_id: 'b6', prompt_id: 'prompt-b6',
+    prompt: 'brand prompt 6', measurement_mode: 'search_requested',
     captured_at: new Date(capturedBase + 6_000).toISOString(),
   });
+  assert.equal(result.mention_evidence_samples.competitors[0]?.samples[0]?.prompt, 'competitor prompt 6');
+  assert.equal(result.mention_evidence_samples.competitors[0]?.samples[0]?.measurement_mode, 'search_requested');
   assert.match(result.mention_evidence_samples.note, /not.*citations|mention.*not.*citation/i);
 });
