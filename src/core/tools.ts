@@ -890,6 +890,23 @@ export function registerTools(
         }
         throw new Error(`No successful stored visibility observations for the selected engines. Failed or incomplete runs are unmeasured, not zero. ${emptyVisibilityPreviewHint}`);
       }
+      // A run may be marked complete long after an earlier successful answer
+      // was persisted. Date the displayed evidence by its latest usable row,
+      // not by a later status update (or by excluded retired prompts).
+      const latestCapturedAtByEngine = new Map<string, number>();
+      for (const row of scoredResponses) {
+        if (row.status !== 'ok' || !Number.isFinite(row.captured_at) || row.captured_at <= 0) continue;
+        const previous = latestCapturedAtByEngine.get(row.engine);
+        if (previous === undefined || row.captured_at > previous) {
+          latestCapturedAtByEngine.set(row.engine, row.captured_at);
+        }
+      }
+      for (const { engine } of scored.per_engine) {
+        const capturedAt = latestCapturedAtByEngine.get(engine);
+        if (capturedAt === undefined) continue; // Older data may lack a usable capture timestamp.
+        refreshMsByEngine.set(engine, capturedAt);
+        refreshedAtByEngine.set(engine, new Date(capturedAt).toISOString());
+      }
       const scoredEngines = new Set(scored.per_engine.map(({ engine }) => engine));
       // Failed-only engines are unmeasured even when they have a stored run;
       // they must not appear to have supplied a zero score or fresh evidence.
