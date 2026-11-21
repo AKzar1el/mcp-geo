@@ -858,20 +858,23 @@ export function registerTools(
         ? selectedResponses.filter((row) => activePromptIds.has(row.prompt_id))
         : selectedResponses;
       const scored = computeOverallScore(brand, scoredResponses);
-      // A snapshot containing only retired questions is not a measured zero.
-      if (active_prompts_only && scored.per_engine.length === 0) {
-        throw new Error(`No successful stored observations for currently active buyer prompts in the selected engines. Historical results remain available without active_prompts_only. ${emptyVisibilityPreviewHint}`);
+      // A failed-only snapshot is not evidence of zero brand visibility.
+      if (scored.per_engine.length === 0) {
+        if (active_prompts_only) {
+          throw new Error(`No successful stored observations for currently active buyer prompts in the selected engines. Historical results remain available without active_prompts_only. ${emptyVisibilityPreviewHint}`);
+        }
+        throw new Error(`No successful stored visibility observations for the selected engines. Failed or incomplete runs are unmeasured, not zero. ${emptyVisibilityPreviewHint}`);
       }
       const scoredEngines = new Set(scored.per_engine.map(({ engine }) => engine));
-      // An explicit multi-engine request must disclose engines whose latest
-      // run contains no successful currently active questions.
+      // Failed-only engines are unmeasured even when they have a stored run;
+      // they must not appear to have supplied a zero score or fresh evidence.
       const unmeasuredEngines = selectedEngines.filter((engine) =>
-        active_prompts_only ? !scoredEngines.has(engine) : !refreshedAtByEngine.has(engine));
+        !scoredEngines.has(engine));
       const missingRequestedEngines = engines && engines.length > 0
         ? unmeasuredEngines
         : [];
       const scoredRefreshMs = [...refreshMsByEngine.entries()]
-        .filter(([engine]) => !active_prompts_only || scoredEngines.has(engine));
+        .filter(([engine]) => scoredEngines.has(engine));
       const oldestTimestamp = Math.min(...scoredRefreshMs.map(([, timestamp]) => timestamp));
       mostRecentTimestamp = Math.max(...scoredRefreshMs.map(([, timestamp]) => timestamp));
       const ageSpreadMs = mostRecentTimestamp - oldestTimestamp;
@@ -903,7 +906,7 @@ export function registerTools(
       // identity snapshot. Report potentially older scoring evidence without
       // claiming we know which metadata fields actually changed.
       const enginesBeforeBrandUpdate = [...startedMsByEngine.entries()]
-        .filter(([engine]) => !active_prompts_only || scoredEngines.has(engine))
+        .filter(([engine]) => scoredEngines.has(engine))
         .filter(([, startedAt]) => startedAt < brand.updated_at)
         .map(([engine]) => engine)
         .sort();
