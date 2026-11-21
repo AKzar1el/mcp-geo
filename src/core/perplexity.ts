@@ -7,6 +7,7 @@ import {
   buildSystemPrompt,
   extractCitations,
   hasBrandInEngineCitations,
+  visibleAnswerProse,
 } from './openai.js';
 import type {
   Brand,
@@ -82,9 +83,10 @@ function extractAgentText(data: PerplexityResponse): string {
 
 function extractAgentCitations(data: PerplexityResponse, text: string): string[] {
   const citedIds = new Set<number>();
-  let hasInlineMarkers = false;
-  for (const match of text.matchAll(/\[(?:web:)?(\d+)\]/g)) {
-    hasInlineMarkers = true;
+  // A marker in code or hidden markup must not cite a source, but its raw
+  // presence still prevents the broad all-search-results fallback.
+  const hasInlineMarkers = /\[(?:web:)?\d+\]/.test(text);
+  for (const match of visibleAnswerProse(text).matchAll(/(?<!\\)\[(?:web:)?(\d+)\]/g)) {
     const id = Number(match[1]);
     if (Number.isSafeInteger(id)) citedIds.add(id);
   }

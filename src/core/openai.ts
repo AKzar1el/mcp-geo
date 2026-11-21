@@ -611,6 +611,14 @@ export function extractUrls(text: string): string[] {
   return urls;
 }
 
+export function visibleAnswerProse(responseText: string): string {
+  // Source markers in examples, hidden markup and reference definitions are
+  // not citations made by the rendered answer.
+  return decodeHtmlCharacterReferences(
+    parseMarkdownReferenceLinks(omitMarkdownLinkTitles(omitMarkdownImageAssets(
+      omitHtmlTags(omitHtmlCodeExamples(omitMarkdownCodeExamples(responseText)))))).visibleText);
+}
+
 export function extractCitations(
   brand: Brand,
   responseText: string,
@@ -620,9 +628,7 @@ export function extractCitations(
   // balanced parentheses inside URLs, but leave an unmatched ')' in place so
   // visible text after a Markdown link target remains scoreable. Hidden HTML
   // and sample code must not inflate brand or competitor answer mentions.
-  const answerProse = decodeHtmlCharacterReferences(
-    parseMarkdownReferenceLinks(omitMarkdownLinkTitles(omitMarkdownImageAssets(
-      omitHtmlTags(omitHtmlCodeExamples(omitMarkdownCodeExamples(responseText)))))).visibleText);
+  const answerProse = visibleAnswerProse(responseText);
   const mentionText = answerProse.replace(/https?:\/\/(?:\([^()\s]*\)|[^\s()\]\}'"\x60<>])+/gi, ' ');
   let brandMentioned = mentionsTermSet(mentionText, {
     domain: brand.domain,

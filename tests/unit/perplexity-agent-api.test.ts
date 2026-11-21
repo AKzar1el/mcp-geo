@@ -114,6 +114,48 @@ test('Perplexity does not credit an unreferenced search result when inline sourc
   }
 });
 
+test('Perplexity source IDs in code and hidden markup do not count as visible citations', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    status: 'completed',
+    output: [
+      { type: 'search_results', results: [
+        { id: 1, url: 'https://acme.example/uncited' },
+        { id: 7, url: 'https://research.example/actually-cited' },
+      ] },
+      { type: 'message', content: [{
+        type: 'output_text',
+        text: 'Example:\n```md\n[web:1]\n```\n`[1]` <!-- [web:1] --> <span hidden>[web:1]</span> Escaped \\[web:1]. Real source [web:7].',
+      }] },
+    ],
+  }), { status: 200 });
+  try {
+    const result = await chatCompletion('offline-test-key', 'Question', 'System');
+    assert.deepEqual(result.citations, ['https://research.example/actually-cited']);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Perplexity does not fall back to uncited search results for hidden-only source markers', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    status: 'completed',
+    output: [
+      { type: 'search_results', results: [{ id: 1, url: 'https://acme.example/uncited' }] },
+      { type: 'message', content: [{
+        type: 'output_text', text: 'Code example:\n```text\n[web:1]\n```',
+      }] },
+    ],
+  }), { status: 200 });
+  try {
+    const result = await chatCompletion('offline-test-key', 'Question', 'System');
+    assert.deepEqual(result.citations, []);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('Perplexity declines ambiguous or malformed inline source IDs', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => new Response(JSON.stringify({
