@@ -37,6 +37,7 @@ type EvidenceResult = {
   identity_scope: string;
   active_prompt: boolean;
   response_excerpt: string;
+  requested_competitor: string | null;
   provider_source_count: number;
   provider_source_urls_truncated: boolean;
   provider_source_urls: Array<{ url: string; url_redacted: boolean }>;
@@ -44,7 +45,7 @@ type EvidenceResult = {
 };
 
 type Handler = (args: {
-  brand_id: string; run_id: string; response_id: string;
+  brand_id: string; run_id: string; response_id: string; focus_competitor?: string;
 }) => Promise<{ structuredContent: EvidenceResult }>;
 
 function setup(runRecord: Run = run, rows: PromptResponse[] = [response]): Handler | undefined {
@@ -96,6 +97,24 @@ test('evidence lookup cannot cross a brand, a run, or a successful response boun
   const failed = setup(run, [{ ...response, status: 'failed', raw_response: 'secret', error_message: 'credential' }]);
   assert.ok(failed);
   await assert.rejects(failed({ brand_id: 'acme', run_id: run.id, response_id: response.id }), /not found/i);
+});
+
+test('recorded competitor focus brings a distant mention into the redacted evidence excerpt', async () => {
+  const handler = setup(run, [{ ...response,
+    brand_mentioned: 0,
+    raw_response: `${'Neutral background. '.repeat(25)}Asana supports teams. Authorization: Bearer DISTANT_SECRET`,
+  }]);
+  assert.ok(handler);
+  const args = { brand_id: brand.id, run_id: run.id, response_id: response.id };
+  const baseline = (await handler(args)).structuredContent;
+  assert.doesNotMatch(baseline.response_excerpt, /Asana supports/);
+  assert.equal(baseline.requested_competitor, null);
+  const focused = (await handler({ ...args, focus_competitor: 'ASANA.COM' })).structuredContent;
+  assert.equal(focused.requested_competitor, 'asana.com');
+  assert.match(focused.response_excerpt, /Asana supports/);
+  assert.doesNotMatch(focused.response_excerpt, /DISTANT_SECRET/);
+  assert.ok(focused.response_excerpt.length <= 250);
+  await assert.rejects(handler({ ...args, focus_competitor: 'untracked.example' }), /not found|not recorded/i);
 });
 
 test('observation evidence exposes bounded, credential-redacted provider-native source links only', async () => {
