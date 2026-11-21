@@ -11,7 +11,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { Brand, CitationSourceRow, ComparisonEvidenceRow, Db, Prompt, PromptResponse } from '../db/types.js';
-import { extractUrls, findTermSetMatchIndex, hostMatchesDomain } from './openai.js';
+import { extractUrls, findTermSetMatchIndex, hostMatchesDomain, maskAnswerUrlMentions } from './openai.js';
 import {
   ALL_ENGINES,
   getAvailableEngines,
@@ -3003,15 +3003,21 @@ export function buildResponseExcerpt(text: string, brand: Brand): string {
   const safeText = urlSafeText
     .replace(/\b(Authorization\s*:\s*(?:Bearer|Basic)\s+)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;]+)/gi, '$1[REDACTED]')
     .replace(/\b((?:access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|client[_-]?secret)\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s&,;]+)/gi, '$1[REDACTED]');
-  const idx = findTermSetMatchIndex(safeText, {
+  const matchTerms = {
     domain: brand.domain,
     name: brand.name,
     aliases: brand.aliases,
     excludeTerms: brand.exclude_terms,
-  });
+  };
+  // Prefer answer-text evidence over earlier URL paths, preserving excerpt offsets.
+  // Keep source-link-only results available as an explicit fallback.
+  const proseIndex = findTermSetMatchIndex(maskAnswerUrlMentions(safeText, true), matchTerms);
+  const idx = proseIndex !== -1 ? proseIndex : findTermSetMatchIndex(safeText, matchTerms);
   if (idx === -1) return safeText.slice(0, 250);
   const start = Math.max(0, idx - 100);
-  const end = Math.min(safeText.length, idx + 150);
+  // Keep the full 250-character bound even when the match is near the start;
+  // otherwise later, safely redacted URLs can be truncated unnecessarily.
+  const end = Math.min(safeText.length, start + 250);
   return safeText.slice(start, end);
 }
 

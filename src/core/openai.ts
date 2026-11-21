@@ -611,6 +611,15 @@ export function extractUrls(text: string): string[] {
   return urls;
 }
 
+export function maskAnswerUrlMentions(text: string, preserveOffsets = false): string {
+  // URL paths are source data, not answer prose. Preserve the original length
+  // when locating an excerpt so a scored mention maps to its actual position.
+  return text.replace(
+    /https?:\/\/(?:\([^()\s]*\)|[^\s()\]\}'"\x60<>])+/gi,
+    (url) => preserveOffsets ? ' '.repeat(url.length) : ' ',
+  );
+}
+
 export function extractCitations(
   brand: Brand,
   responseText: string,

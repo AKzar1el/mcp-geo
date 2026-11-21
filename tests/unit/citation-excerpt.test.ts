@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Brand } from '../../src/db/types.ts';
 import { buildResponseExcerpt } from '../../src/core/tools.ts';
+import { extractCitations } from '../../src/core/openai.ts';
 
 function makeBrand(overrides: Partial<Brand>): Brand {
   return {
@@ -50,6 +51,20 @@ test('citation excerpt can center an explicit alias when no domain is present', 
   const excerpt = buildResponseExcerpt(response, brand);
 
   assert.match(excerpt, /Example Pro is recommended/);
+});
+
+test('citation excerpt centers a scored prose mention rather than earlier source URL paths', () => {
+  const brand = makeBrand({ domain: 'acme.com', name: 'Acme' });
+  const urlReferences = Array.from(
+    { length: 12 },
+    (_, i) => `Reference ${i}: https://neutral.example/reviews/Acme/round-${i}.`,
+  ).join(' ');
+  const response = `${urlReferences} Independent assessment: Acme is the best fit.`;
+
+  assert.equal(extractCitations(brand, response).brand_mentioned, 1);
+  const excerpt = buildResponseExcerpt(response, brand);
+  assert.match(excerpt, /Independent assessment: Acme is the best fit/);
+  assert.ok(!excerpt.startsWith('Reference 0:'), 'excerpt must not center on the earliest URL path');
 });
 
 test('citation excerpts omit credential-bearing URLs without suppressing valid evidence', () => {
