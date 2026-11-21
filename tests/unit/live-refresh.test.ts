@@ -202,7 +202,16 @@ test('live scans bypass shared cached responses for every provider', async (t) =
           {
             type: 'message',
             content: [
-              { type: 'output_text', text: 'Fresh Acme provider response.' },
+              {
+                type: 'output_text',
+                text: 'Fresh Acme provider response.',
+                annotations: [{
+                  type: 'url_citation',
+                  url: 'https://acme.com/fresh',
+                  start_index: 0,
+                  end_index: 10,
+                }],
+              },
             ],
           },
         ],
