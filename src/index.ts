@@ -49,6 +49,7 @@ import { handlePublicAudit } from './public-audit.js';
 import {
   hasExplicitClientApproval,
   missingConnectSecretResponse,
+  oauthRedirectAuthority,
 } from './core/oauth-consent.js';
 
 export interface Env {
@@ -785,9 +786,11 @@ function renderConnectForm(query: string, error?: string): Response {
   const action = `/authorize${escapeHtml(query)}`;
   const params = new URLSearchParams(query);
   // These labels are provided by the requesting client, not verified identities.
-  const clientId = escapeHtml((params.get('client_id') ?? '').slice(0, 240));
-  const requestedScope = escapeHtml((params.get('scope') ?? '').slice(0, 240));
-  const redirectTarget = escapeHtml((params.get('redirect_uri') ?? '').slice(0, 240));
+  const clientId = escapeHtml(params.get('client_id') ?? '');
+  const requestedScope = escapeHtml(params.get('scope') ?? '');
+  const redirectUri = params.get('redirect_uri') ?? '';
+  const redirectTarget = escapeHtml(redirectUri);
+  const redirectAuthority = oauthRedirectAuthority(redirectUri);
   const errorHtml = error
     ? `<p class="err">${escapeHtml(error)}</p>`
     : '';
@@ -820,6 +823,7 @@ function renderConnectForm(query: string, error?: string): Response {
 authorized. Enter the <code>CONNECT_SECRET</code> you set during deploy.</p>
 <p>Requesting client ID (unverified): <code>${clientId}</code></p>
 ${redirectTarget ? `<p>Redirect destination (unverified): <code>${redirectTarget}</code></p>` : ''}
+${redirectAuthority ? `<p>Parsed redirect authority (unverified): <code>${escapeHtml(redirectAuthority)}</code></p>` : ''}
 ${requestedScope ? `<p>Requested scope: <code>${requestedScope}</code></p>` : ''}
 <p>Approve only if you recognize the client and its redirect destination. These
 request details are self-reported, not proof of client identity. Authorized clients may access
