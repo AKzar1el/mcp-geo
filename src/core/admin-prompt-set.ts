@@ -218,5 +218,9 @@ export async function handleAdminListPrompts(
       created_at: new Date(prompt.created_at).toISOString(),
     })),
     count: prompts.length,
+    category_prompt_review_pending: brand.category_prompt_review_pending === true,
+    prompt_review_note: brand.category_prompt_review_pending === true
+      ? 'The category changed after active prompts were confirmed. Review and explicitly confirm or replace the buyer questions before a new provider-backed scan.'
+      : null,
   });
 }

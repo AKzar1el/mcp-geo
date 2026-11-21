@@ -77,7 +77,7 @@ test('updateTrackedBrand updates mutable metadata and preserves active prompts',
       refresh_frequency: 'manual',
     });
     assert.equal(paused.updated, true);
-    assert.equal(paused.prompt_set_review_recommended, false);
+    assert.equal(paused.prompt_set_review_recommended, true);
     assert.equal(paused.historical_attribution_review_recommended, false);
     assert.deepEqual(paused.changed_fields, ['refresh_frequency']);
     assert.equal(paused.brand.refresh_frequency, 'manual');
@@ -98,7 +98,7 @@ test('updateTrackedBrand updates mutable metadata and preserves active prompts',
       refresh_frequency: 'manual',
     });
     assert.equal(noOp.updated, false);
-    assert.equal(noOp.prompt_set_review_recommended, false);
+    assert.equal(noOp.prompt_set_review_recommended, true);
     assert.equal(noOp.historical_attribution_review_recommended, false);
     assert.deepEqual(noOp.changed_fields, []);
     assert.equal(noOp.brand.identity_changed_at, identityBoundary);
@@ -118,6 +118,32 @@ test('identity-only edits flag historical comparability, while competitor-only e
     const competitors = await updateTrackedBrand(db, { brand_id: 'acme', competitors: ['linear.app'] });
     assert.equal(competitors.historical_attribution_review_recommended, false);
     assert.equal(competitors.brand.identity_changed_at, identity.brand.identity_changed_at);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('category prompt review survives unrelated updates until an explicit prompt confirmation', async () => {
+  const { root, db } = await seededDb();
+  try {
+    const initialPrompts = await db.getActivePrompts('acme');
+    const changed = await updateTrackedBrand(db, { brand_id: 'acme', category: 'CRM software' });
+    assert.equal(changed.prompt_set_review_recommended, true);
+    assert.equal(changed.brand.category_prompt_review_pending, true);
+    const metadata = await updateTrackedBrand(db, { brand_id: 'acme', refresh_frequency: 'manual' });
+    assert.equal(metadata.prompt_set_review_recommended, true, 'unreviewed category remains flagged');
+    assert.equal((await db.getBrand('acme'))?.category_prompt_review_pending, true);
+    assert.deepEqual((await db.getActivePrompts('acme')).map((p) => p.id), initialPrompts.map((p) => p.id));
+
+    // An explicit confirmation of the same exact prompt set must not rewrite history.
+    const { applyExactPromptSet } = await import('../../src/core/prompt-set.ts');
+    const confirmed = await applyExactPromptSet(db, 'acme', initialPrompts.map((p) => p.text));
+    assert.equal(confirmed.changed, false);
+    assert.equal((await db.getBrand('acme'))?.category_prompt_review_pending, false);
+    assert.deepEqual((await db.getActivePrompts('acme')).map((p) => p.id), initialPrompts.map((p) => p.id));
+    const afterward = await updateTrackedBrand(db, { brand_id: 'acme', refresh_frequency: 'weekly' });
+    assert.equal(afterward.prompt_set_review_recommended, false);
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });
