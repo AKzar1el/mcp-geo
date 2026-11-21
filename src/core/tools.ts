@@ -317,6 +317,14 @@ const comparedPromptOutputSchema = z.object({
   competitors_cited: z.array(z.string()),
 });
 
+const comparisonEvidenceSampleSchema = z.object({
+  engine: z.string(),
+  run_id: z.string(),
+  response_id: z.string(),
+  prompt_id: z.string(),
+  captured_at: z.string(),
+});
+
 const COMPARISON_SEMANTICS =
   'Legacy prompts_you_win includes all brand-mentioned prompts, including co-mentions. ' +
   'prompts_brand_only and prompts_co_mentioned classify individual engine responses; ' +
@@ -349,6 +357,14 @@ const compareOutputSchema = z.object({
       distinct_runs: z.number().int().nonnegative(),
       distinct_prompts: z.number().int().nonnegative(),
       last_observed_at: z.string(),
+    })),
+    note: z.string(),
+  }),
+  mention_evidence_samples: z.object({
+    brand: z.array(comparisonEvidenceSampleSchema).max(5),
+    competitors: z.array(z.object({
+      domain: z.string(),
+      samples: z.array(comparisonEvidenceSampleSchema).max(5),
     })),
     note: z.string(),
   }),
@@ -1515,6 +1531,11 @@ export function registerTools(
         const payload = {
           brand_id,
           days,
+          mention_evidence_samples: {
+            brand: [],
+            competitors: [],
+            note: 'No targets selected; no stored mention evidence was queried.',
+          },
           identity_attribution: {
             last_identity_change_at: lastIdentityChangeAt,
             excluded_responses: 0,
@@ -1602,6 +1623,28 @@ export function registerTools(
         : null;
       const allResponses = activePromptIds === null ? currentIdentityResponses
         : currentIdentityResponses.filter((row) => activePromptIds.has(row.prompt_id));
+      // Sample only records that actually contribute to the scoped comparison
+      // counts. Keep this bounded and omit raw model text from client reports.
+      const sampleRows = [...allResponses].sort((a, b) =>
+        b.captured_at - a.captured_at || b.id.localeCompare(a.id) ||
+        a.engine.localeCompare(b.engine));
+      const sampleReference = (row: ComparisonEvidenceRow) => ({
+        engine: row.engine,
+        run_id: row.run_id,
+        response_id: row.id,
+        prompt_id: row.prompt_id,
+        captured_at: new Date(row.captured_at).toISOString(),
+      });
+      const mention_evidence_samples = {
+        brand: sampleRows.filter((row) => row.brand_mentioned === 1)
+          .slice(0, 5).map(sampleReference),
+        competitors: targets.map((domain) => ({
+          domain,
+          samples: sampleRows.filter((row) => row.competitors_mentioned.includes(domain))
+            .slice(0, 5).map(sampleReference),
+        })),
+        note: 'Up to five latest stored response references for each counted brand or competitor mention, after all comparison scopes and retry deduplication. Mentions are not verified source citations; references contain no raw AI answers. Counts use all eligible observations, not only these samples.',
+      };
       const usableEngines = new Set(allResponses.map((row) => row.engine));
       const engine_scope = {
         selection: requestedEngines ? 'selected' as const : 'all_stored' as const,
@@ -1776,6 +1819,7 @@ export function registerTools(
       const payload = {
         brand_id,
         days,
+        mention_evidence_samples,
         identity_attribution,
         observation_coverage,
         google_search_sampling: googleSearchSampling(allResponses.map(({ engine }) => engine)),
