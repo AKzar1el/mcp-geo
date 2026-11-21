@@ -30,6 +30,7 @@ const EXPECTED_TOOLS = [
   'get_visibility_history',
   'compare_competitors',
   'get_citations',
+  'get_observation_evidence',
   'get_content_gaps',
   'refresh_brand',
   // Local management tools — CLI only, not present on the Worker.
