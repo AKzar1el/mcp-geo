@@ -342,6 +342,12 @@ const observationEvidenceOutputSchema = z.object({
   brand_mentioned: z.boolean(),
   competitors_mentioned: z.array(z.string()),
   response_excerpt: z.string().max(250),
+  provider_source_count: z.number().int().nonnegative(),
+  provider_source_urls_truncated: z.boolean(),
+  provider_source_urls: z.array(z.object({
+    url: z.string(),
+    url_redacted: z.boolean(),
+  })).max(5),
   google_search_sampling: googleSearchSamplingSchema,
   evidence_note: z.string(),
 });
@@ -2130,6 +2136,24 @@ export function registerTools(
       const activePromptIds = new Set(
         (await deps.db.getActivePrompts(brand_id)).map(({ id }) => id),
       );
+      const providerSources = new Map<string, { url: string; url_redacted: boolean }>();
+      for (const rawUrl of response.engine_citations) {
+        try {
+          // Native provider links are evidence, not trusted instructions or
+          // verified sources. Exclude malformed, local and credentialed URLs.
+          if (/[\u0000-\u001f\u007f]/.test(rawUrl) || rawUrl !== rawUrl.trim()) continue;
+          const parsed = new URL(rawUrl);
+          if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') continue;
+          if (parsed.username || parsed.password || !normalizeDomainInput(parsed.hostname)) continue;
+          const safeUrl = redactCitationUrlQuery(rawUrl);
+          if (!providerSources.has(safeUrl)) {
+            providerSources.set(safeUrl, { url: safeUrl, url_redacted: safeUrl !== rawUrl });
+          }
+        } catch {
+          // One invalid provider URL cannot hide other usable evidence.
+        }
+      }
+      const providerSourceList = [...providerSources.values()];
       const identityBoundary = brand.identity_changed_at ?? null;
       const payload = {
         brand_id,
@@ -2150,8 +2174,11 @@ export function registerTools(
         brand_mentioned: response.brand_mentioned === 1,
         competitors_mentioned: [...new Set(response.competitors_mentioned)].sort(),
         response_excerpt: buildResponseExcerpt(response.raw_response, brand),
+        provider_source_count: providerSourceList.length,
+        provider_source_urls_truncated: providerSourceList.length > 5,
+        provider_source_urls: providerSourceList.slice(0, 5),
         google_search_sampling: googleSearchSampling([run.engine]),
-        evidence_note: 'This is a short credential-redacted excerpt of one stored successful response, not a full answer or an independently verified source citation. Review identity_scope, active_prompt and measurement_mode before quoting in an audit. No provider request occurred.',
+        evidence_note: 'This is a short credential-redacted excerpt of one stored successful response, not a full answer or an independently verified source citation. Provider-returned source URLs are not independently verified; access-bearing URL query and fragment fields are masked. Review identity_scope, active_prompt and measurement_mode before quoting in an audit. No provider request occurred.',
       };
       return toolResult(payload);
     },
