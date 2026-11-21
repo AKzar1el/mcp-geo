@@ -3278,7 +3278,7 @@ function redactCitationUrlQuery(rawUrl: string): string {
   // also place their own query string after a route or anchor prefix.
   const hashQueryStart = fragment.indexOf('?');
   const safeFragment = hashQueryStart === -1 ? redactParameters(fragment)
-    : `${fragment.slice(0, hashQueryStart + 1)}${redactParameters(fragment.slice(hashQueryStart + 1))}`;
+    : `${redactParameters(fragment.slice(0, hashQueryStart))}?${redactParameters(fragment.slice(hashQueryStart + 1))}`;
   return `${safeAddress}#${safeFragment}`;
 }
 
