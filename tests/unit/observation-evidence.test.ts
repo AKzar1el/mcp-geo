@@ -37,6 +37,9 @@ type EvidenceResult = {
   identity_scope: string;
   active_prompt: boolean;
   response_excerpt: string;
+  provider_source_count: number;
+  provider_source_urls_truncated: boolean;
+  provider_source_urls: Array<{ url: string; url_redacted: boolean }>;
   evidence_note: string;
 };
 
@@ -93,4 +96,31 @@ test('evidence lookup cannot cross a brand, a run, or a successful response boun
   const failed = setup(run, [{ ...response, status: 'failed', raw_response: 'secret', error_message: 'credential' }]);
   assert.ok(failed);
   await assert.rejects(failed({ brand_id: 'acme', run_id: run.id, response_id: response.id }), /not found/i);
+});
+
+test('observation evidence exposes bounded, credential-redacted provider-native source links only', async () => {
+  const sourceUrls = [
+    'https://sources.example.org/a?api_key=secret-a&topic=geo',
+    'https://sources.example.org/b#access_token=secret-b',
+    'https://user:pass@sources.example.org/private',
+    'http://localhost/admin',
+    'javascript:alert(1)',
+    'https://sources.example.org/a?api_key=secret-a&topic=geo',
+    'https://sources.example.org/c',
+    'https://sources.example.org/d',
+    'https://sources.example.org/e',
+    'https://sources.example.org/f',
+  ];
+  const handler = setup(run, [{ ...response, engine_citations: sourceUrls }]);
+  assert.ok(handler);
+  const result = (await handler({ brand_id: brand.id, run_id: run.id, response_id: response.id })).structuredContent;
+  assert.equal(result.provider_source_count, 6);
+  assert.equal(result.provider_source_urls_truncated, true);
+  assert.equal(result.provider_source_urls.length, 5);
+  assert.deepEqual(result.provider_source_urls.slice(0, 2), [
+    { url: 'https://sources.example.org/a?api_key=[REDACTED]&topic=geo', url_redacted: true },
+    { url: 'https://sources.example.org/b#access_token=[REDACTED]', url_redacted: true },
+  ]);
+  assert.doesNotMatch(JSON.stringify(result.provider_source_urls), /secret-a|secret-b|user:pass|localhost|javascript:/);
+  assert.match(result.evidence_note, /provider-returned.*not independently verified/i);
 });
