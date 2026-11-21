@@ -104,6 +104,7 @@ type VisibilitySnapshot = {
   };
   missing_requested_engines: string[];
   unmeasured_engines: string[];
+  unmeasured_engine_reasons: Array<{ engine: string; reason: string }>;
   unmeasured_engines_note: string;
   measurement_scope: {
     measurement_mode_filter: 'model_only' | 'search_requested' | null;
@@ -253,6 +254,9 @@ test('check_visibility never attributes pre-identity-change scores to the curren
   assert.equal(current.overall_score, 100, 'old Claude mentions must not lower the current score');
   assert.deepEqual(current.per_engine.map((engine) => engine.engine), ['chatgpt']);
   assert.ok(current.unmeasured_engines.includes('claude'));
+  assert.deepEqual(current.unmeasured_engine_reasons.find((item) => item.engine === 'claude'), {
+    engine: 'claude', reason: 'stale_brand_identity',
+  });
   assert.deepEqual(current.identity_attribution.stale_engines, ['claude']);
 
   const staleOnly = registerVisibilityTool({
@@ -551,6 +555,9 @@ test('check_visibility identifies explicitly requested engines missing usable sc
   assert.equal(result.structuredContent.overall_score, 75);
   assert.deepEqual(result.structuredContent.missing_requested_engines, ['gemini']);
   assert.deepEqual(result.structuredContent.unmeasured_engines, ['gemini']);
+  assert.deepEqual(result.structuredContent.unmeasured_engine_reasons, [
+    { engine: 'gemini', reason: 'no_eligible_stored_run' },
+  ]);
   assert.deepEqual(result.structuredContent.per_engine.map(({ engine }) => engine), ['chatgpt', 'claude']);
 
   const implicit = await visibility.handler({ brand_id: brand.id });
@@ -625,6 +632,9 @@ test('check_visibility excludes failed-only engines from scores and score freshn
   assert.equal(snapshot.overall_score, 100);
   assert.deepEqual(snapshot.per_engine.map(({ engine }) => engine), ['chatgpt']);
   assert.deepEqual(snapshot.unmeasured_engines, ['claude']);
+  assert.deepEqual(snapshot.unmeasured_engine_reasons, [
+    { engine: 'claude', reason: 'no_usable_stored_responses' },
+  ]);
   assert.deepEqual(snapshot.missing_requested_engines, ['claude']);
   assert.equal(snapshot.refreshed_at, new Date(chatgptTimestamp).toISOString());
   assert.equal(snapshot.freshness.oldest_refreshed_at, new Date(chatgptTimestamp).toISOString());
@@ -713,6 +723,9 @@ test('active-only scoring excludes engines with retired-only evidence instead of
   assert.equal(snapshot.overall_score, 100);
   assert.deepEqual(snapshot.per_engine.map(({ engine }) => engine), ['chatgpt']);
   assert.deepEqual(snapshot.unmeasured_engines, ['claude']);
+  assert.deepEqual(snapshot.unmeasured_engine_reasons, [
+    { engine: 'claude', reason: 'no_successful_active_prompt_observations' },
+  ]);
   assert.deepEqual(snapshot.missing_requested_engines, ['claude']);
   assert.equal(snapshot.freshness.oldest_refreshed_at, new Date(chatgptTimestamp).toISOString());
   assert.equal(snapshot.prompt_set_scope.excluded_successful_responses, 3);
@@ -832,6 +845,9 @@ test('check_visibility selects latest eligible stored request mode before headli
   assert.equal(search.overall_score, 100);
   assert.deepEqual(search.per_engine.map((row) => row.engine), ['chatgpt']);
   assert.deepEqual(search.unmeasured_engines, ['claude']);
+  assert.deepEqual(search.unmeasured_engine_reasons, [
+    { engine: 'claude', reason: 'incompatible_mode_selection' },
+  ]);
   assert.deepEqual(search.missing_requested_engines, ['claude']);
   assert.deepEqual(search.top_winning_prompts.map((row) => row.prompt), ['Live winner']);
   assert.equal(search.measurement_scope.measurement_mode_filter, 'search_requested');
@@ -852,6 +868,9 @@ test('check_visibility selects latest eligible stored request mode before headli
   })).structuredContent;
   assert.equal(liveModel.overall_score, 50);
   assert.deepEqual(liveModel.unmeasured_engines, ['chatgpt']);
+  assert.deepEqual(liveModel.unmeasured_engine_reasons, [
+    { engine: 'chatgpt', reason: 'incompatible_mode_selection' },
+  ]);
   assert.deepEqual(liveModel.per_engine.map((row) => row.engine), ['claude']);
 
   await assert.rejects(
