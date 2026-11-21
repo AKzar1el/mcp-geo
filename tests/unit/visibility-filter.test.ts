@@ -471,6 +471,44 @@ test('check_visibility discloses absolute scan age for scheduled brands without 
   assert.deepEqual(freshWeekly.freshness.cadence_overdue_engines, []);
 });
 
+test('check_visibility does not present delayed run completion as fresh captured evidence', async () => {
+  const capturedAt = Date.now() - 9 * 24 * 60 * 60 * 1000;
+  const completedAt = Date.now() - 60 * 60 * 1000;
+  const stored = { ...response('chatgpt', 'p1', 'Buyer question', 1), captured_at: capturedAt };
+  const delayedRun = {
+    ...run('chatgpt', completedAt, 'batch'), started_at: capturedAt - 60_000,
+  };
+  const result = (await registerVisibilityTool({
+    runs: { chatgpt: delayedRun, claude: undefined },
+    responses: { [delayedRun.id]: [stored] },
+  }).handler({ brand_id: brand.id, engines: ['chatgpt'] })).structuredContent;
+
+  assert.equal(result.per_engine[0].refreshed_at, new Date(capturedAt).toISOString());
+  assert.equal(result.refreshed_at, new Date(capturedAt).toISOString());
+  assert.equal(result.freshness.cadence_overdue_warning, true);
+  assert.deepEqual(result.freshness.cadence_overdue_engines, ['chatgpt']);
+});
+
+test('active-only visibility freshness excludes newer retired-prompt observations', async () => {
+  const activeCapturedAt = Date.now() - 9 * 24 * 60 * 60 * 1000;
+  const retiredCapturedAt = Date.now() - 60 * 60 * 1000;
+  const currentRun = {
+    ...run('chatgpt', retiredCapturedAt, 'batch'), started_at: activeCapturedAt - 60_000,
+  };
+  const result = (await registerVisibilityTool({
+    runs: { chatgpt: currentRun, claude: undefined },
+    responses: { [currentRun.id]: [
+      { ...response('chatgpt', 'active', 'Current buyer prompt', 1), captured_at: activeCapturedAt },
+      { ...response('chatgpt', 'retired', 'Retired buyer prompt', 1), captured_at: retiredCapturedAt },
+    ] },
+    activePromptIds: ['active'],
+  }).handler({ brand_id: brand.id, engines: ['chatgpt'], active_prompts_only: true })).structuredContent;
+
+  assert.equal(result.per_engine[0].refreshed_at, new Date(activeCapturedAt).toISOString());
+  assert.equal(result.freshness.cadence_overdue_warning, true);
+  assert.equal(result.prompt_set_scope.selection, 'active_only');
+});
+
 test('batch ChatGPT results are not falsely classified as live-search observations', async () => {
   const batchRun = run('chatgpt', chatgptTimestamp, 'batch');
   const visibility = registerVisibilityTool({ runs: { chatgpt: batchRun } });
