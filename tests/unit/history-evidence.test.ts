@@ -19,10 +19,35 @@ type HistoryTool = {
     brand_id: string;
     days: number;
     granularity: 'daily' | 'weekly';
+    current_identity_only?: boolean;
+    active_prompts_only?: boolean;
+    engines?: Array<'chatgpt' | 'claude' | 'perplexity' | 'gemini' | 'grok' | 'ai_overviews' | 'ai_mode'>;
+    measurement_mode?: 'model_only' | 'search_requested';
   }) => Promise<{ structuredContent: {
     series: HistoryPoint[];
+    engine_scope: {
+      selection: 'all_stored' | 'selected';
+      requested_engines: string[];
+      not_observed_engines: string[];
+      note: string;
+    };
+    prompt_set_scope: {
+      selection: 'full_history' | 'active_only';
+      active_prompt_count: number;
+      excluded_observations: number;
+      note: string;
+    };
+    identity_scope: {
+      selection: 'full_history' | 'current_identity_only';
+      excluded_runs: number;
+      unknown_start_runs: number;
+      note: string;
+    };
     measurement_scope: {
+      measurement_mode_filter: 'model_only' | 'search_requested' | null;
+      excluded_mode_runs: number;
       mixed_mode_engines: string[];
+      unmeasured_scoped_engines: string[];
       by_engine: Record<string, {
         search_requested: { brand_mentions: number; usable_prompts: number; score: number } | null;
         model_only: { brand_mentions: number; usable_prompts: number; score: number } | null;
@@ -50,6 +75,12 @@ type HistoryTool = {
       changes_detected: boolean;
       changed_engines: string[];
       insufficient_evidence_engines: string[];
+      current_active_roster: {
+        active_prompt_count: number;
+        latest_run_status_by_engine: Record<string, 'matches' | 'differs' | 'unverified'>;
+        engines_needing_new_measurement: string[];
+        note: string;
+      };
       note: string;
     };
   } }>;
@@ -62,6 +93,7 @@ function registerHistoryTool(
     identityChangedAt?: number;
     onHistoryQuery?: (since: number) => void;
     filterBySince?: boolean;
+    activePromptIds?: string[];
   } = {},
 ): HistoryTool {
   let history: HistoryTool | undefined;
@@ -84,6 +116,7 @@ function registerHistoryTool(
           ? rows.filter((row) => row.completed_at >= since)
           : rows;
       },
+      getActivePrompts: async () => (options.activePromptIds ?? []).map((id) => ({ id })),
     } as Db,
     env: {},
     refreshExecution: 'sync',
@@ -113,6 +146,42 @@ test('visibility history preserves an empty series for an existing unscanned bra
   assert.deepEqual(result.structuredContent.series, []);
   assert.equal(result.structuredContent.google_search_sampling, null);
   assert.deepEqual(result.structuredContent.measurement_scope.mixed_mode_engines, []);
+});
+
+test('history limits all evidence and scores to explicitly selected engines without inventing missing scores', async () => {
+  const completed_at = Date.UTC(2026, 0, 5);
+  const history = registerHistoryTool([
+    { run_id: 'a', engine: 'chatgpt', completed_at, total: 4, hits: 1 },
+    { run_id: 'b', engine: 'claude', completed_at, total: 4, hits: 4 },
+    { run_id: 'c', engine: 'ai_mode', completed_at, total: 4, hits: 2 },
+  ]);
+  const args = { brand_id: 'acme', days: 30, granularity: 'daily' as const };
+  const all = (await history.handler(args)).structuredContent;
+  assert.equal(all.series[0]?.overall_score, 58);
+  assert.equal(all.engine_scope.selection, 'all_stored');
+  assert.deepEqual(all.engine_scope.requested_engines, []);
+  assert.deepEqual(all.google_search_sampling?.engines, ['ai_mode']);
+
+  const selected = (await history.handler({
+    ...args, engines: ['chatgpt', 'gemini', 'chatgpt'],
+  })).structuredContent;
+  assert.equal(selected.engine_scope.selection, 'selected');
+  assert.deepEqual(selected.engine_scope.requested_engines, ['chatgpt', 'gemini']);
+  assert.deepEqual(selected.engine_scope.not_observed_engines, ['gemini']);
+  assert.match(selected.engine_scope.note, /not.*observed|no.*stored/i);
+  assert.deepEqual(selected.series[0]?.per_engine, { chatgpt: 25 });
+  assert.deepEqual(selected.series[0]?.per_engine_evidence.chatgpt.usable_prompts, 4);
+  assert.equal(selected.series[0]?.overall_score, 25);
+  assert.deepEqual(Object.keys(selected.measurement_scope.by_engine), ['chatgpt']);
+  assert.deepEqual(Object.keys(selected.measurement_scope.by_bucket['2026-01-05']), ['chatgpt']);
+  assert.equal(selected.google_search_sampling, null);
+  assert.deepEqual(selected.measurement_scope.unmeasured_scoped_engines, [],
+    'a never-observed requested engine must not be described as filtered historical evidence');
+
+  const missingOnly = (await history.handler({ ...args, engines: ['gemini'] })).structuredContent;
+  assert.deepEqual(missingOnly.series, []);
+  assert.deepEqual(missingOnly.engine_scope.not_observed_engines, ['gemini']);
+  assert.deepEqual(missingOnly.prompt_set_comparability.current_active_roster.latest_run_status_by_engine, {});
 });
 
 test('daily history includes the entire requested UTC calendar-day window', async (t) => {
@@ -176,6 +245,60 @@ test('history discloses batch/model-only evidence separately from live search re
   assert.match(result.measurement_scope.note, /combined.*mode|mode.*combined/i);
 });
 
+test('history optionally selects request mode before scoring, comparability and missing-evidence attribution', async () => {
+  const completed_at = Date.UTC(2026, 0, 5);
+  const history = registerHistoryTool([
+    { run_id: 'chatgpt-live', engine: 'chatgpt', mode: 'live', completed_at,
+      total: 4, hits: 1 },
+    { run_id: 'chatgpt-batch', engine: 'chatgpt', mode: 'batch', completed_at: completed_at + 1000,
+      total: 4, hits: 4 },
+    { run_id: 'claude-live', engine: 'claude', mode: 'live', completed_at: completed_at + 2000,
+      total: 4, hits: 3 },
+  ]);
+  const args = {
+    brand_id: 'acme', days: 30, granularity: 'daily' as const,
+    engines: ['chatgpt', 'claude', 'gemini'] as Array<'chatgpt' | 'claude' | 'gemini'>,
+  };
+  const all = (await history.handler(args)).structuredContent;
+  assert.equal(all.measurement_scope.measurement_mode_filter, null);
+  assert.equal(all.measurement_scope.excluded_mode_runs, 0);
+  assert.equal(all.series[0]?.per_engine.chatgpt, 63, 'historical defaults remain mixed');
+
+  const search = (await history.handler({ ...args, measurement_mode: 'search_requested' })).structuredContent;
+  assert.deepEqual(search.series[0]?.per_engine, { chatgpt: 25 });
+  assert.equal(search.series[0]?.overall_score, 25);
+  assert.equal(search.measurement_scope.measurement_mode_filter, 'search_requested');
+  assert.equal(search.measurement_scope.excluded_mode_runs, 2);
+  assert.deepEqual(search.measurement_scope.mixed_mode_engines, []);
+  assert.deepEqual(search.engine_scope.not_observed_engines, ['gemini'],
+    'an engine observed in another mode is not a never-observed engine');
+  assert.deepEqual(search.measurement_scope.unmeasured_scoped_engines, ['claude'],
+    'model-only evidence excluded by mode selection must be disclosed as unmeasured');
+  assert.deepEqual(search.measurement_scope.by_engine, {
+    chatgpt: {
+      search_requested: { brand_mentions: 1, usable_prompts: 4, score: 25 },
+      model_only: null,
+    },
+  });
+  assert.deepEqual(Object.keys(search.measurement_scope.by_bucket['2026-01-05']), ['chatgpt']);
+  assert.deepEqual(Object.keys(search.prompt_set_comparability.current_active_roster.latest_run_status_by_engine),
+    ['chatgpt'], 'unselected mode rosters must not affect comparability');
+
+  const model = (await history.handler({ ...args, measurement_mode: 'model_only' })).structuredContent;
+  assert.deepEqual(model.series[0]?.per_engine, { chatgpt: 100, claude: 75 });
+  assert.equal(model.series[0]?.overall_score, 88);
+  assert.equal(model.measurement_scope.excluded_mode_runs, 1);
+  assert.deepEqual(model.measurement_scope.unmeasured_scoped_engines, []);
+
+  const absentMode = (await history.handler({
+    ...args, engines: ['claude', 'gemini'], measurement_mode: 'search_requested',
+  })).structuredContent;
+  assert.deepEqual(absentMode.series, []);
+  assert.deepEqual(absentMode.engine_scope.not_observed_engines, ['gemini']);
+  assert.deepEqual(absentMode.measurement_scope.unmeasured_scoped_engines, ['claude']);
+  assert.match(absentMode.measurement_scope.note, /unmeasured|excluded/i);
+});
+
 test('history keeps model-only and search-requested evidence in their own weekly buckets', async () => {
   const history = registerHistoryTool([
     { run_id: 'week1-live', engine: 'chatgpt', mode: 'live', completed_at: Date.UTC(2026, 0, 5), total: 6, hits: 3 },
@@ -219,8 +342,10 @@ test('visibility history discloses US-English scope when historical Google scans
 test('visibility history discloses stored observations spanning an identity edit', async () => {
   const changedAt = Date.UTC(2026, 0, 8);
   const history = registerHistoryTool([
-    { run_id: 'old', engine: 'chatgpt', completed_at: changedAt - 86_400_000, total: 2, hits: 2 },
-    { run_id: 'new', engine: 'chatgpt', completed_at: changedAt + 86_400_000, total: 2, hits: 0 },
+    { run_id: 'old', engine: 'chatgpt', started_at: changedAt - 86_400_000,
+      completed_at: changedAt - 86_400_000, total: 2, hits: 2 },
+    { run_id: 'new', engine: 'chatgpt', started_at: changedAt + 86_400_000,
+      completed_at: changedAt + 86_400_000, total: 2, hits: 0 },
   ], { identityChangedAt: changedAt });
   const result = await history.handler({ brand_id: 'acme', days: 30, granularity: 'weekly' });
   assert.equal(result.structuredContent.identity_comparability.last_identity_change_at, new Date(changedAt).toISOString());
@@ -247,6 +372,130 @@ test('history attributes a scan to the identity in effect when it started, not w
   assert.equal(result.structuredContent.identity_comparability.pre_change_runs, 1);
   assert.equal(result.structuredContent.identity_comparability.post_change_runs, 1);
   assert.equal(result.structuredContent.identity_comparability.mixes_identity_versions, true);
+});
+
+test('current-identity history excludes pre-edit and unknown-start evidence without changing historical defaults', async () => {
+  const changedAt = Date.UTC(2026, 0, 8, 12);
+  const history = registerHistoryTool([
+    { run_id: 'old-late', engine: 'chatgpt', started_at: changedAt - 60_000,
+      completed_at: changedAt + 60_000, total: 2, hits: 2 },
+    { run_id: 'new', engine: 'chatgpt', started_at: changedAt + 120_000,
+      completed_at: changedAt + 180_000, total: 2, hits: 0 },
+    { run_id: 'unknown', engine: 'chatgpt', completed_at: changedAt + 240_000,
+      total: 2, hits: 2 },
+  ], { identityChangedAt: changedAt });
+  const args = { brand_id: 'acme', days: 30, granularity: 'daily' as const };
+  const legacy = (await history.handler(args)).structuredContent;
+  assert.equal(legacy.identity_scope.selection, 'full_history');
+  assert.equal(legacy.identity_scope.excluded_runs, 0);
+  assert.equal(legacy.series[0].overall_score, 67);
+
+  const current = (await history.handler({ ...args, current_identity_only: true })).structuredContent;
+  assert.equal(current.identity_scope.selection, 'current_identity_only');
+  assert.equal(current.identity_scope.excluded_runs, 2);
+  assert.equal(current.identity_scope.unknown_start_runs, 1);
+  assert.match(current.identity_scope.note, /run start|identity/i);
+  assert.equal(current.series[0].overall_score, 0);
+  assert.deepEqual(current.series[0].per_engine_evidence.chatgpt.usable_prompts, 2);
+  assert.deepEqual(current.measurement_scope.by_engine.chatgpt.search_requested,
+    { brand_mentions: 0, usable_prompts: 2, score: 0 });
+  assert.equal(current.identity_comparability.pre_change_runs, 1,
+    'historical comparability metadata should still describe the entire requested window');
+  assert.equal(current.identity_comparability.post_change_runs, 1,
+    'unknown start provenance must not be classified as a post-change run');
+});
+
+test('current-identity history preserves unknown-boundary data and returns no fabricated zero when all runs are stale', async () => {
+  const changedAt = Date.UTC(2026, 0, 8, 12);
+  const old = { run_id: 'old', engine: 'chatgpt', started_at: changedAt - 60_000,
+    completed_at: changedAt + 60_000, total: 2, hits: 2 };
+  const args = { brand_id: 'acme', days: 30, granularity: 'daily' as const,
+    current_identity_only: true };
+  const oldOnly = (await registerHistoryTool([old], { identityChangedAt: changedAt })
+    .handler(args)).structuredContent;
+  assert.deepEqual(oldOnly.series, []);
+  assert.deepEqual(oldOnly.measurement_scope.unmeasured_scoped_engines, ['chatgpt'],
+    'pre-identity-only evidence must not silently disappear from current-only coverage');
+  assert.equal(oldOnly.identity_scope.excluded_runs, 1);
+  assert.equal(oldOnly.identity_comparability.pre_change_runs, 1);
+
+  const unknownBoundary = (await registerHistoryTool([old]).handler(args)).structuredContent;
+  assert.equal(unknownBoundary.series[0].overall_score, 100);
+  assert.equal(unknownBoundary.identity_scope.excluded_runs, 0);
+  assert.match(unknownBoundary.identity_scope.note, /no recorded matching-identity boundary/i);
+});
+
+test('active-prompt history excludes retired buyer questions before scoring while keeping roster warnings', async () => {
+  const date = Date.UTC(2026, 10, 11);
+  const history = registerHistoryTool([
+    { run_id: 'older', engine: 'chatgpt', mode: 'live', started_at: date,
+      completed_at: date, total: 2, hits: 2, active_total: 0, active_hits: 0,
+      roster_expected: 2, roster_observed: 2, roster_ids_csv: 'retired-a,retired-b' },
+    { run_id: 'mixed', engine: 'chatgpt', mode: 'live', started_at: date + 1000,
+      completed_at: date + 1000, total: 2, hits: 1, active_total: 1, active_hits: 0,
+      roster_expected: 2, roster_observed: 2, roster_ids_csv: 'active,retired-a' },
+    { run_id: 'retired-only', engine: 'claude', mode: 'live', started_at: date + 2000,
+      completed_at: date + 2000, total: 1, hits: 1, active_total: 0, active_hits: 0,
+      roster_expected: 1, roster_observed: 1, roster_ids_csv: 'retired-a' },
+  ], { activePromptIds: ['active'] });
+  const args = { brand_id: 'acme', days: 30, granularity: 'daily' as const };
+  const legacy = (await history.handler(args)).structuredContent;
+  assert.equal(legacy.series[0].per_engine.chatgpt, 75);
+  assert.equal(legacy.series[0].per_engine.claude, 100);
+  assert.deepEqual(legacy.measurement_scope.unmeasured_scoped_engines, []);
+  assert.equal(legacy.prompt_set_scope.selection, 'full_history');
+
+  const current = (await history.handler({ ...args, active_prompts_only: true })).structuredContent;
+  assert.equal(current.prompt_set_scope.selection, 'active_only');
+  assert.equal(current.prompt_set_scope.active_prompt_count, 1);
+  assert.equal(current.prompt_set_scope.excluded_observations, 4);
+  assert.equal(current.series[0].per_engine.chatgpt, 0);
+  assert.equal(current.series[0].per_engine_evidence.chatgpt.usable_prompts, 1);
+  assert.equal(current.series[0].per_engine.claude, undefined,
+    'an engine with retired-only responses is unmeasured, not scored as zero');
+  assert.deepEqual(current.measurement_scope.unmeasured_scoped_engines, ['claude'],
+    'active-only history must identify engines with historical but no selected evidence');
+  assert.equal(current.measurement_scope.by_engine.chatgpt.search_requested?.usable_prompts, 1);
+  assert.equal(current.prompt_set_comparability.current_active_roster.latest_run_status_by_engine.claude,
+    'differs', 'retired-only runs still inform the roster mismatch warning');
+  assert.match(current.prompt_set_scope.note, /stored|provider/i);
+
+  const noActive = (await registerHistoryTool([
+    { run_id: 'retired', engine: 'chatgpt', completed_at: date, total: 2, hits: 2,
+      active_total: 0, active_hits: 0 },
+  ]).handler({ ...args, active_prompts_only: true })).structuredContent;
+  assert.deepEqual(noActive.series, []);
+  assert.equal(noActive.prompt_set_scope.active_prompt_count, 0);
+
+  const sameIdentity = (await registerHistoryTool([
+    { run_id: 'old', engine: 'chatgpt', started_at: date, completed_at: date,
+      total: 2, hits: 2, active_total: 0, active_hits: 0 },
+    { run_id: 'new', engine: 'chatgpt', started_at: date + 1000,
+      completed_at: date + 1000, total: 2, hits: 1, active_total: 1, active_hits: 0 },
+  ], { identityChangedAt: date + 500, activePromptIds: ['active'] })
+    .handler({ ...args, current_identity_only: true, active_prompts_only: true })).structuredContent;
+  assert.equal(sameIdentity.identity_scope.excluded_runs, 1);
+  assert.equal(sameIdentity.prompt_set_scope.excluded_observations, 1);
+  assert.equal(sameIdentity.series[0].per_engine.chatgpt, 0,
+    'identity and prompt selection must be independently composable');
+});
+
+test('history discloses engines excluded by both identity and active-prompt scopes', async () => {
+  const changedAt = Date.UTC(2026, 10, 12);
+  const history = registerHistoryTool([
+    { run_id: 'old-identity', engine: 'chatgpt', started_at: changedAt - 1000,
+      completed_at: changedAt - 500, total: 1, hits: 1, active_total: 1, active_hits: 1 },
+    { run_id: 'retired-prompts', engine: 'claude', started_at: changedAt + 1000,
+      completed_at: changedAt + 2000, total: 1, hits: 1, active_total: 0, active_hits: 0 },
+    { run_id: 'current', engine: 'perplexity', started_at: changedAt + 3000,
+      completed_at: changedAt + 4000, total: 1, hits: 0, active_total: 1, active_hits: 0 },
+  ], { identityChangedAt: changedAt, activePromptIds: ['current'] });
+  const result = (await history.handler({ brand_id: 'acme', days: 30, granularity: 'daily',
+    current_identity_only: true, active_prompts_only: true })).structuredContent;
+  assert.deepEqual(result.measurement_scope.unmeasured_scoped_engines, ['chatgpt', 'claude']);
+  assert.deepEqual(Object.keys(result.series[0].per_engine), ['perplexity']);
+  assert.equal(result.series[0].per_engine.perplexity, 0,
+    'an actual observed loss remains a measured zero');
 });
 
 test('visibility history exposes the evidence denominator behind each engine score', async () => {
@@ -358,7 +607,13 @@ test('history detects different complete prompt rosters, not partial scan subset
   const result = await history.handler({
     brand_id: 'acme', days: 30, granularity: 'daily',
   });
-  assert.deepEqual(result.structuredContent.prompt_set_comparability, {
+  const comparison = result.structuredContent.prompt_set_comparability;
+  assert.deepEqual({
+    changes_detected: comparison.changes_detected,
+    changed_engines: comparison.changed_engines,
+    insufficient_evidence_engines: comparison.insufficient_evidence_engines,
+    note: comparison.note,
+  }, {
     changes_detected: true,
     changed_engines: ['chatgpt'],
     insufficient_evidence_engines: ['claude'],
@@ -379,4 +634,33 @@ test('incomplete rosters do not falsely report a prompt-set change', async () =>
   });
   assert.equal(result.structuredContent.prompt_set_comparability.changes_detected, false);
   assert.deepEqual(result.structuredContent.prompt_set_comparability.insufficient_evidence_engines, ['chatgpt']);
+});
+
+test('history identifies stale and unverified latest prompt rosters against active buyer questions', async () => {
+  const date = Date.UTC(2026, 0, 5);
+  const history = registerHistoryTool([
+    { run_id: 'old-only', engine: 'chatgpt', completed_at: date, total: 2, hits: 1,
+      roster_expected: 2, roster_observed: 2, roster_ids_csv: 'old-a,old-b' },
+    { run_id: 'claude-old', engine: 'claude', completed_at: date, total: 2, hits: 0,
+      roster_expected: 2, roster_observed: 2, roster_ids_csv: 'old-a,old-b' },
+    { run_id: 'claude-new', engine: 'claude', completed_at: date + 2000, total: 2, hits: 1,
+      roster_expected: 2, roster_observed: 2, roster_ids_csv: 'new-b,new-a' },
+    { run_id: 'perplexity-new', engine: 'perplexity', completed_at: date, total: 2, hits: 1,
+      roster_expected: 2, roster_observed: 2, roster_ids_csv: 'new-a,new-b' },
+    { run_id: 'perplexity-partial', engine: 'perplexity', completed_at: date + 3000, total: 1, hits: 1,
+      roster_expected: 2, roster_observed: 1, roster_ids_csv: 'new-a' },
+  ], { activePromptIds: ['new-a', 'new-b'] });
+  const result = await history.handler({ brand_id: 'acme', days: 30, granularity: 'daily' });
+  assert.deepEqual(result.structuredContent.prompt_set_comparability.changed_engines, ['claude'],
+    'a single old complete roster is not itself a historical prompt-set change');
+  assert.deepEqual(result.structuredContent.prompt_set_comparability.current_active_roster, {
+    active_prompt_count: 2,
+    latest_run_status_by_engine: {
+      chatgpt: 'differs',
+      claude: 'matches',
+      perplexity: 'unverified',
+    },
+    engines_needing_new_measurement: ['chatgpt'],
+    note: 'Most recent completed run per engine is compared with the current active prompt IDs. A differing complete roster needs new measurement; a partial or missing roster is unverified, not proof of current coverage. Historical scores remain unchanged.',
+  });
 });

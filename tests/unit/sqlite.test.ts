@@ -464,6 +464,11 @@ test('getResponsesSince returns every usable response in the requested brand win
       [first.id, second.id],
     );
     assert.equal(all[0].brand_mentioned, 0, 'latest successful retry must win');
+    assert.equal(all[0].run_started_at, first.started_at,
+      'identity comparisons must use run start, not response capture time');
+    assert.equal(all[1].run_started_at, second.started_at);
+    assert.equal(all[0].mode, 'live', 'comparison evidence must retain the original run request mode');
+    assert.equal(all[1].mode, 'live');
 
     const hostedSql: string[] = [];
     const hosted = createD1Db({
@@ -512,6 +517,15 @@ test('getResponsesSince returns every usable response in the requested brand win
     const recent = await db.getResponsesSince('acme', Date.now() - 60_000);
     assert.equal(recent.length, 1);
     assert.equal(recent[0].run_id, second.id);
+    const batch = await db.createRun(brand, 'chatgpt', 'batch', 1);
+    await db.persistEngineRun(batch.id, 'chatgpt', 'gpt-4o-mini', 3600, [{
+      prompt_id: 'p1', raw_response: 'Batch comparison evidence', brand_mentioned: 0,
+      brand_cited_with_link: 0, cited_urls: [], competitors_mentioned: ['asana.com'], status: 'ok',
+    }]);
+    const withBatch = await db.getResponsesSince('acme', Date.now() - 60_000);
+    assert.equal(withBatch.find((row) => row.run_id === batch.id)?.mode, 'batch');
+    assert.deepEqual(await hosted.getResponsesSince('acme', Date.now() - 60_000), withBatch,
+      'D1/SQLite comparison must retain request mode for both live and batch runs');
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });
@@ -538,8 +552,9 @@ test('citation source projections preserve complete window, engine and status pa
       status: 'ok' | 'failed',
       citedUrl: string,
       capturedAt: number,
+      mode: 'live' | 'batch' = 'live',
     ) => {
-      const run = await db.createRun(target, engine, 'live', 1);
+      const run = await db.createRun(target, engine, mode, 1);
       await db.persistEngineRun(run.id, engine, 'offline-model', 3600, [{
         prompt_id: promptId,
         raw_response: 'This large AI answer is not needed for source aggregation. '.repeat(30),
@@ -554,8 +569,8 @@ test('citation source projections preserve complete window, engine and status pa
         .run(capturedAt, run.id);
       return run.id;
     };
-    const firstRunId = await insert(brand, 'p1', 'chatgpt', 'ok', 'https://research.example/old', now - 20_000);
-    await insert(brand, 'p1', 'perplexity', 'ok', 'https://research.example/new', now - 10_000);
+    const firstRunId = await insert(brand, 'p1', 'chatgpt', 'ok', 'https://research.example/old', now - 20_000, 'batch');
+    const secondRunId = await insert(brand, 'p1', 'perplexity', 'ok', 'https://research.example/new', now - 10_000);
     await insert(brand, 'p1', 'gemini', 'failed', 'https://invalid.example/failed', now - 5_000);
     await insert(other, 'p2', 'chatgpt', 'ok', 'https://other.example/citation', now - 5_000);
     // A successful retry supersedes an older observation of the same run and
@@ -597,6 +612,22 @@ test('citation source projections preserve complete window, engine and status pa
       const full = await adapter.getCitationSourceRows('acme', now - 30_000, now);
       assert.deepEqual(full.map((row) => row.engine_citations[0]), expectedUrls);
       assert.deepEqual(full.map((row) => row.engine), ['chatgpt', 'perplexity']);
+      assert.deepEqual(full.map((row) => row.mode), ['batch', 'live'],
+        'SQLite and D1 must retain source run mode without reading AI answer bodies');
+      assert.deepEqual(
+        (await adapter.getCitationSourceRows('acme', now - 30_000, now, undefined, undefined, false, 'model_only'))
+          .map((row) => row.engine_citations[0]),
+        ['https://research.example/retried'],
+        'mode selection must keep batch ChatGPT sources and exclude live search requests',
+      );
+      assert.deepEqual(
+        (await adapter.getCitationSourceRows('acme', now - 30_000, now, undefined, undefined, false, 'search_requested'))
+          .map((row) => row.engine_citations[0]),
+        ['https://research.example/new'],
+      );
+      assert.deepEqual(full.map((row) => row.run_started_at),
+        [(await db.getRunById(firstRunId))?.started_at, (await db.getRunById(secondRunId))?.started_at],
+        'SQLite and D1 must project originating run start instead of source capture time');
       const frozenWindow = await adapter.getCitationSourceRows('acme', now - 30_000, now - 18_000);
       assert.deepEqual(frozenWindow.map((row) => row.engine_citations[0]),
         ['https://research.example/old'],
@@ -1484,6 +1515,8 @@ test('read history: getVisibilityHistoryRows aggregates ok rows per run', async 
     assert.equal(rows[0].started_at, run.started_at);
     assert.equal(Number(rows[0].total), 2);
     assert.equal(Number(rows[0].hits), 1);
+    assert.equal(Number(rows[0].active_total), 2);
+    assert.equal(Number(rows[0].active_hits), 1);
     assert.equal(Number(rows[0].roster_expected), 2);
     assert.equal(Number(rows[0].roster_observed), 2);
     assert.deepEqual(rows[0].roster_ids_csv?.split(',').sort(), ['p1', 'p2']);
@@ -1516,6 +1549,9 @@ test('SQLite and D1 history count only the latest successful observation per run
     // Match computeOverallScore's deterministic id tie-breaker.
     insert.run('a-old-tie', run.id, 'p2', 0, 'ok', 2000);
     insert.run('b-new-tie', run.id, 'p2', 1, 'ok', 2000);
+    // Retiring a prompt preserves its historical responses, but removes it
+    // from an opt-in current buyer-question trend.
+    db.raw.prepare("UPDATE prompts SET active = 0 WHERE id = 'p1'").run();
 
     const hosted = createD1Db({
       prepare(sql: string) {
@@ -1539,7 +1575,16 @@ test('SQLite and D1 history count only the latest successful observation per run
         'both adapters must expose the real scan start for historical identity attribution');
       assert.equal(Number(rows[0].total), 2, 'retries must not inflate prompt denominator');
       assert.equal(Number(rows[0].hits), 2, 'latest successful response determines the hit');
+      assert.equal(Number(rows[0].active_total), 1, 'retired questions cannot count in current trends');
+      assert.equal(Number(rows[0].active_hits), 1, 'current hit count uses the latest successful active response');
       assert.equal(Number(rows[0].roster_observed), 2);
+    }
+    db.raw.prepare("UPDATE prompts SET active = 0 WHERE id = 'p2'").run();
+    for (const adapter of [db, hosted]) {
+      const rows = await adapter.getVisibilityHistoryRows('acme', 0);
+      assert.equal(rows.length, 1, 'retired-only runs remain available for historical evidence');
+      assert.equal(Number(rows[0].active_total), 0);
+      assert.equal(Number(rows[0].active_hits), 0);
     }
   } finally {
     db.close();
@@ -1585,6 +1630,21 @@ test('replacePrompts soft-deletes old prompts and getCitationRows filters by eng
     assert.equal(citations.length, 1);
     assert.equal(citations[0].prompt, 'old prompt');
     assert.equal(citations[0].brand_cited_with_link, 1);
+    assert.equal(citations[0].mode, 'live', 'citation provenance must preserve stored run dispatch mode');
+    assert.equal(citations[0].run_started_at, run.started_at,
+      'citation page identity provenance must use run start, not response capture');
+    const hosted = createD1Db({
+      prepare(sql: string) {
+        return { bind(...params: unknown[]) {
+          return { async all() {
+            const stmt = db.raw.prepare(sql);
+            return { results: stmt.all(...(params as Parameters<typeof stmt.all>)) };
+          } };
+        } };
+      },
+    } as unknown as Parameters<typeof createD1Db>[0]);
+    assert.equal((await hosted.getCitationRows('acme', 0))[0].run_started_at, run.started_at,
+      'D1 and SQLite citation pages must return identical run start provenance');
     const filtered = await db.getCitationRows('acme', 0, 'claude');
     assert.equal(filtered.length, 0);
   } finally {
@@ -1650,6 +1710,212 @@ test('getCitationRows returns genuine link-only citations but excludes failed an
   }
 });
 
+test('SQLite and D1 scope multi-engine citation pages and source rankings before LIMIT', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'digestseo.sqlite'));
+  try {
+    seedBrandFixture(db, 'acme');
+    const tracked = await db.getBrand('acme');
+    assert.ok(tracked);
+    for (const engine of ['chatgpt', 'claude', 'perplexity']) {
+      const promptId = 'prompt-' + engine;
+      seedPromptFixture(db, 'acme', promptId, 'best project management ' + engine);
+      const run = await db.createRun(tracked, engine, 'live', 1);
+      await db.persistEngineRun(run.id, engine, 'test-model', 3600, [{
+        prompt_id: promptId,
+        raw_response: 'Acme is listed.',
+        brand_mentioned: 1,
+        brand_cited_with_link: 1,
+        cited_urls: ['acme.com'],
+        engine_citations: ['https://' + engine + '.example/report'],
+        competitors_mentioned: [],
+        status: 'ok',
+      }]);
+    }
+    const hosted = createD1Db({
+      prepare(sql: string) {
+        return { bind(...params: unknown[]) {
+          return { async all() {
+            const stmt = db.raw.prepare(sql);
+            return { results: stmt.all(...(params as Parameters<typeof stmt.all>)) };
+          } };
+        } };
+      },
+    } as unknown as Parameters<typeof createD1Db>[0]);
+    const selected = ['perplexity', 'chatgpt'];
+    const until = Date.now() + 1000;
+    for (const adapter of [db, hosted]) {
+      const all = await adapter.getCitationRows('acme', 0, undefined, { until, limit: 10 });
+      assert.equal(all.length, 3);
+      assert.equal(await adapter.countCitationRows('acme', 0, undefined, { until, limit: 1 }), 3);
+      assert.equal(await adapter.countCitationRows('acme', 0, selected, { until, limit: 1 }), 2);
+      assert.equal(await adapter.countCitationRows('acme', 0, undefined, { until, measurementMode: 'model_only' }), 1);
+      assert.equal(await adapter.countCitationRows('acme', 0, undefined, { until, measurementMode: 'search_requested' }), 2);
+      const modelOnly = await adapter.getCitationRows('acme', 0, undefined, {
+        until, limit: 1, measurementMode: 'model_only',
+      });
+      assert.deepEqual(modelOnly.map((row) => row.engine), ['claude']);
+      const searchOnly = await adapter.getCitationRows('acme', 0, undefined, {
+        until, limit: 10, measurementMode: 'search_requested',
+      });
+      assert.deepEqual(searchOnly.map((row) => row.engine).sort(), ['chatgpt', 'perplexity']);
+      const first = await adapter.getCitationRows('acme', 0, selected, { until, limit: 1 });
+      assert.equal(first.length, 1);
+      const second = await adapter.getCitationRows('acme', 0, selected, {
+        until, limit: 1, before: {
+          captured_at: first[0].captured_at,
+          run_id: first[0].run_id,
+          prompt_id: first[0].prompt_id,
+          response_id: first[0].response_id,
+        },
+      });
+      assert.deepEqual([...first, ...second].map((row) => row.engine).sort(),
+        ['chatgpt', 'perplexity']);
+      const sources = await adapter.getCitationSourceRows('acme', 0, until, selected);
+      assert.deepEqual(sources.map((row) => row.engine).sort(), ['chatgpt', 'perplexity']);
+      assert.equal((await adapter.getCitationRows('acme', 0, 'claude')).length, 1,
+        'legacy single-engine lookup remains unchanged');
+    }
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('SQLite and D1 filter citation pages and top-source inputs by run start before limits', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'digestseo.sqlite'));
+  try {
+    seedBrandFixture(db, 'acme');
+    seedPromptFixture(db, 'acme', 'p1', 'best project management');
+    const brand = await db.getBrand('acme');
+    assert.ok(brand);
+    const boundary = Date.now() - 60_000;
+    const oldRun = await db.createRun(brand, 'chatgpt', 'live', 1);
+    const newRun = await db.createRun(brand, 'chatgpt', 'live', 1);
+    for (const [runId, url] of [[oldRun.id, 'https://old.example/one'], [newRun.id, 'https://current.example/two']]) {
+      await db.persistEngineRun(runId, 'chatgpt', 'test-model', 3600, [{
+        prompt_id: 'p1', raw_response: 'Acme was mentioned.', brand_mentioned: 1,
+        brand_cited_with_link: 1, cited_urls: ['acme.com'], engine_citations: [url],
+        competitors_mentioned: [], status: 'ok',
+      }]);
+    }
+    db.raw.prepare('UPDATE runs SET started_at = ? WHERE id = ?').run(boundary - 5000, oldRun.id);
+    db.raw.prepare('UPDATE runs SET started_at = ? WHERE id = ?').run(boundary + 5000, newRun.id);
+    const captured = Date.now() - 2000;
+    // The old identity has the newest capture: response time must not reclassify it.
+    db.raw.prepare('UPDATE prompt_responses SET captured_at = ? WHERE run_id = ?').run(captured, oldRun.id);
+    db.raw.prepare('UPDATE prompt_responses SET captured_at = ? WHERE run_id = ?').run(captured - 1000, newRun.id);
+    const hosted = createD1Db({
+      prepare(sql: string) {
+        return { bind(...params: unknown[]) {
+          return { async all() {
+            const stmt = db.raw.prepare(sql);
+            return { results: stmt.all(...(params as Parameters<typeof stmt.all>)) };
+          } };
+        } };
+      },
+    } as unknown as Parameters<typeof createD1Db>[0]);
+    for (const adapter of [db, hosted]) {
+      const full = await adapter.getCitationRows('acme', 0, undefined, { until: Date.now(), limit: 2 });
+      assert.deepEqual(full.map(({ run_id }) => run_id), [oldRun.id, newRun.id]);
+      const current = await adapter.getCitationRows('acme', 0, undefined, {
+        until: Date.now(), limit: 1, minRunStartedAt: boundary,
+      });
+      assert.deepEqual(current.map(({ run_id }) => run_id), [newRun.id]);
+      const sources = await adapter.getCitationSourceRows('acme', 0, Date.now(), undefined, boundary);
+      assert.deepEqual(sources.map((row) => row.engine_citations[0]), ['https://current.example/two']);
+      const engineScoped = await adapter.getCitationRows('acme', 0, 'chatgpt', {
+        until: Date.now(), limit: 1, minRunStartedAt: boundary,
+      });
+      assert.deepEqual(engineScoped.map(({ run_id }) => run_id), [newRun.id]);
+      const engineSources = await adapter.getCitationSourceRows('acme', 0, Date.now(), 'chatgpt', boundary);
+      assert.deepEqual(engineSources.map((row) => row.engine_citations[0]), ['https://current.example/two']);
+      const afterLast = await adapter.getCitationRows('acme', 0, undefined, {
+        until: Date.now(), limit: 1, minRunStartedAt: boundary,
+        before: {
+          captured_at: current[0].captured_at, run_id: current[0].run_id,
+          prompt_id: current[0].prompt_id, response_id: current[0].response_id,
+        },
+      });
+      assert.deepEqual(afterLast, []);
+    }
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('SQLite and D1 exclude retired prompts before citation limits and source aggregation', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'digestseo.sqlite'));
+  try {
+    seedBrandFixture(db, 'acme');
+    seedPromptFixture(db, 'acme', 'retired', 'Old buyer question');
+    seedPromptFixture(db, 'acme', 'active', 'Current buyer question');
+    const brand = await db.getBrand('acme');
+    assert.ok(brand);
+    const oldRun = await db.createRun(brand, 'chatgpt', 'live', 1);
+    const activeRun = await db.createRun(brand, 'chatgpt', 'live', 1);
+    for (const [runId, promptId, url] of [
+      [oldRun.id, 'retired', 'https://old.example/review'],
+      [activeRun.id, 'active', 'https://new.example/review'],
+    ]) {
+      await db.persistEngineRun(runId, 'chatgpt', 'test-model', 3600, [{
+        prompt_id: promptId, raw_response: 'Acme mentioned',
+        brand_mentioned: 1, brand_cited_with_link: 1,
+        cited_urls: ['acme.com'], engine_citations: [url],
+        competitors_mentioned: [], status: 'ok',
+      }]);
+    }
+    db.raw.prepare('UPDATE prompts SET active = 0 WHERE id = ?').run('retired');
+    const now = Date.now();
+    db.raw.prepare('UPDATE prompt_responses SET captured_at = ? WHERE run_id = ?').run(now - 1000, oldRun.id);
+    db.raw.prepare('UPDATE prompt_responses SET captured_at = ? WHERE run_id = ?').run(now - 2000, activeRun.id);
+    const hosted = createD1Db({
+      prepare(sql: string) {
+        return { bind(...params: unknown[]) {
+          return { async all() {
+            const stmt = db.raw.prepare(sql);
+            return { results: stmt.all(...(params as Parameters<typeof stmt.all>)) };
+          } };
+        } };
+      },
+    } as unknown as Parameters<typeof createD1Db>[0]);
+
+    for (const adapter of [db, hosted]) {
+      const historical = await adapter.getCitationRows('acme', 0, undefined, { until: now, limit: 1 });
+      assert.deepEqual(historical.map(({ prompt_id }) => prompt_id), ['retired']);
+      const current = await adapter.getCitationRows('acme', 0, undefined, {
+        until: now, limit: 1, activePromptsOnly: true,
+      });
+      assert.deepEqual(current.map(({ prompt_id }) => prompt_id), ['active']);
+      const activeSources = await adapter.getCitationSourceRows('acme', 0, now, undefined, undefined, true);
+      assert.deepEqual(activeSources.map(({ engine_citations }) => engine_citations[0]), ['https://new.example/review']);
+      assert.equal((await adapter.getCitationSourceRows('acme', 0, now)).length, 2);
+      const afterCurrent = await adapter.getCitationRows('acme', 0, undefined, {
+        until: now, limit: 1, activePromptsOnly: true,
+        before: {
+          captured_at: current[0].captured_at, run_id: current[0].run_id,
+          prompt_id: current[0].prompt_id, response_id: current[0].response_id,
+        },
+      });
+      assert.deepEqual(afterCurrent, []);
+    }
+
+    db.raw.prepare('UPDATE prompts SET active = 0 WHERE id = ?').run('active');
+    for (const adapter of [db, hosted]) {
+      assert.deepEqual(await adapter.getCitationRows('acme', 0, undefined, {
+        until: now, activePromptsOnly: true,
+      }), []);
+      assert.deepEqual(await adapter.getCitationSourceRows('acme', 0, now, undefined, undefined, true), []);
+    }
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('citation row pagination preserves repeated observations of the same run and prompt', async () => {
   const root = tempRoot();
   const db = openSqliteDb(join(root, 'digestseo.sqlite'));
@@ -1680,6 +1946,7 @@ test('citation row pagination preserves repeated observations of the same run an
     const until = Date.now();
     const first = await db.getCitationRows('acme', 0, undefined, { limit: 1, until });
     assert.equal(first.length, 1);
+    assert.equal(await db.countCitationRows('acme', 0, undefined, { until, limit: 1 }), 2);
     const second = await db.getCitationRows('acme', 0, undefined, {
       limit: 1, until,
       before: {
@@ -1691,6 +1958,10 @@ test('citation row pagination preserves repeated observations of the same run an
     });
     assert.equal(second.length, 1);
     assert.notEqual(first[0].response_id, second[0].response_id);
+    assert.equal(await db.countCitationRows('acme', 0, undefined, { until, limit: 1, before: {
+      captured_at: first[0].captured_at, run_id: first[0].run_id,
+      prompt_id: first[0].prompt_id, response_id: first[0].response_id,
+    } }), 2, 'historical retry evidence count is unchanged by pagination');
     assert.equal((await db.getCitationRows('acme', 0, undefined, {
       limit: 1, until,
       before: {

@@ -38,3 +38,37 @@ test('hosted Worker and local stdio tool names stay explicitly mapped in docs', 
   assert.ok(setup.includes('`refresh_brand`'));
   assert.doesNotMatch(setup, /Claude will call `check_visibility`/);
 });
+
+test('client audit report instructions account for paginated citation evidence', () => {
+  const report = read('docs/ai-visibility-audit-report-prompt.md');
+  const toolsSource = read('src/core/tools.ts');
+
+  assert.match(toolsSource, /has_more: hasMore/);
+  assert.match(toolsSource, /next_cursor: hasMore/);
+  assert.match(report, /`has_more`/);
+  assert.match(report, /`next_cursor`/);
+  assert.match(report, /same.*`brand_id`.*`days`.*`engines`.*`measurement_mode`/);
+  assert.match(report, /`top_sources`.*full.*window/i);
+  assert.match(report, /partial.*citation.*examples/i);
+});
+
+test('client audit report instructions require a no-call refresh scope preview before spending', () => {
+  const report = read('docs/ai-visibility-audit-report-prompt.md');
+  const toolsSource = read('src/core/tools.ts');
+
+  assert.match(toolsSource, /preview_only: z\.boolean\(\)\.default\(false\)/);
+  assert.match(report, /refresh_brand\(preview_only=true/);
+  for (const field of [
+    'ready_to_refresh',
+    'planned_engines',
+    'active_prompt_count',
+    'planned_prompt_engine_pairs',
+    'skipped_unconfigured_engines',
+    'readiness_warnings',
+    'cost_note',
+  ]) {
+    assert.ok(report.includes('`' + field + '`'), `Audit report omits ${field} preview guidance`);
+  }
+  assert.match(report, /partial.*engine.*scope/i);
+  assert.match(report, /not.*billing.*(quote|estimate)/i);
+});

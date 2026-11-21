@@ -156,6 +156,41 @@ test('reordering unchanged brand term sets does not invalidate historical attrib
   }
 });
 
+test('case-only brand name, alias and exclusion edits retain the existing identity boundary', async () => {
+  const { root, db } = await seededDb();
+  try {
+    const seeded = await updateTrackedBrand(db, {
+      brand_id: 'acme',
+      exclude_terms: ['Acme'],
+    });
+    const identityBoundary = seeded.brand.identity_changed_at;
+    assert.ok(typeof identityBoundary === 'number');
+
+    const caseOnly = await updateTrackedBrand(db, {
+      brand_id: 'acme',
+      name: 'ACME',
+      aliases: ['ACME pm'],
+      exclude_terms: ['ACME'],
+    });
+    assert.equal(caseOnly.updated, true, 'display capitalization can still be updated');
+    assert.deepEqual(caseOnly.changed_fields, ['name', 'aliases', 'exclude_terms']);
+    assert.equal(caseOnly.historical_attribution_review_recommended, false);
+    assert.equal(caseOnly.brand.identity_changed_at, identityBoundary);
+    assert.equal(caseOnly.brand.name, 'ACME');
+    assert.deepEqual(caseOnly.brand.aliases, ['ACME pm']);
+    assert.deepEqual(caseOnly.brand.exclude_terms, ['ACME']);
+
+    const renamedAlias = await updateTrackedBrand(db, {
+      brand_id: 'acme', aliases: ['Different Brand'],
+    });
+    assert.equal(renamedAlias.historical_attribution_review_recommended, true,
+      'a changed matching term still invalidates historical identity attribution');
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('updateTrackedBrand rejects malformed input and missing brands without mutation', async () => {
   const { root, db } = await seededDb();
   try {

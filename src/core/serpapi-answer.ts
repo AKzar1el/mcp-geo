@@ -5,6 +5,7 @@ import { normalizeDomainInput } from './domain.js';
 export interface SerpApiAnswerBlock {
   type?: string;
   title?: string;
+  subtitle?: string;
   snippet?: string;
   text?: string;
   table?: unknown;
@@ -75,11 +76,14 @@ export function flattenSerpApiAnswer(
 
     const title = visibleText(block.title);
     const body = visibleText(block.snippet) || visibleText(block.text);
+    const subtitle = block.type === 'expandable' ? visibleText(block.subtitle) : '';
     if (listItem) {
       const label = title && title !== body ? [title, body].filter(Boolean).join(' ') : body;
       if (label) add(`${bullet} ${label}`);
+      if (subtitle && subtitle !== title && subtitle !== body) add(subtitle);
     } else {
       if (title && title !== body) add(title);
+      if (subtitle && subtitle !== title && subtitle !== body) add(subtitle);
       add(body);
     }
 

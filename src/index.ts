@@ -44,6 +44,7 @@ import { seedBrand, type SeedBrandInput } from './core/seed.js';
 import { DomainInputError } from './core/domain.js';
 import { hasRequiredIdentifier, selectAdminRunEngines } from './core/admin-run-input.js';
 import { validateExistingEngineRun } from './core/run-engine-replay.js';
+import { runClaimedHostedEngine } from './core/hosted-engine-dispatch.js';
 import { handlePublicAudit } from './public-audit.js';
 import {
   hasExplicitClientApproval,
@@ -574,8 +575,7 @@ async function handleAdminRunEngine(
     return jsonResponse({ error: 'run_id dispatch already claimed or no longer pending' }, 409);
   }
   // Clear stale rows only for the unique invocation that owns this run.
-  await db.deleteResponsesForRun(runId);
-  await runEngineInProcess(
+  const completed = await runClaimedHostedEngine(db, runId, () => runEngineInProcess(
     {
       db,
       OPENAI_API_KEY: env.OPENAI_API_KEY,
@@ -589,7 +589,10 @@ async function handleAdminRunEngine(
     brand,
     prompts,
     { engine, run_id: runId },
-  );
+  ));
+  if (!completed) {
+    return jsonResponse({ error: 'Hosted engine execution failed', run_id: runId }, 500);
+  }
   return jsonResponse({
     run_id: runId,
     engine,

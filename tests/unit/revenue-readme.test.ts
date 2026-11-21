@@ -169,20 +169,34 @@ test('audit methodology exposes the score formulas buyers need to verify', () =>
     /\[Use the reusable evidence-first report prompt\]\(\.\/ai-visibility-audit-report-prompt\.md\)/,
   );
 });
-test('audit report prompt uses the shipped citation source summary without inventing derived metrics', () => {
+test('audit report prompt distinguishes cited source paths from response-domain observations', () => {
   assert.match(
     reportPrompt,
     /get_citations[\s\S]*`top_sources` summary[\s\S]*recurring cited domains/,
   );
   assert.match(
     reportPrompt,
-    /Domain \| Citations \| Prompts \| Engines \| Brand domain\?/,
+    /Domain \| Response-domain observations \| Per-engine observations \| Per-engine source observation % \| Per-engine distinct prompts \| Per-engine last observed \| Per-engine source example \| Distinct cited paths \| Prompts \| Last observed \| Engines \| Evidence modes \| Brand domain\?/,
   );
   assert.match(
     reportPrompt,
-    /`citation_count`[\s\S]*`prompt_count`[\s\S]*`engines`[\s\S]*`is_brand_domain`/,
+    /`citation_count`[\s\S]*`per_engine_citation_count`[\s\S]*`prompt_count`[\s\S]*`engines`[\s\S]*`is_brand_domain`/,
   );
   assert.match(reportPrompt, /Do not infer a citation share or source category/);
+  assert.match(reportPrompt, /`distinct_cited_path_count`[\s\S]*ignoring query strings and fragments/);
+  assert.match(reportPrompt, /`top_cited_paths`[\s\S]*up to five pathnames[\s\S]*path counts can sum to more than the domain's `citation_count`/);
+  assert.match(reportPrompt, /`citation_count` counts stored responses listing that domain/);
+  assert.match(reportPrompt, /`per_engine_citation_count` breaks those same response-domain observations down by engine/);
+  assert.match(reportPrompt, /`per_engine_source_observation_percent` divides that source's per-engine response count by the same engine's `observation_coverage\.per_engine\.successful_observation_count`/);
+  assert.match(reportPrompt, /not a brand visibility score, a representative population estimate/);
+  assert.match(reportPrompt, /`per_engine_distinct_prompt_count` shows how many different stored prompt IDs cited that domain on each engine/);
+  assert.match(reportPrompt, /`per_engine_last_observed_at` is the latest stored response capture citing \*\*that source on that engine\*\*/);
+  assert.match(reportPrompt, /`top_sources\.per_engine_examples`[\s\S]*`url_redacted` flag/);
+  assert.match(reportPrompt, /top 10 source domains by default[\s\S]*`total_source_domains`[\s\S]*`top_sources_truncated`/);
+  assert.match(reportPrompt, /`get_citations\(top_sources_limit=50\)`[\s\S]*does not trigger provider calls/);
+  assert.match(reportPrompt, /must not be summed to infer global `prompt_count`/);
+  assert.match(reportPrompt, /`measurement_modes`[\s\S]*model-only versus search-requested evidence/);
+  assert.match(reportPrompt, /neither request mode alone verifies that a source was actually cited/);
   assert.match(
     reportPrompt,
     /recurring source domains from `top_sources`, when available/,
@@ -195,6 +209,58 @@ test('audit report prompt carries prompt bias and evidence-mode caveats into cli
   assert.match(reportPrompt, /`mixed_age_warning`[\s\S]*older engines/);
   assert.match(reportPrompt, /get_content_gaps[\s\S]*`measurement_scope`/);
   assert.match(reportPrompt, /model-only[\s\S]*search-requested[\s\S]*not proof of source citations/);
+});
+
+test('copy-paste audit instructions disclose stored observation coverage and evidence record limits', () => {
+  const instructions = reportPrompt.match(/## Copy-paste prompt\s+```text\r?\n([\s\S]*?)\r?\n```/)?.[1] ?? '';
+  assert.match(instructions, /`observation_coverage`[\s\S]*`active_prompt_count`[\s\S]*`per_engine`/);
+  assert.match(instructions, /`refreshed_at`[\s\S]*`incomplete_engines`[\s\S]*`unmeasured_engines`/);
+  assert.match(instructions, /`losing_prompt_evidence`[\s\S]*`response_id`[\s\S]*not (?:verified |independently verified )?source citations/i);
+  assert.match(instructions, /inspect (?:the )?stored responses before quoting/i);
+});
+
+test('copy-paste audit instructions flag configuration age and Google sampling limits', () => {
+  const instructions = reportPrompt.match(/## Copy-paste prompt\s+```text\r?\n([\s\S]*?)\r?\n```/)?.[1] ?? '';
+  assert.match(instructions, /`configuration_comparability`[\s\S]*`historical_settings_warning`[\s\S]*`engines_scanned_before_update`/);
+  assert.match(instructions, /cadence-only/);
+  assert.match(instructions, /`google_search_sampling`[\s\S]*`gl=us`[\s\S]*`hl=en`/);
+  assert.match(instructions, /(?:other markets or languages|other locales)/);
+});
+
+test('client audit guidance excludes pre-identity scans from current scores and content gaps', () => {
+  const instructions = reportPrompt.match(/## Copy-paste prompt\s+```text\r?\n([\s\S]*?)\r?\n```/)?.[1] ?? '';
+  assert.match(readme, /`identity_attribution\.stale_engines`[\s\S]*excluded/);
+  assert.match(instructions, /`check_visibility\.identity_attribution`[\s\S]*`get_content_gaps\.identity_attribution`/);
+  assert.match(instructions, /excluded from current-identity scoring and recommendations/);
+});
+
+test('client audit prompt selects the same active buyer cohort across evidence tools', () => {
+  const instructions = reportPrompt.match(/## Copy-paste prompt\s+```text\r?\n([\s\S]*?)\r?\n```/)?.[1] ?? '';
+  assert.match(instructions, /check_visibility[^\n]*active_prompts_only=true/);
+  assert.match(instructions, /compare_competitors[^\n]*active_prompts_only=true/);
+  assert.match(instructions, /get_citations[^\n]*active_prompts_only=true[^\n]*current_identity_only=true/);
+  assert.match(instructions, /get_visibility_history[^\n]*active_prompts_only=true[^\n]*current_identity_only=true/);
+  assert.match(instructions, /historical default[^\n]*retired/i);
+  assert.match(instructions, /same time window|different time windows/i);
+  assert.match(instructions, /unmeasured[^\n]*not zero/i);
+  assert.match(instructions, /do not perform a fresh scan|no new provider requests/i);
+});
+
+test('client audit prompt scopes stored competitor comparisons to the selected AI surfaces', () => {
+  const instructions = reportPrompt.match(/## Copy-paste prompt\s+```text\r?\n([\s\S]*?)\r?\n```/)?.[1] ?? '';
+  assert.match(instructions, /compare_competitors\(active_prompts_only=true, engines=\[\.\.\.\]\)/);
+  assert.match(instructions, /get_visibility_history\(active_prompts_only=true, current_identity_only=true, engines=\[\.\.\.\]\)/);
+  assert.match(instructions, /`engine_scope\.not_observed_engines`/);
+  assert.match(instructions, /`engine_scope\.unmeasured_scoped_engines`/);
+  assert.match(instructions, /not measured zero|not zero visibility|neither is measured zero/i);
+});
+
+test('client audit instructions use selected engines for headline scores and optional trends', () => {
+  const instructions = reportPrompt.match(/## Copy-paste prompt\s+```text\r?\n([\s\S]*?)\r?\n```/)?.[1] ?? '';
+  assert.match(instructions, /check_visibility\(active_prompts_only=true, engines=\[\.\.\.\]\)/);
+  assert.match(instructions, /1\. check_visibility\(active_prompts_only=true, engines=\[\.\.\.\]\)/);
+  assert.match(instructions, /5\. get_visibility_history\(active_prompts_only=true, current_identity_only=true, engines=\[\.\.\.\]\)/);
+  assert.match(instructions, /overall score[^\n]*selected (?:audit )?engines|selected (?:audit )?engines[^\n]*overall score/i);
 });
 
 test('README documents Roo Code local stdio setup and Windows fallback', () => {

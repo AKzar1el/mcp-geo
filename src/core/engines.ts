@@ -150,4 +150,5 @@ export async function runEngineInProcess(
 export interface RunEnginesResult {
   run_ids: Record<string, string>;
   engines: EngineName[];
+  failed_engines?: EngineName[];
 }

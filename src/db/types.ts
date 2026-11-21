@@ -195,6 +195,10 @@ export interface VisibilityHistoryRow {
   completed_at: number;
   total: number | null;
   hits: number | null;
+  // Current buyer-prompt cohort counts from the same deduplicated source rows.
+  // Optional for older in-memory fixtures; production adapters always return them.
+  active_total?: number | null;
+  active_hits?: number | null;
   // Roster coverage includes all response statuses, not just successful
   // responses used in scoring. Missing/incomplete rosters cannot establish
   // that two historical runs used the same set of prompts.
@@ -208,6 +212,8 @@ export interface VisibilityHistoryRow {
 export interface CitationRow {
   response_id: string;
   engine: string;
+  mode?: Run['mode'] | null;
+  run_started_at?: number | null;
   prompt: string;
   raw_response: string;
   brand_mentioned: number;
@@ -225,6 +231,8 @@ export interface CitationSourceRow {
   id: string;
   prompt_id: string;
   engine: string;
+  mode?: Run['mode'] | null;
+  run_started_at?: number | null;
   engine_citations: string[];
   captured_at: number;
 }
@@ -232,11 +240,22 @@ export interface CitationSourceRow {
 // Comparison needs stable retry identity and timing, not full AI answer bodies.
 export type ComparisonEvidenceRow = Pick<PromptResponse,
   'id' | 'run_id' | 'prompt_id' | 'prompt_text' | 'engine' |
-  'brand_mentioned' | 'competitors_mentioned' | 'status' | 'captured_at'>;
+  'brand_mentioned' | 'competitors_mentioned' | 'status' | 'captured_at'> & {
+    // Run start, not response capture, determines identity-version attribution.
+    run_started_at?: number;
+    // Stored live/batch request mode, not inferred from the response body.
+    mode?: Run['mode'] | null;
+  };
 
 export interface CitationPageOptions {
   limit?: number;
   until?: number;
+  // Request mode must be selected in SQL before keyset pagination.
+  measurementMode?: 'model_only' | 'search_requested';
+  // Apply identity provenance in SQL before page LIMIT/keyset selection.
+  minRunStartedAt?: number;
+  // Filter retired buyer questions before page LIMIT/keyset selection.
+  activePromptsOnly?: boolean;
   // response_id breaks ties between repeated observations of one run/prompt.
   // Optional for cursors issued before response-level pagination existed.
   before?: Pick<CitationRow, 'captured_at' | 'run_id' | 'prompt_id'> & {
@@ -316,7 +335,10 @@ export interface Db {
     brandId: string,
     since: number,
     until: number,
-    engine?: string,
+    engine?: string | string[],
+    minRunStartedAt?: number,
+    activePromptsOnly?: boolean,
+    measurementMode?: 'model_only' | 'search_requested',
   ): Promise<CitationSourceRow[]>;
   replacePrompts(brandId: string, prompts: NewPromptInput[]): Promise<number>;
   cacheGet(
@@ -343,7 +365,14 @@ export interface Db {
   getCitationRows(
     brandId: string,
     since: number,
-    engine?: string,
+    engine?: string | string[],
     page?: CitationPageOptions,
   ): Promise<CitationRow[]>;
+  // Full-window count before the cursor anchor/limit; historical retries remain distinct.
+  countCitationRows(
+    brandId: string,
+    since: number,
+    engine?: string | string[],
+    page?: CitationPageOptions,
+  ): Promise<number>;
 }

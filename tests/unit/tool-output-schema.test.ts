@@ -39,6 +39,7 @@ test('visibility output schema describes winning and losing prompt records', () 
     unmeasured_engines: ['chatgpt'],
     unmeasured_engines_note: 'No usable stored observation; this does not establish why.',
     measurement_scope: {
+      measurement_mode_filter: null,
       search_requested: { score: null, engines: [] },
       model_only: { score: 50, engines: ['claude'] },
       mixed_modes: false,
@@ -60,6 +61,12 @@ test('visibility output schema describes winning and losing prompt records', () 
       engines_with_retired_prompt_evidence: ['claude'],
       historical_prompt_warning: true,
       note: 'The Claude snapshot uses retired prompts.',
+    },
+    prompt_set_scope: {
+      selection: 'full_window',
+      active_prompt_count: 2,
+      excluded_successful_responses: 0,
+      note: 'Historical snapshot.',
     },
     configuration_comparability: {
       brand_updated_at: '2026-09-19T00:00:00.000Z',
@@ -99,6 +106,7 @@ test('visibility output schema describes winning and losing prompt records', () 
     refreshed_at: '2026-09-19T00:00:00.000Z',
     overall_score: 50,
     measurement_scope: {
+      measurement_mode_filter: null,
       search_requested: { score: null, engines: [] },
       model_only: { score: 50, engines: ['claude'] },
       mixed_modes: false,
@@ -127,7 +135,45 @@ test('content-gap output schema describes recommendation records', () => {
     schema.safeParse({
       brand_id: 'acme',
       google_search_sampling: null,
+      engine_scope: {
+        selection: 'all_stored', requested_engines: [],
+        not_observed_engines: [], unmeasured_scoped_engines: [],
+        note: 'All stored engines are included.',
+      },
+      observation_coverage: {
+        active_prompt_count: 2,
+        per_engine: [{
+          engine: 'chatgpt', run_id: 'run-1', usable_prompt_count: 1, missing_prompt_count: 1,
+          refreshed_at: '2026-11-12T00:00:00.000Z',
+        }],
+        incomplete_engines: ['chatgpt'],
+        unmeasured_engines: ['claude'],
+        note: 'One of two active prompts has usable evidence.',
+      },
+      losing_prompt_evidence: {
+        note: 'Stored observation references do not prove a source citation.',
+        prompts: [{
+          prompt_id: 'prompt-1',
+          prompt_text: 'Project tools for agencies',
+          observations: [{
+            engine: 'chatgpt', run_id: 'run-1', response_id: 'response-1',
+            captured_at_ms: 1000, competitors_mentioned: ['beta.com'],
+          }],
+        }],
+      },
+      configuration_comparability: {
+        brand_updated_at: '2026-11-11T00:00:00.000Z',
+        engines_scanned_before_update: [],
+        historical_settings_warning: false,
+        note: 'No settings-age divergence observed.',
+      },
+      identity_attribution: {
+        last_identity_change_at: null,
+        stale_engines: [],
+        note: 'Current-identity evidence only.',
+      },
       measurement_scope: {
+        measurement_mode_filter: null,
         search_requested_engines: ['chatgpt'],
         model_only_engines: [],
         mixed_modes: false,
@@ -150,7 +196,35 @@ test('content-gap output schema describes recommendation records', () => {
     schema.safeParse({
       brand_id: 'acme',
       google_search_sampling: null,
+      engine_scope: {
+        selection: 'all_stored', requested_engines: [],
+        not_observed_engines: [], unmeasured_scoped_engines: [],
+        note: 'All stored engines are included.',
+      },
+      observation_coverage: {
+        active_prompt_count: 1,
+        per_engine: [],
+        incomplete_engines: [],
+        unmeasured_engines: ['chatgpt', 'claude'],
+        note: 'No completed runs.',
+      },
+      losing_prompt_evidence: {
+        note: 'Stored observation references do not prove a source citation.',
+        prompts: [],
+      },
+      configuration_comparability: {
+        brand_updated_at: '2026-11-11T00:00:00.000Z',
+        engines_scanned_before_update: [],
+        historical_settings_warning: false,
+        note: 'No settings-age divergence observed.',
+      },
+      identity_attribution: {
+        last_identity_change_at: null,
+        stale_engines: [],
+        note: 'Current-identity evidence only.',
+      },
       measurement_scope: {
+        measurement_mode_filter: null,
         search_requested_engines: [],
         model_only_engines: ['claude'],
         mixed_modes: false,

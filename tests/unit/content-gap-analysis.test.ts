@@ -6,6 +6,7 @@ import {
   buildFallbackRecommendations,
 } from '../../src/core/content-gap-analysis.ts';
 import { registerTools } from '../../src/core/tools.ts';
+import { ALL_ENGINES } from '../../src/core/engines.ts';
 import type { Brand, Db, PromptResponse } from '../../src/db/types.ts';
 
 test('fallback recommendations stay grounded in observed losing prompts', () => {
@@ -117,6 +118,87 @@ test('content gaps distinguishes missing scan evidence from observed absence of 
   const failed = (await handler({ brand_id: 'acme', max_recommendations: 3 })).structuredContent;
   assert.equal(failed.recommendations.length, 0);
   assert.match(failed.reason ?? '', /no usable scan responses/i);
+});
+
+test('content gaps limit recommendations and coverage to selected audit engines', async () => {
+  const brand: Brand = {
+    id: 'acme', user_id: 'test-user', domain: 'acme.com', name: 'Acme',
+    category: 'Software', competitors: ['rival.com'], aliases: [],
+    exclude_terms: [], refresh_frequency: 'weekly', created_at: 0, updated_at: 0,
+  };
+  const makeResponse = (engine: string, promptId: string): PromptResponse => ({
+    id: `${engine}-response`, run_id: `${engine}-run`, prompt_id: promptId,
+    prompt_text: `${engine} buyer question`, engine, raw_response: '',
+    brand_mentioned: 0, brand_cited_with_link: 0, cited_urls: [],
+    competitors_mentioned: ['rival.com'], engine_citations: [], status: 'ok',
+    error_message: null, captured_at: 2000,
+  });
+  const runs: Record<string, PromptResponse[]> = {
+    'chatgpt-run': [makeResponse('chatgpt', 'prompt-chatgpt')],
+    'claude-run': [makeResponse('claude', 'prompt-claude')],
+  };
+  type GapPayload = {
+    recommendations: Array<{ topic: string }>;
+    observation_coverage: { per_engine: Array<{ engine: string }>; unmeasured_engines: string[] };
+    losing_prompt_evidence: { prompts: Array<{ observations: Array<{ engine: string }> }> };
+    engine_scope: { selection: string; requested_engines: string[];
+      not_observed_engines: string[]; unmeasured_scoped_engines: string[] };
+  };
+  let handler: ((args: { brand_id: string; max_recommendations: number;
+    engines?: string[] }) => Promise<{ structuredContent: GapPayload }>) | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, callback: unknown) {
+      if (name === 'get_content_gaps') handler = callback as typeof handler;
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getActivePrompts: async () => [{ id: 'prompt-chatgpt' }, { id: 'prompt-claude' }],
+      getLatestCompletedRun: async (_id, engine) => runs[`${engine}-run`]
+        ? { id: `${engine}-run`, started_at: 1000, completed_at: 2000 } : null,
+      getResponsesForRun: async (runId) => runs[runId] ?? [],
+    } as Db,
+    env: {}, refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(handler);
+
+  const selected = (await handler({ brand_id: 'acme', max_recommendations: 5,
+    engines: ['chatgpt', 'chatgpt'] })).structuredContent;
+  assert.deepEqual(selected.recommendations.map((r) => r.topic),
+    ['Address losing prompt: "chatgpt buyer question"']);
+  assert.deepEqual(selected.observation_coverage.per_engine.map((r) => r.engine), ['chatgpt']);
+  assert.deepEqual(selected.observation_coverage.unmeasured_engines, []);
+  assert.equal(selected.engine_scope.selection, 'selected');
+  assert.deepEqual(selected.engine_scope.requested_engines, ['chatgpt']);
+  assert.deepEqual(selected.engine_scope.not_observed_engines, []);
+  assert.deepEqual(selected.engine_scope.unmeasured_scoped_engines, []);
+  assert.deepEqual(selected.losing_prompt_evidence.prompts
+    .flatMap((p) => p.observations.map((r) => r.engine)), ['chatgpt']);
+
+  const missing = (await handler({ brand_id: 'acme', max_recommendations: 5,
+    engines: ['gemini'] })).structuredContent;
+  assert.deepEqual(missing.recommendations, []);
+  assert.deepEqual(missing.observation_coverage.unmeasured_engines, ['gemini']);
+  assert.deepEqual(missing.engine_scope.not_observed_engines, ['gemini']);
+  assert.deepEqual(missing.engine_scope.unmeasured_scoped_engines, []);
+
+  const all = (await handler({ brand_id: 'acme', max_recommendations: 5,
+    engines: [] })).structuredContent;
+  assert.equal(all.engine_scope.selection, 'all_stored');
+  assert.equal(all.recommendations.length, 2);
+  const omitted = (await handler({ brand_id: 'acme', max_recommendations: 5 }))
+    .structuredContent;
+  assert.deepEqual(all.recommendations, omitted.recommendations);
+
+  brand.identity_changed_at = 1500;
+  const stale = (await handler({ brand_id: 'acme', max_recommendations: 5,
+    engines: ['claude'] })).structuredContent;
+  assert.deepEqual(stale.recommendations, []);
+  assert.deepEqual(stale.engine_scope.not_observed_engines, []);
+  assert.deepEqual(stale.engine_scope.unmeasured_scoped_engines, ['claude']);
+  assert.deepEqual(stale.observation_coverage.unmeasured_engines, ['claude']);
 });
 
 test('content-gap recommendations disclose model-only and search-requested loss evidence', async () => {
@@ -561,6 +643,534 @@ test('content-gap analyzer still retries malformed model output once', async () 
   }
 });
 
+test('content-gap analyzer rejects advice without an observed competitor anchor without a paid retry', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return Response.json({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify([{
+        priority: 1,
+        topic: 'Compare Acme to Zephyr',
+        rationale: 'zephyr.example wins all observed buyer questions',
+        suggested_format: 'comparison_page',
+      }]) }],
+    });
+  };
+  try {
+    await assert.rejects(
+      analyzeContentGaps(
+        { ANTHROPIC_API_KEY: 'synthetic-offline-key' },
+        { id: 'acme', name: 'Acme', domain: 'acme.com' } as Brand,
+        [{ prompt_text: 'Best software for agencies', engines_lost_on: ['chatgpt'], competitors_winning: ['asana.com'] }],
+        1,
+      ),
+      /no recommendation passes observed competitor and domain provenance checks/i,
+    );
+    assert.equal(calls, 1, 'grounding failures must not cause a second billed request');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('content-gap analyzer keeps only recommendations anchored to observed competitors', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return Response.json({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify([
+        { priority: 1, topic: 'Compare Acme to Zephyr', rationale: 'Zephyr leads the market', suggested_format: 'comparison_page' },
+        { priority: 2, topic: 'Acme versus Asana', rationale: 'Answer observed agency buyer questions', suggested_format: 'comparison_page' },
+      ]) }],
+    });
+  };
+  try {
+    const recommendations = await analyzeContentGaps(
+      { ANTHROPIC_API_KEY: 'synthetic-offline-key' },
+      { id: 'acme', name: 'Acme', domain: 'acme.com' } as Brand,
+      [{ prompt_text: 'Best software for agencies', engines_lost_on: ['chatgpt'], competitors_winning: ['asana.com'] }],
+      2,
+    );
+    assert.deepEqual(recommendations.map((rec) => rec.topic), ['Acme versus Asana']);
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('content-gap analyzer does not attribute a competitor win to a different quoted buyer prompt', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    return Response.json({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify([
+        {
+          priority: 1,
+          topic: 'Acme versus monday.com for "Best analytics tools for stores"',
+          rationale: 'monday.com supposedly won this exact analytics buyer prompt',
+          suggested_format: 'comparison_page',
+        },
+        {
+          priority: 2,
+          topic: 'Acme versus asana.com for "Best analytics tools for stores"',
+          rationale: 'asana.com won the observed analytics buyer prompt',
+          suggested_format: 'comparison_page',
+        },
+      ]) }],
+    });
+  };
+  try {
+    const recommendations = await analyzeContentGaps(
+      { ANTHROPIC_API_KEY: 'synthetic-offline-key' },
+      { id: 'acme', name: 'Acme', domain: 'acme.com' } as Brand,
+      [
+        { prompt_text: 'Best analytics tools for stores', engines_lost_on: ['chatgpt'], competitors_winning: ['asana.com'] },
+        { prompt_text: 'Best collaboration platforms', engines_lost_on: ['claude'], competitors_winning: ['monday.com'] },
+      ],
+      2,
+    );
+    assert.deepEqual(recommendations.map((rec) => rec.priority), [2],
+      'a real competitor win on another prompt must not substantiate an exact quoted prompt claim');
+    assert.equal(calls, 1, 'evidence rejection must not trigger an additional paid call');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('content-gap quoted prompt text alone cannot supply the winning competitor anchor', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    return Response.json({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify([
+        {
+          priority: 1,
+          topic: 'Acme versus asana.com for "Is monday.com useful for agencies?"',
+          rationale: 'asana.com supposedly won that exact agency question',
+          suggested_format: 'comparison_page',
+        },
+        {
+          priority: 2,
+          topic: 'Acme versus monday.com for "Is monday.com useful for agencies?"',
+          rationale: 'monday.com won the observed agency question',
+          suggested_format: 'comparison_page',
+        },
+      ]) }],
+    });
+  };
+  try {
+    const recommendations = await analyzeContentGaps(
+      { ANTHROPIC_API_KEY: 'synthetic-offline-key' },
+      { id: 'acme', name: 'Acme', domain: 'acme.com' } as Brand,
+      [
+        { prompt_text: 'Is monday.com useful for agencies?', engines_lost_on: ['chatgpt'], competitors_winning: ['monday.com'] },
+        { prompt_text: 'Best analytics tools for stores', engines_lost_on: ['claude'], competitors_winning: ['asana.com'] },
+      ],
+      2,
+    );
+    assert.deepEqual(recommendations.map((rec) => rec.priority), [2],
+      'quoting an observed winner in the buyer question is not independent evidence for a different competitor claim');
+    assert.equal(calls, 1, 'grounding rejection must not trigger a second provider request');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('content-gap analyzer preserves recorded buyer questions containing third-party domains', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    return Response.json({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify([
+        {
+          priority: 1,
+          topic: 'Acme versus Asana for "Can Shopify.com connect to Salesforce?"',
+          rationale: 'asana.com won this recorded buyer question about an external integration.',
+          suggested_format: 'integration_landing_page',
+        },
+        {
+          priority: 2,
+          topic: 'Acme versus Asana external integration',
+          rationale: 'asana.com won, and shopify.com independently proves the result.',
+          suggested_format: 'integration_landing_page',
+        },
+        {
+          priority: 3,
+          topic: 'Acme versus Asana fabricated reference',
+          rationale: 'asana.com won and https://invented.example/report proves it.',
+          suggested_format: 'comparison_page',
+        },
+      ]) }],
+    });
+  };
+  try {
+    const recommendations = await analyzeContentGaps(
+      { ANTHROPIC_API_KEY: 'synthetic-offline-key' },
+      { id: 'acme', name: 'Acme', domain: 'acme.com' } as Brand,
+      [{
+        prompt_text: 'Can Shopify.com connect to Salesforce?',
+        engines_lost_on: ['chatgpt'],
+        competitors_winning: ['asana.com'],
+      }],
+      3,
+    );
+    assert.deepEqual(recommendations.map((rec) => rec.priority), [1],
+      'exact observed questions are safe to quote, but do not license external domain claims');
+    assert.equal(calls, 1, 'semantic validation must never retry a paid model');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('content-gap analyzer returns distinct actionable topics instead of duplicate paid-model advice', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return Response.json({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify([
+        { priority: 1, topic: 'Acme versus Asana', rationale: 'Compare the observed Asana loss', suggested_format: 'comparison_page' },
+        { priority: 2, topic: ' acme  VERSUS   asana ', rationale: 'Repeat the same Asana comparison', suggested_format: 'comparison_page' },
+        { priority: 3, topic: 'Acme versus Asana', rationale: 'Answer a distinct Asana FAQ', suggested_format: 'faq_page' },
+        { priority: 4, topic: 'Acme pricing versus Asana', rationale: 'Compare pricing to Asana', suggested_format: 'pricing_page' },
+      ]) }],
+    });
+  };
+  try {
+    const recommendations = await analyzeContentGaps(
+      { ANTHROPIC_API_KEY: 'synthetic-offline-key' },
+      { id: 'acme', name: 'Acme', domain: 'acme.com' } as Brand,
+      [{ prompt_text: 'Compare Acme and Asana for agencies', engines_lost_on: ['chatgpt'], competitors_winning: ['asana.com'] }],
+      3,
+    );
+    assert.deepEqual(recommendations.map((rec) => [rec.priority, rec.topic, rec.suggested_format]), [
+      [1, 'Acme versus Asana', 'comparison_page'],
+      [3, 'Acme versus Asana', 'faq_page'],
+      [4, 'Acme pricing versus Asana', 'pricing_page'],
+    ]);
+    assert.equal(calls, 1, 'deduplicating valid advice must not trigger a second paid request');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('content-gap analyzer excludes mixed observed and invented competitor domains without another paid call', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return Response.json({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify([
+        {
+          priority: 1,
+          topic: 'Acme versus Asana and Zephyr',
+          rationale: 'Asana is observed, but zephyr.example also supposedly wins these prompts',
+          suggested_format: 'comparison_page',
+        },
+        {
+          priority: 2,
+          topic: 'Acme.com versus Asana.com',
+          rationale: 'Compare acme.com with the observed asana.com competitor',
+          suggested_format: 'comparison_page',
+        },
+      ]) }],
+    });
+  };
+  try {
+    const recommendations = await analyzeContentGaps(
+      { ANTHROPIC_API_KEY: 'synthetic-offline-key' },
+      { id: 'acme', name: 'Acme', domain: 'acme.com' } as Brand,
+      [{ prompt_text: 'Best agency tools', engines_lost_on: ['chatgpt'], competitors_winning: ['asana.com'] }],
+      2,
+    );
+    assert.deepEqual(recommendations.map((rec) => rec.topic), ['Acme.com versus Asana.com']);
+    assert.equal(calls, 1, 'semantic grounding validation must not retry a billable model');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('content-gap analyzer rejects invented subdomain URLs without another paid call', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return Response.json({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify([
+        {
+          priority: 1,
+          topic: 'Acme versus Asana research',
+          rationale: 'Asana is observed, and https://fabricated.asana.com/report is supposedly a cited report',
+          suggested_format: 'comparison_page',
+        },
+        {
+          priority: 2,
+          topic: 'Acme versus Asana integration',
+          rationale: 'Compare with the observed asana.com competitor using its main website https://www.asana.com/',
+          suggested_format: 'integration_landing_page',
+        },
+      ]) }],
+    });
+  };
+  try {
+    const recommendations = await analyzeContentGaps(
+      { ANTHROPIC_API_KEY: 'synthetic-offline-key' },
+      { id: 'acme', name: 'Acme', domain: 'acme.com' } as Brand,
+      [{ prompt_text: 'Compare agency tools', engines_lost_on: ['chatgpt'], competitors_winning: ['asana.com'] }],
+      2,
+    );
+    assert.deepEqual(recommendations.map((rec) => rec.topic), ['Acme versus Asana integration']);
+    assert.equal(calls, 1, 'unobserved subdomain must not trigger another provider request');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('content-gap analyzer does not present invented competitor page URLs as observed sources', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return Response.json({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify([
+        {
+          priority: 1,
+          topic: 'Acme versus Asana invented study',
+          rationale: 'Asana is observed and https://asana.com/research/market-report supposedly proves the claim',
+          suggested_format: 'comparison_page',
+        },
+        {
+          priority: 2,
+          topic: 'Acme versus Asana tracking claim',
+          rationale: 'Asana is observed, but https://asana.com/?source=unverified was not supplied as evidence',
+          suggested_format: 'comparison_page',
+        },
+        {
+          priority: 3,
+          topic: 'Acme versus Asana homepages',
+          rationale: 'Compare Acme with the observed Asana competitor at https://www.asana.com/',
+          suggested_format: 'comparison_page',
+        },
+        {
+          priority: 4,
+          topic: 'Acme versus Asana pricing guide',
+          rationale: 'Create a proposed pricing guide at https://acme.com/pricing to address the Asana competitor',
+          suggested_format: 'pricing_page',
+        },
+      ]) }],
+    });
+  };
+  try {
+    const recommendations = await analyzeContentGaps(
+      { ANTHROPIC_API_KEY: 'synthetic-offline-key' },
+      { id: 'acme', name: 'Acme', domain: 'acme.com' } as Brand,
+      [{ prompt_text: 'Compare team tools', engines_lost_on: ['chatgpt'], competitors_winning: ['asana.com'] }],
+      4,
+    );
+    assert.deepEqual(recommendations.map((rec) => rec.topic), [
+      'Acme versus Asana homepages',
+      'Acme versus Asana pricing guide',
+    ]);
+    assert.equal(calls, 1, 'grounding rejection must not trigger another provider call');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('content-gap analyzer keeps common GEO files without accepting invented domain URLs', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return Response.json({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify([
+        {
+          priority: 1,
+          topic: 'Acme versus Asana AI discovery guidance',
+          rationale: 'Compare observed asana.com with Acme and document robots.txt, sitemap.xml, llms.txt and security.txt readiness',
+          suggested_format: 'how_to_guide',
+        },
+        {
+          priority: 2,
+          topic: 'Acme versus Asana unsupported source',
+          rationale: 'Asana is observed, but https://invented.example/robots.txt is not',
+          suggested_format: 'comparison_page',
+        },
+      ]) }],
+    });
+  };
+  try {
+    const recommendations = await analyzeContentGaps(
+      { ANTHROPIC_API_KEY: 'synthetic-offline-key' },
+      { id: 'acme', name: 'Acme', domain: 'acme.com' } as Brand,
+      [{ prompt_text: 'Compare AI discovery tools', engines_lost_on: ['chatgpt'], competitors_winning: ['asana.com'] }],
+      2,
+    );
+    assert.deepEqual(recommendations.map((rec) => rec.topic),
+      ['Acme versus Asana AI discovery guidance']);
+    assert.equal(calls, 1, 'file-name parsing must not trigger another provider request');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('content-gap analyzer falls back when every model recommendation mixes observed and invented domains', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return Response.json({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify([{
+        priority: 1,
+        topic: 'Compare Asana and fake.example',
+        rationale: 'asana.com has real observed evidence, fake.example does not',
+        suggested_format: 'comparison_page',
+      }]) }],
+    });
+  };
+  try {
+    await assert.rejects(
+      analyzeContentGaps(
+        { ANTHROPIC_API_KEY: 'synthetic-offline-key' },
+        { id: 'acme', name: 'Acme', domain: 'acme.com' } as Brand,
+        [{ prompt_text: 'Best agency tools', engines_lost_on: ['chatgpt'], competitors_winning: ['asana.com'] }],
+        1,
+      ),
+      /no recommendation passes observed competitor and domain provenance checks/i,
+    );
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('content-gap analyzer rejects unobserved Unicode URL hosts beside genuine competitor evidence', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return Response.json({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify([
+        {
+          priority: 1,
+          topic: 'Acme versus Asana in international markets',
+          rationale: 'Asana is observed but https://\u5047\u5192.\u6d4b\u8bd5/agency is an unobserved comparison source',
+          suggested_format: 'comparison_page',
+        },
+        {
+          priority: 2,
+          topic: 'Acme versus Asana for agencies',
+          rationale: 'Asana is observed at its homepage https://www.asana.com/',
+          suggested_format: 'comparison_page',
+        },
+        {
+          priority: 3,
+          topic: 'Acme versus Asana and observed international vendor',
+          rationale: 'Asana and https://\u4f8b\u5b50.\u4e2d\u56fd/ are both observed competitors',
+          suggested_format: 'comparison_page',
+        },
+      ]) }],
+    });
+  };
+  try {
+    const result = await analyzeContentGaps(
+      { ANTHROPIC_API_KEY: 'synthetic-offline-key' },
+      { id: 'acme', name: 'Acme', domain: 'acme.com' } as Brand,
+      [{ prompt_text: 'Compare agency tools', engines_lost_on: ['chatgpt'], competitors_winning: ['asana.com', 'xn--fsqu00a.xn--fiqs8s'] }],
+      3,
+    );
+    assert.deepEqual(result.map((item) => item.topic), [
+      'Acme versus Asana for agencies',
+      'Acme versus Asana and observed international vendor',
+    ]);
+    assert.equal(calls, 1, 'URL evidence filtering must not request another paid completion');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('content-gap analyzer rejects invented bare internationalized domains without a paid retry', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return Response.json({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify([
+        {
+          priority: 1,
+          topic: 'Acme versus Asana global competitor guide',
+          rationale: 'Asana is observed, but the claimed source \u5047\u5192.\u6d4b\u8bd5 is not an observed competitor',
+          suggested_format: 'comparison_page',
+        },
+        {
+          priority: 2,
+          topic: 'Acme versus Asana observed comparison',
+          rationale: 'Only the observed asana.com website supplies the comparison evidence',
+          suggested_format: 'comparison_page',
+        },
+      ]) }],
+    });
+  };
+  try {
+    const recommendations = await analyzeContentGaps(
+      { ANTHROPIC_API_KEY: 'synthetic-offline-key' },
+      { id: 'acme', name: 'Acme', domain: 'acme.com' } as Brand,
+      [{ prompt_text: 'Compare agency tools', engines_lost_on: ['chatgpt'], competitors_winning: ['asana.com'] }],
+      2,
+    );
+    assert.deepEqual(recommendations.map((rec) => rec.topic), ['Acme versus Asana observed comparison']);
+    assert.equal(calls, 1, 'bare Unicode provenance checking must not trigger a second model request');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('content-gap analyzer recognizes an observed bare Unicode competitor domain by IDNA', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return Response.json({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify([{
+        priority: 1,
+        topic: 'Compare Acme with \u4f8b\u5b50.\u4e2d\u56fd',
+        rationale: 'The observed \u4f8b\u5b50.\u4e2d\u56fd competitor is cited in the source results',
+        suggested_format: 'comparison_page',
+      }]) }],
+    });
+  };
+  try {
+    const recommendations = await analyzeContentGaps(
+      { ANTHROPIC_API_KEY: 'synthetic-offline-key' },
+      { id: 'acme', name: 'Acme', domain: 'acme.com' } as Brand,
+      [{ prompt_text: 'Compare international tools', engines_lost_on: ['chatgpt'], competitors_winning: ['xn--fsqu00a.xn--fiqs8s'] }],
+      1,
+    );
+    assert.deepEqual(recommendations.map((rec) => rec.topic), ['Compare Acme with \u4f8b\u5b50.\u4e2d\u56fd']);
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('content-gap analyzer rejects whitespace-only Anthropic credentials before requests', async () => {
   const originalFetch = globalThis.fetch;
   let fetchCalls = 0;
@@ -584,7 +1194,7 @@ test('content-gap analyzer rejects whitespace-only Anthropic credentials before 
   }
 });
 
-test('content-gap advice discloses US/English Google sampling only for observed losing engines', async () => {
+test('content-gap advice discloses US/English Google sampling for observed Google losses', async () => {
   const brand: Brand = {
     id: 'acme', user_id: 'test-user', name: 'Acme', domain: 'acme.com',
     category: 'Software', competitors: ['rival.com'], aliases: [],
@@ -633,6 +1243,58 @@ test('content-gap advice discloses US/English Google sampling only for observed 
   assert.equal(nonGoogle, null);
 });
 
+test('content gaps disclose Google locale for usable scans without competitor-only losses', async () => {
+  const brand = {
+    id: 'acme', name: 'Acme', domain: 'acme.com', competitors: ['rival.com'],
+    aliases: [], exclude_terms: [], updated_at: 0,
+  } as Brand;
+  let observedEngine = 'ai_overviews';
+  let responseStatus: 'ok' | 'error' = 'ok';
+  let handler: ((input: { brand_id: string; max_recommendations: number }) => Promise<{
+    structuredContent: {
+      google_search_sampling: null | { engines: string[]; country: string; language: string };
+      recommendations: unknown[];
+    };
+  }>) | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, callback: unknown) {
+      if (name === 'get_content_gaps') handler = callback as typeof handler;
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getActivePrompts: async () => [{ id: 'prompt-1' }],
+      getLatestCompletedRun: async (_id, engine) => engine === observedEngine
+        ? { id: 'run-1', started_at: 1000, completed_at: 2000 } : null,
+      getResponsesForRun: async () => [{
+        id: 'response-1', run_id: 'run-1', prompt_id: 'prompt-1',
+        prompt_text: 'Best software for agencies', engine: observedEngine,
+        raw_response: '', brand_mentioned: 1, brand_cited_with_link: 0,
+        cited_urls: [], competitors_mentioned: [], engine_citations: [],
+        status: responseStatus, error_message: responseStatus === 'ok' ? null : 'provider error',
+        captured_at: 1500,
+      }],
+    } as Db,
+    env: {}, refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(handler);
+  const measured = (await handler({ brand_id: 'acme', max_recommendations: 1 })).structuredContent;
+  assert.deepEqual(measured.recommendations, []);
+  assert.deepEqual(measured.google_search_sampling?.engines, ['ai_overviews']);
+  assert.equal(measured.google_search_sampling?.country, 'us');
+  assert.equal(measured.google_search_sampling?.language, 'en');
+
+  responseStatus = 'error';
+  const failed = (await handler({ brand_id: 'acme', max_recommendations: 1 })).structuredContent;
+  assert.equal(failed.google_search_sampling, null);
+  observedEngine = 'chatgpt';
+  responseStatus = 'ok';
+  const nonGoogle = (await handler({ brand_id: 'acme', max_recommendations: 1 })).structuredContent;
+  assert.equal(nonGoogle.google_search_sampling, null);
+});
+
 test('content gaps never recommend prompts retired from the active buyer-intent set', async () => {
   const brand = {
     id: 'acme', name: 'Acme', domain: 'acme.com', competitors: ['rival.com'],
@@ -675,4 +1337,381 @@ test('content gaps never recommend prompts retired from the active buyer-intent 
   assert.deepEqual(mixed.recommendations.map((item) => item.topic), [
     'Address losing prompt: "Question for active"',
   ]);
+});
+
+test('content gaps disclose whether recommendation evidence predates brand settings', async () => {
+  const brand: Brand = {
+    id: 'acme', user_id: 'test-user', domain: 'acme.com', name: 'Acme',
+    category: 'Software', competitors: ['rival.com'], aliases: [],
+    exclude_terms: [], refresh_frequency: 'weekly', created_at: 0, updated_at: 2000,
+  };
+  const response = (engine: string, runId: string): PromptResponse => ({
+    id: `${runId}-response`, run_id: runId, prompt_id: 'prompt-1',
+    prompt_text: 'Best software for agencies', engine, raw_response: '',
+    brand_mentioned: 0, brand_cited_with_link: 0, cited_urls: [],
+    competitors_mentioned: ['rival.com'], engine_citations: [],
+    status: 'ok', error_message: null, captured_at: engine === 'chatgpt' ? 1500 : 3200,
+  });
+  type Comparison = {
+    brand_updated_at: string | null;
+    engines_scanned_before_update: string[];
+    historical_settings_warning: boolean;
+    note: string;
+  };
+  let handler: ((input: { brand_id: string; max_recommendations: number }) => Promise<{
+    structuredContent: { configuration_comparability: Comparison; recommendations: unknown[] };
+  }>) | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, callback: unknown) {
+      if (name === 'get_content_gaps') handler = callback as typeof handler;
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getActivePrompts: async () => [{ id: 'prompt-1' }],
+      getLatestCompletedRun: async (_id, engine) =>
+        engine === 'chatgpt' ? { id: 'old-run', started_at: 1000 } :
+        engine === 'claude' ? { id: 'new-run', started_at: 3000 } : null,
+      getResponsesForRun: async (runId) =>
+        [response(runId === 'old-run' ? 'chatgpt' : 'claude', runId)],
+    } as Db,
+    env: {}, refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(handler);
+
+  const first = (await handler({ brand_id: 'acme', max_recommendations: 2 })).structuredContent;
+  assert.equal(first.recommendations.length, 1);
+  assert.equal(first.configuration_comparability.brand_updated_at, new Date(2000).toISOString());
+  assert.deepEqual(first.configuration_comparability.engines_scanned_before_update, ['chatgpt']);
+  assert.equal(first.configuration_comparability.historical_settings_warning, true);
+  assert.match(first.configuration_comparability.note, /cadence-only|which settings changed/i);
+
+  brand.updated_at = 500;
+  const fresh = (await handler({ brand_id: 'acme', max_recommendations: 2 })).structuredContent;
+  assert.equal(fresh.configuration_comparability.historical_settings_warning, false);
+  assert.deepEqual(fresh.configuration_comparability.engines_scanned_before_update, []);
+});
+
+test('content gaps expose bounded traceable winning observations, not retired or superseded responses', async () => {
+  const brand: Brand = {
+    id: 'acme', user_id: 'test-user', domain: 'acme.com', name: 'Acme',
+    category: 'Software', competitors: ['rival.com'], aliases: [],
+    exclude_terms: [], refresh_frequency: 'manual', created_at: 0, updated_at: 0,
+  };
+  const response = (
+    id: string, promptId: string, competitors: string[], capturedAt: number,
+    brandMentioned = 0,
+  ): PromptResponse => ({
+    id, run_id: 'run-chatgpt', prompt_id: promptId,
+    prompt_text: promptId === 'active' ? 'Best software for agencies' : 'Retired question',
+    engine: 'chatgpt', raw_response: 'Private answer is not a client citation',
+    brand_mentioned: brandMentioned, brand_cited_with_link: 0, cited_urls: [],
+    competitors_mentioned: competitors, engine_citations: [], status: 'ok',
+    error_message: null, captured_at: capturedAt,
+  });
+  let handler: ((input: { brand_id: string; max_recommendations: number }) => Promise<{
+    structuredContent: {
+      losing_prompt_evidence: {
+        note: string;
+        prompts: Array<{
+          prompt_id: string;
+          prompt_text: string;
+          observations: Array<{
+            engine: string;
+            run_id: string;
+            response_id: string;
+            captured_at_ms: number;
+            competitors_mentioned: string[];
+          }>;
+        }>;
+      };
+    };
+  }>) | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, callback: unknown) {
+      if (name === 'get_content_gaps') handler = callback as typeof handler;
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getActivePrompts: async () => [{ id: 'active' }],
+      getLatestCompletedRun: async (_id, engine) =>
+        engine === 'chatgpt' ? { id: 'run-chatgpt', mode: 'live', started_at: 10 } : null,
+      getResponsesForRun: async () => [
+        response('old', 'active', ['obsolete.com'], 100),
+        response('current', 'active', ['rival.com', 'obsolete.com'], 200),
+        response('retired', 'retired', ['rival.com'], 300),
+        response('brand-win', 'active', ['rival.com'], 150, 1),
+      ],
+    } as Db,
+    env: {}, refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(handler);
+  const result = (await handler({ brand_id: 'acme', max_recommendations: 1 })).structuredContent;
+  assert.deepEqual(result.losing_prompt_evidence.prompts, [{
+    prompt_id: 'active',
+    prompt_text: 'Best software for agencies',
+    observations: [{
+      engine: 'chatgpt', run_id: 'run-chatgpt', response_id: 'current',
+      captured_at_ms: 200, competitors_mentioned: ['rival.com'],
+    }],
+  }]);
+  assert.match(result.losing_prompt_evidence.note, /not.*(verified|source citation)/i);
+  assert.doesNotMatch(JSON.stringify(result.losing_prompt_evidence), /Private answer|obsolete.com|retired/);
+});
+
+test('content gaps disclose usable active-prompt coverage of latest completed engine runs', async () => {
+  const brand = {
+    id: 'acme', name: 'Acme', domain: 'acme.com', competitors: ['rival.com'],
+    aliases: [], exclude_terms: [], updated_at: 0,
+  } as Brand;
+  const response = (
+    runId: string, promptId: string, id: string, status: 'ok' | 'error',
+    capturedAt: number,
+  ): PromptResponse => ({
+    id, run_id: runId, prompt_id: promptId, prompt_text: `Question ${promptId}`,
+    engine: runId === 'run-chatgpt' ? 'chatgpt' : 'claude',
+    raw_response: '', brand_mentioned: status === 'ok' ? 0 : 1,
+    brand_cited_with_link: 0, cited_urls: [],
+    competitors_mentioned: status === 'ok' ? ['rival.com'] : [],
+    engine_citations: [], status, error_message: status === 'ok' ? null : 'provider error',
+    captured_at: capturedAt,
+  });
+  let handler: ((input: { brand_id: string; max_recommendations: number }) => Promise<{
+    structuredContent: {
+      observation_coverage: {
+        active_prompt_count: number;
+        per_engine: Array<{
+          engine: string; run_id: string; usable_prompt_count: number;
+          missing_prompt_count: number; refreshed_at: string | null;
+        }>;
+        incomplete_engines: string[];
+        unmeasured_engines: string[];
+        note: string;
+      };
+    };
+  }>) | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, callback: unknown) {
+      if (name === 'get_content_gaps') handler = callback as typeof handler;
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getActivePrompts: async () => [{ id: 'prompt-1' }, { id: 'prompt-2' }],
+      getLatestCompletedRun: async (_id, engine) =>
+        engine === 'chatgpt' ? { id: 'run-chatgpt', started_at: 1000, completed_at: 1500 } :
+        engine === 'claude' ? { id: 'run-claude', started_at: 3000, completed_at: null } : null,
+      getResponsesForRun: async (runId) => runId === 'run-chatgpt' ? [
+        response(runId, 'prompt-1', 'success', 'ok', 100),
+        response(runId, 'prompt-1', 'later-failure', 'error', 200),
+        response(runId, 'prompt-2', 'failure', 'error', 100),
+        response(runId, 'retired', 'retired-success', 'ok', 300),
+      ] : [
+        response(runId, 'prompt-1', 'claude-1', 'ok', 100),
+        response(runId, 'prompt-2', 'claude-2', 'ok', 100),
+      ],
+    } as Db,
+    env: {}, refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(handler);
+  const result = (await handler({ brand_id: brand.id, max_recommendations: 2 })).structuredContent;
+  assert.equal(result.observation_coverage.active_prompt_count, 2);
+  assert.deepEqual(result.observation_coverage.per_engine, [
+    { engine: 'chatgpt', run_id: 'run-chatgpt', usable_prompt_count: 1, missing_prompt_count: 1, refreshed_at: new Date(1500).toISOString() },
+    { engine: 'claude', run_id: 'run-claude', usable_prompt_count: 2, missing_prompt_count: 0, refreshed_at: new Date(3000).toISOString() },
+  ]);
+  assert.deepEqual(result.observation_coverage.incomplete_engines, ['chatgpt']);
+  assert.deepEqual(result.observation_coverage.unmeasured_engines,
+    ALL_ENGINES.filter((engine) => engine !== 'chatgpt' && engine !== 'claude'));
+  assert.match(result.observation_coverage.note, /unmeasured_engines|no usable stored/i);
+});
+
+test('content gaps flag a completed engine run without usable active-prompt evidence as unmeasured', async () => {
+  const brand = {
+    id: 'acme', name: 'Acme', domain: 'acme.com', competitors: ['rival.com'],
+    aliases: [], exclude_terms: [], updated_at: 0,
+  } as Brand;
+  let handler: ((input: { brand_id: string; max_recommendations: number }) => Promise<{
+    structuredContent: {
+      observation_coverage: {
+        per_engine: Array<{ engine: string; usable_prompt_count: number; missing_prompt_count: number }>;
+        incomplete_engines: string[];
+        unmeasured_engines: string[];
+        note: string;
+      };
+      recommendations: unknown[];
+    };
+  }>) | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, callback: unknown) {
+      if (name === 'get_content_gaps') handler = callback as typeof handler;
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getActivePrompts: async () => [{ id: 'current-prompt' }],
+      getLatestCompletedRun: async (_id, engine) =>
+        engine === 'chatgpt' ? { id: 'failed-run', started_at: 1000, completed_at: 2000 } : null,
+      getResponsesForRun: async () => [{
+        id: 'failed-response', run_id: 'failed-run', prompt_id: 'current-prompt',
+        prompt_text: 'Best tools', engine: 'chatgpt', raw_response: '',
+        brand_mentioned: 0, brand_cited_with_link: 0, cited_urls: [],
+        competitors_mentioned: [], engine_citations: [],
+        status: 'error', error_message: 'provider failure', captured_at: 1900,
+      }],
+    } as Db,
+    env: {}, refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(handler);
+  const result = (await handler({ brand_id: brand.id, max_recommendations: 2 })).structuredContent;
+  assert.deepEqual(result.recommendations, []);
+  assert.equal(result.observation_coverage.per_engine[0]?.usable_prompt_count, 0);
+  assert.equal(result.observation_coverage.per_engine[0]?.missing_prompt_count, 1);
+  assert.ok(result.observation_coverage.incomplete_engines.includes('chatgpt'));
+  assert.ok(result.observation_coverage.unmeasured_engines.includes('chatgpt'));
+  assert.match(result.observation_coverage.note, /no usable|zero usable/i);
+});
+
+test('content gaps exclude pre-identity-change losses from recommendations without deleting history', async () => {
+  const trackedBrand = {
+    id: 'acme', name: 'Beta', domain: 'beta.com', competitors: ['rival.com'],
+    aliases: [], exclude_terms: [], updated_at: 2000, identity_changed_at: 2000,
+  } as Brand;
+  let handler: ((input: { brand_id: string; max_recommendations: number }) => Promise<{
+    structuredContent: {
+      recommendations: unknown[];
+      identity_attribution: { last_identity_change_at: string | null; stale_engines: string[]; note: string };
+      observation_coverage: { per_engine: Array<{ engine: string }>; unmeasured_engines: string[] };
+    };
+  }>) | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, callback: unknown) {
+      if (name === 'get_content_gaps') handler = callback as typeof handler;
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => trackedBrand,
+      getActivePrompts: async () => [{ id: 'prompt-1' }],
+      getLatestCompletedRun: async (_id, engine) =>
+        engine === 'chatgpt' ? { id: 'old-acme', mode: 'live', started_at: 1000, completed_at: 1500 } :
+        engine === 'claude' ? { id: 'new-beta', mode: 'live', started_at: 3000, completed_at: 3500 } : null,
+      getResponsesForRun: async (runId) => [{
+        id: `${runId}-response`, run_id: runId, prompt_id: 'prompt-1',
+        prompt_text: 'Best agency tools', engine: runId === 'old-acme' ? 'chatgpt' : 'claude',
+        raw_response: '', brand_mentioned: runId === 'new-beta' ? 1 : 0,
+        brand_cited_with_link: 0, cited_urls: [],
+        competitors_mentioned: runId === 'old-acme' ? ['rival.com'] : [],
+        engine_citations: [], status: 'ok', error_message: null,
+        captured_at: runId === 'old-acme' ? 1400 : 3400,
+      } satisfies PromptResponse],
+    } as Db,
+    env: {}, refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(handler);
+
+  const current = (await handler({ brand_id: trackedBrand.id, max_recommendations: 2 })).structuredContent;
+  assert.equal(current.recommendations.length, 0, 'old Acme losses must not become Beta advice');
+  assert.deepEqual(current.observation_coverage.per_engine.map((row) => row.engine), ['claude']);
+  assert.ok(current.observation_coverage.unmeasured_engines.includes('chatgpt'));
+  assert.deepEqual(current.identity_attribution.stale_engines, ['chatgpt']);
+  assert.equal(current.identity_attribution.last_identity_change_at, new Date(2000).toISOString());
+
+  trackedBrand.identity_changed_at = null;
+  const legacy = (await handler({ brand_id: trackedBrand.id, max_recommendations: 2 })).structuredContent;
+  assert.equal(legacy.recommendations.length, 1, 'legacy rows with unknown identity boundaries remain readable');
+  assert.deepEqual(legacy.identity_attribution.stale_engines, []);
+});
+
+test('content gaps select the latest eligible run within a request-mode cohort', async () => {
+  const brand = {
+    id: 'acme', name: 'Acme', domain: 'acme.com', competitors: ['rival.com'],
+    aliases: [], exclude_terms: [], updated_at: 0,
+  } as Brand;
+  const selectedRuns: Array<{ engine: string; mode: string }> = [];
+  let handler: ((input: {
+    brand_id: string; engines: string[]; max_recommendations: number;
+    ai_analysis: boolean; measurement_mode?: 'model_only' | 'search_requested';
+  }) => Promise<{ structuredContent: {
+    observation_coverage: { per_engine: Array<{ run_id: string }>; unmeasured_engines: string[] };
+    losing_prompt_evidence: { prompts: Array<{ prompt_id: string }> };
+    measurement_scope: {
+      measurement_mode_filter: 'model_only' | 'search_requested' | null;
+      model_only_engines: string[]; search_requested_engines: string[];
+    };
+  } }>) | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, callback: unknown) {
+      if (name === 'get_content_gaps') handler = callback as typeof handler;
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getActivePrompts: async () => [
+        { id: 'prompt-live' }, { id: 'prompt-batch' }, { id: 'prompt-claude' },
+      ],
+      getLatestCompletedRun: async (_id, engine, mode) => {
+        selectedRuns.push({ engine, mode: mode ?? 'any' });
+        const id = engine === 'chatgpt'
+          ? mode === 'live' ? 'live-old' : 'batch-new'
+          : engine === 'claude' && mode !== 'batch' ? 'claude-run' : null;
+        return id ? {
+          id, mode: id === 'batch-new' ? 'batch' : 'live',
+          started_at: id === 'live-old' ? 1000 : 3000, completed_at: 3500,
+        } : null;
+      },
+      getResponsesForRun: async (runId) => [{
+        id: `${runId}-response`, run_id: runId,
+        prompt_id: runId === 'live-old' ? 'prompt-live'
+          : runId === 'batch-new' ? 'prompt-batch' : 'prompt-claude',
+        prompt_text: `Question from ${runId}`,
+        engine: runId === 'claude-run' ? 'claude' : 'chatgpt',
+        raw_response: '', brand_mentioned: 0, brand_cited_with_link: 0,
+        cited_urls: [], competitors_mentioned: ['rival.com'], engine_citations: [],
+        status: 'ok', error_message: null, captured_at: 3400,
+      } satisfies PromptResponse],
+    } as Db,
+    env: {}, refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(handler);
+  const input = {
+    brand_id: brand.id, engines: ['chatgpt', 'claude'],
+    max_recommendations: 5, ai_analysis: false,
+  };
+  const search = (await handler({ ...input, measurement_mode: 'search_requested' })).structuredContent;
+  assert.equal(search.measurement_scope.measurement_mode_filter, 'search_requested');
+  assert.deepEqual(search.observation_coverage.per_engine.map((run) => run.run_id), ['live-old']);
+  assert.deepEqual(search.losing_prompt_evidence.prompts.map((prompt) => prompt.prompt_id), ['prompt-live']);
+  assert.deepEqual(search.measurement_scope.search_requested_engines, ['chatgpt']);
+  assert.ok(search.observation_coverage.unmeasured_engines.includes('claude'));
+  assert.ok(!selectedRuns.some(({ engine }) => engine === 'claude'),
+    'Claude has no search-requested adapter and must not enter that cohort');
+  assert.ok(selectedRuns.some(({ engine, mode }) => engine === 'chatgpt' && mode === 'live'),
+    'an older live run must be selected instead of the newer batch run');
+
+  selectedRuns.length = 0;
+  const model = (await handler({ ...input, measurement_mode: 'model_only' })).structuredContent;
+  assert.equal(model.measurement_scope.measurement_mode_filter, 'model_only');
+  assert.deepEqual(model.observation_coverage.per_engine.map((run) => run.run_id),
+    ['batch-new', 'claude-run']);
+  assert.deepEqual(model.measurement_scope.model_only_engines, ['chatgpt', 'claude']);
+  assert.ok(selectedRuns.some(({ engine, mode }) => engine === 'chatgpt' && mode === 'batch'));
+  assert.ok(selectedRuns.some(({ engine, mode }) => engine === 'claude' && mode === 'any'));
+
+  const legacy = (await handler(input)).structuredContent;
+  assert.equal(legacy.measurement_scope.measurement_mode_filter, null);
+  assert.deepEqual(legacy.observation_coverage.per_engine.map((run) => run.run_id),
+    ['batch-new', 'claude-run']);
 });

@@ -730,7 +730,7 @@ export function openSqliteDb(path?: string): SqliteDb {
           `WITH ranked AS (
              SELECT pr.id, pr.run_id, pr.prompt_id, pr.engine,
                     pr.brand_mentioned, pr.competitors_mentioned_json,
-                    pr.status, pr.captured_at,
+                    pr.status, pr.captured_at, r.started_at AS run_started_at, r.mode,
                     ROW_NUMBER() OVER (
                       PARTITION BY pr.run_id, pr.engine, pr.prompt_id
                       ORDER BY pr.captured_at DESC, pr.id DESC
@@ -744,7 +744,7 @@ export function openSqliteDb(path?: string): SqliteDb {
            SELECT ranked.id, ranked.run_id, ranked.prompt_id,
                   p.text AS prompt_text, ranked.engine,
                   ranked.brand_mentioned, ranked.competitors_mentioned_json,
-                  ranked.status, ranked.captured_at
+                  ranked.status, ranked.captured_at, ranked.run_started_at, ranked.mode
              FROM ranked
              JOIN prompts p ON p.id = ranked.prompt_id
             WHERE ranked.retry_rank = 1
@@ -752,7 +752,8 @@ export function openSqliteDb(path?: string): SqliteDb {
         )
         .all(brandId, since) as Array<Pick<ResponseJoinRow,
           'id' | 'run_id' | 'prompt_id' | 'prompt_text' | 'engine' |
-          'brand_mentioned' | 'competitors_mentioned_json' | 'status' | 'captured_at'>>;
+          'brand_mentioned' | 'competitors_mentioned_json' | 'status' | 'captured_at'> &
+          { run_started_at: number; mode: Run['mode'] }>;
       return rows.map((row) => ({
         id: row.id,
         run_id: row.run_id,
@@ -763,6 +764,8 @@ export function openSqliteDb(path?: string): SqliteDb {
         competitors_mentioned: parseJsonArray(row.competitors_mentioned_json),
         status: (row.status as ResponseStatus) ?? 'ok',
         captured_at: row.captured_at,
+        run_started_at: row.run_started_at,
+        mode: row.mode,
       }));
     },
 
@@ -770,19 +773,28 @@ export function openSqliteDb(path?: string): SqliteDb {
       brandId: string,
       since: number,
       until: number,
-      engine?: string,
+      engine?: string | string[],
+      minRunStartedAt?: number,
+      activePromptsOnly = false,
+      measurementMode?: 'model_only' | 'search_requested',
     ): Promise<CitationSourceRow[]> {
+      const selectedEngines = Array.isArray(engine) ? [...new Set(engine)] : engine ? [engine] : [];
       // Count the latest successful source observation per run/prompt, but only
       // within this window so a later retry cannot rewrite a frozen cursor page.
       const rows = sqlite
         .prepare(
-          `SELECT pr.id, pr.prompt_id, pr.engine, pr.engine_citations_json, pr.captured_at
+          `SELECT pr.id, pr.prompt_id, pr.engine, r.mode AS mode, r.started_at AS run_started_at, pr.engine_citations_json, pr.captured_at
              FROM prompt_responses pr
              JOIN runs r ON r.id = pr.run_id
+             ${activePromptsOnly ? 'JOIN prompts p ON p.id = pr.prompt_id' : ''}
             WHERE r.brand_id = ?
               AND pr.captured_at >= ?
               AND pr.captured_at <= ?
               AND pr.status = 'ok'
+              ${measurementMode === 'model_only' ? "AND (r.mode = 'batch' OR r.engine IN ('claude', 'gemini'))" : ''}
+              ${measurementMode === 'search_requested' ? "AND r.mode <> 'batch' AND r.engine NOT IN ('claude', 'gemini')" : ''}
+              ${activePromptsOnly ? 'AND p.active = 1' : ''}
+              ${minRunStartedAt !== undefined ? 'AND r.started_at >= ?' : ''}
               AND NOT EXISTS (
                 SELECT 1 FROM prompt_responses newer
                  WHERE newer.run_id = pr.run_id
@@ -792,10 +804,12 @@ export function openSqliteDb(path?: string): SqliteDb {
                    AND (newer.captured_at > pr.captured_at
                      OR (newer.captured_at = pr.captured_at AND newer.id > pr.id))
               )
-              ${engine ? 'AND pr.engine = ?' : ''}
+              ${selectedEngines.length ? `AND pr.engine IN (${selectedEngines.map(() => '?').join(', ')})` : ''}
             ORDER BY pr.captured_at ASC, pr.id ASC`,
         )
-        .all(...(engine ? [brandId, since, until, until, engine] : [brandId, since, until, until])) as Array<
+        .all(brandId, since, until,
+          ...(minRunStartedAt !== undefined ? [minRunStartedAt] : []),
+          until, ...selectedEngines) as Array<
           Omit<CitationSourceRow, 'engine_citations'> & { engine_citations_json: string | null }
         >;
       return rows.map(({ engine_citations_json, ...row }) => ({
@@ -908,6 +922,8 @@ export function openSqliteDb(path?: string): SqliteDb {
                   COALESCE(r.completed_at, r.started_at) AS completed_at,
                   COUNT(pr.id) AS total,
                   SUM(pr.brand_mentioned) AS hits,
+                  SUM(CASE WHEN p.active = 1 THEN 1 ELSE 0 END) AS active_total,
+                  SUM(CASE WHEN p.active = 1 THEN pr.brand_mentioned ELSE 0 END) AS active_hits,
                   r.prompts_total AS roster_expected,
                   (SELECT COUNT(DISTINCT all_pr.prompt_id)
                      FROM prompt_responses all_pr WHERE all_pr.run_id = r.id) AS roster_observed,
@@ -924,6 +940,7 @@ export function openSqliteDb(path?: string): SqliteDb {
                    AND (newer.captured_at > pr.captured_at
                      OR (newer.captured_at = pr.captured_at AND newer.id > pr.id))
               )
+             LEFT JOIN prompts p ON p.id = pr.prompt_id AND p.brand_id = r.brand_id
             WHERE r.brand_id = ?
               AND COALESCE(r.completed_at, r.started_at) >= ?
             GROUP BY r.id, r.engine
@@ -932,13 +949,50 @@ export function openSqliteDb(path?: string): SqliteDb {
         .all(brandId, since) as unknown as VisibilityHistoryRow[];
     },
 
+    async countCitationRows(
+      brandId: string,
+      since: number,
+      engine?: string | string[],
+      page?: CitationPageOptions,
+    ): Promise<number> {
+      let sql = `SELECT COUNT(*) AS total
+                   FROM prompt_responses pr
+                   JOIN runs r ON r.id = pr.run_id
+                   JOIN prompts p ON p.id = pr.prompt_id
+                  WHERE r.brand_id = ? AND pr.captured_at >= ?
+                    AND (pr.brand_mentioned = 1 OR pr.brand_cited_with_link = 1)
+                    AND pr.status = 'ok'`;
+      const params: unknown[] = [brandId, since];
+      if (page?.minRunStartedAt !== undefined) {
+        sql += ' AND r.started_at >= ?';
+        params.push(page.minRunStartedAt);
+      }
+      if (page?.activePromptsOnly) sql += ' AND p.active = 1';
+      if (page?.measurementMode === 'model_only') {
+        sql += " AND (r.mode = 'batch' OR r.engine IN ('claude', 'gemini'))";
+      } else if (page?.measurementMode === 'search_requested') {
+        sql += " AND r.mode <> 'batch' AND r.engine NOT IN ('claude', 'gemini')";
+      }
+      const selectedEngines = Array.isArray(engine) ? [...new Set(engine)] : engine ? [engine] : [];
+      if (selectedEngines.length) {
+        sql += ` AND r.engine IN (${selectedEngines.map(() => '?').join(', ')})`;
+        params.push(...selectedEngines);
+      }
+      if (page?.until !== undefined) {
+        sql += ' AND pr.captured_at <= ?';
+        params.push(page.until);
+      }
+      return (sqlite.prepare(sql).get(...(params as never[])) as { total: number }).total;
+    },
+
     async getCitationRows(
       brandId: string,
       since: number,
-      engine?: string,
+      engine?: string | string[],
       page?: CitationPageOptions,
     ): Promise<CitationRow[]> {
-      let sql = `SELECT pr.id AS response_id, r.engine AS engine, p.text AS prompt, pr.raw_response,
+      let sql = `SELECT pr.id AS response_id, r.engine AS engine, r.mode AS mode, r.started_at AS run_started_at,
+                  p.text AS prompt, pr.raw_response,
                   pr.brand_mentioned, pr.brand_cited_with_link,
                   pr.cited_urls_json, pr.engine_citations_json,
                   pr.captured_at, pr.run_id, pr.prompt_id
@@ -950,9 +1004,22 @@ export function openSqliteDb(path?: string): SqliteDb {
               AND (pr.brand_mentioned = 1 OR pr.brand_cited_with_link = 1)
               AND pr.status = 'ok'`;
       const params: unknown[] = [brandId, since];
-      if (engine) {
-        sql += ' AND r.engine = ?';
-        params.push(engine);
+      if (page?.minRunStartedAt !== undefined) {
+        sql += ' AND r.started_at >= ?';
+        params.push(page.minRunStartedAt);
+      }
+      if (page?.activePromptsOnly) {
+        sql += ' AND p.active = 1';
+      }
+      if (page?.measurementMode === 'model_only') {
+        sql += " AND (r.mode = 'batch' OR r.engine IN ('claude', 'gemini'))";
+      } else if (page?.measurementMode === 'search_requested') {
+        sql += " AND r.mode <> 'batch' AND r.engine NOT IN ('claude', 'gemini')";
+      }
+      const selectedEngines = Array.isArray(engine) ? [...new Set(engine)] : engine ? [engine] : [];
+      if (selectedEngines.length) {
+        sql += ` AND r.engine IN (${selectedEngines.map(() => '?').join(', ')})`;
+        params.push(...selectedEngines);
       }
       if (page?.until !== undefined) {
         sql += ' AND pr.captured_at <= ?';
