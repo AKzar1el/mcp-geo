@@ -2146,6 +2146,9 @@ export function registerTools(
         (await deps.db.getActivePrompts(brand_id)).map(({ id }) => id),
       );
       const providerSources = new Map<string, { url: string; url_redacted: boolean }>();
+      // Special-use hostnames are not publicly actionable AI source links.
+      // Avoid exposing private network names in client-facing audit evidence.
+      const nonPublicSuffixes = ['.local', '.localhost', '.internal', '.test', '.invalid', '.example', '.home.arpa'];
       for (const rawUrl of response.engine_citations) {
         try {
           // Native provider links are evidence, not trusted instructions or
@@ -2153,7 +2156,9 @@ export function registerTools(
           if (/[\u0000-\u001f\u007f]/.test(rawUrl) || rawUrl !== rawUrl.trim()) continue;
           const parsed = new URL(rawUrl);
           if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') continue;
-          if (parsed.username || parsed.password || !normalizeDomainInput(parsed.hostname)) continue;
+          const hostname = normalizeDomainInput(parsed.hostname);
+          if (parsed.username || parsed.password || !hostname ||
+            nonPublicSuffixes.some((suffix) => hostname.endsWith(suffix))) continue;
           const safeUrl = redactCitationUrlQuery(rawUrl);
           if (!providerSources.has(safeUrl)) {
             providerSources.set(safeUrl, { url: safeUrl, url_redacted: safeUrl !== rawUrl });
