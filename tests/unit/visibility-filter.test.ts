@@ -594,6 +594,44 @@ test('check_visibility labels a score based on partial successful prompt coverag
   assert.match(result.structuredContent.score_uncertainty.note, /unmeasured engines.*excluded/i);
 });
 
+test('check_visibility refuses to report a measured zero when every stored response failed', async () => {
+  const failed = {
+    ...response('claude', 'failed-only', 'Provider-unavailable question', 0),
+    status: 'failed' as const,
+    error_message: 'Offline provider failure fixture',
+  };
+  const tool = registerVisibilityTool({
+    runs: { chatgpt: undefined, claude: runs.claude },
+    responses: { [runs.claude.id]: [failed] },
+  });
+  await assert.rejects(
+    tool.handler({ brand_id: brand.id, engines: ['claude'] }),
+    /No successful stored visibility observations.*unmeasured, not (?:an observed )?zero/i,
+  );
+});
+
+test('check_visibility excludes failed-only engines from scores and score freshness', async () => {
+  const failed = {
+    ...response('claude', 'failed-only', 'Provider-unavailable question', 0),
+    status: 'failed' as const,
+    error_message: 'Offline provider failure fixture',
+  };
+  const tool = registerVisibilityTool({
+    responses: { [runs.claude.id]: [failed] },
+  });
+  const snapshot = (await tool.handler({
+    brand_id: brand.id, engines: ['chatgpt', 'claude'],
+  })).structuredContent;
+  assert.equal(snapshot.overall_score, 100);
+  assert.deepEqual(snapshot.per_engine.map(({ engine }) => engine), ['chatgpt']);
+  assert.deepEqual(snapshot.unmeasured_engines, ['claude']);
+  assert.deepEqual(snapshot.missing_requested_engines, ['claude']);
+  assert.equal(snapshot.refreshed_at, new Date(chatgptTimestamp).toISOString());
+  assert.equal(snapshot.freshness.oldest_refreshed_at, new Date(chatgptTimestamp).toISOString());
+  assert.equal(snapshot.freshness.mixed_age_warning, false);
+  assert.deepEqual(snapshot.score_uncertainty.partial_engines, []);
+});
+
 test('check_visibility score range averages measured-engine extremes without counting missing engines as zeros', async () => {
   const partialRun: Run = { ...runs.claude, prompts_total: 5, prompts_completed: 1 };
   const tool = registerVisibilityTool({
