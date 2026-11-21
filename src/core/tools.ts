@@ -125,6 +125,12 @@ const visibilityOutputSchema = z.object({
   }),
   refreshed_at: z.string(),
   overall_score: z.number(),
+  score_uncertainty: z.object({
+    minimum: z.number(),
+    maximum: z.number(),
+    partial_engines: z.array(z.string()),
+    note: z.string(),
+  }),
   missing_requested_engines: z.array(z.string()),
   unmeasured_engines: z.array(z.string()),
   unmeasured_engines_note: z.string(),
@@ -904,6 +910,33 @@ export function registerTools(
         };
       });
 
+      // The headline score conditions on observed successful prompts. Give
+      // clients deterministic extremes over each engine's missing prompt
+      // slots instead of letting a 1-of-20 result appear fully measured.
+      const possiblePerEngineScores = perEngine.map((engine) => {
+        const expected = engine.coverage.expected_prompts;
+        const missing = expected - engine.coverage.usable_prompts;
+        const hits = engine.prompts_appeared_in;
+        return {
+          engine: engine.engine,
+          minimum: expected === 0 ? 0 : Math.round(100 * hits / expected),
+          maximum: expected === 0 ? 0 : Math.round(100 * (hits + missing) / expected),
+          partial: missing > 0,
+        };
+      });
+      const averageExtreme = (key: 'minimum' | 'maximum'): number =>
+        possiblePerEngineScores.length === 0 ? 0 : Math.round(
+          possiblePerEngineScores.reduce((sum, engine) => sum + engine[key], 0) /
+          possiblePerEngineScores.length,
+        );
+      const score_uncertainty = {
+        minimum: averageExtreme('minimum'),
+        maximum: averageExtreme('maximum'),
+        partial_engines: possiblePerEngineScores.filter((engine) => engine.partial)
+          .map((engine) => engine.engine).sort(),
+        note: 'These are deterministic best/worst-case bounds if every missing prompt in each scored engine were a brand mention or a non-mention, not a confidence interval or a forecast. Only scored engines contribute; unmeasured engines are excluded. Historical or changed prompt sets may not be directly comparable. No provider calls were made.',
+      };
+
       const measurementGroup = (mode: 'search_requested' | 'model_only') => {
         const engines = perEngine.filter((engine) => engine.measurement_mode === mode);
         return {
@@ -925,6 +958,7 @@ export function registerTools(
         },
         refreshed_at: new Date(mostRecentTimestamp).toISOString(),
         overall_score: scored.overall_score,
+        score_uncertainty,
         missing_requested_engines: missingRequestedEngines,
         unmeasured_engines: unmeasuredEngines,
         unmeasured_engines_note: active_prompts_only
