@@ -879,6 +879,8 @@ export function createD1Db(d1: D1Database): Db {
           `SELECT r.id AS run_id, r.engine, r.mode, r.started_at,
                   COALESCE(r.completed_at, r.started_at) AS completed_at,
                   COUNT(pr.id) AS total,
+                  MAX(pr.captured_at) AS last_captured_at,
+                  MAX(CASE WHEN p.active = 1 THEN pr.captured_at END) AS active_last_captured_at,
                   SUM(pr.brand_mentioned) AS hits,
                   SUM(CASE WHEN p.active = 1 THEN 1 ELSE 0 END) AS active_total,
                   SUM(CASE WHEN p.active = 1 THEN pr.brand_mentioned ELSE 0 END) AS active_hits,
