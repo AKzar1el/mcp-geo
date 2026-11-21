@@ -88,6 +88,14 @@ type VisibilitySnapshot = {
     minimum: number;
     maximum: number;
     partial_engines: string[];
+    by_engine: Array<{
+      engine: string;
+      observed_score: number;
+      minimum: number;
+      maximum: number;
+      usable_prompts: number;
+      expected_prompts: number;
+    }>;
     note: string;
   };
   missing_requested_engines: string[];
@@ -589,6 +597,16 @@ test('check_visibility score range averages measured-engine extremes without cou
   assert.equal(result.structuredContent.score_uncertainty.minimum, 60);
   assert.equal(result.structuredContent.score_uncertainty.maximum, 100);
   assert.deepEqual(result.structuredContent.score_uncertainty.partial_engines, ['claude']);
+  assert.deepEqual(result.structuredContent.score_uncertainty.by_engine, [
+    {
+      engine: 'chatgpt', observed_score: 100, minimum: 100, maximum: 100,
+      usable_prompts: 2, expected_prompts: 2,
+    },
+    {
+      engine: 'claude', observed_score: 100, minimum: 20, maximum: 100,
+      usable_prompts: 1, expected_prompts: 5,
+    },
+  ]);
   assert.ok(result.structuredContent.unmeasured_engines.includes('gemini'));
 });
 
