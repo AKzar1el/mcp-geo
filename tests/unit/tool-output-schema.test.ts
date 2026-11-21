@@ -176,6 +176,7 @@ test('content-gap output schema describes recommendation records', () => {
           prompt_text: 'Project tools for agencies',
           observations: [{
             engine: 'chatgpt', run_id: 'run-1', response_id: 'response-1',
+            measurement_mode: 'search_requested',
             captured_at_ms: 1000, competitors_mentioned: ['beta.com'],
           }],
         }],

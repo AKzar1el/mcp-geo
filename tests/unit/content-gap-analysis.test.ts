@@ -1422,6 +1422,7 @@ test('content gaps expose bounded traceable winning observations, not retired or
             engine: string;
             run_id: string;
             response_id: string;
+            measurement_mode: 'model_only' | 'search_requested';
             captured_at_ms: number;
             competitors_mentioned: string[];
           }>;
@@ -1457,6 +1458,7 @@ test('content gaps expose bounded traceable winning observations, not retired or
     prompt_text: 'Best software for agencies',
     observations: [{
       engine: 'chatgpt', run_id: 'run-chatgpt', response_id: 'current',
+      measurement_mode: 'search_requested',
       captured_at_ms: 200, competitors_mentioned: ['rival.com'],
     }],
   }]);
@@ -1645,7 +1647,10 @@ test('content gaps select the latest eligible run within a request-mode cohort',
     ai_analysis: boolean; measurement_mode?: 'model_only' | 'search_requested';
   }) => Promise<{ structuredContent: {
     observation_coverage: { per_engine: Array<{ run_id: string }>; unmeasured_engines: string[] };
-    losing_prompt_evidence: { prompts: Array<{ prompt_id: string }> };
+    losing_prompt_evidence: { prompts: Array<{
+      prompt_id: string;
+      observations: Array<{ measurement_mode: 'model_only' | 'search_requested' }>;
+    }> };
     measurement_scope: {
       measurement_mode_filter: 'model_only' | 'search_requested' | null;
       model_only_engines: string[]; search_requested_engines: string[];
@@ -1695,6 +1700,8 @@ test('content gaps select the latest eligible run within a request-mode cohort',
   assert.equal(search.measurement_scope.measurement_mode_filter, 'search_requested');
   assert.deepEqual(search.observation_coverage.per_engine.map((run) => run.run_id), ['live-old']);
   assert.deepEqual(search.losing_prompt_evidence.prompts.map((prompt) => prompt.prompt_id), ['prompt-live']);
+  assert.deepEqual(search.losing_prompt_evidence.prompts[0]?.observations.map((row) => row.measurement_mode),
+    ['search_requested']);
   assert.deepEqual(search.measurement_scope.search_requested_engines, ['chatgpt']);
   assert.ok(search.observation_coverage.unmeasured_engines.includes('claude'));
   assert.ok(!selectedRuns.some(({ engine }) => engine === 'claude'),
@@ -1708,6 +1715,8 @@ test('content gaps select the latest eligible run within a request-mode cohort',
   assert.deepEqual(model.observation_coverage.per_engine.map((run) => run.run_id),
     ['batch-new', 'claude-run']);
   assert.deepEqual(model.measurement_scope.model_only_engines, ['chatgpt', 'claude']);
+  assert.deepEqual(model.losing_prompt_evidence.prompts.flatMap((prompt) =>
+    prompt.observations.map((row) => row.measurement_mode)), ['model_only', 'model_only']);
   assert.ok(selectedRuns.some(({ engine, mode }) => engine === 'chatgpt' && mode === 'batch'));
   assert.ok(selectedRuns.some(({ engine, mode }) => engine === 'claude' && mode === 'any'));
 
