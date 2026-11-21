@@ -74,6 +74,29 @@ function extractResponseText(data: XAiResponse): string {
   return chunks.join('');
 }
 
+function matchesInlineCitation(text: string, start: number, end: number, expectedUrl: unknown): boolean {
+  if (typeof expectedUrl !== 'string') return false;
+  let canonicalUrl: string;
+  try {
+    canonicalUrl = new URL(expectedUrl).href;
+  } catch {
+    return false;
+  }
+  const matches = (span: string): boolean => {
+    const match = /^\[\[\d+\]\]\((https?:\/\/.+)\)$/i.exec(span);
+    if (!match) return false;
+    try {
+      return new URL(match[1]).href === canonicalUrl;
+    } catch {
+      return false;
+    }
+  };
+  // xAI documents character (Python-style) offsets. Handle both code points
+  // and JS UTF-16 offsets to avoid losing citations after emoji in the answer.
+  return matches(text.slice(start, end)) ||
+    matches(Array.from(text).slice(start, end).join(''));
+}
+
 function extractResponseCitations(data: XAiResponse): string[] {
   const urls: string[] = [];
   const seen = new Set<string>();
@@ -103,13 +126,15 @@ function extractResponseCitations(data: XAiResponse): string[] {
       for (const annotation of part.annotations ?? []) {
         // Without offsets, annotations can also describe merely encountered
         // sources when inline citations are disabled.
+        const citationUrl = annotation.url ?? annotation.url_citation?.url;
         if (annotation.type !== 'url_citation' ||
             !Number.isInteger(annotation.start_index) ||
             !Number.isInteger(annotation.end_index) ||
             (annotation.start_index ?? -1) < 0 ||
             (annotation.end_index ?? 0) <= (annotation.start_index ?? 0) ||
-            (annotation.end_index ?? Infinity) > part.text.length) continue;
-        add(annotation.url ?? annotation.url_citation?.url);
+            (annotation.end_index ?? Infinity) > part.text.length ||
+            !matchesInlineCitation(part.text, annotation.start_index!, annotation.end_index!, citationUrl)) continue;
+        add(citationUrl);
       }
     }
   }

@@ -5,6 +5,8 @@ import { chatCompletion, MODEL, runLive } from '../../src/core/xai.js';
 
 test('xAI uses Responses API with required web search and captures only answer-linked citations', async () => {
   const originalFetch = globalThis.fetch;
+  const citedText = 'Acme is visible in this answer. [[1]](https://acme.example/source)';
+  const citedStart = citedText.indexOf('[[1]]');
   let seenUrl = '';
   let seenInit: RequestInit | undefined;
 
@@ -20,13 +22,13 @@ test('xAI uses Responses API with required web search and captures only answer-l
             content: [
               {
                 type: 'output_text',
-                text: 'Acme is visible in this answer.',
+                text: citedText,
                 annotations: [
                   {
                     type: 'url_citation',
                     url: 'https://acme.example/source',
-                    start_index: 0,
-                    end_index: 10,
+                    start_index: citedStart,
+                    end_index: citedText.length,
                   },
                 ],
               },
@@ -67,7 +69,7 @@ test('xAI uses Responses API with required web search and captures only answer-l
       tool_choice: 'required',
     });
     assert.deepEqual(result, {
-      text: 'Acme is visible in this answer.',
+      text: citedText,
       citations: ['https://acme.example/source'],
     });
   } finally {
@@ -92,13 +94,15 @@ test('xAI surfaces non-2xx Responses API failures', async () => {
 
 test('xAI only returns valid web citation evidence from provider metadata', async () => {
   const originalFetch = globalThis.fetch;
+  const citedText = 'The answer names Acme. [[1]](https://acme.example/article)';
+  const citedStart = citedText.indexOf('[[1]]');
   globalThis.fetch = async () => new Response(JSON.stringify({
     status: 'completed',
     output: [{ type: 'message', content: [{
-      type: 'output_text', text: 'The answer names Acme.',
+      type: 'output_text', text: citedText,
       annotations: [
         { url: 'ftp://acme.example/other' },
-        { type: 'url_citation', url_citation: { url: 'https://acme.example/article' }, start_index: 0, end_index: 8 },
+        { type: 'url_citation', url_citation: { url: 'https://acme.example/article' }, start_index: citedStart, end_index: citedText.length },
         { type: 'url_citation', url: 'https://acme.example/unpositioned-outside-text', start_index: 200, end_index: 210 },
         { url: 'https://example.org:bad/path' },
         { url_citation: { url: 'https://[::1]/internal' } },
@@ -121,6 +125,39 @@ test('xAI only returns valid web citation evidence from provider metadata', asyn
   try {
     const result = await chatCompletion('test-key', 'Question', 'System');
     assert.deepEqual(result.citations, ['https://acme.example/article']);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('xAI inline metadata cannot attribute a URL absent from its cited text span', async () => {
+  const originalFetch = globalThis.fetch;
+  const unrelated = 'Acme appears without any source link.';
+  const otherUrl = 'https://other.example/article';
+  const otherText = `The link is [[1]](${otherUrl})`;
+  const otherStart = otherText.indexOf('[[1]]');
+  const verifiedUrl = 'https://acme.example/verified';
+  const verifiedText = `🔎 Sources: [[2]](${verifiedUrl})`;
+  const verifiedStart = Array.from(verifiedText.slice(0, verifiedText.indexOf('[[2]]'))).length;
+  const verifiedEnd = Array.from(verifiedText).length;
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    status: 'completed',
+    output: [{ type: 'message', content: [
+      { type: 'output_text', text: unrelated, annotations: [
+        { type: 'url_citation', url: 'https://acme.example/phantom', start_index: 0, end_index: 8 },
+      ] },
+      { type: 'output_text', text: otherText, annotations: [
+        { type: 'url_citation', url: 'https://acme.example/misattributed', start_index: otherStart, end_index: otherText.length },
+      ] },
+      { type: 'output_text', text: verifiedText, annotations: [
+        { type: 'url_citation', url: verifiedUrl, start_index: verifiedStart, end_index: verifiedEnd },
+      ] },
+    ] }],
+    citations: ['https://acme.example/visited-only'],
+  }), { status: 200 });
+  try {
+    const result = await chatCompletion('offline-key', 'Question', 'System');
+    assert.deepEqual(result.citations, [verifiedUrl]);
   } finally {
     globalThis.fetch = originalFetch;
   }
