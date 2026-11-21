@@ -193,6 +193,10 @@ export interface VisibilityHistoryRow {
   // Optional only for legacy in-memory fixtures.
   started_at?: number;
   completed_at: number;
+  // Latest successful, retry-deduplicated observation capture in this run;
+  // optional for legacy fixtures. Active capture excludes retired prompts.
+  last_captured_at?: number | null;
+  active_last_captured_at?: number | null;
   total: number | null;
   hits: number | null;
   // Current buyer-prompt cohort counts from the same deduplicated source rows.

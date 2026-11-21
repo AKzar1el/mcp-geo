@@ -1544,7 +1544,7 @@ test('SQLite and D1 history count only the latest successful observation per run
        VALUES (?, ?, ?, 'chatgpt', '', ?, 0, '[]', '[]', ?, ?)`,
     );
     insert.run('old-no-mention', run.id, 'p1', 0, 'ok', 1000);
-    insert.run('new-mention', run.id, 'p1', 1, 'ok', 2000);
+    insert.run('new-mention', run.id, 'p1', 1, 'ok', 2500);
     insert.run('later-failed', run.id, 'p1', 0, 'failed', 3000);
     // Match computeOverallScore's deterministic id tie-breaker.
     insert.run('a-old-tie', run.id, 'p2', 0, 'ok', 2000);
@@ -1577,6 +1577,10 @@ test('SQLite and D1 history count only the latest successful observation per run
       assert.equal(Number(rows[0].hits), 2, 'latest successful response determines the hit');
       assert.equal(Number(rows[0].active_total), 1, 'retired questions cannot count in current trends');
       assert.equal(Number(rows[0].active_hits), 1, 'current hit count uses the latest successful active response');
+      assert.equal(Number(rows[0].last_captured_at), 2500,
+        'last capture must exclude later failed responses and older successful retries');
+      assert.equal(Number(rows[0].active_last_captured_at), 2000,
+        'active capture must exclude the later retired prompt response');
       assert.equal(Number(rows[0].roster_observed), 2);
     }
     db.raw.prepare("UPDATE prompts SET active = 0 WHERE id = 'p2'").run();
@@ -1585,6 +1589,8 @@ test('SQLite and D1 history count only the latest successful observation per run
       assert.equal(rows.length, 1, 'retired-only runs remain available for historical evidence');
       assert.equal(Number(rows[0].active_total), 0);
       assert.equal(Number(rows[0].active_hits), 0);
+      assert.equal(rows[0].active_last_captured_at, null,
+        'no active observations must not be assigned a fabricated capture time');
     }
   } finally {
     db.close();

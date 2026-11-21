@@ -1410,7 +1410,15 @@ export function registerTools(
         const previous = perEngine.get(row.engine);
         const brand_mentions = (previous?.brand_mentions ?? 0) + hits;
         const usable_prompts = (previous?.usable_prompts ?? 0) + total;
-        const observedAt = new Date(row.completed_at).toISOString();
+        // Run completion can lag successful captures by hours or days.
+        // Preserve completion-based chart buckets while dating evidence by
+        // the latest eligible successful response in the selected cohort.
+        const capturedAt = active_prompts_only
+          ? row.active_last_captured_at : row.last_captured_at;
+        const observedAt = new Date(
+          typeof capturedAt === 'number' && Number.isFinite(capturedAt)
+            ? capturedAt : row.completed_at,
+        ).toISOString();
         perEngine.set(row.engine, {
           score: usable_prompts > 0 ? Math.round((100 * brand_mentions) / usable_prompts) : 0,
           brand_mentions,
