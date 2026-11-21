@@ -136,6 +136,7 @@ function auditHtml(origin: string): string {
 
     <p class="proof"><a href="${SAMPLE_REPORT_URL}">See a sample report</a> generated through mcp-geo before you request the audit. It shows the output style and evidence depth; your paid audit is run for your own brand, prompts, and competitors.</p>
     <p class="proof"><strong>Methodology:</strong> The same 20 buyer-intent prompts are run as a point-in-time diagnostic and reported per engine, with citation/source evidence where the provider returns it. The report is a bounded observed snapshot, not a proprietary ranking promise or guaranteed forecast. <a href="${AUDIT_METHODOLOGY_URL}">See the exact score calculation and interpretation limits.</a></p>
+    <p class="fine"><strong>Geographic scope:</strong> When included, Google AI Overviews and AI Mode are sampled for the United States (gl=us) and English (hl=en), with no city-level location. These observations do not establish visibility in other markets or languages. Specify your target market in Context so we can confirm audit fit before proceeding.</p>
 
     <form id="audit-request-form" class="request-card">
       <label>
