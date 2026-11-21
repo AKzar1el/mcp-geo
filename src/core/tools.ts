@@ -342,6 +342,7 @@ const observationEvidenceOutputSchema = z.object({
   brand_mentioned: z.boolean(),
   competitors_mentioned: z.array(z.string()),
   response_excerpt: z.string().max(250),
+  requested_competitor: z.string().nullable(),
   provider_source_count: z.number().int().nonnegative(),
   provider_source_urls_truncated: z.boolean(),
   provider_source_urls: z.array(z.object({
@@ -2106,7 +2107,7 @@ export function registerTools(
     {
       title: 'Inspect one stored AI observation',
       description:
-        "Read one brand-owned stored response as a credential-redacted excerpt. Labels retired prompts and prior identities; not verified citations. No provider calls. Example: brand_id='acme', run_id='run-1', response_id='response-1'.",
+        "Read a brand-owned stored response as a redacted excerpt. Optional competitor focus requires a recorded mention. No provider calls or verified citations. Example: brand_id='acme', run_id='run-1', response_id='response-1'.",
       inputSchema: {
         brand_id: z.string().min(1).max(128)
           .describe('Tracked brand ID that owns the originating run.'),
@@ -2114,6 +2115,8 @@ export function registerTools(
           .describe('Run ID from a stored evidence reference.'),
         response_id: z.string().min(1).max(128)
           .describe('Response ID from the same stored evidence reference.'),
+        focus_competitor: z.string().trim().min(1).max(253).optional()
+          .describe('Recorded competitor domain; prioritizes its mention in the redacted excerpt.'),
       },
       outputSchema: observationEvidenceOutputSchema,
       annotations: {
@@ -2122,7 +2125,7 @@ export function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ brand_id, run_id, response_id }) => {
+    async ({ brand_id, run_id, response_id, focus_competitor }) => {
       const missing = 'Successful stored observation not found for this brand, run and response.';
       const brand = await deps.db.getBrand(brand_id);
       if (!brand) throw new Error(missing);
@@ -2133,6 +2136,12 @@ export function registerTools(
         (row) => row.run_id === run.id && row.id === response_id && row.status === 'ok',
       );
       if (!response) throw new Error(missing);
+      const requestedCompetitor = focus_competitor?.toLowerCase() ?? null;
+      // A guessed term cannot be used to explore arbitrary slices of a
+      // stored response. Only competitors recorded for this observation qualify.
+      if (requestedCompetitor && !response.competitors_mentioned.some(
+        (domain) => domain.toLowerCase() === requestedCompetitor,
+      )) throw new Error(missing);
       const activePromptIds = new Set(
         (await deps.db.getActivePrompts(brand_id)).map(({ id }) => id),
       );
@@ -2173,12 +2182,13 @@ export function registerTools(
         active_prompt: activePromptIds.has(response.prompt_id),
         brand_mentioned: response.brand_mentioned === 1,
         competitors_mentioned: [...new Set(response.competitors_mentioned)].sort(),
-        response_excerpt: buildResponseExcerpt(response.raw_response, brand),
+        response_excerpt: buildResponseExcerpt(response.raw_response, brand, requestedCompetitor ?? undefined),
+        requested_competitor: requestedCompetitor,
         provider_source_count: providerSourceList.length,
         provider_source_urls_truncated: providerSourceList.length > 5,
         provider_source_urls: providerSourceList.slice(0, 5),
         google_search_sampling: googleSearchSampling([run.engine]),
-        evidence_note: 'This is a short credential-redacted excerpt of one stored successful response, not a full answer or an independently verified source citation. Provider-returned source URLs are not independently verified; access-bearing URL query and fragment fields are masked. Review identity_scope, active_prompt and measurement_mode before quoting in an audit. No provider request occurred.',
+        evidence_note: 'This is a short credential-redacted excerpt of one stored successful response, not a full answer or an independently verified source citation. An optional recorded competitor focus is best effort; absence from the excerpt does not disprove a recorded mention. Provider-returned source URLs are not independently verified; access-bearing URL query and fragment fields are masked. Review identity_scope, active_prompt and measurement_mode before quoting in an audit. No provider request occurred.',
       };
       return toolResult(payload);
     },
@@ -3282,7 +3292,7 @@ function redactCitationUrlQuery(rawUrl: string): string {
   return `${safeAddress}#${safeFragment}`;
 }
 
-export function buildResponseExcerpt(text: string, brand: Brand): string {
+export function buildResponseExcerpt(text: string, brand: Brand, focusCompetitor?: string): string {
   if (!text) return '';
   if (text === '[NO_AI_OVERVIEW]') return text;
   // Provider text is untrusted. Even a URL rejected as citation evidence can
@@ -3306,7 +3316,10 @@ export function buildResponseExcerpt(text: string, brand: Brand): string {
   const safeText = urlSafeText
     .replace(/\b(Authorization\s*:\s*(?:Bearer|Basic)\s+)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;]+)/gi, '$1[REDACTED]')
     .replace(/\b((?:access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|client[_-]?secret)\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s&,;]+)/gi, '$1[REDACTED]');
-  const idx = findTermSetMatchIndex(safeText, {
+  const focusIdx = focusCompetitor
+    ? findTermSetMatchIndex(safeText, { domain: focusCompetitor })
+    : -1;
+  const idx = focusIdx !== -1 ? focusIdx : findTermSetMatchIndex(safeText, {
     domain: brand.domain,
     name: brand.name,
     aliases: brand.aliases,
