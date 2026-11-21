@@ -124,3 +124,17 @@ test('observation evidence exposes bounded, credential-redacted provider-native 
   assert.doesNotMatch(JSON.stringify(result.provider_source_urls), /secret-a|secret-b|user:pass|localhost|javascript:/);
   assert.match(result.evidence_note, /provider-returned.*not independently verified/i);
 });
+
+test('observation evidence masks OAuth fragment credentials before hash-route query separators', async () => {
+  const handler = setup(run, [{ ...response, engine_citations: [
+    'https://sources.example.org/page#access_token=SOURCE_SECRET?view=public',
+    'https://sources.example.org/page#/viewer?token=OTHER_SECRET&view=public',
+  ] }]);
+  assert.ok(handler);
+  const result = (await handler({ brand_id: brand.id, run_id: run.id, response_id: response.id })).structuredContent;
+  assert.deepEqual(result.provider_source_urls, [
+    { url: 'https://sources.example.org/page#access_token=[REDACTED]?view=public', url_redacted: true },
+    { url: 'https://sources.example.org/page#/viewer?token=[REDACTED]&view=public', url_redacted: true },
+  ]);
+  assert.doesNotMatch(JSON.stringify(result), /SOURCE_SECRET|OTHER_SECRET/);
+});

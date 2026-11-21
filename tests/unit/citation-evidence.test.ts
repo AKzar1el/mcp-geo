@@ -609,6 +609,25 @@ test('get_citations redacts URL fragment credentials without changing public que
   assert.doesNotMatch(JSON.stringify(result), /NATIVE_ID|SOURCE_HASH|EXCERPT_SECRET/);
 });
 
+test('get_citations masks fragment credentials before a hash-route question mark', async () => {
+  const citation = registerCitationTool(citationRow({
+    raw_response: 'Acme cites https://acme.com/report#access_token=EXCERPT_SECRET?view=public',
+    engine_citations_json: JSON.stringify([
+      'https://acme.com/report#id_token=NATIVE_SECRET?view=public',
+    ]),
+  }), [promptResponse({ engine_citations: [
+    'https://research.example/article#access_token=SOURCE_SECRET?view=public',
+  ] })]);
+  const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.equal(result.citations[0].cited_url,
+    'https://acme.com/report#id_token=[REDACTED]?view=public');
+  assert.equal(result.top_sources[0].sample_url,
+    'https://research.example/article#access_token=[REDACTED]?view=public');
+  assert.match(result.citations[0].response_excerpt,
+    /#access_token=\[REDACTED\]/);
+  assert.doesNotMatch(JSON.stringify(result), /NATIVE_SECRET|SOURCE_SECRET|EXCERPT_SECRET/);
+});
+
 test('get_citations redacts cloud signed-URL capabilities from all client-facing evidence', async () => {
   const citation = registerCitationTool(citationRow({
     raw_response: 'Acme cites https://acme.com/report?X-Goog-Signature=GOOGLE_SENTINEL&X-Goog-Credential=GOOGLE_ID_SENTINEL&X-Goog-Date=20261119T000000Z',
