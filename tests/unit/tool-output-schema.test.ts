@@ -47,6 +47,10 @@ test('visibility output schema describes winning and losing prompt records', () 
         usable_prompts: 2,
         expected_prompts: 2,
       }],
+      by_measurement_mode: {
+        search_requested: null,
+        model_only: { minimum: 50, maximum: 50, partial_engines: [] },
+      },
       note: 'Deterministic extremes, not a confidence interval.',
     },
     missing_requested_engines: [],

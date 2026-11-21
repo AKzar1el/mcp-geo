@@ -96,6 +96,10 @@ type VisibilitySnapshot = {
       usable_prompts: number;
       expected_prompts: number;
     }>;
+    by_measurement_mode: {
+      search_requested: { minimum: number; maximum: number; partial_engines: string[] } | null;
+      model_only: { minimum: number; maximum: number; partial_engines: string[] } | null;
+    };
     note: string;
   };
   missing_requested_engines: string[];
@@ -582,6 +586,10 @@ test('check_visibility labels a score based on partial successful prompt coverag
       partial_engines: result.structuredContent.score_uncertainty.partial_engines },
     { minimum: 20, maximum: 100, partial_engines: ['claude'] },
   );
+  assert.deepEqual(result.structuredContent.score_uncertainty.by_measurement_mode, {
+    search_requested: null,
+    model_only: { minimum: 20, maximum: 100, partial_engines: ['claude'] },
+  });
   assert.match(result.structuredContent.score_uncertainty.note, /not a confidence interval/i);
   assert.match(result.structuredContent.score_uncertainty.note, /unmeasured engines.*excluded/i);
 });
@@ -607,6 +615,10 @@ test('check_visibility score range averages measured-engine extremes without cou
       usable_prompts: 1, expected_prompts: 5,
     },
   ]);
+  assert.deepEqual(result.structuredContent.score_uncertainty.by_measurement_mode, {
+    search_requested: { minimum: 100, maximum: 100, partial_engines: [] },
+    model_only: { minimum: 20, maximum: 100, partial_engines: ['claude'] },
+  });
   assert.ok(result.structuredContent.unmeasured_engines.includes('gemini'));
 });
 

@@ -137,6 +137,14 @@ const visibilityOutputSchema = z.object({
       usable_prompts: z.number(),
       expected_prompts: z.number(),
     })),
+    by_measurement_mode: z.object({
+      search_requested: z.object({
+        minimum: z.number(), maximum: z.number(), partial_engines: z.array(z.string()),
+      }).nullable(),
+      model_only: z.object({
+        minimum: z.number(), maximum: z.number(), partial_engines: z.array(z.string()),
+      }).nullable(),
+    }),
     note: z.string(),
   }),
   missing_requested_engines: z.array(z.string()),
@@ -935,19 +943,34 @@ export function registerTools(
           partial: missing > 0,
         };
       });
-      const averageExtreme = (key: 'minimum' | 'maximum'): number =>
-        possiblePerEngineScores.length === 0 ? 0 : Math.round(
-          possiblePerEngineScores.reduce((sum, engine) => sum + engine[key], 0) /
-          possiblePerEngineScores.length,
+      const averageExtreme = (
+        scores: typeof possiblePerEngineScores, key: 'minimum' | 'maximum',
+      ): number => scores.length === 0 ? 0 : Math.round(
+        scores.reduce((sum, engine) => sum + engine[key], 0) / scores.length,
+      );
+      const modeBounds = (mode: 'search_requested' | 'model_only') => {
+        const scores = possiblePerEngineScores.filter(
+          (engine) => measurementModeByEngine.get(engine.engine) === mode,
         );
+        return scores.length === 0 ? null : {
+          minimum: averageExtreme(scores, 'minimum'),
+          maximum: averageExtreme(scores, 'maximum'),
+          partial_engines: scores.filter((engine) => engine.partial)
+            .map((engine) => engine.engine).sort(),
+        };
+      };
       const score_uncertainty = {
-        minimum: averageExtreme('minimum'),
-        maximum: averageExtreme('maximum'),
+        minimum: averageExtreme(possiblePerEngineScores, 'minimum'),
+        maximum: averageExtreme(possiblePerEngineScores, 'maximum'),
         partial_engines: possiblePerEngineScores.filter((engine) => engine.partial)
           .map((engine) => engine.engine).sort(),
         by_engine: possiblePerEngineScores.map(({ partial, ...engine }) => engine)
           .sort((a, b) => a.engine.localeCompare(b.engine)),
-        note: 'These are deterministic best/worst-case bounds if every missing prompt in each scored engine were a brand mention or a non-mention, not a confidence interval or a forecast. by_engine identifies the observed and possible scores for each measured surface. Only scored engines contribute; unmeasured engines are excluded. Historical or changed prompt sets may not be directly comparable. No provider calls were made.',
+        by_measurement_mode: {
+          search_requested: modeBounds('search_requested'),
+          model_only: modeBounds('model_only'),
+        },
+        note: 'These are deterministic best/worst-case bounds if every missing prompt in each scored engine were a brand mention or a non-mention, not a confidence interval or a forecast. by_engine identifies the observed and possible scores for each measured surface. by_measurement_mode separates search-requested from model-only scored engines; a null mode has no measured engines, not a zero score. Only scored engines contribute; unmeasured engines are excluded. Historical or changed prompt sets may not be directly comparable. No provider calls were made.',
       };
 
       const measurementGroup = (mode: 'search_requested' | 'model_only') => {
