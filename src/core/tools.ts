@@ -1,6 +1,6 @@
-// The six shared MCP tools (registerTools) plus the six CLI-only
+// The seven shared MCP tools (registerTools) plus the six CLI-only
 // management tools (registerLocalManagementTools), registered against
-// any McpServer. The shared six are wired verbatim
+// any McpServer. The shared seven are wired verbatim
 // between the Cloudflare Worker (src/index.ts) and the local stdio CLI
 // (src/cli.ts) — only the Deps wiring differs:
 //   - Worker: D1-backed Db, refresh_brand fans out per engine via the
@@ -325,6 +325,25 @@ const comparisonEvidenceSampleSchema = z.object({
   prompt: z.string(),
   measurement_mode: z.enum(['model_only', 'search_requested']),
   captured_at: z.string(),
+});
+
+const observationEvidenceOutputSchema = z.object({
+  brand_id: z.string(),
+  run_id: z.string(),
+  response_id: z.string(),
+  engine: z.string(),
+  prompt_id: z.string(),
+  prompt: z.string(),
+  captured_at: z.string().nullable(),
+  status: z.literal('ok'),
+  measurement_mode: z.enum(['model_only', 'search_requested']),
+  identity_scope: z.enum(['current_identity', 'historical_identity', 'unknown_boundary']),
+  active_prompt: z.boolean(),
+  brand_mentioned: z.boolean(),
+  competitors_mentioned: z.array(z.string()),
+  response_excerpt: z.string().max(250),
+  google_search_sampling: googleSearchSamplingSchema,
+  evidence_note: z.string(),
 });
 
 const COMPARISON_SEMANTICS =
@@ -728,6 +747,7 @@ const HOSTED_TOOL_NAMES = {
   get_visibility_history: 'visibility.history',
   compare_competitors: 'visibility.compare',
   get_citations: 'visibility.citations',
+  get_observation_evidence: 'visibility.observation_evidence',
   get_content_gaps: 'visibility.content_gaps',
   refresh_brand: 'visibility.refresh',
 } as const;
@@ -2070,6 +2090,68 @@ export function registerTools(
         top_sources_truncated: rankedSources.length > top_sources_limit,
         top_sources: rankedSources.slice(0, top_sources_limit),
         citations,
+      };
+      return toolResult(payload);
+    },
+  );
+
+  server.registerTool(
+    toolName('get_observation_evidence'),
+    {
+      title: 'Inspect one stored AI observation',
+      description:
+        "Read one brand-owned stored response as a credential-redacted excerpt. Labels retired prompts and prior identities; not verified citations. No provider calls. Example: brand_id='acme', run_id='run-1', response_id='response-1'.",
+      inputSchema: {
+        brand_id: z.string().min(1).max(128)
+          .describe('Tracked brand ID that owns the originating run.'),
+        run_id: z.string().min(1).max(128)
+          .describe('Run ID from a stored evidence reference.'),
+        response_id: z.string().min(1).max(128)
+          .describe('Response ID from the same stored evidence reference.'),
+      },
+      outputSchema: observationEvidenceOutputSchema,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        openWorldHint: false,
+      },
+    },
+    async ({ brand_id, run_id, response_id }) => {
+      const missing = 'Successful stored observation not found for this brand, run and response.';
+      const brand = await deps.db.getBrand(brand_id);
+      if (!brand) throw new Error(missing);
+      const run = await deps.db.getRunById(run_id);
+      // A guessed run or response ID must not reveal another brand's observations.
+      if (!run || run.brand_id !== brand_id) throw new Error(missing);
+      const response = (await deps.db.getResponsesForRun(run.id)).find(
+        (row) => row.run_id === run.id && row.id === response_id && row.status === 'ok',
+      );
+      if (!response) throw new Error(missing);
+      const activePromptIds = new Set(
+        (await deps.db.getActivePrompts(brand_id)).map(({ id }) => id),
+      );
+      const identityBoundary = brand.identity_changed_at ?? null;
+      const payload = {
+        brand_id,
+        run_id: run.id,
+        response_id: response.id,
+        engine: response.engine,
+        prompt_id: response.prompt_id,
+        prompt: response.prompt_text,
+        captured_at: Number.isFinite(response.captured_at) &&
+          response.captured_at > 0 && Math.abs(response.captured_at) <= 8.64e15
+          ? new Date(response.captured_at).toISOString() : null,
+        status: 'ok' as const,
+        measurement_mode: visibilityMeasurementMode(run.engine, run.mode),
+        identity_scope: identityBoundary === null ? 'unknown_boundary' as const
+          : run.started_at < identityBoundary ? 'historical_identity' as const
+          : 'current_identity' as const,
+        active_prompt: activePromptIds.has(response.prompt_id),
+        brand_mentioned: response.brand_mentioned === 1,
+        competitors_mentioned: [...new Set(response.competitors_mentioned)].sort(),
+        response_excerpt: buildResponseExcerpt(response.raw_response, brand),
+        google_search_sampling: googleSearchSampling([run.engine]),
+        evidence_note: 'This is a short credential-redacted excerpt of one stored successful response, not a full answer or an independently verified source citation. Review identity_scope, active_prompt and measurement_mode before quoting in an audit. No provider request occurred.',
       };
       return toolResult(payload);
     },

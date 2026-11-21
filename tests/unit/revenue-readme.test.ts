@@ -359,7 +359,7 @@ test('README documents Langflow local stdio setup without storing provider secre
 test('README documents Flowise local Custom MCP stdio setup without implying cloud npx support', () => {
   assert.match(
     readme,
-    /\*\*Flowise:\*\*[\s\S]*local\/self-hosted Flowise instance[\s\S]*\*\*Custom MCP\*\*[\s\S]*"command":"npx"[\s\S]*@digestseo\/mcp-geo[\s\S]*Available Actions[\s\S]*twelve mcp-geo tools/,
+    /\*\*Flowise:\*\*[\s\S]*local\/self-hosted Flowise instance[\s\S]*\*\*Custom MCP\*\*[\s\S]*"command":"npx"[\s\S]*@digestseo\/mcp-geo[\s\S]*Available Actions[\s\S]*thirteen mcp-geo tools/,
   );
   assert.match(readme, /STDIO only when it is running locally rather than in a cloud service/);
   assert.match(readme, /docs\.flowiseai\.com\/tutorials\/tools-and-mcp/);
