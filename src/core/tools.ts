@@ -149,6 +149,17 @@ const visibilityOutputSchema = z.object({
   }),
   missing_requested_engines: z.array(z.string()),
   unmeasured_engines: z.array(z.string()),
+  unmeasured_engine_reasons: z.array(z.object({
+    engine: z.string(),
+    reason: z.enum([
+      'incompatible_mode_selection',
+      'no_eligible_stored_run',
+      'no_stored_responses',
+      'stale_brand_identity',
+      'no_successful_active_prompt_observations',
+      'no_usable_stored_responses',
+    ]),
+  })),
   unmeasured_engines_note: z.string(),
   measurement_scope: z.object({
     measurement_mode_filter: z.enum(['model_only', 'search_requested']).nullable(),
@@ -804,6 +815,7 @@ export function registerTools(
       const observedPromptIdsByEngine = new Map<string, Set<string>>();
       const identityChangedAt = brand.identity_changed_at ?? null;
       const staleIdentityEngines: string[] = [];
+      const unmeasuredReasonByEngine = new Map<string, string>();
       const measurementModeByEngine = new Map<string, 'search_requested' | 'model_only'>();
       let mostRecentTimestamp = 0;
       for (const engine of selectedEngines) {
@@ -811,20 +823,33 @@ export function registerTools(
         // dispatch mode: Claude/Gemini live runs are still model-only.
         let eligibleRunMode = run_mode;
         if (measurement_mode === 'search_requested') {
-          if (run_mode === 'batch' || engine === 'claude' || engine === 'gemini') continue;
+          if (run_mode === 'batch' || engine === 'claude' || engine === 'gemini') {
+            unmeasuredReasonByEngine.set(engine, 'incompatible_mode_selection');
+            continue;
+          }
           eligibleRunMode = 'live';
         } else if (measurement_mode === 'model_only' && engine !== 'claude' && engine !== 'gemini') {
-          if (run_mode === 'live') continue;
+          if (run_mode === 'live') {
+            unmeasuredReasonByEngine.set(engine, 'incompatible_mode_selection');
+            continue;
+          }
           eligibleRunMode = 'batch';
         }
         const run = await deps.db.getLatestCompletedRun(brand_id, engine, eligibleRunMode);
-        if (!run) continue;
+        if (!run) {
+          unmeasuredReasonByEngine.set(engine, 'no_eligible_stored_run');
+          continue;
+        }
         const responses = await deps.db.getResponsesForRun(run.id);
-        if (responses.length === 0) continue;
+        if (responses.length === 0) {
+          unmeasuredReasonByEngine.set(engine, 'no_stored_responses');
+          continue;
+        }
         // Stored mention flags were scored against the brand identity at scan
         // time. Do not attribute them to a later name/domain/alias revision.
         if (identityChangedAt !== null && run.started_at < identityChangedAt) {
           staleIdentityEngines.push(engine);
+          unmeasuredReasonByEngine.set(engine, 'stale_brand_identity');
           continue;
         }
         selectedResponses.push(...responses);
@@ -870,6 +895,14 @@ export function registerTools(
       // they must not appear to have supplied a zero score or fresh evidence.
       const unmeasuredEngines = selectedEngines.filter((engine) =>
         !scoredEngines.has(engine));
+      // Explain only what the selected stored evidence proves. Missing runs
+      // do not establish whether a provider was configured or attempted.
+      const unmeasuredEngineReasons = unmeasuredEngines.map((engine) => ({
+        engine,
+        reason: unmeasuredReasonByEngine.get(engine) ?? (active_prompts_only
+          ? 'no_successful_active_prompt_observations'
+          : 'no_usable_stored_responses'),
+      }));
       const missingRequestedEngines = engines && engines.length > 0
         ? unmeasuredEngines
         : [];
@@ -1000,6 +1033,7 @@ export function registerTools(
         score_uncertainty,
         missing_requested_engines: missingRequestedEngines,
         unmeasured_engines: unmeasuredEngines,
+        unmeasured_engine_reasons: unmeasuredEngineReasons,
         unmeasured_engines_note: active_prompts_only
           ? 'These engines have no successful stored observations for currently active buyer prompts under the selected run and measurement modes and are excluded from overall_score. They are unmeasured, not observed zeros. A new scan may incur provider charges.'
           : 'These known or requested engines have no usable current-identity observations under the selected run and measurement modes and are excluded from overall_score. Stale identity engines are listed in identity_attribution; absence does not establish whether an engine was configured, attempted or failed.',
