@@ -157,3 +157,22 @@ test('observation evidence masks OAuth fragment credentials before hash-route qu
   ]);
   assert.doesNotMatch(JSON.stringify(result), /SOURCE_SECRET|OTHER_SECRET/);
 });
+
+test('observation evidence excludes special-use internal hosts from provider source links', async () => {
+  const handler = setup(run, [{ ...response, engine_citations: [
+    'https://team.portal.local/notes',
+    'https://service.localhost/private',
+    'https://staging.internal/dashboard',
+    'https://fixture.test/example',
+    'https://broken.invalid/example',
+    'https://router.home.arpa/config',
+    'https://docs.example.org/public',
+  ] }]);
+  assert.ok(handler);
+  const result = (await handler({ brand_id: brand.id, run_id: run.id, response_id: response.id })).structuredContent;
+  assert.equal(result.provider_source_count, 1);
+  assert.equal(result.provider_source_urls_truncated, false);
+  assert.deepEqual(result.provider_source_urls, [
+    { url: 'https://docs.example.org/public', url_redacted: false },
+  ]);
+});
