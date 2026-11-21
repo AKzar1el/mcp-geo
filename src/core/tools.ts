@@ -3015,7 +3015,9 @@ export function buildResponseExcerpt(text: string, brand: Brand): string {
   const idx = proseIndex !== -1 ? proseIndex : findTermSetMatchIndex(safeText, matchTerms);
   if (idx === -1) return safeText.slice(0, 250);
   const start = Math.max(0, idx - 100);
-  const end = Math.min(safeText.length, idx + 150);
+  // Keep the full 250-character bound even when the match is near the start;
+  // otherwise later, safely redacted URLs can be truncated unnecessarily.
+  const end = Math.min(safeText.length, start + 250);
   return safeText.slice(start, end);
 }
 
