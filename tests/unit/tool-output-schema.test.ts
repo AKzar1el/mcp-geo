@@ -35,6 +35,12 @@ test('visibility output schema describes winning and losing prompt records', () 
     brand: { id: 'acme', name: 'Acme', domain: 'acme.com', category: null },
     refreshed_at: '2026-09-19T00:00:00.000Z',
     overall_score: 50,
+    score_uncertainty: {
+      minimum: 50,
+      maximum: 50,
+      partial_engines: [],
+      note: 'Deterministic extremes, not a confidence interval.',
+    },
     missing_requested_engines: [],
     unmeasured_engines: ['chatgpt'],
     unmeasured_engines_note: 'No usable stored observation; this does not establish why.',

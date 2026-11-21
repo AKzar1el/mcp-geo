@@ -84,6 +84,12 @@ const responses = {
 type VisibilitySnapshot = {
   refreshed_at: string;
   overall_score: number;
+  score_uncertainty: {
+    minimum: number;
+    maximum: number;
+    partial_engines: string[];
+    note: string;
+  };
   missing_requested_engines: string[];
   unmeasured_engines: string[];
   unmeasured_engines_note: string;
@@ -253,6 +259,12 @@ test('check_visibility scopes every snapshot field to the requested engine', asy
   });
 
   assert.equal(result.structuredContent.overall_score, 50);
+  assert.deepEqual(
+    { minimum: result.structuredContent.score_uncertainty.minimum,
+      maximum: result.structuredContent.score_uncertainty.maximum,
+      partial_engines: result.structuredContent.score_uncertainty.partial_engines },
+    { minimum: 50, maximum: 50, partial_engines: [] },
+  );
   assert.equal(result.structuredContent.google_search_sampling, null);
   assert.deepEqual(result.structuredContent.per_engine, [
     {
@@ -556,6 +568,28 @@ test('check_visibility labels a score based on partial successful prompt coverag
     percent: 20,
     partial: true,
   });
+  assert.deepEqual(
+    { minimum: result.structuredContent.score_uncertainty.minimum,
+      maximum: result.structuredContent.score_uncertainty.maximum,
+      partial_engines: result.structuredContent.score_uncertainty.partial_engines },
+    { minimum: 20, maximum: 100, partial_engines: ['claude'] },
+  );
+  assert.match(result.structuredContent.score_uncertainty.note, /not a confidence interval/i);
+  assert.match(result.structuredContent.score_uncertainty.note, /unmeasured engines.*excluded/i);
+});
+
+test('check_visibility score range averages measured-engine extremes without counting missing engines as zeros', async () => {
+  const partialRun: Run = { ...runs.claude, prompts_total: 5, prompts_completed: 1 };
+  const tool = registerVisibilityTool({
+    runs: { claude: partialRun },
+    responses: { [partialRun.id]: [response('claude', 'only-ok', 'Observed mention', 1)] },
+  });
+  const result = await tool.handler({ brand_id: brand.id });
+  assert.equal(result.structuredContent.overall_score, 100);
+  assert.equal(result.structuredContent.score_uncertainty.minimum, 60);
+  assert.equal(result.structuredContent.score_uncertainty.maximum, 100);
+  assert.deepEqual(result.structuredContent.score_uncertainty.partial_engines, ['claude']);
+  assert.ok(result.structuredContent.unmeasured_engines.includes('gemini'));
 });
 
 test('check_visibility flags historical prompt evidence after a prompt-set replacement', async () => {
