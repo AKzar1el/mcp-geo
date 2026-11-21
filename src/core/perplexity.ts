@@ -1,8 +1,7 @@
 // Perplexity Agent API runner. Live mode only; uses the managed `fast` preset.
-// Captures the engine-native citations array Perplexity returns alongside
-// the answer text — those URLs are explicit sources Perplexity grounded
-// its answer on, so we keep them in addition to whatever extractCitations
-// finds in the response body.
+// Captures Agent API search-result source URLs alongside the answer text.
+// Where inline citation IDs exist, only the referenced results qualify as
+// answer citations; otherwise retain the provider's search-result fallback.
 
 import {
   buildSystemPrompt,
@@ -49,7 +48,7 @@ interface PerplexityMessageOutput {
 
 interface PerplexitySearchResultsOutput {
   type: 'search_results';
-  results?: Array<{ url?: unknown }>;
+  results?: Array<{ id?: unknown; url?: unknown }>;
 }
 
 type PerplexityOutput =
@@ -81,7 +80,15 @@ function extractAgentText(data: PerplexityResponse): string {
   return chunks.join('');
 }
 
-function extractAgentCitations(data: PerplexityResponse): string[] {
+function extractAgentCitations(data: PerplexityResponse, text: string): string[] {
+  const citedIds = new Set<number>();
+  let hasInlineMarkers = false;
+  for (const match of text.matchAll(/\[(?:web:)?(\d+)\]/g)) {
+    hasInlineMarkers = true;
+    const id = Number(match[1]);
+    if (Number.isSafeInteger(id)) citedIds.add(id);
+  }
+  const matchingSources = new Map<number, string | null>();
   const urls: string[] = [];
   for (const item of data.output ?? []) {
     if (
@@ -97,14 +104,23 @@ function extractAgentCitations(data: PerplexityResponse): string[] {
         // not a loopback, IP literal, or malformed DNS spelling.
         if ((parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
             normalizeDomainInput(parsed.hostname) && !parsed.username && !parsed.password) {
-          urls.push(result.url);
+          if (!hasInlineMarkers) {
+            urls.push(result.url);
+          } else if (typeof result.id === 'number' && citedIds.has(result.id)) {
+            // Conflicting URLs for the same provider ID are ambiguous: fail closed.
+            const previous = matchingSources.get(result.id);
+            matchingSources.set(result.id, previous === undefined || previous === result.url
+              ? result.url : null);
+          }
         }
       } catch {
         // Bare hosts and malformed provider metadata are not source links.
       }
     }
   }
-  return urls;
+  return !hasInlineMarkers
+    ? urls
+    : [...matchingSources.values()].filter((url): url is string => url !== null);
 }
 
 function describeAgentError(data: PerplexityResponse): string {
@@ -159,7 +175,7 @@ export async function chatCompletion(
   if (text.trim().length === 0) {
     throw new Error('Perplexity Agent API response missing output_text');
   }
-  const citations = extractAgentCitations(data);
+  const citations = extractAgentCitations(data, text);
   return { text, citations };
 }
 
