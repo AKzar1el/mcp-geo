@@ -99,7 +99,7 @@ function extractResponseCitations(data: XAiResponse): string[] {
   for (const item of data.output ?? []) {
     if (item.type !== 'message' || !Array.isArray(item.content)) continue;
     for (const part of item.content) {
-      if (part.type !== 'output_text') continue;
+      if (part.type !== 'output_text' || typeof part.text !== 'string') continue;
       for (const annotation of part.annotations ?? []) {
         // Without offsets, annotations can also describe merely encountered
         // sources when inline citations are disabled.
@@ -107,7 +107,8 @@ function extractResponseCitations(data: XAiResponse): string[] {
             !Number.isInteger(annotation.start_index) ||
             !Number.isInteger(annotation.end_index) ||
             (annotation.start_index ?? -1) < 0 ||
-            (annotation.end_index ?? 0) <= (annotation.start_index ?? 0)) continue;
+            (annotation.end_index ?? 0) <= (annotation.start_index ?? 0) ||
+            (annotation.end_index ?? Infinity) > part.text.length) continue;
         add(annotation.url ?? annotation.url_citation?.url);
       }
     }

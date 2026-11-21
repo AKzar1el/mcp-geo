@@ -99,10 +99,14 @@ test('xAI only returns valid web citation evidence from provider metadata', asyn
       annotations: [
         { url: 'ftp://acme.example/other' },
         { type: 'url_citation', url_citation: { url: 'https://acme.example/article' }, start_index: 0, end_index: 8 },
+        { type: 'url_citation', url: 'https://acme.example/unpositioned-outside-text', start_index: 200, end_index: 210 },
         { url: 'https://example.org:bad/path' },
         { url_citation: { url: 'https://[::1]/internal' } },
         { url: 'https://acme.example../malformed-root' },
       ],
+    }, {
+      type: 'output_text',
+      annotations: [{ type: 'url_citation', url: 'https://acme.example/no-answer-text', start_index: 0, end_index: 5 }],
     }] }],
     citations: [
       'acme.example',
