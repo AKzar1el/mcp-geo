@@ -770,6 +770,22 @@ test('top source rankings exclude internal and invalid hosts from historical pro
     ['https://news.example.org/public']);
 });
 
+test('top source rankings reject provider URLs with control characters or outer whitespace', async () => {
+  const citation = registerCitationTool(citationRow(), [
+    promptResponse({ engine_citations: [
+      'https://newline.example.org/report\n',
+      'https://tab.example.org/re\tport',
+      ' https://space.example.org/report',
+      'https://clean.example.org/report',
+    ] }),
+  ]);
+  const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.deepEqual(result.top_sources.map((source) => source.domain), ['clean.example.org']);
+  assert.equal(result.total_source_domains, 1);
+  assert.deepEqual(result.top_sources.map((source) => source.sample_url),
+    ['https://clean.example.org/report']);
+});
+
 test('get_citations distinguishes provider-listed link-only evidence from textual brand mentions', async () => {
   const citation = registerCitationTool(
     citationRow({
