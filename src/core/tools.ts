@@ -2386,9 +2386,15 @@ export function registerTools(
             a.prompt_text.localeCompare(b.prompt_text),
         )
         .slice(0, 15);
+      // Keep evidence ordering and stored questions intact, but do not expose
+      // embedded credentials in client reports or opt-in analyzer inputs.
+      const safeLosingPrompts = losingPrompts.map((prompt) => ({
+        ...prompt,
+        prompt_text: redactEvidenceText(prompt.prompt_text),
+      }));
       const losing_prompt_evidence = {
-        note: 'These are stored response record references for observed competitor-only mentions in the current active prompt set, not independently verified source citations. Each observation records its model-only or search-requested request mode; neither mode proves a citation. No raw model answers are included; inspect stored responses before quoting any evidence in a client audit.',
-        prompts: losingPrompts.map(({ prompt_id, prompt_text, observations }) => ({
+        note: 'These are stored response record references for observed competitor-only mentions in the current active prompt set, not independently verified source citations. Buyer questions are credential-redacted in this report. Each observation records its model-only or search-requested request mode; neither mode proves a citation. No raw model answers are included; inspect stored responses before quoting any evidence in a client audit.',
+        prompts: safeLosingPrompts.map(({ prompt_id, prompt_text, observations }) => ({
           prompt_id, prompt_text, observations,
         })),
       };
@@ -2472,7 +2478,7 @@ export function registerTools(
         return toolResult(payload);
       }
 
-      let recommendations = buildFallbackRecommendations(losingPrompts, max_recommendations);
+      let recommendations = buildFallbackRecommendations(safeLosingPrompts, max_recommendations);
       let prompt_source: 'generated' | 'fallback' = 'fallback';
       let fallbackReason: string | undefined;
       if (ai_analysis) {
@@ -2483,7 +2489,7 @@ export function registerTools(
             recommendations = await analyzeContentGaps(
               { ANTHROPIC_API_KEY: deps.env.ANTHROPIC_API_KEY },
               brand,
-              losingPrompts,
+              safeLosingPrompts,
               max_recommendations,
             );
             prompt_source = 'generated';

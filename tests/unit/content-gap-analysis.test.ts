@@ -1725,3 +1725,48 @@ test('content gaps select the latest eligible run within a request-mode cohort',
   assert.deepEqual(legacy.observation_coverage.per_engine.map((run) => run.run_id),
     ['batch-new', 'claude-run']);
 });
+
+test('content gap evidence and fallback advice redact credentials in stored buyer questions', async () => {
+  const question = 'Best tools at https://example.com/docs?api_key=synthetic-url-secret and access_token=synthetic-inline-secret';
+  const stored: PromptResponse = {
+    id: 'response-secret', run_id: 'run-1', prompt_id: 'prompt-1',
+    prompt_text: question, engine: 'chatgpt', raw_response: '',
+    brand_mentioned: 0, brand_cited_with_link: 0, cited_urls: [],
+    competitors_mentioned: ['rival.com'], engine_citations: [], status: 'ok',
+    error_message: null, captured_at: 2000,
+  };
+  let handler: ((input: { brand_id: string; max_recommendations: number; ai_analysis: boolean }) =>
+    Promise<{ structuredContent: {
+      losing_prompt_evidence: { prompts: Array<{ prompt_text: string }> };
+      recommendations: Array<{ topic: string; rationale: string }>;
+      observation_coverage: { active_prompt_count: number };
+    } }>) | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, callback: unknown) {
+      if (name === 'get_content_gaps') handler = callback as typeof handler;
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => ({
+        id: 'acme', name: 'Acme', domain: 'acme.com', competitors: ['rival.com'],
+        aliases: [], exclude_terms: [], updated_at: 0,
+      } as Brand),
+      getActivePrompts: async () => [{ id: 'prompt-1' }],
+      getLatestCompletedRun: async (_id, engine) =>
+        engine === 'chatgpt' ? { id: 'run-1', mode: 'live', started_at: 1000 } : null,
+      getResponsesForRun: async () => [stored],
+    } as Db,
+    env: {}, refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(handler);
+  const result = (await handler({ brand_id: 'acme', max_recommendations: 1, ai_analysis: false })).structuredContent;
+  const output = JSON.stringify(result);
+  assert.doesNotMatch(output, /synthetic-url-secret|synthetic-inline-secret/);
+  assert.match(result.losing_prompt_evidence.prompts[0]?.prompt_text ?? '', /api_key=\[REDACTED\]/);
+  assert.match(result.recommendations[0]?.topic ?? '', /access_token=\[REDACTED\]/);
+  assert.match(result.recommendations[0]?.rationale ?? '', /rival\.com/);
+  assert.equal(result.observation_coverage.active_prompt_count, 1);
+  assert.equal(stored.prompt_text, question, 'stored evidence remains unchanged');
+});
