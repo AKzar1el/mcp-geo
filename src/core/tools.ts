@@ -507,6 +507,8 @@ const citationsOutputSchema = z.object({
   citations: z.array(
     z.object({
       id: z.string(),
+      run_id: z.string().describe('Stored run ID; pair with response_id and brand_id in get_observation_evidence.'),
+      response_id: z.string().describe('Exact stored response ID for get_observation_evidence; not an independently verified citation.'),
       engine: z.string(),
       prompt: z.string(),
       cited_at: z.string(),
@@ -1892,7 +1894,7 @@ export function registerTools(
     {
       title: 'Get AI citation evidence',
       description:
-        "Page stored citations with full-window row count, per-engine prompt coverage/freshness and top sources. engines and measurement_mode scope evidence before pagination. Defaults retain history; no provider scans. Example: brand_id='acme'.",
+        "Page stored citations and sources. Each row includes run_id/response_id for get_observation_evidence. engines and measurement_mode scope before pagination; no new scans or verified links. Example: brand_id='acme'.",
       inputSchema: {
         brand_id: z
           .string()
@@ -2001,6 +2003,8 @@ export function registerTools(
         const citedUrl = brandUrl ? redactCitationUrlQuery(brandUrl.url) : null;
         return {
           id: citationId(row.response_id),
+          run_id: row.run_id,
+          response_id: row.response_id,
           engine: row.engine,
           prompt: redactEvidenceText(row.prompt),
           cited_at: new Date(row.captured_at).toISOString(),

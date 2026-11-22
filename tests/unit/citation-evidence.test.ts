@@ -88,6 +88,8 @@ type CitationResult = {
   };
   citations: Array<{
     id: string;
+    run_id: string;
+    response_id: string;
     prompt: string;
     cited_url: string | null;
     url_redacted: boolean;
@@ -241,6 +243,28 @@ function citationRow(overrides: Partial<CitationRow> = {}): CitationRow {
     ...overrides,
   };
 }
+
+test('citation rows expose the exact stored run and response for observation drilldown', async () => {
+  const now = Date.now();
+  const rows = [
+    citationRow({ run_id: 'run-alpha', response_id: 'response-alpha', prompt_id: 'shared', captured_at: now }),
+    citationRow({ run_id: 'run-beta', response_id: 'response-beta', prompt_id: 'shared', captured_at: now - 1000 }),
+  ];
+  const tool = registerCitationTool(rows);
+  const first = (await tool.handler({ brand_id: brand.id, days: 14, limit: 1 })).structuredContent;
+  assert.equal(first.citations.length, 1);
+  assert.equal(first.citations[0].run_id, 'run-alpha');
+  assert.equal(first.citations[0].response_id, 'response-alpha');
+  assert.equal(first.has_more, true);
+  assert.ok(first.next_cursor);
+  const second = (await tool.handler({
+    brand_id: brand.id, days: 14, limit: 1, cursor: first.next_cursor!,
+  })).structuredContent;
+  assert.equal(second.citations.length, 1);
+  assert.equal(second.citations[0].run_id, 'run-beta');
+  assert.equal(second.citations[0].response_id, 'response-beta');
+  assert.equal(second.has_more, false);
+});
 
 test('citation evidence discloses Google US-English sampling even without a Google citation match', async () => {
   const tool = registerCitationTool(citationRow({ engine: 'chatgpt' }));
