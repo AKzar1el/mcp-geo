@@ -726,6 +726,26 @@ test('top source rankings exclude localhost, IP addresses and malformed DNS host
   assert.deepEqual(sources.map((source) => source.sample_url), ['https://research.example/report']);
 });
 
+test('top source rankings exclude internal and invalid hosts from historical provider evidence', async () => {
+  const citation = registerCitationTool(citationRow(), [
+    promptResponse({ engine_citations: [
+      'https://wiki.office.local/internal',
+      'https://gateway.staging.internal/dashboard',
+      'https://service.localhost/private',
+      'https://fixture.test/document',
+      'https://invalid.invalid/document',
+      'https://home.arpa/router',
+      'https://router.home.arpa/status',
+      'https://news.example.org/public',
+    ] }),
+  ]);
+  const sources = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.deepEqual(sources.top_sources.map((source) => source.domain), ['news.example.org']);
+  assert.equal(sources.total_source_domains, 1);
+  assert.deepEqual(sources.top_sources.map((source) => source.sample_url),
+    ['https://news.example.org/public']);
+});
+
 test('get_citations distinguishes provider-listed link-only evidence from textual brand mentions', async () => {
   const citation = registerCitationTool(
     citationRow({

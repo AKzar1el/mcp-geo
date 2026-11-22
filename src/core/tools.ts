@@ -3123,6 +3123,9 @@ function citationIdentityScope(startedAt: number | null | undefined, boundary: n
 }
 
 function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityBoundary: number | null = null) {
+  // Historical provider evidence may predate source-host filtering at ingest.
+  // Exclude private/internal and invalid/test hostnames from audit rankings.
+  const nonPublicSuffixes = ['.local', '.localhost', '.internal', '.test', '.invalid', '.home.arpa'];
   const engineObservationCounts = new Map<string, number>();
   for (const response of responses) {
     engineObservationCounts.set(response.engine, (engineObservationCounts.get(response.engine) ?? 0) + 1);
@@ -3160,6 +3163,7 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
         // Only rank domain-shaped sources using the same host rules as brands.
         const domain = normalizeDomainInput(parsed.hostname);
         if (!domain) continue;
+        if (domain === 'home.arpa' || nonPublicSuffixes.some((suffix) => domain.endsWith(suffix))) continue;
         if (!domainsForResponse.has(domain)) domainsForResponse.set(domain, rawUrl);
         const citedPaths = pathsForResponse.get(domain) ?? new Set<string>();
         citedPaths.add(parsed.pathname);
