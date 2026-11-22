@@ -1153,9 +1153,15 @@ export function registerTools(
           note: 'Runs started before the last matching-identity change are excluded from current scores and listed as stale engines, not treated as observed zeros. Refresh those engines before measuring the current brand identity (provider charges may apply). Historical runs remain available in history; older changes before identity-boundary migration are unknown.',
         },
         per_engine: perEngine,
-        top_winning_prompts: scored.top_winning_prompts,
+        top_winning_prompts: scored.top_winning_prompts.map((row) => ({
+          ...row,
+          prompt: redactEvidenceText(row.prompt),
+        })),
         winning_prompt_evidence_note: 'engines_cited_in is a legacy field counting brand mentions in answers, not source citations. Use engines_mentioned_in for mention evidence and engines_with_brand_link for linked brand evidence. A link-only source without an answer mention is not a winning prompt.',
-        top_losing_prompts: scored.top_losing_prompts,
+        top_losing_prompts: scored.top_losing_prompts.map((row) => ({
+          ...row,
+          prompt: redactEvidenceText(row.prompt),
+        })),
         losing_prompt_evidence_note: 'competitors_cited retains historical answer mentions, not verified source links. The tracked and not-currently-tracked lists describe the present competitor roster, not the roster at observation time; historical scores and observations are not rewritten. Refresh scans before interpreting current competitors.',
       };
       return toolResult(payload);
