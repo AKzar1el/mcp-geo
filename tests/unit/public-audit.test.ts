@@ -401,7 +401,11 @@ test('audit form validates scope and preserves oversized email requests with the
 
   // WHATWG URL accepts malformed DNS labels; an email request cannot treat
   // those as valid, measurable public brand or competitor domains.
-  for (const invalid of ['one..com', 'one..site', 'https://-bad.com', 'https://localhost.', 'https://one.com..', '127.0.0.1']) {
+  for (const invalid of [
+    'one..com', 'one..site', 'https://-bad.com', 'https://localhost.',
+    'https://one.com..', '127.0.0.1', 'router.home.arpa', 'home.arpa',
+    'printer.local', 'service.internal', 'brand.test', 'demo.invalid', 'docs.example',
+  ]) {
     form.values.brand = invalid;
     form.values.competitors = 'two.com';
     location.href = '';
@@ -410,6 +414,13 @@ test('audit form validates scope and preserves oversized email requests with the
     assert.match(status.textContent, /valid.*(?:domain|URL)/i);
   }
   form.values.brand = 'example.com';
+  for (const invalid of ['printer.local', 'router.home.arpa', 'brand.test']) {
+    form.values.competitors = invalid;
+    location.href = '';
+    await submit();
+    assert.equal(location.href, '', `non-public competitor ${invalid} must not open an email`);
+    assert.match(status.textContent, /valid.*(?:domain|URL)/i);
+  }
   form.values.competitors = 'https://one..com';
   location.href = '';
   await submit();

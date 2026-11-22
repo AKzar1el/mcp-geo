@@ -188,6 +188,7 @@ function auditHtml(origin: string): string {
           !(downloadButton instanceof HTMLButtonElement) ||
           !(previewButton instanceof HTMLButtonElement) || !previewBody || !status) return;
 
+      const nonPublicSuffixes = ['.local', '.localhost', '.internal', '.test', '.invalid', '.example', '.home.arpa'];
       const domainForRequest = (input) => {
         const raw = input.trim();
         const isUrl = raw.includes('://');
@@ -201,6 +202,7 @@ function auditHtml(origin: string): string {
             // Match the backend's public-domain requirements before offering an audit.
             const isIpv4 = /^(?:[0-9]{1,3}[.]){3}[0-9]{1,3}$/.test(host);
             if (host.length <= 253 && labels.length >= 2 && !isIpv4 &&
+                host !== 'home.arpa' && !nonPublicSuffixes.some((suffix) => host.endsWith(suffix)) &&
                 labels.every((label) => label.length <= 63 &&
                   /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label))) {
               return host;
