@@ -2175,7 +2175,7 @@ export function registerTools(
         response_id: response.id,
         engine: response.engine,
         prompt_id: response.prompt_id,
-        prompt: response.prompt_text,
+        prompt: redactEvidenceText(response.prompt_text),
         captured_at: Number.isFinite(response.captured_at) &&
           response.captured_at > 0 && Math.abs(response.captured_at) <= 8.64e15
           ? new Date(response.captured_at).toISOString() : null,
@@ -2193,7 +2193,7 @@ export function registerTools(
         provider_source_urls_truncated: providerSourceList.length > 5,
         provider_source_urls: providerSourceList.slice(0, 5),
         google_search_sampling: googleSearchSampling([run.engine]),
-        evidence_note: 'This is a short credential-redacted excerpt of one stored successful response, not a full answer or an independently verified source citation. An optional recorded competitor focus is best effort; absence from the excerpt does not disprove a recorded mention. Provider-returned source URLs are not independently verified; access-bearing URL query and fragment fields are masked. Review identity_scope, active_prompt and measurement_mode before quoting in an audit. No provider request occurred.',
+        evidence_note: 'This is a short credential-redacted excerpt of one stored successful response, not a full answer or an independently verified source citation. The original buyer question is credential-redacted without excerpt truncation. An optional recorded competitor focus is best effort; absence from the excerpt does not disprove a recorded mention. Provider-returned source URLs are not independently verified; access-bearing URL query and fragment fields are masked. Review identity_scope, active_prompt and measurement_mode before quoting in an audit. No provider request occurred.',
       };
       return toolResult(payload);
     },
@@ -3297,11 +3297,9 @@ function redactCitationUrlQuery(rawUrl: string): string {
   return `${safeAddress}#${safeFragment}`;
 }
 
-export function buildResponseExcerpt(text: string, brand: Brand, focusCompetitor?: string): string {
-  if (!text) return '';
-  if (text === '[NO_AI_OVERVIEW]') return text;
-  // Provider text is untrusted. Even a URL rejected as citation evidence can
-  // otherwise expose authority credentials in the user-facing excerpt.
+function redactEvidenceText(text: string): string {
+  // Stored text can carry credentials even when a URL is not valid citation
+  // evidence. Apply the same output-only redaction to excerpts and questions.
   // Closing parentheses and square brackets can occur in URL paths before
   // token-bearing query or fragment values. Keep scanning to redact them.
   const urlSafeText = text.replace(/https?:\/\/[^\s<>"'`]+/gi, (rawUrl) => {
@@ -3318,9 +3316,15 @@ export function buildResponseExcerpt(text: string, brand: Brand, focusCompetitor
   // Provider prose can contain standalone credential assignments and auth
   // headers, not just URLs. Mask their values before selecting an excerpt;
   // raw stored observations remain unchanged for forensic provenance.
-  const safeText = urlSafeText
+  return urlSafeText
     .replace(/\b(Authorization\s*:\s*(?:Bearer|Basic)\s+)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;]+)/gi, '$1[REDACTED]')
     .replace(/\b((?:access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|client[_-]?secret)\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s&,;]+)/gi, '$1[REDACTED]');
+}
+
+export function buildResponseExcerpt(text: string, brand: Brand, focusCompetitor?: string): string {
+  if (!text) return '';
+  if (text === '[NO_AI_OVERVIEW]') return text;
+  const safeText = redactEvidenceText(text);
   const focusIdx = focusCompetitor
     ? findTermSetMatchIndex(safeText, { domain: focusCompetitor })
     : -1;

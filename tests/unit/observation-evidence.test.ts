@@ -87,6 +87,20 @@ test('evidence reference resolves a scoped redacted excerpt without provider tra
   assert.match(result.evidence_note, /not a full answer or an independently verified/i);
 });
 
+test('observation evidence redacts secrets in the original buyer question without truncating its context', async () => {
+  const question = `What does ${'our procurement process '.repeat(18)}suggest about ` +
+    'https://docs.example.org/compare?api_key=QUESTION_SECRET&view=public and ' +
+    'access_token=INLINE_SECRET?';
+  const handler = setup(run, [{ ...response, prompt_text: question }]);
+  assert.ok(handler);
+  const result = (await handler({ brand_id: brand.id, run_id: run.id, response_id: response.id })).structuredContent;
+  assert.match(result.prompt, /our procurement process/);
+  assert.ok(result.prompt.length > 250, 'the original buyer question should not be excerpt-truncated');
+  assert.match(result.prompt, /api_key=\[REDACTED\]&view=public/);
+  assert.match(result.prompt, /access_token=\[REDACTED\]/);
+  assert.doesNotMatch(result.prompt, /QUESTION_SECRET|INLINE_SECRET/);
+});
+
 test('evidence lookup cannot cross a brand, a run, or a successful response boundary', async () => {
   const foreign = setup({ ...run, brand_id: 'foreign-brand' });
   assert.ok(foreign);
