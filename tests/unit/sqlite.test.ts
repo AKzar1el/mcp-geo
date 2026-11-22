@@ -611,6 +611,8 @@ test('citation source projections preserve complete window, engine and status pa
     for (const adapter of [db, hosted]) {
       const full = await adapter.getCitationSourceRows('acme', now - 30_000, now);
       assert.deepEqual(full.map((row) => row.engine_citations[0]), expectedUrls);
+      assert.deepEqual(full.map((row) => row.run_id), [firstRunId, secondRunId],
+        'SQLite and D1 source samples must retain the owning run for exact observation drilldown');
       assert.deepEqual(full.map((row) => row.engine), ['chatgpt', 'perplexity']);
       assert.deepEqual(full.map((row) => row.mode), ['batch', 'live'],
         'SQLite and D1 must retain source run mode without reading AI answer bodies');

@@ -233,6 +233,7 @@ export interface CitationRow {
 // not the potentially large AI answer body or prompt text.
 export interface CitationSourceRow {
   id: string;
+  run_id: string;
   prompt_id: string;
   engine: string;
   mode?: Run['mode'] | null;

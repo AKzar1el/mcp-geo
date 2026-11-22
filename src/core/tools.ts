@@ -488,6 +488,8 @@ const citationsOutputSchema = z.object({
       per_engine_examples: z.record(z.string(), z.object({
         sample_url: z.string(),
         url_redacted: z.boolean(),
+        run_id: z.string().describe('Stored run for this engine source sample; use with brand_id and response_id in get_observation_evidence.'),
+        response_id: z.string().describe('Exact stored response for this engine source sample; not a verified live citation.'),
       })).describe('One deterministic URL cited for this domain on each observed engine, from its latest stored response; sensitive parameters masked, not a verified live link.'),
       distinct_cited_path_count: z.number().int().nonnegative().describe('Distinct cited URL pathnames for this domain, ignoring query and fragment; not verified live pages.'),
       top_cited_paths: z.array(z.object({
@@ -1894,7 +1896,7 @@ export function registerTools(
     {
       title: 'Get AI citation evidence',
       description:
-        "Page stored citations and sources. Each row includes run_id/response_id for get_observation_evidence. engines and measurement_mode scope before pagination; no new scans or verified links. Example: brand_id='acme'.",
+        "Page stored citations and ranked sources. Citation rows and per-engine source examples include run_id/response_id for get_observation_evidence. Engine/mode filters scope results. No new scans or verified links. Example: brand_id='acme'.",
       inputSchema: {
         brand_id: z
           .string()
@@ -3132,7 +3134,7 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
       engineCitationCounts: Map<string, number>;
       enginePrompts: Map<string, Set<string>>;
       engineLastCapturedAt: Map<string, number>;
-      engineSamples: Map<string, { url: string; capturedAt: number; responseId: string }>;
+      engineSamples: Map<string, { url: string; capturedAt: number; responseId: string; runId: string }>;
       pathResponseCounts: Map<string, number>;
       prompts: Set<string>;
       engines: Set<string>;
@@ -3184,7 +3186,7 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
         if (!engineSample || response.captured_at > engineSample.capturedAt ||
           (response.captured_at === engineSample.capturedAt && response.id < engineSample.responseId)) {
           existing.engineSamples.set(response.engine, {
-            url: sampleUrl, capturedAt: response.captured_at, responseId: response.id,
+            url: sampleUrl, capturedAt: response.captured_at, responseId: response.id, runId: response.run_id,
           });
         }
         for (const path of pathsForResponse.get(domain) ?? []) {
@@ -3212,7 +3214,7 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
           enginePrompts: new Map([[response.engine, new Set([response.prompt_id])]]),
           engineLastCapturedAt: new Map([[response.engine, response.captured_at]]),
           engineSamples: new Map([[response.engine, {
-            url: sampleUrl, capturedAt: response.captured_at, responseId: response.id,
+            url: sampleUrl, capturedAt: response.captured_at, responseId: response.id, runId: response.run_id,
           }]]),
           pathResponseCounts: new Map([...(pathsForResponse.get(domain) ?? [])]
             .map((path): [string, number] => [path, 1])),
@@ -3249,7 +3251,10 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
         per_engine_examples: Object.fromEntries(
           [...source.engineSamples].sort(([a], [b]) => a.localeCompare(b)).map(([engine, sample]) => {
             const safeUrl = redactCitationUrlQuery(sample.url);
-            return [engine, { sample_url: safeUrl, url_redacted: safeUrl !== sample.url }];
+            return [engine, {
+              sample_url: safeUrl, url_redacted: safeUrl !== sample.url,
+              run_id: sample.runId, response_id: sample.responseId,
+            }];
           }),
         ),
         distinct_cited_path_count: source.pathResponseCounts.size,
