@@ -122,6 +122,42 @@ type ComparisonTool = {
   }) => Promise<{ structuredContent: ComparisonResult }>;
 };
 
+test('comparison redacts credentials in displayed buyer questions without changing counts', async () => {
+  let comparison: ComparisonTool | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, handler: unknown) {
+      if (name === 'compare_competitors') comparison = { handler: handler as ComparisonTool['handler'] };
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getResponsesSince: async () => [
+        response('brand', 'Which platform works with https://example.com/docs?api_key=private-brand-key for teams?', 1, []),
+        response('competitor', 'Compare access_token=private-competitor-token for team planning', 0, ['asana.com']),
+        response('both', 'Does Authorization: Bearer private-cohort-token work for both?', 1, ['asana.com']),
+      ],
+    } as Db,
+    env: {}, refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(comparison);
+
+  const result = (await comparison.handler({ brand_id: brand.id })).structuredContent;
+  const serialized = JSON.stringify(result);
+  for (const secret of ['private-brand-key', 'private-competitor-token', 'private-cohort-token']) {
+    assert.ok(!serialized.includes(secret), `comparison output exposed ${secret}`);
+  }
+  assert.match(result.mention_evidence_samples.brand[0]?.prompt ?? '', /api_key=\[REDACTED\]/);
+  assert.match(result.mention_evidence_samples.competitors[0]?.samples[0]?.prompt ?? '', /\[REDACTED\]/);
+  assert.match(result.prompts_brand_only[0]?.prompt ?? '', /\[REDACTED\]/);
+  assert.match(result.prompts_co_mentioned[0]?.prompt ?? '', /\[REDACTED\]/);
+  assert.match(result.competitors[0]?.prompts_won_against_you[0] ?? '', /\[REDACTED\]/);
+  assert.equal(result.observation_coverage.successful_responses, 3);
+  assert.equal(result.your_mentions, 2);
+  assert.equal(result.competitors[0]?.mentions, 2);
+});
+
 test('comparison scopes model-only and search-requested evidence before shares and coverage', async () => {
   let comparison: ComparisonTool | undefined;
   const server = {

@@ -1671,7 +1671,7 @@ export function registerTools(
         run_id: row.run_id,
         response_id: row.id,
         prompt_id: row.prompt_id,
-        prompt: row.prompt_text,
+        prompt: redactEvidenceText(row.prompt_text),
         measurement_mode: visibilityMeasurementMode(row.engine, row.mode ?? 'live'),
         captured_at: new Date(row.captured_at).toISOString(),
       });
@@ -1797,7 +1797,7 @@ export function registerTools(
             .sort(([idA, textA], [idB, textB]) =>
               textA.localeCompare(textB) || idA.localeCompare(idB))
             .slice(0, 5)
-            .map(([, text]) => text),
+            .map(([, text]) => redactEvidenceText(text)),
         };
       });
 
@@ -1845,7 +1845,7 @@ export function registerTools(
           const you_mentioned_by = [...w.engines].sort();
           const competitors_mentioned = [...w.competitors].sort();
           return {
-            prompt: w.prompt,
+            prompt: redactEvidenceText(w.prompt),
             you_mentioned_by,
             competitors_mentioned,
             you_cited_by: you_mentioned_by,
