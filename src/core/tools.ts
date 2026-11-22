@@ -3174,6 +3174,9 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
       ? null : citationIdentityScope(response.run_started_at, identityBoundary);
     for (const rawUrl of response.engine_citations) {
       try {
+        // WHATWG URL silently drops tabs/newlines and trims outer whitespace.
+        // Historical malformed provider links are not trustworthy audit evidence.
+        if (/[\u0000-\u001f\u007f]/.test(rawUrl) || rawUrl !== rawUrl.trim()) continue;
         const parsed = new URL(rawUrl);
         if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') continue;
         if (parsed.username || parsed.password) continue;
