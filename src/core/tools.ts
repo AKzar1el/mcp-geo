@@ -2157,7 +2157,7 @@ export function registerTools(
           const parsed = new URL(rawUrl);
           if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') continue;
           const hostname = normalizeDomainInput(parsed.hostname);
-          if (parsed.username || parsed.password || !hostname ||
+          if (parsed.username || parsed.password || !hostname || hostname === 'home.arpa' ||
             nonPublicSuffixes.some((suffix) => hostname.endsWith(suffix))) continue;
           const safeUrl = redactCitationUrlQuery(rawUrl);
           if (!providerSources.has(safeUrl)) {
