@@ -88,6 +88,7 @@ type CitationResult = {
   };
   citations: Array<{
     id: string;
+    prompt: string;
     cited_url: string | null;
     url_redacted: boolean;
     citation_type: string;
@@ -589,6 +590,16 @@ test('get_citations redacts repeated and encoded query credentials at all client
     'https://research.example/article?client_secret=[REDACTED]&page=2&KEY=[REDACTED]');
   assert.match(result.citations[0].response_excerpt, /token=\[REDACTED\]/);
   assert.doesNotMatch(JSON.stringify(result), /NATIVE_SECRET|TOKEN_ONE|TOKEN_TWO|SOURCE_SECRET|ANOTHER_SECRET|ANSWER_SECRET/);
+});
+
+test('get_citations redacts credentials in stored buyer questions without hiding public context', async () => {
+  const citation = registerCitationTool(citationRow({
+    prompt: 'Compare Acme at https://research.example/guide?api_key=BUYER_API_SECRET&ref=client with Authorization: Bearer BUYER_BEARER_SECRET',
+  }));
+  const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.equal(result.citations[0].prompt,
+    'Compare Acme at https://research.example/guide?api_key=[REDACTED]&ref=client with Authorization: Bearer [REDACTED]');
+  assert.doesNotMatch(JSON.stringify(result.citations), /BUYER_API_SECRET|BUYER_BEARER_SECRET/);
 });
 
 test('get_citations redacts URL fragment credentials without changing public query and anchor context', async () => {
