@@ -35,8 +35,27 @@ test('visibility output schema describes winning and losing prompt records', () 
     brand: { id: 'acme', name: 'Acme', domain: 'acme.com', category: null },
     refreshed_at: '2026-09-19T00:00:00.000Z',
     overall_score: 50,
+    score_uncertainty: {
+      minimum: 50,
+      maximum: 50,
+      partial_engines: [],
+      by_engine: [{
+        engine: 'claude',
+        observed_score: 50,
+        minimum: 50,
+        maximum: 50,
+        usable_prompts: 2,
+        expected_prompts: 2,
+      }],
+      by_measurement_mode: {
+        search_requested: null,
+        model_only: { minimum: 50, maximum: 50, partial_engines: [] },
+      },
+      note: 'Deterministic extremes, not a confidence interval.',
+    },
     missing_requested_engines: [],
     unmeasured_engines: ['chatgpt'],
+    unmeasured_engine_reasons: [{ engine: 'chatgpt', reason: 'no_eligible_stored_run' }],
     unmeasured_engines_note: 'No usable stored observation; this does not establish why.',
     measurement_scope: {
       measurement_mode_filter: null,
@@ -157,6 +176,7 @@ test('content-gap output schema describes recommendation records', () => {
           prompt_text: 'Project tools for agencies',
           observations: [{
             engine: 'chatgpt', run_id: 'run-1', response_id: 'response-1',
+            measurement_mode: 'search_requested',
             captured_at_ms: 1000, competitors_mentioned: ['beta.com'],
           }],
         }],

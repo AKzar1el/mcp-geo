@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   hasExplicitClientApproval,
   missingConnectSecretResponse,
+  oauthRedirectAuthority,
 } from '../../src/core/oauth-consent.js';
 
 test('hosted OAuth refuses missing and blank connection secrets without echoing input', async () => {
@@ -45,16 +46,30 @@ test('the hosted /authorize path fails closed before issuing any OAuth grant', (
   const sourceForm = source.split('function renderConnectForm(')[1]?.split('async function handleAuthorize(')[0];
   assert.ok(sourceForm);
   assert.match(sourceForm, /name="approve_client" value="yes" required/);
-  assert.match(sourceForm, /escapeHtml\(\(params\.get\('client_id'\)/);
+  assert.match(sourceForm, /const clientId = escapeHtml\(params\.get\('client_id'\) \?\? ''\)/);
+  assert.match(sourceForm, /const requestedScope = escapeHtml\(params\.get\('scope'\) \?\? ''\)/);
+  assert.doesNotMatch(sourceForm, /\.slice\(0, 240\)/);
   assert.match(sourceForm, /'cache-control': 'no-store'/);
   assert.match(sourceForm, /'referrer-policy': 'no-referrer'/);
 });
 
-test('OAuth approval reveals the unverified redirect destination as escaped, non-clickable text', () => {
+test('OAuth approval shows a complete, escaped redirect plus its parsed authority', () => {
   const source = readFileSync('src/index.ts', 'utf8');
   const sourceForm = source.split('function renderConnectForm(')[1]?.split('async function handleAuthorize(')[0];
   assert.ok(sourceForm);
-  assert.match(sourceForm, /const redirectTarget = escapeHtml\(\(params\.get\('redirect_uri'\) \?\? ''\)\.slice\(0, 240\)\)/);
+  assert.match(sourceForm, /const redirectTarget = escapeHtml\(redirectUri\)/);
+  assert.doesNotMatch(sourceForm, /redirectUri\.slice\(|redirectTarget\.slice\(/);
+  assert.match(sourceForm, /oauthRedirectAuthority\(redirectUri\)/);
   assert.match(sourceForm, /Redirect destination \(unverified\): <code>\$\{redirectTarget\}<\/code>/);
+  assert.match(sourceForm, /Parsed redirect authority \(unverified\): <code>\$\{escapeHtml\(redirectAuthority\)\}<\/code>/);
   assert.doesNotMatch(sourceForm, /href="\$\{redirectTarget\}"/);
+});
+
+test('redirect authority reveals the actual recipient behind long paths, userinfo and IDNs', () => {
+  const deceptive = `https://trusted.example@receiver.evil.example/${'x'.repeat(350)}`;
+  assert.equal(oauthRedirectAuthority(deceptive), 'https://receiver.evil.example');
+  assert.equal(oauthRedirectAuthority('https://example.org:8443/callback'), 'https://example.org:8443');
+  assert.equal(oauthRedirectAuthority('https://b\u00fccher.example/cb'), 'https://xn--bcher-kva.example');
+  assert.equal(oauthRedirectAuthority('native-app:/callback'), null);
+  assert.equal(oauthRedirectAuthority('not a URL'), null);
 });

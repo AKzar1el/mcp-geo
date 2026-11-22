@@ -23,3 +23,14 @@ export function hasExplicitClientApproval(form: FormData | null): boolean {
   const approvals = form?.getAll('approve_client') ?? [];
   return approvals.length === 1 && approvals[0] === 'yes';
 }
+
+export function oauthRedirectAuthority(redirectUri: string): string | null {
+  try {
+    const destination = new URL(redirectUri);
+    // The parsed authority exposes the actual host even when untrusted
+    // userinfo or a very long path makes the raw redirect misleading.
+    return destination.host ? `${destination.protocol}//${destination.host}` : null;
+  } catch {
+    return null;
+  }
+}

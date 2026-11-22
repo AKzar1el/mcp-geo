@@ -57,16 +57,16 @@ test('markdown link to brand domain counts as linked citation', () => {
 
 test('Markdown link titles are hidden metadata, not cited URLs or visible recommendations', () => {
   for (const link of [
-    '[report](https://neutral.example/report "Acme Project Tool and Asana at https://acme.com/hidden")',
-    "[report](https://neutral.example/report 'Acme Project Tool and Asana at https://asana.com/hidden')",
-    '[report](<https://neutral.example/report> "Acme Project Tool and Asana")',
-    '[report](https://neutral.example/a(b) (Acme Project Tool and Asana))',
+    '[report](https://neutral.example.org/report "Acme Project Tool and Asana at https://acme.com/hidden")',
+    "[report](https://neutral.example.org/report 'Acme Project Tool and Asana at https://asana.com/hidden')",
+    '[report](<https://neutral.example.org/report> "Acme Project Tool and Asana")',
+    '[report](https://neutral.example.org/a(b) (Acme Project Tool and Asana))',
   ]) {
     const r = extractCitations(acme, `See this ${link} for independent evidence.`);
     assert.equal(r.brand_mentioned, 0, link);
     assert.equal(r.brand_cited_with_link, 0, link);
     assert.deepEqual(r.competitors_mentioned, [], link);
-    assert.deepEqual(r.cited_urls, ['neutral.example'], link);
+    assert.deepEqual(r.cited_urls, ['neutral.example.org'], link);
   }
 
   const relative = extractCitations(acme, '[internal](/about "Acme Project Tool at https://acme.com/hidden")');
@@ -151,8 +151,8 @@ test('Markdown image assets are not source citations, but ordinary links remain 
 
 test('Markdown image alt labels do not become visible brand or competitor mentions', () => {
   for (const image of [
-    '![Acme Project Tool](https://neutral.example/logo.svg) ![Asana](https://neutral.example/icon.png)',
-    '![Acme Project Tool](https://neutral.example/logo_(dark).svg "Acme Project Tool logo")',
+    '![Acme Project Tool](https://neutral.example.org/logo.svg) ![Asana](https://neutral.example.org/icon.png)',
+    '![Acme Project Tool](https://neutral.example.org/logo_(dark).svg "Acme Project Tool logo")',
   ]) {
     const result = extractCitations(acme, image);
     assert.equal(result.brand_mentioned, 0, image);
@@ -162,7 +162,7 @@ test('Markdown image alt labels do not become visible brand or competitor mentio
 
   const visible = extractCitations(
     acme,
-    '![Acme Project Tool](https://neutral.example/logo.svg) Compare [Asana](https://asana.com) with Acme Project Tool.',
+    '![Acme Project Tool](https://neutral.example.org/logo.svg) Compare [Asana](https://asana.com) with Acme Project Tool.',
   );
   assert.equal(visible.brand_mentioned, 1);
   assert.deepEqual(visible.competitors_mentioned, ['asana.com']);
@@ -248,12 +248,12 @@ test('indented Markdown code examples are not AI mention or citation evidence', 
 
   const visible = extractCitations(
     acme,
-    'Example:\n\n    Acme Project Tool at https://acme.com/example\n\nVisible: Asana [study](https://neutral.example/report)',
+    'Example:\n\n    Acme Project Tool at https://acme.com/example\n\nVisible: Asana [study](https://neutral.example.org/report)',
   );
   assert.equal(visible.brand_mentioned, 0);
   assert.equal(visible.brand_cited_with_link, 0);
   assert.deepEqual(visible.competitors_mentioned, ['asana.com']);
-  assert.deepEqual(visible.cited_urls, ['neutral.example']);
+  assert.deepEqual(visible.cited_urls, ['neutral.example.org']);
 
   // Four-space continuation without a blank line remains paragraph text.
   const paragraph = extractCitations(acme, 'Recommended:\n    Acme Project Tool at https://acme.com');
@@ -292,11 +292,11 @@ test('thematic breaks and setext headings end paragraphs before indented code ev
 
   const realEvidence = extractCitations(
     acme,
-    'Intro\n***\n    Acme Project Tool: https://acme.com/hidden\nAsana is recommended. [proof](https://neutral.example/visible)',
+    'Intro\n***\n    Acme Project Tool: https://acme.com/hidden\nAsana is recommended. [proof](https://neutral.example.org/visible)',
   );
   assert.equal(realEvidence.brand_mentioned, 0);
   assert.deepEqual(realEvidence.competitors_mentioned, ['asana.com']);
-  assert.deepEqual(realEvidence.cited_urls, ['neutral.example']);
+  assert.deepEqual(realEvidence.cited_urls, ['neutral.example.org']);
 });
 
 test('fenced Markdown code inside blockquotes is not visible recommendation or citation evidence', () => {
@@ -314,23 +314,23 @@ test('fenced Markdown code inside blockquotes is not visible recommendation or c
   const realEvidence = extractCitations(
     acme,
     '> ```\n> Acme Project Tool and https://acme.com/hidden\n> ```\n' +
-      '> Asana is genuinely recommended. [report](https://neutral.example/report)\n\n' +
+      '> Asana is genuinely recommended. [report](https://neutral.example.org/report)\n\n' +
       'Acme Project Tool is also recommended. [source](https://acme.com/real)',
   );
   assert.equal(realEvidence.brand_mentioned, 1);
   assert.equal(realEvidence.brand_cited_with_link, 1);
   assert.deepEqual(realEvidence.competitors_mentioned, ['asana.com']);
-  assert.deepEqual(realEvidence.cited_urls, ['neutral.example', 'acme.com']);
+  assert.deepEqual(realEvidence.cited_urls, ['neutral.example.org', 'acme.com']);
 
   const afterUnclosedQuote = extractCitations(
     acme,
     '> ```\n> Acme Project Tool and https://acme.com/hidden\n\n' +
-      'Asana is recommended. [report](https://neutral.example/visible)',
+      'Asana is recommended. [report](https://neutral.example.org/visible)',
   );
   assert.equal(afterUnclosedQuote.brand_mentioned, 0);
   assert.equal(afterUnclosedQuote.brand_cited_with_link, 0);
   assert.deepEqual(afterUnclosedQuote.competitors_mentioned, ['asana.com']);
-  assert.deepEqual(afterUnclosedQuote.cited_urls, ['neutral.example']);
+  assert.deepEqual(afterUnclosedQuote.cited_urls, ['neutral.example.org']);
 
   // Quoted-looking fence delimiters inside an ordinary code fence are literal
   // code and must never close the surrounding fence early.
@@ -373,12 +373,12 @@ test('HTML head metadata is not answer evidence while visible body and header re
     '<head><title>Acme Project Tool at https://acme.com/study</title>' +
       '<meta name="description" content="Asana"></head>' +
       '<body><header>Asana is recommended.</header>' +
-      '<a href="https://neutral.example/report">Read the report</a></body>',
+      '<a href="https://neutral.example.org/report">Read the report</a></body>',
   );
   assert.equal(result.brand_mentioned, 0);
   assert.equal(result.brand_cited_with_link, 0);
   assert.deepEqual(result.competitors_mentioned, ['asana.com']);
-  assert.deepEqual(result.cited_urls, ['neutral.example']);
+  assert.deepEqual(result.cited_urls, ['neutral.example.org']);
 
   const unclosedHead = extractCitations(
     acme,
@@ -404,12 +404,12 @@ test('inert HTML template content cannot manufacture brand mentions or cited sou
   const withVisibleSource = extractCitations(
     acme,
     '<template><a href="https://acme.com/hidden">Acme Project Tool</a></template>' +
-      '<p>Asana is recommended.</p><a href="https://neutral.example/report">Report</a>',
+      '<p>Asana is recommended.</p><a href="https://neutral.example.org/report">Report</a>',
   );
   assert.equal(withVisibleSource.brand_mentioned, 0);
   assert.equal(withVisibleSource.brand_cited_with_link, 0);
   assert.deepEqual(withVisibleSource.competitors_mentioned, ['asana.com']);
-  assert.deepEqual(withVisibleSource.cited_urls, ['neutral.example']);
+  assert.deepEqual(withVisibleSource.cited_urls, ['neutral.example.org']);
 });
 
 test('HTML script and style resources are not cited sources but visible anchors remain', () => {
@@ -478,9 +478,9 @@ test('hidden markup and example code do not count as brand or competitor answer 
 
 test('HTML attributes do not count as visible brand or competitor answer mentions', () => {
   const attributesOnly = [
-    '<img src="https://neutral.example/chart.png" alt="Acme Project Tool versus Asana">',
+    '<img src="https://neutral.example.org/chart.png" alt="Acme Project Tool versus Asana">',
     '<meta name="description" content="Acme Project Tool and Asana">',
-    '<a href="https://neutral.example/source" title="Acme Project Tool and Asana">Read source</a>',
+    '<a href="https://neutral.example.org/source" title="Acme Project Tool and Asana">Read source</a>',
     '<span data-tooltip="Acme Project Tool versus Asana">Read analysis</span>',
     '<img alt="Asana > Acme Project Tool" src="/assets/compare.svg">',
   ];
@@ -492,11 +492,11 @@ test('HTML attributes do not count as visible brand or competitor answer mention
 
   const visible = extractCitations(
     acme,
-    '<a href="https://neutral.example/source" title="Asana">Acme Project Tool is recommended.</a>',
+    '<a href="https://neutral.example.org/source" title="Asana">Acme Project Tool is recommended.</a>',
   );
   assert.equal(visible.brand_mentioned, 1);
   assert.deepEqual(visible.competitors_mentioned, []);
-  assert.deepEqual(visible.cited_urls, ['neutral.example']);
+  assert.deepEqual(visible.cited_urls, ['neutral.example.org']);
 });
 
 test('HTML metadata and data attributes are not linked citations; anchor hrefs are', () => {
@@ -515,10 +515,10 @@ test('HTML metadata and data attributes are not linked citations; anchor hrefs a
   const linked = extractCitations(
     acme,
     '<a title="https://asana.com/not-a-source" href="https://acme.com/research">Evidence</a> ' +
-      '<span data-source="https://asana.com/internal">See also https://neutral.example/report</span>',
+      '<span data-source="https://asana.com/internal">See also https://neutral.example.org/report</span>',
   );
   assert.equal(linked.brand_cited_with_link, 1);
-  assert.deepEqual(linked.cited_urls, ['acme.com', 'neutral.example']);
+  assert.deepEqual(linked.cited_urls, ['acme.com', 'neutral.example.org']);
 
   const quoted = extractCitations(
     acme,
@@ -562,15 +562,15 @@ test('a source-only competitor URL is not a competitor mention in answer prose',
 test('parenthesized URL path fragments are not answer-prose brand or competitor mentions', () => {
   const r = extractCitations(
     acme,
-    'Sources: https://neutral.example/reviews/(other)Acme https://neutral.example/notes/(other)Asana',
+    'Sources: https://neutral.example.org/reviews/(other)Acme https://neutral.example.org/notes/(other)Asana',
   );
   assert.equal(r.brand_mentioned, 0);
   assert.deepEqual(r.competitors_mentioned, []);
   assert.equal(r.brand_cited_with_link, 0);
-  assert.ok(r.cited_urls.includes('neutral.example'));
+  assert.ok(r.cited_urls.includes('neutral.example.org'));
   const visibleAfterLink = extractCitations(
     acme,
-    '[source](https://neutral.example)Acme Project Tool is recommended.',
+    '[source](https://neutral.example.org)Acme Project Tool is recommended.',
   );
   assert.equal(visibleAfterLink.brand_mentioned, 1);
 });
@@ -697,6 +697,28 @@ test('answer-text citation sources exclude localhost and IP literals', () => {
   assert.equal(result.brand_cited_with_link, 1);
 });
 
+test('answer-text and native citation links exclude special-use internal hosts', () => {
+  const internal = [
+    'https://wiki.office.local/private',
+    'https://service.dev.internal/debug',
+    'https://router.home.arpa/status',
+    'https://docs.example.test/reports',
+    'https://preview.example/hidden',
+    'https://name.invalid/nope',
+    'https://portal.localhost/admin',
+  ];
+  const result = extractCitations(
+    acme,
+    `Evidence: ${internal.join(' ')} https://example.org/report https://docs.acme.com./guide`,
+  );
+  assert.deepEqual(result.cited_urls, ['example.org', 'docs.acme.com']);
+  assert.equal(result.brand_cited_with_link, 1);
+  for (const url of internal) {
+    const host = new URL(url).hostname;
+    assert.equal(hasBrandInEngineCitations(host, [url]), false, url);
+  }
+});
+
 test('encoded root dots cannot turn repeated-dot citation hosts into brand evidence', () => {
   // URL.hostname decodes %2e in host labels; validate the decoded root-dot count.
   for (const url of [
@@ -737,7 +759,7 @@ test('sentence-final lookalike URL is not a brand mention or citation', () => {
 test('brand link beyond 20 distinct cited hosts still counts', () => {
   const otherLinks = Array.from(
     { length: 20 },
-    (_, i) => `https://other${i}.example/article`,
+    (_, i) => `https://other${i}.example.org/article`,
   ).join(' ');
   const response = `Acme Project Tool ${otherLinks} https://docs.acme.com/reference`;
   const r = extractCitations(acme, response);
@@ -750,7 +772,7 @@ test('brand link beyond 20 distinct cited hosts still counts', () => {
 test('late lookalike host does not count as brand citation', () => {
   const otherLinks = Array.from(
     { length: 20 },
-    (_, i) => `https://other${i}.example/article`,
+    (_, i) => `https://other${i}.example.org/article`,
   ).join(' ');
   const r = extractCitations(acme, `${otherLinks} https://acme.com.evil.io/article`);
   assert.equal(r.brand_cited_with_link, 0);
@@ -758,7 +780,7 @@ test('late lookalike host does not count as brand citation', () => {
 });
 
 test('native citation beyond the display evidence cap still counts the brand', () => {
-  const textualHosts = Array.from({ length: 20 }, (_, i) => 'text' + i + '.example');
+  const textualHosts = Array.from({ length: 20 }, (_, i) => 'text' + i + '.example.org');
   const nativeLinks = [
     ...Array.from({ length: 10 }, (_, i) => 'https://native' + i + '.example/path'),
     'https://www.acme.com/late-brand-reference',
@@ -773,7 +795,7 @@ test('native citation lookalikes and redirect text do not count as brand links',
   const misleading = [
     'https://notacme.com/page',
     'https://acme.com.example.org/page',
-    'https://unrelated.example/?redirect=https://acme.com',
+    'https://unrelated.example.org/?redirect=https://acme.com',
   ];
   assert.equal(hasBrandInEngineCitations(acme.domain, misleading), false);
   assert.equal(hasBrandInEngineCitations(acme.domain, ['https://docs.acme.com/source']), true);
@@ -785,7 +807,7 @@ test('native citation evidence requires an actual HTTP(S) link to the brand', ()
     'docs.acme.com',
     'ftp://acme.com/report',
     'file://acme.com/report',
-    'https://unrelated.example/?to=https://acme.com',
+    'https://unrelated.example.org/?to=https://acme.com',
   ];
   for (const citation of unlinked) {
     assert.equal(hasBrandInEngineCitations(acme.domain, [citation]), false, citation);
