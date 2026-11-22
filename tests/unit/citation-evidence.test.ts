@@ -34,6 +34,8 @@ type CitationResult = {
   top_sources_limit: number;
   total_source_domains: number;
   top_sources_truncated: boolean;
+  ranked_source_domain_filter: string | null;
+  ranked_source_domain_match_found: boolean;
   measurement_mode_filter: 'model_only' | 'search_requested' | null;
   engine_scope: {
     selection: 'selected' | 'all_stored';
@@ -108,6 +110,7 @@ type CitationTool = {
     engines?: Array<'chatgpt' | 'claude' | 'perplexity' | 'gemini' | 'ai_overviews' | 'ai_mode'>;
     limit?: number;
     top_sources_limit?: number;
+    ranked_source_domain?: string;
     cursor?: string;
     current_identity_only?: boolean;
     active_prompts_only?: boolean;
@@ -814,6 +817,47 @@ test('get_citations discloses truncated source rankings and supports a bounded w
   assert.equal(extended.top_sources[12].domain, 'source-13.example');
   assert.equal(extended.total_matching_rows, defaultView.total_matching_rows);
   assert.deepEqual(extended.citations, defaultView.citations);
+});
+
+test('get_citations looks up an exact low-ranked source without changing citation pages or window counts', async () => {
+  const domains = Array.from({ length: 13 }, (_, index) =>
+    `https://source-${String(index + 1).padStart(2, '0')}.example/report`);
+  const now = Date.now();
+  const tool = registerCitationTool([
+    citationRow({ response_id: 'newer', captured_at: now - 1000 }),
+    citationRow({ response_id: 'older', captured_at: now - 2000 }),
+  ], [promptResponse({ engine_citations: domains })]);
+  const regular = (await tool.handler({ brand_id: brand.id, limit: 1, top_sources_limit: 1 })).structuredContent;
+  assert.deepEqual(regular.top_sources.map(({ domain }) => domain), ['source-01.example']);
+
+  const focusedArgs = {
+    brand_id: brand.id, limit: 1, top_sources_limit: 1, ranked_source_domain: 'SOURCE-13.EXAMPLE.',
+  };
+  const focused = (await tool.handler(focusedArgs)).structuredContent;
+  assert.equal(focused.ranked_source_domain_filter, 'source-13.example');
+  assert.equal(focused.ranked_source_domain_match_found, true);
+  assert.deepEqual(focused.top_sources.map(({ domain }) => domain), ['source-13.example']);
+  assert.equal(focused.total_source_domains, 13);
+  assert.equal(focused.top_sources_truncated, false);
+  assert.equal(focused.total_matching_rows, 2);
+  assert.deepEqual(focused.citations, regular.citations);
+  assert.equal(focused.has_more, true);
+  assert.ok(focused.next_cursor);
+
+  const next = (await tool.handler({ ...focusedArgs, cursor: focused.next_cursor! })).structuredContent;
+  assert.equal(next.has_more, false);
+  assert.deepEqual(next.top_sources, focused.top_sources);
+  assert.notDeepEqual(next.citations, focused.citations);
+  await assert.rejects(tool.handler({ brand_id: brand.id, limit: 1, cursor: focused.next_cursor! }),
+    /Invalid citation cursor/);
+
+  const absent = (await tool.handler({ brand_id: brand.id, ranked_source_domain: 'absent.example' })).structuredContent;
+  assert.equal(absent.ranked_source_domain_match_found, false);
+  assert.equal(absent.total_source_domains, 13);
+  assert.deepEqual(absent.top_sources, []);
+  assert.equal(absent.total_matching_rows, 2);
+  await assert.rejects(tool.handler({ brand_id: brand.id, ranked_source_domain: 'http://localhost/private' }),
+    /Invalid ranked source domain/);
 });
 
 test('get_citations ranks engine-native source domains across the requested window', async () => {

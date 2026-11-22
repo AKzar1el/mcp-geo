@@ -475,8 +475,10 @@ const citationsOutputSchema = z.object({
   has_more: z.boolean(),
   next_cursor: z.string().nullable(),
   top_sources_limit: z.number().int().min(1).max(50).describe('Maximum ranked source domains returned; default 10, maximum 50.'),
-  total_source_domains: z.number().int().nonnegative().describe('All distinct valid cited source domains in the selected stored evidence window, before the top-sources cap.'),
+  total_source_domains: z.number().int().nonnegative().describe('All valid distinct cited domains in the selected stored window, before the ranked-source cap or exact-domain lookup.'),
   top_sources_truncated: z.boolean().describe('True when ranked source domains are omitted by top_sources_limit; citation pagination does not expand this summary.'),
+  ranked_source_domain_filter: z.string().nullable().describe('Optional exact domain lookup applied only to the ranked source summary, not citation rows or full-window evidence counts.'),
+  ranked_source_domain_match_found: z.boolean().describe('True when the requested domain was observed in the selected window; false with no lookup or no match is not a universal non-citation claim.'),
   top_sources: z.array(
     z.object({
       domain: z.string(),
@@ -532,6 +534,7 @@ const citationCursorSchema = z.object({
   engine: z.string().nullable(),
   engines: z.array(engineSchema).optional(),
   measurement_mode: z.enum(['model_only', 'search_requested']).optional(),
+  ranked_source_domain: z.string().nullable().optional(),
   identity_selection: z.enum(['full_history', 'current_identity_only']).optional(),
   identity_boundary: z.number().int().nullable().optional(),
   prompt_selection: z.enum(['full_history', 'active_only']).optional(),
@@ -561,6 +564,7 @@ function decodeCitationCursor(
   measurementMode: 'model_only' | 'search_requested' | undefined,
   currentIdentityOnly: boolean, identityBoundary: number | null,
   activePromptsOnly: boolean, promptRosterDigest: string | null,
+  rankedSourceDomain: string | null,
 ) {
   try {
     const parsed = citationCursorSchema.parse(JSON.parse(decodeURIComponent(cursor)));
@@ -571,6 +575,7 @@ function decodeCitationCursor(
     if (parsed.brand_id !== brandId || parsed.days !== days || parsed.engine !== engine ||
       JSON.stringify(parsed.engines ?? []) !== JSON.stringify(engines) ||
       (parsed.measurement_mode ?? null) !== (measurementMode ?? null) ||
+      (parsed.ranked_source_domain ?? null) !== rankedSourceDomain ||
       (parsed.identity_selection ?? 'full_history') !==
         (currentIdentityOnly ? 'current_identity_only' : 'full_history') ||
       (currentIdentityOnly && parsed.identity_boundary !== identityBoundary) ||
@@ -587,7 +592,7 @@ function decodeCitationCursor(
     }
     return parsed;
   } catch {
-    throw new Error('Invalid citation cursor. Start again without cursor or preserve the brand, days, engine/engines, measurement mode, identity and prompt selection.');
+    throw new Error('Invalid citation cursor. Start again without cursor or preserve the brand, days, engine/engines, measurement mode, ranked source domain, identity and prompt selection.');
   }
 }
 
@@ -1896,7 +1901,7 @@ export function registerTools(
     {
       title: 'Get AI citation evidence',
       description:
-        "Page stored citations and ranked sources. Citation rows and per-engine source examples include run_id/response_id for get_observation_evidence. Engine/mode filters scope results. No new scans or verified links. Example: brand_id='acme'.",
+        "Page citations and ranked sources; look up one exact source domain past the cap. Lookup leaves citation pages and window counts unchanged. Includes run/response IDs for drilldown. No provider calls. Example: brand_id='acme'.",
       inputSchema: {
         brand_id: z
           .string()
@@ -1919,6 +1924,8 @@ export function registerTools(
           .describe('Citation rows per page, 1-100 (default 50).'),
         top_sources_limit: z.number().int().min(1).max(50).default(10)
           .describe('Ranked source domains, 1-50 (default 10); independent of citation page size.'),
+        ranked_source_domain: z.string().trim().min(1).max(253).optional()
+          .describe('Exact ranked domain lookup beyond top-50; does not filter citation pages or window counts.'),
         current_identity_only: z.boolean().default(false)
           .describe('Filter citations and source rankings to current-brand runs when the identity boundary is known.'),
         active_prompts_only: z.boolean().default(false)
@@ -1933,7 +1940,7 @@ export function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ brand_id, days = 14, engine, engines, measurement_mode, limit = 50, top_sources_limit = 10, current_identity_only = false,
+    async ({ brand_id, days = 14, engine, engines, measurement_mode, limit = 50, top_sources_limit = 10, ranked_source_domain, current_identity_only = false,
       active_prompts_only = false, cursor }) => {
       const selectedEngines = [...new Set(engines ?? [])].sort();
       if (engine && selectedEngines.length) {
@@ -1941,6 +1948,10 @@ export function registerTools(
       }
       const engineSelection = engine ?? (selectedEngines.length ? selectedEngines : undefined);
       const requestedEngines = engine ? [engine] : selectedEngines;
+      const rankedSourceDomain = ranked_source_domain === undefined ? null : normalizeDomainInput(ranked_source_domain);
+      if (ranked_source_domain !== undefined && rankedSourceDomain === null) {
+        throw new Error('Invalid ranked source domain. Provide a valid domain-shaped hostname from ranked citations.');
+      }
       const brand = await deps.db.getBrand(brand_id);
       if (!brand) {
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
@@ -1954,7 +1965,7 @@ export function registerTools(
       const now = Date.now();
       const previous = cursor ? decodeCitationCursor(
         cursor, brand_id, days, engine ?? null, selectedEngines, measurement_mode, current_identity_only, identityBoundary,
-        active_prompts_only, promptRosterDigest,
+        active_prompts_only, promptRosterDigest, rankedSourceDomain,
       ) : null;
       const since = previous?.since ?? (now - days * 86_400_000);
       const until = previous?.until ?? now;
@@ -1976,6 +1987,10 @@ export function registerTools(
         brand_id, since, until, engineSelection, minRunStartedAt, active_prompts_only, measurement_mode,
       );
       const rankedSources = buildTopSources(sourceResponses, brand, identityBoundary);
+      // Exact domain drilldown only changes the ranked summary; page/coverage
+      // denominators still describe the entire selected observation window.
+      const selectedRankedSources = rankedSourceDomain === null ? rankedSources
+        : rankedSources.filter(({ domain }) => domain === rankedSourceDomain);
       const observationEvidence = new Map<string, {
         count: number;
         prompts: Set<string>;
@@ -2090,6 +2105,7 @@ export function registerTools(
               engine: engine ?? null,
               ...(selectedEngines.length ? { engines: selectedEngines } : {}),
               ...(measurement_mode ? { measurement_mode } : {}),
+              ...(rankedSourceDomain ? { ranked_source_domain: rankedSourceDomain } : {}),
               identity_selection: current_identity_only ? 'current_identity_only' : 'full_history',
               identity_boundary: current_identity_only ? identityBoundary : null,
               prompt_selection: active_prompts_only ? 'active_only' : 'full_history',
@@ -2106,8 +2122,10 @@ export function registerTools(
           : null,
         top_sources_limit,
         total_source_domains: rankedSources.length,
-        top_sources_truncated: rankedSources.length > top_sources_limit,
-        top_sources: rankedSources.slice(0, top_sources_limit),
+        top_sources_truncated: selectedRankedSources.length > top_sources_limit,
+        ranked_source_domain_filter: rankedSourceDomain,
+        ranked_source_domain_match_found: rankedSourceDomain !== null && selectedRankedSources.length > 0,
+        top_sources: selectedRankedSources.slice(0, top_sources_limit),
         citations,
       };
       return toolResult(payload);
