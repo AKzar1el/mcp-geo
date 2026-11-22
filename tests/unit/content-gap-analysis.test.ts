@@ -970,6 +970,12 @@ test('content-gap analyzer does not present invented competitor page URLs as obs
           rationale: 'Create a proposed pricing guide at https://acme.com/pricing to address the Asana competitor',
           suggested_format: 'pricing_page',
         },
+        {
+          priority: 5,
+          topic: 'Acme versus Asana credentialed guide',
+          rationale: 'Asana is observed, but https://user:private@acme.com/pricing is a supposed Acme guide',
+          suggested_format: 'comparison_page',
+        },
       ]) }],
     });
   };
@@ -978,7 +984,7 @@ test('content-gap analyzer does not present invented competitor page URLs as obs
       { ANTHROPIC_API_KEY: 'synthetic-offline-key' },
       { id: 'acme', name: 'Acme', domain: 'acme.com' } as Brand,
       [{ prompt_text: 'Compare team tools', engines_lost_on: ['chatgpt'], competitors_winning: ['asana.com'] }],
-      4,
+      5,
     );
     assert.deepEqual(recommendations.map((rec) => rec.topic), [
       'Acme versus Asana homepages',
