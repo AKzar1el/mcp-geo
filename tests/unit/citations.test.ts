@@ -830,3 +830,17 @@ test('credential-bearing native provider URLs cannot establish a brand citation'
   );
   assert.equal(hasBrandInEngineCitations(acme.domain, ['https://docs.acme.com/source']), true);
 });
+
+test('malformed native annotation URLs cannot establish brand citation evidence', () => {
+  const malformed = [
+    ' https://docs.acme.com/source',
+    'https://docs.acme.com/source ',
+    '\thttps://docs.acme.com/source',
+    'https://docs.acme.com/sou\nrce',
+    'https://docs.acme.com/source\r\n',
+  ];
+  for (const url of malformed) {
+    assert.equal(hasBrandInEngineCitations(acme.domain, [url]), false, JSON.stringify(url));
+  }
+  assert.equal(hasBrandInEngineCitations(acme.domain, ['HTTPS://DOCS.ACME.COM/source']), true);
+});
