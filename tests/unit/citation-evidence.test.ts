@@ -1109,6 +1109,29 @@ test('source path breadth counts distinct cited paths without inflating response
   assert.equal(result.top_sources[0].prompt_count, 2);
 });
 
+test('get_citations masks access-bearing URL path segments without losing distinct source-path breadth', async () => {
+  const citation = registerCitationTool(citationRow({
+    raw_response: 'Acme cites https://acme.com/password-reset/EXCERPT_PATH?ref=public',
+    engine_citations_json: JSON.stringify(['https://acme.com/api-key/NATIVE_PATH?ref=public']),
+  }), [promptResponse({ engine_citations: [
+    'https://research.example/password-reset/SOURCE_PATH_ONE?ref=public',
+    'https://research.example/password-reset/SOURCE_PATH_TWO?ref=public',
+    'https://research.example/guide',
+  ] })]);
+  const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.equal(result.citations[0].cited_url, 'https://acme.com/api-key/[REDACTED]?ref=public');
+  assert.match(result.citations[0].response_excerpt, /password-reset\/\[REDACTED\]\?ref=public/);
+  assert.equal(result.top_sources[0].sample_url,
+    'https://research.example/password-reset/[REDACTED]?ref=public');
+  assert.equal(result.top_sources[0].distinct_cited_path_count, 3);
+  assert.deepEqual(result.top_sources[0].top_cited_paths, [
+    { path: '/guide', response_count: 1 },
+    { path: '/password-reset/[REDACTED]', response_count: 1 },
+  ]);
+  assert.doesNotMatch(JSON.stringify(result),
+    /EXCERPT_PATH|NATIVE_PATH|SOURCE_PATH_ONE|SOURCE_PATH_TWO/);
+});
+
 test('top cited source paths are bounded and tie-broken deterministically', async () => {
   const tool = registerCitationTool(citationRow(), [
     promptResponse({

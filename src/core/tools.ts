@@ -3139,6 +3139,7 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
       engineLastCapturedAt: Map<string, number>;
       engineSamples: Map<string, { url: string; capturedAt: number; responseId: string; runId: string }>;
       pathResponseCounts: Map<string, number>;
+      rawPaths: Set<string>;
       prompts: Set<string>;
       engines: Set<string>;
       measurement_modes: Set<'model_only' | 'search_requested'>;
@@ -3152,6 +3153,7 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
   for (const response of responses) {
     const domainsForResponse = new Map<string, string>();
     const pathsForResponse = new Map<string, Set<string>>();
+    const rawPathsForResponse = new Map<string, Set<string>>();
     const identityScope = identityBoundary === null
       ? null : citationIdentityScope(response.run_started_at, identityBoundary);
     for (const rawUrl of response.engine_citations) {
@@ -3166,8 +3168,11 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
         if (domain === 'home.arpa' || nonPublicSuffixes.some((suffix) => domain.endsWith(suffix))) continue;
         if (!domainsForResponse.has(domain)) domainsForResponse.set(domain, rawUrl);
         const citedPaths = pathsForResponse.get(domain) ?? new Set<string>();
-        citedPaths.add(parsed.pathname);
+        citedPaths.add(redactSensitivePathSegments(parsed.pathname));
         pathsForResponse.set(domain, citedPaths);
+        const rawPaths = rawPathsForResponse.get(domain) ?? new Set<string>();
+        rawPaths.add(parsed.pathname);
+        rawPathsForResponse.set(domain, rawPaths);
       } catch {
         // Provider-native citation payloads are external data. Ignore malformed
         // entries rather than letting one bad source hide the usable evidence.
@@ -3196,6 +3201,7 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
         for (const path of pathsForResponse.get(domain) ?? []) {
           existing.pathResponseCounts.set(path, (existing.pathResponseCounts.get(path) ?? 0) + 1);
         }
+        for (const path of rawPathsForResponse.get(domain) ?? []) existing.rawPaths.add(path);
         existing.prompts.add(response.prompt_id);
         existing.engines.add(response.engine);
         existing.measurement_modes.add(measurementMode);
@@ -3222,6 +3228,7 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
           }]]),
           pathResponseCounts: new Map([...(pathsForResponse.get(domain) ?? [])]
             .map((path): [string, number] => [path, 1])),
+          rawPaths: new Set(rawPathsForResponse.get(domain) ?? []),
           prompts: new Set([response.prompt_id]),
           engines: new Set([response.engine]),
           measurement_modes: new Set([measurementMode]),
@@ -3261,7 +3268,7 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
             }];
           }),
         ),
-        distinct_cited_path_count: source.pathResponseCounts.size,
+        distinct_cited_path_count: source.rawPaths.size,
         top_cited_paths: [...source.pathResponseCounts.entries()]
           .sort(([pathA, countA], [pathB, countB]) => countB - countA || pathA.localeCompare(pathB))
           .slice(0, 5).map(([path, response_count]) => ({ path, response_count })),
@@ -3281,6 +3288,15 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
         b.prompt_count - a.prompt_count ||
         a.domain.localeCompare(b.domain),
     );
+}
+
+// Some access-bearing links embed a capability in a path segment instead
+// of a query field. Mask only known credential-route values, not public slugs.
+function redactSensitivePathSegments(path: string): string {
+  return path.replace(
+    /(\/(?:password[-_]reset|reset[-_]password|api[-_]key|access[-_]token|auth[-_]token|client[-_]secret)\/)[^/?#]+/gi,
+    '$1[REDACTED]',
+  );
 }
 
 // Source URLs can contain access-bearing query or fragment values without URL
@@ -3311,8 +3327,8 @@ function redactCitationUrlQuery(rawUrl: string): string {
     const normalized = name.toLowerCase().replace(/[-_.\s]/g, '');
     return secretNames.has(normalized) ? `${piece.slice(0, equals)}=[REDACTED]` : piece;
   }).join('');
-  const safeAddress = queryStart === -1 ? address
-    : `${address.slice(0, queryStart + 1)}${redactParameters(address.slice(queryStart + 1))}`;
+  const safeAddress = queryStart === -1 ? redactSensitivePathSegments(address)
+    : `${redactSensitivePathSegments(address.slice(0, queryStart))}?${redactParameters(address.slice(queryStart + 1))}`;
   if (fragment === null) return safeAddress;
   // OAuth fragments commonly encode key/value pairs directly; hash routers
   // also place their own query string after a route or anchor prefix.
