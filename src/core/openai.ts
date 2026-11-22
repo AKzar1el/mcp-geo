@@ -264,6 +264,9 @@ export function hostMatchesDomain(host: string, domain: string): boolean {
 }
 
 function normalizeHost(rawUrl: string): string | null {
+  // WHATWG URL trims outer whitespace and strips tabs/newlines; raw provider
+  // annotations containing those bytes are not reliable citation evidence.
+  if (/[\u0000-\u001f\u007f]/.test(rawUrl) || rawUrl !== rawUrl.trim()) return null;
   try {
     const u = new URL(rawUrl);
     // Native source metadata is link evidence only when it points to a web URL.
