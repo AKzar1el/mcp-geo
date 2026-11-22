@@ -3402,6 +3402,8 @@ function pickBrandUrl(
     [extractUrls(rawResponse), 'answer_text'],
   ] as const) {
     for (const rawUrl of urls) {
+      // WHATWG URL normalizes malformed stored links; do not present them as direct citations.
+      if (/[\u0000-\u001f\u007f]/.test(rawUrl) || rawUrl !== rawUrl.trim()) continue;
       const url = source === 'answer_text' ? rawUrl.replace(/[.,;!]+$/, '') : rawUrl;
       try {
         const parsed = new URL(url);
