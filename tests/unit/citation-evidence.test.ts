@@ -617,6 +617,27 @@ test('get_citations redacts repeated and encoded query credentials at all client
   assert.doesNotMatch(JSON.stringify(result), /NATIVE_SECRET|TOKEN_ONE|TOKEN_TWO|SOURCE_SECRET|ANOTHER_SECRET|ANSWER_SECRET/);
 });
 
+test('get_citations redacts array and nested credential parameter names without hiding public context', async () => {
+  const citation = registerCitationTool(citationRow({
+    prompt: 'Compare Acme at https://acme.com/guide?meta%5Bapi_key%5D=BUYER_NESTED&ref=client',
+    raw_response: 'Acme cites https://acme.com/report?access_token[]=EXCERPT_ARRAY&ref=excerpt',
+    engine_citations_json: JSON.stringify([
+      'https://acme.com/report?credentials%5Baccess_token%5D=NATIVE_NESTED&scope=public',
+    ]),
+  }), [promptResponse({ engine_citations: [
+    'https://research.example/article?token%5B%5D=SOURCE_ARRAY&filter%5Blang%5D=en#auth%5Bclient_secret%5D=SOURCE_FRAGMENT',
+  ] })]);
+  const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.equal(result.citations[0].cited_url,
+    'https://acme.com/report?credentials%5Baccess_token%5D=[REDACTED]&scope=public');
+  assert.equal(result.top_sources[0].sample_url,
+    'https://research.example/article?token%5B%5D=[REDACTED]&filter%5Blang%5D=en#auth%5Bclient_secret%5D=[REDACTED]');
+  assert.match(result.citations[0].response_excerpt, /access_token\[\]=\[REDACTED\]&ref=excerpt/);
+  assert.match(result.citations[0].prompt, /meta%5Bapi_key%5D=\[REDACTED\]&ref=client/);
+  assert.doesNotMatch(JSON.stringify(result),
+    /BUYER_NESTED|EXCERPT_ARRAY|NATIVE_NESTED|SOURCE_ARRAY|SOURCE_FRAGMENT/);
+});
+
 test('get_citations redacts credentials in stored buyer questions without hiding public context', async () => {
   const citation = registerCitationTool(citationRow({
     prompt: 'Compare Acme at https://research.example/guide?api_key=BUYER_API_SECRET&ref=client with Authorization: Bearer BUYER_BEARER_SECRET',

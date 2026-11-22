@@ -3308,8 +3308,12 @@ function redactCitationUrlQuery(rawUrl: string): string {
     } catch {
       // An invalid encoded name is not interpreted as a credential key.
     }
-    const normalized = name.toLowerCase().replace(/[-_.\s]/g, '');
-    return secretNames.has(normalized) ? `${piece.slice(0, equals)}=[REDACTED]` : piece;
+    // Array and nested form keys can carry credentials too: token[] or
+    // auth[access_token], including percent-encoded bracket spellings.
+    const keyParts = name.toLowerCase().split(/[\[\]]+/)
+      .map((part) => part.replace(/[-_.\s]/g, ''));
+    return keyParts.some((part) => secretNames.has(part))
+      ? `${piece.slice(0, equals)}=[REDACTED]` : piece;
   }).join('');
   const safeAddress = queryStart === -1 ? address
     : `${address.slice(0, queryStart + 1)}${redactParameters(address.slice(queryStart + 1))}`;
