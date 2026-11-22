@@ -166,6 +166,8 @@ test('observation evidence excludes special-use internal hosts from provider sou
     'https://fixture.test/example',
     'https://broken.invalid/example',
     'https://router.home.arpa/config',
+    'https://home.arpa/router',
+    'https://HOME.ARPA./config',
     'https://docs.example.org/public',
   ] }]);
   assert.ok(handler);
