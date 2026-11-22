@@ -63,7 +63,7 @@ type CitationResult = {
     per_engine_source_observation_percent: Record<string, number>;
     per_engine_distinct_prompt_count: Record<string, number>;
     per_engine_last_observed_at: Record<string, string>;
-    per_engine_examples: Record<string, { sample_url: string; url_redacted: boolean }>;
+    per_engine_examples: Record<string, { sample_url: string; url_redacted: boolean; run_id: string; response_id: string }>;
     distinct_cited_path_count: number;
     top_cited_paths: Array<{ path: string; response_count: number }>;
     prompt_count: number;
@@ -186,8 +186,9 @@ function registerCitationTool(
           .filter((response) => minRunStartedAt === undefined ||
             (typeof response.run_started_at === 'number' && response.run_started_at >= minRunStartedAt))
           .filter((response) => !activeOnly || activeIds.includes(response.prompt_id))
-          .map(({ id, prompt_id, engine: responseEngine, mode, captured_at, engine_citations, run_started_at }) => ({
+          .map(({ id, run_id, prompt_id, engine: responseEngine, mode, captured_at, engine_citations, run_started_at }) => ({
             id,
+            run_id,
             prompt_id,
             engine: responseEngine,
             mode,
@@ -815,8 +816,10 @@ test('get_citations ranks engine-native source domains across the requested wind
       per_engine_distinct_prompt_count: { chatgpt: 1, perplexity: 1 },
       per_engine_last_observed_at: { chatgpt: observedAt, perplexity: observedAt },
       per_engine_examples: {
-        chatgpt: { sample_url: 'https://www.g2.com/categories/project-management', url_redacted: false },
-        perplexity: { sample_url: 'https://g2.com/reports/project-management', url_redacted: false },
+        chatgpt: { sample_url: 'https://www.g2.com/categories/project-management', url_redacted: false,
+          run_id: 'run-1', response_id: 'response-1' },
+        perplexity: { sample_url: 'https://g2.com/reports/project-management', url_redacted: false,
+          run_id: 'run-2', response_id: 'response-2' },
       },
       distinct_cited_path_count: 2,
       top_cited_paths: [
@@ -839,7 +842,8 @@ test('get_citations ranks engine-native source domains across the requested wind
       per_engine_distinct_prompt_count: { chatgpt: 1 },
       per_engine_last_observed_at: { chatgpt: observedAt },
       per_engine_examples: {
-        chatgpt: { sample_url: 'https://acme.com/guides/project-management', url_redacted: false },
+        chatgpt: { sample_url: 'https://acme.com/guides/project-management', url_redacted: false,
+          run_id: 'run-1', response_id: 'response-1' },
       },
       distinct_cited_path_count: 1,
       top_cited_paths: [{ path: '/guides/project-management', response_count: 1 }],
@@ -859,7 +863,8 @@ test('get_citations ranks engine-native source domains across the requested wind
       per_engine_distinct_prompt_count: { gemini: 1 },
       per_engine_last_observed_at: { gemini: observedAt },
       per_engine_examples: {
-        gemini: { sample_url: 'https://example.org/pm-tools', url_redacted: false },
+        gemini: { sample_url: 'https://example.org/pm-tools', url_redacted: false,
+          run_id: 'run-3', response_id: 'response-3' },
       },
       distinct_cited_path_count: 1,
       top_cited_paths: [{ path: '/pm-tools', response_count: 1 }],
@@ -995,21 +1000,25 @@ test('top source examples keep separate latest cited URLs by engine, with stable
 
   const all = (await citation.handler({ brand_id: brand.id })).structuredContent.top_sources[0];
   assert.deepEqual(all.per_engine_examples, {
-    chatgpt: { sample_url: 'https://research.example/chat-a?access_token=[REDACTED]&ref=public', url_redacted: true },
-    perplexity: { sample_url: 'https://research.example/perplexity?ref=public', url_redacted: false },
+    chatgpt: { sample_url: 'https://research.example/chat-a?access_token=[REDACTED]&ref=public', url_redacted: true,
+      run_id: 'chat-a', response_id: 'chat-a' },
+    perplexity: { sample_url: 'https://research.example/perplexity?ref=public', url_redacted: false,
+      run_id: 'perplexity', response_id: 'perplexity' },
   });
   assert.equal(all.sample_url, all.per_engine_examples.chatgpt.sample_url);
 
   const modelOnly = (await citation.handler({ brand_id: brand.id, measurement_mode: 'model_only' }))
     .structuredContent.top_sources[0];
   assert.deepEqual(modelOnly.per_engine_examples, {
-    chatgpt: { sample_url: 'https://research.example/old-chat', url_redacted: false },
+    chatgpt: { sample_url: 'https://research.example/old-chat', url_redacted: false,
+      run_id: 'chat-older', response_id: 'chat-older' },
   });
 
   const selected = (await citation.handler({ brand_id: brand.id, engines: ['perplexity'] }))
     .structuredContent.top_sources[0];
   assert.deepEqual(selected.per_engine_examples, {
-    perplexity: { sample_url: 'https://research.example/perplexity?ref=public', url_redacted: false },
+    perplexity: { sample_url: 'https://research.example/perplexity?ref=public', url_redacted: false,
+      run_id: 'perplexity', response_id: 'perplexity' },
   });
 });
 

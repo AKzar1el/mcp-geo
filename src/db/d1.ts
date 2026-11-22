@@ -735,7 +735,7 @@ export function createD1Db(d1: D1Database): Db {
       // Match SQLite's per-run/prompt retry deduplication and frozen window.
       const { results } = await d1
         .prepare(
-          `SELECT pr.id, pr.prompt_id, pr.engine, r.mode AS mode, r.started_at AS run_started_at, pr.engine_citations_json, pr.captured_at
+          `SELECT pr.id, pr.run_id, pr.prompt_id, pr.engine, r.mode AS mode, r.started_at AS run_started_at, pr.engine_citations_json, pr.captured_at
              FROM prompt_responses pr
              JOIN runs r ON r.id = pr.run_id
              ${activePromptsOnly ? 'JOIN prompts p ON p.id = pr.prompt_id' : ''}
