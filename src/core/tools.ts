@@ -2002,7 +2002,7 @@ export function registerTools(
         return {
           id: citationId(row.response_id),
           engine: row.engine,
-          prompt: row.prompt,
+          prompt: redactEvidenceText(row.prompt),
           cited_at: new Date(row.captured_at).toISOString(),
           citation_type:
             row.brand_mentioned !== 1 && row.brand_cited_with_link === 1
