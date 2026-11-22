@@ -551,6 +551,33 @@ test('get_citations preserves the full engine-native brand citation URL', async 
   assert.equal(result.structuredContent.citations[0].url_source, 'provider_source');
 });
 
+test('get_citations rejects malformed provider brand URLs without hiding valid evidence', async () => {
+  for (const rawUrl of [
+    ' https://acme.com/guide',
+    'https://acme.com/guide\npage',
+    'https://acme.com/\tguide',
+    'https://acme.com/report\r\n',
+  ]) {
+    const tool = registerCitationTool(citationRow({
+      engine_citations_json: JSON.stringify([rawUrl]),
+    }));
+    const citation = (await tool.handler({ brand_id: brand.id })).structuredContent.citations[0];
+    assert.equal(citation.cited_url, null, JSON.stringify(rawUrl));
+    assert.equal(citation.url_source, null, JSON.stringify(rawUrl));
+  }
+
+  const tool = registerCitationTool(citationRow({
+    raw_response: 'Acme is documented at https://docs.acme.com/pricing?ref=answer',
+    engine_citations_json: JSON.stringify([
+      'https://acme.com/\tspoofed',
+      'https://www.acme.com/valid?ref=native',
+    ]),
+  }));
+  const citation = (await tool.handler({ brand_id: brand.id })).structuredContent.citations[0];
+  assert.equal(citation.cited_url, 'https://www.acme.com/valid?ref=native');
+  assert.equal(citation.url_source, 'provider_source');
+});
+
 test('get_citations never fabricates a URL from host-only evidence', async () => {
   const citation = registerCitationTool(
     citationRow({
