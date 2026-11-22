@@ -503,19 +503,19 @@ test('hidden Markdown reference IDs do not count as brand or competitor mentions
   const response = [
     'See [an independent guide][Acme] and [another guide][Rival].',
     '',
-    '[Acme]: https://neutral.example/guide',
-    '[Rival]: https://neutral.example/other',
+    '[Acme]: https://neutral.example.org/guide',
+    '[Rival]: https://neutral.example.org/other',
   ].join('\n');
   const evidence = extractCitations(brand, response);
   assert.equal(evidence.brand_mentioned, 0);
   assert.deepEqual(evidence.competitors_mentioned, []);
   assert.equal(evidence.brand_cited_with_link, 0);
-  assert.deepEqual(evidence.cited_urls, ['neutral.example']);
+  assert.deepEqual(evidence.cited_urls, ['neutral.example.org']);
 
   const visible = extractCitations(
     brand,
     '[Acme][guide] is compared with [Rival][] and [the rest][guide].\n\n' +
-      '[guide]: https://neutral.example/guide\n[Rival]: https://neutral.example/other',
+      '[guide]: https://neutral.example.org/guide\n[Rival]: https://neutral.example.org/other',
   );
   assert.equal(visible.brand_mentioned, 1);
   assert.deepEqual(visible.competitors_mentioned, ['rival.com']);

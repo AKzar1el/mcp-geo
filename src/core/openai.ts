@@ -276,9 +276,14 @@ function normalizeHost(rawUrl: string): string | null {
     host = host.replace(/[;,!]+$/, '');
     if (host.endsWith('.')) host = host.slice(0, -1);
     if (host.endsWith('.')) return null; // Do not turn repeated root dots into brand evidence.
-    // Reuse the brand-domain gate for answer-text source hosts too: local or
-    // IP-literal URLs are not independent external citation evidence.
-    return normalizeDomainInput(host);
+    // Reuse the brand-domain gate, then exclude internal/special-use names.
+    // A syntactically valid hostname is not necessarily a public citation.
+    const normalized = normalizeDomainInput(host);
+    if (!normalized) return null;
+    if (normalized === 'home.arpa' ||
+        ['.local', '.localhost', '.internal', '.test', '.invalid', '.example', '.home.arpa']
+          .some((suffix) => normalized.endsWith(suffix))) return null;
+    return normalized;
   } catch {
     return null;
   }
