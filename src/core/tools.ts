@@ -3367,6 +3367,9 @@ function redactEvidenceText(text: string): string {
   // headers, not just URLs. Mask their values before selecting an excerpt;
   // raw stored observations remain unchanged for forensic provenance.
   return urlSafeText
+    // Digest and SigV4 credentials consist of multiple parameters. Redacting
+    // just the first token would expose the nonce, response or signature.
+    .replace(/\b(Authorization[ \t]*:[ \t]*(?:Digest|AWS4-HMAC-SHA256)[ \t]+)[^\r\n]*/gi, '$1[REDACTED]')
     .replace(/\b(Authorization\s*:\s*(?:Bearer|Basic|Token|ApiKey|Api-Key)\s+)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;]+)/gi, '$1[REDACTED]')
     .replace(/\b((?:access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|client[_-]?secret)\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s&,;]+)/gi, '$1[REDACTED]');
 }
