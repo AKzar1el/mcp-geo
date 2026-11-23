@@ -124,6 +124,7 @@ type ComparisonTool = {
 
 test('comparison redacts credentials in displayed buyer questions without changing counts', async () => {
   let comparison: ComparisonTool | undefined;
+  const capturedAt = Date.now();
   const server = {
     registerTool(name: string, _config: unknown, handler: unknown) {
       if (name === 'compare_competitors') comparison = { handler: handler as ComparisonTool['handler'] };
@@ -136,7 +137,7 @@ test('comparison redacts credentials in displayed buyer questions without changi
         response('brand', 'Which platform works with https://example.com/docs?api_key=private-brand-key for teams?', 1, []),
         response('competitor', 'Compare access_token=private-competitor-token for team planning', 0, ['asana.com']),
         response('both', 'Does Authorization: Bearer private-cohort-token work for both?', 1, ['asana.com']),
-      ],
+      ].map((row, index) => ({ ...row, captured_at: capturedAt - 2 + index })),
     } as Db,
     env: {}, refreshExecution: 'sync',
     runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
@@ -148,7 +149,9 @@ test('comparison redacts credentials in displayed buyer questions without changi
   for (const secret of ['private-brand-key', 'private-competitor-token', 'private-cohort-token']) {
     assert.ok(!serialized.includes(secret), `comparison output exposed ${secret}`);
   }
-  assert.match(result.mention_evidence_samples.brand[0]?.prompt ?? '', /api_key=\[REDACTED\]/);
+  assert.equal(result.mention_evidence_samples.brand[0]?.response_id, 'both');
+  const brandSample = result.mention_evidence_samples.brand.find((sample) => sample.response_id === 'brand');
+  assert.match(brandSample?.prompt ?? '', /api_key=\[REDACTED\]/);
   assert.match(result.mention_evidence_samples.competitors[0]?.samples[0]?.prompt ?? '', /\[REDACTED\]/);
   assert.match(result.prompts_brand_only[0]?.prompt ?? '', /\[REDACTED\]/);
   assert.match(result.prompts_co_mentioned[0]?.prompt ?? '', /\[REDACTED\]/);
