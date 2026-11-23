@@ -728,6 +728,21 @@ test('get_citations masks custom authentication and session token headers in cli
   assert.doesNotMatch(JSON.stringify(result), /BUYER_HEADER_SECRET|ANSWER_HEADER_SECRET/);
 });
 
+test('get_citations masks API and CSRF token headers while preserving public evidence', async () => {
+  const citation = registerCitationTool(citationRow({
+    prompt: 'Compare Acme security.\nX-API-Token: BUYER_API_TOKEN_SECRET\nX-CSRF-Token: BUYER_CSRF_SECRET\nPublic note: X-CSRF-Token is a header name.',
+    raw_response: 'Acme supports API integrations.\nX-API-Token: ANSWER_API_TOKEN_SECRET\nX-CSRF-Token: ANSWER_CSRF_SECRET\nPublic answer.',
+  }));
+  const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.match(result.citations[0].prompt, /X-API-Token: \[REDACTED\]/);
+  assert.match(result.citations[0].prompt, /X-CSRF-Token: \[REDACTED\]/);
+  assert.match(result.citations[0].prompt, /Public note: X-CSRF-Token is a header name\./);
+  assert.match(result.citations[0].response_excerpt, /X-API-Token: \[REDACTED\]/);
+  assert.match(result.citations[0].response_excerpt, /X-CSRF-Token: \[REDACTED\]/);
+  assert.match(result.citations[0].response_excerpt, /Public answer\./);
+  assert.doesNotMatch(JSON.stringify(result), /BUYER_API_TOKEN_SECRET|BUYER_CSRF_SECRET|ANSWER_API_TOKEN_SECRET|ANSWER_CSRF_SECRET/);
+});
+
 test('get_citations redacts URL fragment credentials without changing public query and anchor context', async () => {
   const citation = registerCitationTool(citationRow({
     raw_response: 'Acme is at https://acme.com/report#access_token=EXCERPT_SECRET&section=summary',

@@ -3369,7 +3369,7 @@ function redactEvidenceText(text: string): string {
   return urlSafeText
     // Cookie and custom token headers can expose session credentials;
     // mask the complete header value rather than a single key/value token.
-    .replace(/\b((?:Set-Cookie|Cookie|X-Auth-Token|X-Session-Token)[ \t]*:[ \t]*)[^\r\n]*/gi, '$1[REDACTED]')
+    .replace(/\b((?:Set-Cookie|Cookie|X-Auth-Token|X-Session-Token|X-API-Token|X-CSRF-Token)[ \t]*:[ \t]*)[^\r\n]*/gi, '$1[REDACTED]')
     // Digest and SigV4 credentials consist of multiple parameters. Redacting
     // just the first token would expose the nonce, response or signature.
     .replace(/\b(Authorization[ \t]*:[ \t]*(?:Digest|AWS4-HMAC-SHA256)[ \t]+)[^\r\n]*/gi, '$1[REDACTED]')
