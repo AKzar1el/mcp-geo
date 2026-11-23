@@ -678,6 +678,17 @@ test('get_citations redacts credentials in stored buyer questions without hiding
   assert.doesNotMatch(JSON.stringify(result.citations), /BUYER_API_SECRET|BUYER_BEARER_SECRET/);
 });
 
+test('get_citations hides Token and ApiKey authorization schemes in buyer questions and excerpts', async () => {
+  const citation = registerCitationTool(citationRow({
+    prompt: 'Compare Acme with Authorization: Token BUYER_TOKEN_SECRET while discussing public pricing',
+    raw_response: 'Acme supports Authorization: ApiKey EXCERPT_API_SECRET for this integration.',
+  }));
+  const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.match(result.citations[0].prompt, /Authorization: Token \[REDACTED\] while discussing public pricing/);
+  assert.match(result.citations[0].response_excerpt, /Authorization: ApiKey \[REDACTED\] for this integration/);
+  assert.doesNotMatch(JSON.stringify(result), /BUYER_TOKEN_SECRET|EXCERPT_API_SECRET/);
+});
+
 test('get_citations redacts URL fragment credentials without changing public query and anchor context', async () => {
   const citation = registerCitationTool(citationRow({
     raw_response: 'Acme is at https://acme.com/report#access_token=EXCERPT_SECRET&section=summary',
