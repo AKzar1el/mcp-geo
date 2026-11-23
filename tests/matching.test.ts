@@ -296,6 +296,21 @@ test('Pakistani and Thai public suffixes keep competitor names visible in prose'
   );
 });
 
+test('Saudi and Egyptian registrable names are counted without matching longer words', () => {
+  const brand = makeBrand({
+    domain: 'falcon.com.sa',
+    name: 'Different legal name',
+    competitors: ['lotus.com.eg'],
+  });
+  const observed = extractCitations(brand, 'Falcon and Lotus are compared in the response.');
+  assert.equal(observed.brand_mentioned, 1);
+  assert.deepEqual(observed.competitors_mentioned, ['lotus.com.eg']);
+
+  const unrelated = extractCitations(brand, 'Falconry and Lotusware are different names.');
+  assert.equal(unrelated.brand_mentioned, 0);
+  assert.deepEqual(unrelated.competitors_mentioned, []);
+});
+
 test('Kenyan, Nigerian, Ugandan and Bangladeshi registrable names are visible evidence', () => {
   const brand = makeBrand({
     domain: 'bayleaf.co.ke',
