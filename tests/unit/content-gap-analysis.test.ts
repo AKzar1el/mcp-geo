@@ -1239,9 +1239,9 @@ test('content-gap advice discloses US/English Google sampling for observed Googl
   const google = (await handler({ brand_id: 'acme', max_recommendations: 1 }))
     .structuredContent.google_search_sampling;
   assert.deepEqual(google?.engines, ['ai_overviews']);
-  assert.equal(google?.country, 'us');
-  assert.equal(google?.language, 'en');
-  assert.match(google?.scope_note ?? '', /US location/);
+  assert.equal(google?.country, 'pl');
+  assert.equal(google?.language, 'pl');
+  assert.match(google?.scope_note ?? '', /Polish location/);
 
   observedEngine = 'chatgpt';
   const nonGoogle = (await handler({ brand_id: 'acme', max_recommendations: 1 }))
@@ -1289,8 +1289,8 @@ test('content gaps disclose Google locale for usable scans without competitor-on
   const measured = (await handler({ brand_id: 'acme', max_recommendations: 1 })).structuredContent;
   assert.deepEqual(measured.recommendations, []);
   assert.deepEqual(measured.google_search_sampling?.engines, ['ai_overviews']);
-  assert.equal(measured.google_search_sampling?.country, 'us');
-  assert.equal(measured.google_search_sampling?.language, 'en');
+  assert.equal(measured.google_search_sampling?.country, 'pl');
+  assert.equal(measured.google_search_sampling?.language, 'pl');
 
   responseStatus = 'error';
   const failed = (await handler({ brand_id: 'acme', max_recommendations: 1 })).structuredContent;

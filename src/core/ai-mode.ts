@@ -55,8 +55,8 @@ export async function chatCompletion(
     api_key: apiKey,
     engine: 'google_ai_mode',
     q: userText,
-    gl: 'us',
-    hl: 'en',
+    gl: 'pl',
+    hl: 'pl',
     no_cache: 'true',
   });
   const resp = await fetchWithTimeout(`${SERPAPI_URL}?${params.toString()}`, { method: 'GET' });

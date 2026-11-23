@@ -223,7 +223,7 @@ test('copy-paste audit instructions flag configuration age and Google sampling l
   const instructions = reportPrompt.match(/## Copy-paste prompt\s+```text\r?\n([\s\S]*?)\r?\n```/)?.[1] ?? '';
   assert.match(instructions, /`configuration_comparability`[\s\S]*`historical_settings_warning`[\s\S]*`engines_scanned_before_update`/);
   assert.match(instructions, /cadence-only/);
-  assert.match(instructions, /`google_search_sampling`[\s\S]*`gl=us`[\s\S]*`hl=en`/);
+  assert.match(instructions, /`google_search_sampling`[\s\S]*`gl=pl`[\s\S]*`hl=pl`/);
   assert.match(instructions, /(?:other markets or languages|other locales)/);
 });
 

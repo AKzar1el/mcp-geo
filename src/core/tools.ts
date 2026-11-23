@@ -53,12 +53,12 @@ const ENGINE_NAMES = [
 const engineSchema = z.enum(ENGINE_NAMES);
 
 const GOOGLE_SEARCH_SCOPE_NOTE =
-  'Google AI Overviews and AI Mode are sampled using US location (gl=us) and English interface (hl=en); results do not establish visibility in other markets or languages.';
+  'Google AI Overviews and AI Mode are sampled using Polish location (gl=pl, google.pl) and Polish interface (hl=pl); results do not establish visibility in other markets or languages.';
 
 const googleSearchSamplingSchema = z.object({
   engines: z.array(z.string()),
-  country: z.literal('us'),
-  language: z.literal('en'),
+  country: z.literal('pl'),
+  language: z.literal('pl'),
   scope_note: z.string(),
 }).nullable();
 
@@ -68,8 +68,8 @@ function googleSearchSampling(engines: readonly string[]) {
   ))];
   return googleEngines.length === 0 ? null : {
     engines: googleEngines,
-    country: 'us' as const,
-    language: 'en' as const,
+    country: 'pl' as const,
+    language: 'pl' as const,
     scope_note: GOOGLE_SEARCH_SCOPE_NOTE,
   };
 }

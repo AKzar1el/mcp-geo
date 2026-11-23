@@ -111,9 +111,9 @@ export async function chatCompletion(
     api_key: apiKey,
     engine: 'google',
     q: userText,
-    google_domain: 'google.com',
-    gl: 'us',
-    hl: 'en',
+    google_domain: 'google.pl',
+    gl: 'pl',
+    hl: 'pl',
     no_cache: 'true',
   });
   const data = await fetchSerpApi(params);
