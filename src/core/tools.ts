@@ -3367,6 +3367,9 @@ function redactEvidenceText(text: string): string {
   // headers, not just URLs. Mask their values before selecting an excerpt;
   // raw stored observations remain unchanged for forensic provenance.
   return urlSafeText
+    // Cookie headers can contain multiple session secrets and attributes;
+    // mask the complete header value rather than a single key/value token.
+    .replace(/\b((?:Set-Cookie|Cookie)[ \t]*:[ \t]*)[^\r\n]*/gi, '$1[REDACTED]')
     // Digest and SigV4 credentials consist of multiple parameters. Redacting
     // just the first token would expose the nonce, response or signature.
     .replace(/\b(Authorization[ \t]*:[ \t]*(?:Digest|AWS4-HMAC-SHA256)[ \t]+)[^\r\n]*/gi, '$1[REDACTED]')

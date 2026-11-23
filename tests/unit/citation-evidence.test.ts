@@ -702,6 +702,19 @@ test('get_citations masks multiline Digest and AWS SigV4 authorization headers i
   assert.doesNotMatch(JSON.stringify(result), /BUYER_NONCE_SECRET|BUYER_DIGEST_SECRET|AWS_CREDENTIAL_SECRET|AWS_SIGNATURE_SECRET/);
 });
 
+test('get_citations masks session Cookie and Set-Cookie header values in buyer and answer evidence', async () => {
+  const citation = registerCitationTool(citationRow({
+    prompt: 'Compare Acme sessions.\nCookie: session=BUYER_SESSION_SECRET; theme=light\nKeep this public question.',
+    raw_response: 'Acme supports sessions.\nSet-Cookie: __Host-id=ANSWER_SESSION_SECRET; Path=/; HttpOnly; Secure\nPublic answer. Cookie: inline=INLINE_SESSION_SECRET',
+  }));
+  const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.match(result.citations[0].prompt, /Cookie: \[REDACTED\]/);
+  assert.match(result.citations[0].prompt, /Keep this public question\./);
+  assert.match(result.citations[0].response_excerpt, /Set-Cookie: \[REDACTED\]/);
+  assert.match(result.citations[0].response_excerpt, /Public answer\. Cookie: \[REDACTED\]/);
+  assert.doesNotMatch(JSON.stringify(result), /BUYER_SESSION_SECRET|ANSWER_SESSION_SECRET|INLINE_SESSION_SECRET/);
+});
+
 test('get_citations redacts URL fragment credentials without changing public query and anchor context', async () => {
   const citation = registerCitationTool(citationRow({
     raw_response: 'Acme is at https://acme.com/report#access_token=EXCERPT_SECRET&section=summary',
