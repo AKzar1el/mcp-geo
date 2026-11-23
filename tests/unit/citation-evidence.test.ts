@@ -689,6 +689,19 @@ test('get_citations hides Token and ApiKey authorization schemes in buyer questi
   assert.doesNotMatch(JSON.stringify(result), /BUYER_TOKEN_SECRET|EXCERPT_API_SECRET/);
 });
 
+test('get_citations masks multiline Digest and AWS SigV4 authorization headers in client evidence', async () => {
+  const citation = registerCitationTool(citationRow({
+    prompt: 'Compare Acme integration security.\nAuthorization: Digest username="buyer", nonce="BUYER_NONCE_SECRET", response="BUYER_DIGEST_SECRET"\nKeep this public question.',
+    raw_response: 'Acme supports integrations.\nAuthorization: AWS4-HMAC-SHA256 Credential=AWS_CREDENTIAL_SECRET, SignedHeaders=host;x-amz-date, Signature=AWS_SIGNATURE_SECRET\nKeep this public answer.',
+  }));
+  const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.match(result.citations[0].prompt, /Authorization: Digest \[REDACTED\]/);
+  assert.match(result.citations[0].prompt, /Keep this public question\./);
+  assert.match(result.citations[0].response_excerpt, /Authorization: AWS4-HMAC-SHA256 \[REDACTED\]/);
+  assert.match(result.citations[0].response_excerpt, /Keep this public answer\./);
+  assert.doesNotMatch(JSON.stringify(result), /BUYER_NONCE_SECRET|BUYER_DIGEST_SECRET|AWS_CREDENTIAL_SECRET|AWS_SIGNATURE_SECRET/);
+});
+
 test('get_citations redacts URL fragment credentials without changing public query and anchor context', async () => {
   const citation = registerCitationTool(citationRow({
     raw_response: 'Acme is at https://acme.com/report#access_token=EXCERPT_SECRET&section=summary',
