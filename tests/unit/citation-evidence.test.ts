@@ -715,6 +715,19 @@ test('get_citations masks session Cookie and Set-Cookie header values in buyer a
   assert.doesNotMatch(JSON.stringify(result), /BUYER_SESSION_SECRET|ANSWER_SESSION_SECRET|INLINE_SESSION_SECRET/);
 });
 
+test('get_citations masks custom authentication and session token headers in client evidence', async () => {
+  const citation = registerCitationTool(citationRow({
+    prompt: 'Compare Acme authentication.\nX-Auth-Token: BUYER_HEADER_SECRET\nPublic note: X-Auth-Token is a header name.',
+    raw_response: 'Acme supports session APIs.\nX-Session-Token: ANSWER_HEADER_SECRET\nPublic documentation remains.',
+  }));
+  const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.match(result.citations[0].prompt, /X-Auth-Token: \[REDACTED\]/);
+  assert.match(result.citations[0].prompt, /Public note: X-Auth-Token is a header name\./);
+  assert.match(result.citations[0].response_excerpt, /X-Session-Token: \[REDACTED\]/);
+  assert.match(result.citations[0].response_excerpt, /Public documentation remains\./);
+  assert.doesNotMatch(JSON.stringify(result), /BUYER_HEADER_SECRET|ANSWER_HEADER_SECRET/);
+});
+
 test('get_citations redacts URL fragment credentials without changing public query and anchor context', async () => {
   const citation = registerCitationTool(citationRow({
     raw_response: 'Acme is at https://acme.com/report#access_token=EXCERPT_SECRET&section=summary',
