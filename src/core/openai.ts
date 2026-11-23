@@ -214,7 +214,7 @@ function unicodeRootFromPunycode(asciiRoot: string): string | null {
   const decoded = output.join('');
   try {
     // WHATWG's IDNA-to-ASCII pass also rejects invalid or noncanonical labels.
-    return new URL(`http://${decoded}`).hostname === asciiRoot ? decoded : null;
+    return new URL(`http://${decoded}`).hostname === asciiRoot ? decoded.normalize('NFC') : null;
   } catch {
     return null;
   }
@@ -225,11 +225,11 @@ function escapeRegExp(s: string): string {
 }
 
 // Matches `term` only as a standalone token — not buried inside a larger
-// word. Boundaries = "no adjacent letter/digit" (Unicode-friendlier than \b).
+// word. Combining marks belong to words too; a decomposed accent is not a boundary.
 function termMatchIndex(text: string, term: string): number {
   const t = term.trim();
   if (t.length === 0) return -1;
-  const re = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(t)}(?![\\p{L}\\p{N}])`, 'iu');
+  const re = new RegExp(`(?<![\\p{L}\\p{N}\\p{M}])${escapeRegExp(t)}(?![\\p{L}\\p{N}\\p{M}])`, 'iu');
   return re.exec(text)?.index ?? -1;
 }
 
@@ -258,7 +258,7 @@ function domainMatchIndex(text: string, domain: string): number {
     // Require the exact domain or a subdomain, never a lookalike suffix,
     // prefix, or repeated-dot pseudo-host. Preserve original text offsets.
     const re = new RegExp(
-      `(?:^|[^\\p{L}\\p{N}-])((?:[a-z0-9-]+\\.)*${escapeRegExp(variant)})(?!\\.+[\\p{L}\\p{N}-])(?=$|[^\\p{L}\\p{N}.-]|\\.(?![\\p{L}\\p{N}-]))`,
+      `(?:^|[^\\p{L}\\p{N}\\p{M}-])((?:[a-z0-9-]+\\.)*${escapeRegExp(variant)})(?!\\.+[\\p{L}\\p{N}\\p{M}-])(?=$|[^\\p{L}\\p{N}\\p{M}.-]|\\.(?![\\p{L}\\p{N}\\p{M}-]))`,
       'iu',
     );
     const match = re.exec(text);
@@ -271,13 +271,13 @@ function rootTermMatchIndexOutsideHostname(text: string, term: string): number {
   const t = term.trim();
   if (t.length === 0) return -1;
   const re = new RegExp(
-    `(?<![\\p{L}\\p{N}.])${escapeRegExp(t)}(?![\\p{L}\\p{N}]|\\.(?=[\\p{L}\\p{N}-]))`,
+    `(?<![\\p{L}\\p{N}\\p{M}.])${escapeRegExp(t)}(?![\\p{L}\\p{N}\\p{M}]|\\.(?=[\\p{L}\\p{N}\\p{M}-]))`,
     'iu',
   );
   return re.exec(text)?.index ?? -1;
 }
 
-export function findTermSetMatchIndex(text: string, terms: MatchTerms): number {
+function findCanonicalTermSetMatchIndex(text: string, terms: MatchTerms): number {
   // 1. Exact domain/subdomain reference - highest confidence, never suppressed.
   const domainIndex = domainMatchIndex(text, terms.domain);
   if (domainIndex !== -1) return domainIndex;
@@ -309,6 +309,31 @@ export function findTermSetMatchIndex(text: string, terms: MatchTerms): number {
     }
   }
   return -1;
+}
+
+export function findTermSetMatchIndex(text: string, terms: MatchTerms): number {
+  // NFC equates precomposed and decomposed Unicode without folding accents.
+  // Report the original UTF-16 offset for excerpt slicing, not the NFC offset.
+  const canonicalText = text.normalize('NFC');
+  const canonicalTerms: MatchTerms = {
+    domain: terms.domain.normalize('NFC'),
+    name: terms.name?.normalize('NFC'),
+    aliases: terms.aliases?.map((alias) => alias.normalize('NFC')),
+    excludeTerms: terms.excludeTerms?.map((term) => term.normalize('NFC')),
+  };
+  const index = findCanonicalTermSetMatchIndex(canonicalText, canonicalTerms);
+  if (index === -1 || canonicalText === text) return index;
+
+  // A composed character may cover several original code units. Find the
+  // first source offset contributing to the matched canonical character.
+  let low = 0;
+  let high = text.length;
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if (text.slice(0, mid + 1).normalize('NFC').length > index) high = mid;
+    else low = mid + 1;
+  }
+  return low;
 }
 
 function mentionsTermSet(text: string, terms: MatchTerms): boolean {

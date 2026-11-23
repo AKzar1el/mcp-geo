@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { extractCitations } from '../src/core/openai.ts';
+import { extractCitations, findTermSetMatchIndex } from '../src/core/openai.ts';
 import type { Brand } from '../src/db/types.ts';
 
 function makeBrand(overrides: Partial<Brand>): Brand {
@@ -103,6 +103,45 @@ test('bare internationalized hostnames match without turning linked sources into
   );
   assert.equal(lookalikes.brand_mentioned, 0);
   assert.deepEqual(lookalikes.competitors_mentioned, []);
+});
+
+test('canonically equivalent decomposed Unicode names and IDN hosts retain exact evidence boundaries and offsets', () => {
+  const brand = makeBrand({
+    domain: 'xn--bcher-kva.de',
+    name: 'Different legal publisher',
+    competitors: ['xn--caf-dma.fr'],
+  });
+
+  const words = extractCitations(brand, 'Bu\u0308cher and Cafe\u0301 are mentioned in this answer.');
+  assert.equal(words.brand_mentioned, 1);
+  assert.deepEqual(words.competitors_mentioned, ['xn--caf-dma.fr']);
+
+  const hosts = extractCitations(brand, 'Compare bu\u0308cher.de with cafe\u0301.fr.');
+  assert.equal(hosts.brand_mentioned, 1);
+  assert.deepEqual(hosts.competitors_mentioned, ['xn--caf-dma.fr']);
+
+  const lookalikes = extractCitations(brand,
+    'Bu\u0308cherwelt, Cafe\u0301bar, bu\u0308cher.de.attacker.test and cafe\u0301.fr.evil.test.');
+  assert.equal(lookalikes.brand_mentioned, 0);
+  assert.deepEqual(lookalikes.competitors_mentioned, []);
+
+  const asciiBrand = makeBrand({ domain: 'cafe.com', name: 'Different legal publisher' });
+  assert.equal(extractCitations(asciiBrand, 'Cafe\u0301bar alone').brand_mentioned, 0);
+  assert.equal(extractCitations(asciiBrand, 'Cafe\u0301 alone').brand_mentioned, 0);
+  assert.equal(extractCitations(asciiBrand, 'Plain Cafe alone').brand_mentioned, 1);
+
+  const aliasBrand = makeBrand({ domain: 'example.net', name: 'Different legal publisher', aliases: ['Caf\u00e9'] });
+  assert.equal(extractCitations(aliasBrand, 'Cafe\u0301 appears in this answer.').brand_mentioned, 1);
+  assert.equal(extractCitations({ ...brand, exclude_terms: ['Bu\u0308cher'] },
+    'Bu\u0308cher is a generic word.').brand_mentioned, 0);
+
+  const linkOnly = extractCitations(brand, 'Source: https://bu\u0308cher.de/guide');
+  assert.equal(linkOnly.brand_mentioned, 0);
+  assert.equal(linkOnly.brand_cited_with_link, 1);
+
+  const source = '\ud83d\ude80 ' + 'unrelated '.repeat(24) + 'Cafe\u0301 appears here.';
+  const index = findTermSetMatchIndex(source, { domain: 'xn--caf-dma.fr' });
+  assert.equal(index, source.indexOf('Cafe\u0301'));
 });
 
 test('malformed repeated-dot domain suffixes do not count as brand or competitor mentions', () => {
