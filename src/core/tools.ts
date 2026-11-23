@@ -3363,10 +3363,21 @@ function redactEvidenceText(text: string): string {
       return '[unparseable URL omitted]';
     }
   });
+  // HTTP header folding makes whitespace-prefixed continuation lines part of
+  // the preceding credential. Mask them together, before line-based redaction.
+  const foldedHeaderSafeText = urlSafeText.replace(
+    /^([ \t]*(?:Authorization|Set-Cookie|Cookie|X-(?:[A-Za-z0-9-]+-)?(?:Token|Api-Key|Auth-Key|Secret))[ \t]*:[ \t]*)([^\r\n]*)(?:\r?\n[ \t]+[^\r\n]*)+/gim,
+    (_match, header: string, firstValue: string) => {
+      const scheme = /^([A-Za-z][A-Za-z0-9+.-]*[ \t]+)/.exec(firstValue);
+      return /Authorization[ \t]*:[ \t]*$/i.test(header) && scheme
+        ? `${header}${scheme[1]}[REDACTED]`
+        : `${header}[REDACTED]`;
+    },
+  );
   // Provider prose can contain standalone credential assignments and auth
   // headers, not just URLs. Mask their values before selecting an excerpt;
   // raw stored observations remain unchanged for forensic provenance.
-  return urlSafeText
+  return foldedHeaderSafeText
     // Cookie and custom token/key headers can expose session credentials;
     // mask full values, including previously unknown X-*-Token names.
     .replace(/\b((?:Set-Cookie|Cookie|X-(?:[A-Za-z0-9-]+-)?(?:Token|Api-Key|Auth-Key|Secret))[ \t]*:[ \t]*)[^\r\n]*/gi, '$1[REDACTED]')
