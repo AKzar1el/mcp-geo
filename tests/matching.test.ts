@@ -52,6 +52,32 @@ test('full domain still counts even when the bare word is excluded', () => {
   assert.equal(brand_mentioned, 1);
 });
 
+test('internationalized domain roots match visible Unicode brand and competitor names', () => {
+  const brand = makeBrand({
+    domain: 'xn--bcher-kva.de',
+    name: 'Different legal publisher',
+    competitors: ['xn--caf-dma.fr'],
+  });
+
+  const visible = extractCitations(brand, 'B\u00fccher and Caf\u00e9 are both mentioned in this answer.');
+  assert.equal(visible.brand_mentioned, 1);
+  assert.deepEqual(visible.competitors_mentioned, ['xn--caf-dma.fr']);
+
+  const lookalikes = extractCitations(
+    brand,
+    'B\u00fccherwelt and Caf\u00e9bar were mentioned, plus b\u00fccher.attacker.example.',
+  );
+  assert.equal(lookalikes.brand_mentioned, 0);
+  assert.deepEqual(lookalikes.competitors_mentioned, []);
+
+  const excluded = extractCitations({ ...brand, exclude_terms: ['b\u00fccher'] }, 'B\u00fccher is a generic word.');
+  assert.equal(excluded.brand_mentioned, 0);
+
+  const encoded = extractCitations(brand, 'See xn--bcher-kva.de and xn--caf-dma.fr.');
+  assert.equal(encoded.brand_mentioned, 1);
+  assert.deepEqual(encoded.competitors_mentioned, ['xn--caf-dma.fr']);
+});
+
 test('malformed repeated-dot domain suffixes do not count as brand or competitor mentions', () => {
   const brand = makeBrand({
     domain: 'acme.com',

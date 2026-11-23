@@ -168,6 +168,58 @@ function rootTermFromDomain(domain: string): string {
   return parts[parts.length - 2]!.toLowerCase();
 }
 
+// Decode a single canonical Punycode label without Node-only modules; the
+// same mention matcher is bundled into both the Worker and the stdio CLI.
+function unicodeRootFromPunycode(asciiRoot: string): string | null {
+  if (!asciiRoot.startsWith('xn--') || asciiRoot.length > 63) return null;
+  const input = asciiRoot.slice(4);
+  const delimiter = input.lastIndexOf('-');
+  const output = delimiter >= 0 ? [...input.slice(0, delimiter)] : [];
+  let offset = delimiter >= 0 ? delimiter + 1 : 0;
+  let codePoint = 128;
+  let index = 0;
+  let bias = 72;
+
+  while (offset < input.length) {
+    const previousIndex = index;
+    let weight = 1;
+    for (let k = 36; ; k += 36) {
+      if (offset >= input.length) return null;
+      const char = input.charCodeAt(offset++);
+      const digit = char >= 97 && char <= 122 ? char - 97
+        : char >= 48 && char <= 57 ? char - 22 : -1;
+      if (digit < 0 || digit > Math.floor((Number.MAX_SAFE_INTEGER - index) / weight)) return null;
+      index += digit * weight;
+      const threshold = k <= bias ? 1 : k >= bias + 26 ? 26 : k - bias;
+      if (digit < threshold) break;
+      if (weight > Number.MAX_SAFE_INTEGER / (36 - threshold)) return null;
+      weight *= 36 - threshold;
+    }
+    const size = output.length + 1;
+    let delta = previousIndex === 0 ? Math.floor((index - previousIndex) / 700)
+      : Math.floor((index - previousIndex) / 2);
+    delta += Math.floor(delta / size);
+    let adjustment = 0;
+    while (delta > 455) {
+      delta = Math.floor(delta / 35);
+      adjustment += 36;
+    }
+    bias = adjustment + Math.floor((36 * delta) / (delta + 38));
+    codePoint += Math.floor(index / size);
+    index %= size;
+    if (codePoint > 0x10ffff || (codePoint >= 0xd800 && codePoint <= 0xdfff)) return null;
+    output.splice(index++, 0, String.fromCodePoint(codePoint));
+  }
+
+  const decoded = output.join('');
+  try {
+    // WHATWG's IDNA-to-ASCII pass also rejects invalid or noncanonical labels.
+    return new URL(`http://${decoded}`).hostname === asciiRoot ? decoded : null;
+  } catch {
+    return null;
+  }
+}
+
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -235,6 +287,16 @@ export function findTermSetMatchIndex(text: string, terms: MatchTerms): number {
   if (root.length > 0 && !excluded.has(root)) {
     const rootIndex = rootTermMatchIndexOutsideHostname(text, root);
     if (rootIndex !== -1) return rootIndex;
+  }
+  // IDN domains are stored as Punycode, but an answer may name the brand
+  // using its human-readable label. Require a lossless round-trip so an
+  // invalid encoded label cannot silently become an unrelated word.
+  if (root.startsWith('xn--') && !excluded.has(root)) {
+    const decodedRoot = unicodeRootFromPunycode(root)?.toLowerCase();
+    if (decodedRoot && decodedRoot !== root && !excluded.has(decodedRoot)) {
+      const unicodeIndex = rootTermMatchIndexOutsideHostname(text, decodedRoot);
+      if (unicodeIndex !== -1) return unicodeIndex;
+    }
   }
   return -1;
 }
