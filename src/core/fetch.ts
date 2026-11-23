@@ -28,15 +28,15 @@ export function retryDelayMs(
 ): number {
   const ms = Number(headers.get('retry-after-ms'));
   const seconds = Number(headers.get('retry-after'));
-  const hinted =
-    ms > 0 ? ms : seconds > 0 ? seconds * 1000 : baseDelayMs * 2 ** attempt;
-  return Math.min(maxDelayMs, hinted);
+  const hinted = ms > 0 ? ms : seconds > 0 ? seconds * 1000 : 0;
+  // OpenAI hints ~100 ms on a full TPM window; never wait less than the backoff.
+  return Math.min(maxDelayMs, Math.max(hinted, baseDelayMs * 2 ** attempt));
 }
 
 export async function fetchWithRetry(
   input: FetchInput,
   init: FetchInit = {},
-  retries = 3,
+  retries = 5,
   sleep: (ms: number) => Promise<void> = (ms) =>
     new Promise((resolve) => setTimeout(resolve, ms)),
 ): Promise<Response> {

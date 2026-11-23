@@ -4,7 +4,8 @@ import test from 'node:test';
 import { fetchWithRetry, retryDelayMs } from '../../src/core/fetch.js';
 
 test('retryDelayMs prefers provider hints, else backs off, capped', () => {
-  assert.equal(retryDelayMs(new Headers({ 'retry-after-ms': '131' }), 0), 131);
+  assert.equal(retryDelayMs(new Headers({ 'retry-after-ms': '131' }), 0), 2_000);
+  assert.equal(retryDelayMs(new Headers({ 'retry-after-ms': '9000' }), 0), 9_000);
   assert.equal(retryDelayMs(new Headers({ 'retry-after': '5' }), 0), 5_000);
   assert.equal(retryDelayMs(new Headers({ 'retry-after': 'Wed, 21 Oct' }), 1), 4_000);
   assert.equal(retryDelayMs(new Headers(), 10), 30_000);
