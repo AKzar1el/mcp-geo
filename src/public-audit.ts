@@ -188,7 +188,10 @@ function auditHtml(origin: string): string {
           !(downloadButton instanceof HTMLButtonElement) ||
           !(previewButton instanceof HTMLButtonElement) || !previewBody || !status) return;
 
-      const nonPublicSuffixes = ['.local', '.localhost', '.internal', '.test', '.invalid', '.example', '.home.arpa'];
+      const nonPublicSuffixes = [
+        '.local', '.localhost', '.internal', '.test', '.invalid', '.example', '.home.arpa',
+        '.onion', '.alt',
+      ];
       const domainForRequest = (input) => {
         const raw = input.trim();
         const isUrl = raw.includes('://');
