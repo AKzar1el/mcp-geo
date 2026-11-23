@@ -3364,9 +3364,10 @@ function redactEvidenceText(text: string): string {
     }
   });
   // HTTP header folding makes whitespace-prefixed continuation lines part of
-  // the preceding credential. Mask them together, before line-based redaction.
+  // the preceding credential, including proxy credentials. Mask them together
+  // before line-based redaction.
   const foldedHeaderSafeText = urlSafeText.replace(
-    /^([ \t]*(?:Authorization|Set-Cookie|Cookie|X-(?:[A-Za-z0-9-]+-)?(?:Token|Api-Key|Auth-Key|Secret))[ \t]*:[ \t]*)([^\r\n]*)(?:\r?\n[ \t]+[^\r\n]*)+/gim,
+    /^([ \t]*(?:(?:Proxy-)?Authorization|Set-Cookie|Cookie|X-(?:[A-Za-z0-9-]+-)?(?:Token|Api-Key|Auth-Key|Secret))[ \t]*:[ \t]*)([^\r\n]*)(?:\r?\n[ \t]+[^\r\n]*)+/gim,
     (_match, header: string, firstValue: string) => {
       const scheme = /^([A-Za-z][A-Za-z0-9+.-]*[ \t]+)/.exec(firstValue);
       return /Authorization[ \t]*:[ \t]*$/i.test(header) && scheme
