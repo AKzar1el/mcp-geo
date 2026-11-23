@@ -797,6 +797,20 @@ test('top source rankings exclude internal and invalid hosts from historical pro
     ['https://news.example.org/public']);
 });
 
+test('top source rankings omit special-use onion and alt hosts while retaining public sources', async () => {
+  const citation = registerCitationTool(citationRow(), [
+    promptResponse({ engine_citations: [
+      'https://archive.hidden.onion/report',
+      'https://service.alt/document',
+      'https://research.example.org/report',
+    ] }),
+  ]);
+  const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.deepEqual(result.top_sources.map((source) => source.domain), ['research.example.org']);
+  assert.equal(result.total_source_domains, 1);
+  assert.equal(result.top_sources[0]?.sample_url, 'https://research.example.org/report');
+});
+
 test('top source rankings reject provider URLs with control characters or outer whitespace', async () => {
   const citation = registerCitationTool(citationRow(), [
     promptResponse({ engine_citations: [

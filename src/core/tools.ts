@@ -3142,8 +3142,8 @@ function citationIdentityScope(startedAt: number | null | undefined, boundary: n
 
 function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityBoundary: number | null = null) {
   // Historical provider evidence may predate source-host filtering at ingest.
-  // Exclude private/internal and invalid/test hostnames from audit rankings.
-  const nonPublicSuffixes = ['.local', '.localhost', '.internal', '.test', '.invalid', '.home.arpa'];
+  // Exclude private/internal, special-use and invalid/test hostnames from audit rankings.
+  const nonPublicSuffixes = ['.local', '.localhost', '.internal', '.test', '.invalid', '.home.arpa', '.onion', '.alt'];
   const engineObservationCounts = new Map<string, number>();
   for (const response of responses) {
     engineObservationCounts.set(response.engine, (engineObservationCounts.get(response.engine) ?? 0) + 1);
