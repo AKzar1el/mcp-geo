@@ -3367,13 +3367,16 @@ function redactEvidenceText(text: string): string {
   // headers, not just URLs. Mask their values before selecting an excerpt;
   // raw stored observations remain unchanged for forensic provenance.
   return urlSafeText
-    // Cookie and custom token headers can expose session credentials;
-    // mask the complete header value rather than a single key/value token.
-    .replace(/\b((?:Set-Cookie|Cookie|X-Auth-Token|X-Session-Token|X-API-Token|X-CSRF-Token)[ \t]*:[ \t]*)[^\r\n]*/gi, '$1[REDACTED]')
+    // Cookie and custom token/key headers can expose session credentials;
+    // mask full values, including previously unknown X-*-Token names.
+    .replace(/\b((?:Set-Cookie|Cookie|X-(?:[A-Za-z0-9-]+-)?(?:Token|Api-Key|Auth-Key|Secret))[ \t]*:[ \t]*)[^\r\n]*/gi, '$1[REDACTED]')
     // Digest and SigV4 credentials consist of multiple parameters. Redacting
     // just the first token would expose the nonce, response or signature.
     .replace(/\b(Authorization[ \t]*:[ \t]*(?:Digest|AWS4-HMAC-SHA256)[ \t]+)[^\r\n]*/gi, '$1[REDACTED]')
     .replace(/\b(Authorization\s*:\s*(?:Bearer|Basic|Token|ApiKey|Api-Key)\s+)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;]+)/gi, '$1[REDACTED]')
+    // Unknown authorization schemes can also carry multi-parameter secrets;
+    // preserve the scheme label but mask the entire remaining header line.
+    .replace(/\b(Authorization[ \t]*:[ \t]*)(?!(?:Digest|AWS4-HMAC-SHA256|Bearer|Basic|Token|ApiKey|Api-Key)[ \t]+)([A-Za-z][A-Za-z0-9+.-]*[ \t]+)[^\r\n]*/gi, '$1$2[REDACTED]')
     .replace(/\b((?:access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|client[_-]?secret)\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s&,;]+)/gi, '$1[REDACTED]');
 }
 

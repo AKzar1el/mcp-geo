@@ -743,6 +743,23 @@ test('get_citations masks API and CSRF token headers while preserving public evi
   assert.doesNotMatch(JSON.stringify(result), /BUYER_API_TOKEN_SECRET|BUYER_CSRF_SECRET|ANSWER_API_TOKEN_SECRET|ANSWER_CSRF_SECRET/);
 });
 
+test('get_citations masks other authorization schemes and custom token headers without hiding public context', async () => {
+  const citation = registerCitationTool(citationRow({
+    prompt: 'Compare Acme identity security.\nAuthorization: HOBA challenge=BUYER_HOBA_SECRET, nonce=BUYER_NONCE_SECRET\nX-Custom-Token: BUYER_CUSTOM_SECRET\nX-Token-Count: 3\nPublic question remains.',
+    raw_response: 'Acme.\nAuthorization: Negotiate ANSWER_SPNEGO_SECRET\nAuthorization: Bearer-Plus ANSWER_EXTENDED_SECRET\nX-Custom-Token: ANSWER_CUSTOM_SECRET\nPublic.',
+  }));
+  const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.match(result.citations[0].prompt, /Authorization: HOBA \[REDACTED\]/);
+  assert.match(result.citations[0].prompt, /X-Custom-Token: \[REDACTED\]/);
+  assert.match(result.citations[0].prompt, /X-Token-Count: 3/);
+  assert.match(result.citations[0].prompt, /Public question remains\./);
+  assert.match(result.citations[0].response_excerpt, /Authorization: Negotiate \[REDACTED\]/);
+  assert.match(result.citations[0].response_excerpt, /Authorization: Bearer-Plus \[REDACTED\]/);
+  assert.match(result.citations[0].response_excerpt, /X-Custom-Token: \[REDACTED\]/);
+  assert.match(result.citations[0].response_excerpt, /Public\./);
+  assert.doesNotMatch(JSON.stringify(result), /BUYER_HOBA_SECRET|BUYER_NONCE_SECRET|BUYER_CUSTOM_SECRET|ANSWER_SPNEGO_SECRET|ANSWER_EXTENDED_SECRET|ANSWER_CUSTOM_SECRET/);
+});
+
 test('get_citations redacts URL fragment credentials without changing public query and anchor context', async () => {
   const citation = registerCitationTool(citationRow({
     raw_response: 'Acme is at https://acme.com/report#access_token=EXCERPT_SECRET&section=summary',
