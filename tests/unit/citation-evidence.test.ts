@@ -760,6 +760,18 @@ test('get_citations masks other authorization schemes and custom token headers w
   assert.doesNotMatch(JSON.stringify(result), /BUYER_HOBA_SECRET|BUYER_NONCE_SECRET|BUYER_CUSTOM_SECRET|ANSWER_SPNEGO_SECRET|ANSWER_EXTENDED_SECRET|ANSWER_CUSTOM_SECRET/);
 });
 
+test('get_citations masks folded authentication header continuations without hiding public lines', async () => {
+  const citation = registerCitationTool(citationRow({
+    prompt: 'Compare Acme.\nAuthorization: Digest username="buyer",\r\n nonce="BUYER_FOLDED_NONCE",\r\n response="BUYER_FOLDED_RESPONSE"\nPublic buyer question.',
+    raw_response: 'Acme supports authentication.\n  Public indented context.\nAuthorization: Negotiate FIRST_SECRET\r\n CONTINUED_NEGOTIATE_SECRET\r\n\tMORE_NEGOTIATE_SECRET\nX-Custom-Token: FIRST_CUSTOM_SECRET\r\n\tCONTINUED_CUSTOM_SECRET\nPublic response.',
+  }));
+  const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.match(result.citations[0].prompt, /Authorization: Digest \[REDACTED\]\nPublic buyer question\./);
+  assert.match(result.citations[0].response_excerpt, /Authorization: Negotiate \[REDACTED\]\nX-Custom-Token: \[REDACTED\]\nPublic response\./);
+  assert.match(result.citations[0].response_excerpt, /Public indented context\./);
+  assert.doesNotMatch(JSON.stringify(result), /BUYER_FOLDED_NONCE|BUYER_FOLDED_RESPONSE|CONTINUED_NEGOTIATE_SECRET|MORE_NEGOTIATE_SECRET|CONTINUED_CUSTOM_SECRET/);
+});
+
 test('get_citations redacts URL fragment credentials without changing public query and anchor context', async () => {
   const citation = registerCitationTool(citationRow({
     raw_response: 'Acme is at https://acme.com/report#access_token=EXCERPT_SECRET&section=summary',
