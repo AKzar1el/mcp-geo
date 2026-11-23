@@ -245,16 +245,26 @@ function domainMatchIndex(text: string, domain: string): number {
     domain.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0]?.toLowerCase() ?? '';
   if (fullDomain.length === 0) return -1;
 
-  // Match the exact host or one of its subdomains, never a lookalike host
-  // that merely contains the configured domain as a suffix or prefix.
-  // Repeated-dot pseudo-hosts must not count as a domain mention either.
-  const re = new RegExp(
-    `(?:^|[^\\p{L}\\p{N}-])((?:[a-z0-9-]+\\.)*${escapeRegExp(fullDomain)})(?!\\.+[\\p{L}\\p{N}-])(?=$|[^\\p{L}\\p{N}.-]|\\.(?![\\p{L}\\p{N}-]))`,
-    'iu',
-  );
-  const match = re.exec(text);
-  if (!match || !match[1]) return -1;
-  return match.index + match[0].indexOf(match[1]);
+  const variants = [fullDomain];
+  if (fullDomain.includes('xn--')) {
+    // Answer text can spell a tracked IDN host in Unicode even though its
+    // stored canonical domain is Punycode. Decode only validated labels.
+    const unicodeDomain = fullDomain.split('.')
+      .map((label) => unicodeRootFromPunycode(label) ?? label).join('.');
+    if (unicodeDomain !== fullDomain) variants.push(unicodeDomain);
+  }
+
+  for (const variant of variants) {
+    // Require the exact domain or a subdomain, never a lookalike suffix,
+    // prefix, or repeated-dot pseudo-host. Preserve original text offsets.
+    const re = new RegExp(
+      `(?:^|[^\\p{L}\\p{N}-])((?:[a-z0-9-]+\\.)*${escapeRegExp(variant)})(?!\\.+[\\p{L}\\p{N}-])(?=$|[^\\p{L}\\p{N}.-]|\\.(?![\\p{L}\\p{N}-]))`,
+      'iu',
+    );
+    const match = re.exec(text);
+    if (match?.[1]) return match.index + match[0].indexOf(match[1]);
+  }
+  return -1;
 }
 
 function rootTermMatchIndexOutsideHostname(text: string, term: string): number {

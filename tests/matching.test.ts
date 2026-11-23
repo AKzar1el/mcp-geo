@@ -78,6 +78,33 @@ test('internationalized domain roots match visible Unicode brand and competitor 
   assert.deepEqual(encoded.competitors_mentioned, ['xn--caf-dma.fr']);
 });
 
+test('bare internationalized hostnames match without turning linked sources into answer mentions', () => {
+  const brand = makeBrand({
+    domain: 'xn--bcher-kva.de',
+    name: 'Different legal publisher',
+    competitors: ['xn--caf-dma.fr'],
+    exclude_terms: ['b\u00fccher'],
+  });
+
+  const legitimate = extractCitations(
+    brand,
+    'Compare b\u00fccher.de and www.caf\u00e9.fr for this purchase.',
+  );
+  assert.equal(legitimate.brand_mentioned, 1);
+  assert.deepEqual(legitimate.competitors_mentioned, ['xn--caf-dma.fr']);
+
+  const linkOnly = extractCitations(brand, 'Source: https://b\u00fccher.de/guide.');
+  assert.equal(linkOnly.brand_mentioned, 0);
+  assert.equal(linkOnly.brand_cited_with_link, 1);
+
+  const lookalikes = extractCitations(
+    brand,
+    'Ignore https://notb\u00fccher.de, b\u00fccher.de.attacker.test, and caf\u00e9.fr.evil.test.',
+  );
+  assert.equal(lookalikes.brand_mentioned, 0);
+  assert.deepEqual(lookalikes.competitors_mentioned, []);
+});
+
 test('malformed repeated-dot domain suffixes do not count as brand or competitor mentions', () => {
   const brand = makeBrand({
     domain: 'acme.com',
