@@ -9,7 +9,7 @@ import type {
   Prompt,
   Run,
 } from '../db/types.js';
-import { fetchWithTimeout } from './fetch.js';
+import { fetchWithTimeout, fetchWithRetry } from './fetch.js';
 import { normalizeDomainInput } from './domain.js';
 import { redactProviderError } from './provider-error.js';
 
@@ -85,7 +85,7 @@ export async function chatCompletion(
   apiKey: string,
   userText: string,
 ): Promise<OpenAiCompletion> {
-  const resp = await fetchWithTimeout(`${OPENAI_BASE}/chat/completions`, {
+  const resp = await fetchWithRetry(`${OPENAI_BASE}/chat/completions`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -717,7 +717,8 @@ export async function runLive(
 ): Promise<void> {
   // Keep provider calls bounded while writing every response in one final
   // batch. A live refresh always obtains a new response for every prompt.
-  const CONCURRENCY = 5;
+  // shortcut: serial to stay under a 45k TPM OpenAI tier; raise when the org tier grows.
+  const CONCURRENCY = 1;
 
   if (!env.OPENAI_API_KEY) {
     const results = prompts.map(buildSkippedResult);
