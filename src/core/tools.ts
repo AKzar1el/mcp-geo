@@ -2178,7 +2178,12 @@ export function registerTools(
       const providerSources = new Map<string, { url: string; url_redacted: boolean }>();
       // Special-use hostnames are not publicly actionable AI source links.
       // Avoid exposing private network names in client-facing audit evidence.
-      const nonPublicSuffixes = ['.local', '.localhost', '.internal', '.test', '.invalid', '.example', '.home.arpa'];
+      // Tor and alternative namespace names are not globally DNS-resolvable
+      // sources either (RFC 7686 / RFC 9476).
+      const nonPublicSuffixes = [
+        '.local', '.localhost', '.internal', '.test', '.invalid', '.example',
+        '.home.arpa', '.onion', '.alt',
+      ];
       for (const rawUrl of response.engine_citations) {
         try {
           // Native provider links are evidence, not trusted instructions or
