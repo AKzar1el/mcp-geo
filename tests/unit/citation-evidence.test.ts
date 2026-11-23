@@ -772,6 +772,18 @@ test('get_citations masks folded authentication header continuations without hid
   assert.doesNotMatch(JSON.stringify(result), /BUYER_FOLDED_NONCE|BUYER_FOLDED_RESPONSE|CONTINUED_NEGOTIATE_SECRET|MORE_NEGOTIATE_SECRET|CONTINUED_CUSTOM_SECRET/);
 });
 
+test('get_citations masks folded proxy authorization credentials while retaining public context', async () => {
+  const citation = registerCitationTool(citationRow({
+    prompt: 'Compare Acme.\nProxy-Authorization: Digest username="buyer",\r\n nonce="BUYER_PROXY_NONCE",\r\n response="BUYER_PROXY_DIGEST"\nPublic buyer text.',
+    raw_response: 'Acme.\nProxy-Authorization: Negotiate SERVER_PROXY_START\r\n CONTINUED_PROXY_SECRET\r\n\tMORE_PROXY_SECRET\nProxy-Authorization: Bearer SERVER_BEARER_START\n continuation-BEARER-SECRET\nPublic answer.\nProxy-Authorization is a public header name.',
+  }));
+  const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.match(result.citations[0].prompt, /Proxy-Authorization: Digest \[REDACTED\]\nPublic buyer text\./);
+  assert.match(result.citations[0].response_excerpt, /Proxy-Authorization: Negotiate \[REDACTED\]\nProxy-Authorization: Bearer \[REDACTED\]\nPublic answer\./);
+  assert.match(result.citations[0].response_excerpt, /Proxy-Authorization is a public header name\./);
+  assert.doesNotMatch(JSON.stringify(result), /BUYER_PROXY_NONCE|BUYER_PROXY_DIGEST|SERVER_PROXY_START|CONTINUED_PROXY_SECRET|MORE_PROXY_SECRET|SERVER_BEARER_START|continuation-BEARER-SECRET/);
+});
+
 test('get_citations redacts URL fragment credentials without changing public query and anchor context', async () => {
   const citation = registerCitationTool(citationRow({
     raw_response: 'Acme is at https://acme.com/report#access_token=EXCERPT_SECRET&section=summary',
