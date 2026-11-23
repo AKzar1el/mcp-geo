@@ -145,7 +145,7 @@ test('live scans bypass shared cached responses for every provider', async (t) =
         assert.equal(call.url.pathname, '/v1/chat/completions');
         const body = JSON.parse(String(call.init?.body)) as Record<string, unknown>;
         assert.equal(body.model, 'gpt-5-search-api');
-        assert.deepEqual(body.web_search_options, { search_context_size: 'medium' });
+        assert.deepEqual(body.web_search_options, { search_context_size: 'medium', user_location: { type: 'approximate', approximate: { country: 'PL' } } });
         assert.equal('temperature' in body, false);
         assert.equal('max_tokens' in body, false);
       },

@@ -60,8 +60,8 @@ type HistoryTool = {
     };
     google_search_sampling: null | {
       engines: string[];
-      country: 'us';
-      language: 'en';
+      country: 'pl';
+      language: 'pl';
       scope_note: string;
     };
     identity_comparability: {
@@ -334,8 +334,8 @@ test('visibility history discloses US-English scope when historical Google scans
   ]);
   const result = await history.handler({ brand_id: 'acme', days: 30, granularity: 'weekly' });
   assert.deepEqual(result.structuredContent.google_search_sampling?.engines, ['ai_overviews', 'ai_mode']);
-  assert.equal(result.structuredContent.google_search_sampling?.country, 'us');
-  assert.equal(result.structuredContent.google_search_sampling?.language, 'en');
+  assert.equal(result.structuredContent.google_search_sampling?.country, 'pl');
+  assert.equal(result.structuredContent.google_search_sampling?.language, 'pl');
   assert.match(result.structuredContent.google_search_sampling?.scope_note ?? '', /other markets or languages/);
 });
 

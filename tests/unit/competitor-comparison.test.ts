@@ -64,8 +64,8 @@ type ComparisonResult = {
   };
   google_search_sampling: {
     engines: string[];
-    country: 'us';
-    language: 'en';
+    country: 'pl';
+    language: 'pl';
     scope_note: string;
   } | null;
   your_share_of_voice_pct: number;
@@ -487,8 +487,8 @@ test('compare_competitors discloses US/en sampling for observed Google search su
   assert.ok(comparison);
   const result = (await comparison.handler({ brand_id: brand.id })).structuredContent;
   assert.deepEqual(result.google_search_sampling?.engines, ['ai_overviews', 'ai_mode']);
-  assert.equal(result.google_search_sampling?.country, 'us');
-  assert.equal(result.google_search_sampling?.language, 'en');
+  assert.equal(result.google_search_sampling?.country, 'pl');
+  assert.equal(result.google_search_sampling?.language, 'pl');
   assert.match(result.google_search_sampling?.scope_note ?? '', /other markets or languages/);
 });
 

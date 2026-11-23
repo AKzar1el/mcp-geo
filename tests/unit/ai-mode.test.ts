@@ -51,8 +51,8 @@ test('Google AI Mode uses the dedicated SerpAPI engine and reconstructed markdow
       assert.equal(calls[0].url.pathname, '/search.json');
       assert.equal(calls[0].url.searchParams.get('engine'), 'google_ai_mode');
       assert.equal(calls[0].url.searchParams.get('q'), 'best project management tools');
-      assert.equal(calls[0].url.searchParams.get('gl'), 'us');
-      assert.equal(calls[0].url.searchParams.get('hl'), 'en');
+      assert.equal(calls[0].url.searchParams.get('gl'), 'pl');
+      assert.equal(calls[0].url.searchParams.get('hl'), 'pl');
       assert.equal(calls[0].url.searchParams.get('no_cache'), 'true');
     },
   );

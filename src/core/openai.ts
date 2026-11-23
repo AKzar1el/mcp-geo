@@ -93,7 +93,7 @@ export async function chatCompletion(
     },
     body: JSON.stringify({
       model: MODEL,
-      web_search_options: { search_context_size: 'medium' },
+      web_search_options: { search_context_size: 'medium', user_location: { type: 'approximate', approximate: { country: 'PL' } } },
       messages: [
         { role: 'system', content: buildSystemPrompt() },
         { role: 'user', content: userText },

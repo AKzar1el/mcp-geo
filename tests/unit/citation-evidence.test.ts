@@ -54,8 +54,8 @@ type CitationResult = {
   };
   google_search_sampling: null | {
     engines: string[];
-    country: 'us';
-    language: 'en';
+    country: 'pl';
+    language: 'pl';
     scope_note: string;
   };
   top_sources: Array<{
@@ -275,8 +275,8 @@ test('citation evidence discloses Google US-English sampling even without a Goog
   const google = await tool.handler({ brand_id: brand.id, engine: 'ai_overviews' });
   assert.deepEqual(google.structuredContent.citations, []);
   assert.deepEqual(google.structuredContent.google_search_sampling?.engines, ['ai_overviews']);
-  assert.equal(google.structuredContent.google_search_sampling?.country, 'us');
-  assert.equal(google.structuredContent.google_search_sampling?.language, 'en');
+  assert.equal(google.structuredContent.google_search_sampling?.country, 'pl');
+  assert.equal(google.structuredContent.google_search_sampling?.language, 'pl');
   assert.match(google.structuredContent.google_search_sampling?.scope_note ?? '', /other markets or languages/);
   const other = await tool.handler({ brand_id: brand.id, engine: 'chatgpt' });
   assert.equal(other.structuredContent.google_search_sampling, null);

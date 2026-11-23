@@ -38,7 +38,7 @@ test('GET /audit serves the frozen EUR 99 audit offer', async () => {
   assert.match(body, /reported per engine/i);
   assert.match(body, /same 20 buyer-intent prompts/i);
   assert.match(body, /See the exact score calculation and interpretation limits/i);
-  assert.match(body, /Google AI Overviews and AI Mode.*United States.*gl=us.*English.*hl=en/i);
+  assert.match(body, /Google AI Overviews and AI Mode.*Poland.*gl=pl.*Polish.*hl=pl/i);
   assert.match(body, /no city-level location/i);
   assert.match(body, /do not establish visibility in other markets or languages/i);
   assert.match(
