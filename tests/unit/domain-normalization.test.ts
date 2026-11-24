@@ -159,7 +159,6 @@ test('domain errors sanitize newline, control, formatting and delimiter injectio
     '\u202e',
     '\u2066',
     "'",
-    '\\',
   ]) {
     const input = `bad${injection}FORGED.example`;
     for (const validate of [
@@ -180,7 +179,7 @@ test('domain errors sanitize newline, control, formatting and delimiter injectio
 });
 
 test('ordinary invalid domains retain useful input feedback and guidance', () => {
-  for (const input of ['not a domain.com', 'person@example.com', 'example..com']) {
+  for (const input of ['not a domain.com', 'example..com']) {
     assert.throws(() => normalizeRequiredDomain(input), (error: unknown) => {
       assert.ok(error instanceof DomainInputError);
       assert.equal(
@@ -207,4 +206,40 @@ test('long URL paths still normalize valid brand and competitor hosts', () => {
   const input = `https://www.EXAMPLE.COM/${'a'.repeat(100_000)}`;
   assert.equal(normalizeRequiredDomain(input), 'example.com');
   assert.deepEqual(normalizeCompetitorDomains([input], 'acme.com'), ['example.com']);
+});
+
+test('invalid URL-like domain diagnostics do not disclose userinfo or access data', () => {
+  const marker = 'PRIVATE_SYNTHETIC';
+  for (const input of [
+    'person@example.com',
+    'bad\\FORGED.example',
+    'https://user:' + marker + '@example.invalid',
+    'https://user%3A' + marker + '%40example.invalid',
+    'ftp://example.invalid/' + marker,
+    'not a domain?token=' + marker,
+    'not a domain#' + marker,
+    'not a domain/' + marker,
+    'not a domain\\' + marker,
+    'bad.example:' + marker,
+    'not a domain;' + marker,
+    'not a domain\uFF20' + marker,
+    'not a domain\uFF1D' + marker,
+    marker + 'x'.repeat(100) + '@example.invalid',
+  ]) {
+    assert.equal(normalizeDomainInput(input), null);
+    for (const validate of [
+      () => normalizeRequiredDomain(input),
+      () => normalizeCompetitorDomains([input], 'acme.com'),
+    ]) {
+      assert.throws(validate, (error: unknown) => {
+        assert.ok(error instanceof DomainInputError);
+        assert.match(error.message, /'\[redacted\]' does not look like a domain/);
+        assert.ok(!error.message.includes(marker));
+        assert.ok(!error.message.includes(input));
+        assert.doesNotMatch(error.message, /[\p{C}\p{Zl}\p{Zp}]/u);
+        assert.match(error.message, /Pass .*domains? like/);
+        return true;
+      });
+    }
+  }
 });

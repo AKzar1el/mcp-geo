@@ -8,6 +8,12 @@ export class DomainInputError extends Error {}
 // formatting, and line-separator characters, plus the diagnostic's quote
 // delimiter and backslashes, so the preview stays on one readable line.
 function domainInputPreview(raw: string): string {
+  // A rejected URL-like value may carry userinfo, access tokens or query/path
+  // data. Redact the entire value before truncation, including delimiters
+  // outside the preview and compatibility-equivalent Unicode punctuation.
+  // Bare-domain diagnostic previews remain useful; this is not a general
+  // detector for secrets embedded in arbitrary domain-like text.
+  if (/[@:\/\\?#%=&;]/u.test(raw.normalize('NFKC'))) return '[redacted]';
   const limit = 80;
   const preview = raw.slice(0, limit).replace(/[\p{C}\p{Zl}\p{Zp}'\\]/gu, '?');
   return raw.length > limit ? `${preview}...` : preview;
