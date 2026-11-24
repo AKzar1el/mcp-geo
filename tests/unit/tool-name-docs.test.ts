@@ -66,6 +66,8 @@ test('client audit report instructions account for paginated citation evidence',
   assert.match(report, /`has_more`/);
   assert.match(report, /`next_cursor`/);
   assert.match(report, /same.*`brand_id`.*`days`.*`engines`.*`measurement_mode`/);
+  assert.match(report, /same.*`ranked_source_domain`/);
+  assert.match(read('README.md'), /same `brand_id`.*`measurement_mode`.*`ranked_source_domain`/);
   assert.match(report, /`top_sources`.*full.*window/i);
   assert.match(report, /partial.*citation.*examples/i);
 });
