@@ -39,6 +39,8 @@ type EvidenceResult = {
   response_excerpt: string;
   requested_competitor: string | null;
   provider_source_count: number;
+  provider_source_urls_filtered_count: number;
+  provider_source_urls_deduplicated_count: number;
   provider_source_urls_truncated: boolean;
   provider_source_urls: Array<{ url: string; url_redacted: boolean }>;
   evidence_note: string;
@@ -156,6 +158,31 @@ test('observation evidence exposes bounded, credential-redacted provider-native 
   ]);
   assert.doesNotMatch(JSON.stringify(result.provider_source_urls), /secret-a|secret-b|user:pass|localhost|javascript:/);
   assert.match(result.evidence_note, /provider-returned.*not independently verified/i);
+});
+
+test('observation evidence distinguishes filtered and deduplicated provider URLs from accepted sources', async () => {
+  const handler = setup(run, [{ ...response, engine_citations: [
+    'https://docs.example.org/public',
+    'https://docs.example.org/public',
+    'https://docs.example.org/private?api_key=source-secret',
+    'https://docs.example.org/private?api_key=another-secret',
+    'https://user:pass@docs.example.org/credential',
+    'http://127.0.0.1/internal',
+    'https://dev.local/private',
+    'javascript:alert(1)',
+  ] }]);
+  assert.ok(handler);
+  const result = (await handler({ brand_id: brand.id, run_id: run.id, response_id: response.id })).structuredContent;
+  assert.equal(result.provider_source_count, 2);
+  assert.equal(result.provider_source_urls_filtered_count, 4);
+  assert.equal(result.provider_source_urls_deduplicated_count, 2);
+  assert.equal(result.provider_source_urls_truncated, false);
+  assert.deepEqual(result.provider_source_urls, [
+    { url: 'https://docs.example.org/public', url_redacted: false },
+    { url: 'https://docs.example.org/private?api_key=[REDACTED]', url_redacted: true },
+  ]);
+  assert.match(result.evidence_note, /filtered.*deduplicated.*masking/i);
+  assert.doesNotMatch(JSON.stringify(result), /source-secret|another-secret|user:pass|127\.0\.0\.1|dev\.local/);
 });
 
 test('observation evidence masks OAuth fragment credentials before hash-route query separators', async () => {
