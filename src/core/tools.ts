@@ -344,6 +344,8 @@ const observationEvidenceOutputSchema = z.object({
   response_excerpt: z.string().max(250),
   requested_competitor: z.string().nullable(),
   provider_source_count: z.number().int().nonnegative(),
+  provider_source_urls_filtered_count: z.number().int().nonnegative(),
+  provider_source_urls_deduplicated_count: z.number().int().nonnegative(),
   provider_source_urls_truncated: z.boolean(),
   provider_source_urls: z.array(z.object({
     url: z.string(),
@@ -475,8 +477,10 @@ const citationsOutputSchema = z.object({
   has_more: z.boolean(),
   next_cursor: z.string().nullable(),
   top_sources_limit: z.number().int().min(1).max(50).describe('Maximum ranked source domains returned; default 10, maximum 50.'),
-  total_source_domains: z.number().int().nonnegative().describe('All distinct valid cited source domains in the selected stored evidence window, before the top-sources cap.'),
+  total_source_domains: z.number().int().nonnegative().describe('All valid distinct cited domains in the selected stored window, before the ranked-source cap or exact-domain lookup.'),
   top_sources_truncated: z.boolean().describe('True when ranked source domains are omitted by top_sources_limit; citation pagination does not expand this summary.'),
+  ranked_source_domain_filter: z.string().nullable().describe('Optional exact domain lookup applied only to the ranked source summary, not citation rows or full-window evidence counts.'),
+  ranked_source_domain_match_found: z.boolean().describe('True when the requested domain was observed in the selected window; false with no lookup or no match is not a universal non-citation claim.'),
   top_sources: z.array(
     z.object({
       domain: z.string(),
@@ -488,6 +492,8 @@ const citationsOutputSchema = z.object({
       per_engine_examples: z.record(z.string(), z.object({
         sample_url: z.string(),
         url_redacted: z.boolean(),
+        run_id: z.string().describe('Stored run for this engine source sample; use with brand_id and response_id in get_observation_evidence.'),
+        response_id: z.string().describe('Exact stored response for this engine source sample; not a verified live citation.'),
       })).describe('One deterministic URL cited for this domain on each observed engine, from its latest stored response; sensitive parameters masked, not a verified live link.'),
       distinct_cited_path_count: z.number().int().nonnegative().describe('Distinct cited URL pathnames for this domain, ignoring query and fragment; not verified live pages.'),
       top_cited_paths: z.array(z.object({
@@ -507,6 +513,8 @@ const citationsOutputSchema = z.object({
   citations: z.array(
     z.object({
       id: z.string(),
+      run_id: z.string().describe('Stored run ID; pair with response_id and brand_id in get_observation_evidence.'),
+      response_id: z.string().describe('Exact stored response ID for get_observation_evidence; not an independently verified citation.'),
       engine: z.string(),
       prompt: z.string(),
       cited_at: z.string(),
@@ -528,6 +536,7 @@ const citationCursorSchema = z.object({
   engine: z.string().nullable(),
   engines: z.array(engineSchema).optional(),
   measurement_mode: z.enum(['model_only', 'search_requested']).optional(),
+  ranked_source_domain: z.string().nullable().optional(),
   identity_selection: z.enum(['full_history', 'current_identity_only']).optional(),
   identity_boundary: z.number().int().nullable().optional(),
   prompt_selection: z.enum(['full_history', 'active_only']).optional(),
@@ -557,6 +566,7 @@ function decodeCitationCursor(
   measurementMode: 'model_only' | 'search_requested' | undefined,
   currentIdentityOnly: boolean, identityBoundary: number | null,
   activePromptsOnly: boolean, promptRosterDigest: string | null,
+  rankedSourceDomain: string | null,
 ) {
   try {
     const parsed = citationCursorSchema.parse(JSON.parse(decodeURIComponent(cursor)));
@@ -567,6 +577,7 @@ function decodeCitationCursor(
     if (parsed.brand_id !== brandId || parsed.days !== days || parsed.engine !== engine ||
       JSON.stringify(parsed.engines ?? []) !== JSON.stringify(engines) ||
       (parsed.measurement_mode ?? null) !== (measurementMode ?? null) ||
+      (parsed.ranked_source_domain ?? null) !== rankedSourceDomain ||
       (parsed.identity_selection ?? 'full_history') !==
         (currentIdentityOnly ? 'current_identity_only' : 'full_history') ||
       (currentIdentityOnly && parsed.identity_boundary !== identityBoundary) ||
@@ -583,7 +594,7 @@ function decodeCitationCursor(
     }
     return parsed;
   } catch {
-    throw new Error('Invalid citation cursor. Start again without cursor or preserve the brand, days, engine/engines, measurement mode, identity and prompt selection.');
+    throw new Error('Invalid citation cursor. Start again without cursor or preserve the brand, days, engine/engines, measurement mode, ranked source domain, identity and prompt selection.');
   }
 }
 
@@ -1153,9 +1164,15 @@ export function registerTools(
           note: 'Runs started before the last matching-identity change are excluded from current scores and listed as stale engines, not treated as observed zeros. Refresh those engines before measuring the current brand identity (provider charges may apply). Historical runs remain available in history; older changes before identity-boundary migration are unknown.',
         },
         per_engine: perEngine,
-        top_winning_prompts: scored.top_winning_prompts,
+        top_winning_prompts: scored.top_winning_prompts.map((row) => ({
+          ...row,
+          prompt: redactEvidenceText(row.prompt),
+        })),
         winning_prompt_evidence_note: 'engines_cited_in is a legacy field counting brand mentions in answers, not source citations. Use engines_mentioned_in for mention evidence and engines_with_brand_link for linked brand evidence. A link-only source without an answer mention is not a winning prompt.',
-        top_losing_prompts: scored.top_losing_prompts,
+        top_losing_prompts: scored.top_losing_prompts.map((row) => ({
+          ...row,
+          prompt: redactEvidenceText(row.prompt),
+        })),
         losing_prompt_evidence_note: 'competitors_cited retains historical answer mentions, not verified source links. The tracked and not-currently-tracked lists describe the present competitor roster, not the roster at observation time; historical scores and observations are not rewritten. Refresh scans before interpreting current competitors.',
       };
       return toolResult(payload);
@@ -1671,7 +1688,7 @@ export function registerTools(
         run_id: row.run_id,
         response_id: row.id,
         prompt_id: row.prompt_id,
-        prompt: row.prompt_text,
+        prompt: redactEvidenceText(row.prompt_text),
         measurement_mode: visibilityMeasurementMode(row.engine, row.mode ?? 'live'),
         captured_at: new Date(row.captured_at).toISOString(),
       });
@@ -1797,7 +1814,7 @@ export function registerTools(
             .sort(([idA, textA], [idB, textB]) =>
               textA.localeCompare(textB) || idA.localeCompare(idB))
             .slice(0, 5)
-            .map(([, text]) => text),
+            .map(([, text]) => redactEvidenceText(text)),
         };
       });
 
@@ -1845,7 +1862,7 @@ export function registerTools(
           const you_mentioned_by = [...w.engines].sort();
           const competitors_mentioned = [...w.competitors].sort();
           return {
-            prompt: w.prompt,
+            prompt: redactEvidenceText(w.prompt),
             you_mentioned_by,
             competitors_mentioned,
             you_cited_by: you_mentioned_by,
@@ -1886,7 +1903,7 @@ export function registerTools(
     {
       title: 'Get AI citation evidence',
       description:
-        "Page stored citations with full-window row count, per-engine prompt coverage/freshness and top sources. engines and measurement_mode scope evidence before pagination. Defaults retain history; no provider scans. Example: brand_id='acme'.",
+        "Page citations and ranked sources; look up one exact source domain past the cap. Lookup leaves citation pages and window counts unchanged. Includes run/response IDs for drilldown. No provider calls. Example: brand_id='acme'.",
       inputSchema: {
         brand_id: z
           .string()
@@ -1909,12 +1926,14 @@ export function registerTools(
           .describe('Citation rows per page, 1-100 (default 50).'),
         top_sources_limit: z.number().int().min(1).max(50).default(10)
           .describe('Ranked source domains, 1-50 (default 10); independent of citation page size.'),
+        ranked_source_domain: z.string().trim().min(1).max(253).optional()
+          .describe('Exact ranked domain lookup beyond top-50; does not filter citation pages or window counts.'),
         current_identity_only: z.boolean().default(false)
           .describe('Filter citations and source rankings to current-brand runs when the identity boundary is known.'),
         active_prompts_only: z.boolean().default(false)
           .describe('Filter citations and source rankings to currently active buyer questions without new provider scans.'),
         cursor: z.string().max(1600).optional()
-          .describe('Opaque next_cursor; preserve brand, days, engine/engines, identity and prompt selection.'),
+          .describe('next_cursor; keep brand, days, engine(s), measurement_mode, ranked_source_domain, identity, prompts.'),
       },
       outputSchema: citationsOutputSchema,
       annotations: {
@@ -1923,7 +1942,7 @@ export function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ brand_id, days = 14, engine, engines, measurement_mode, limit = 50, top_sources_limit = 10, current_identity_only = false,
+    async ({ brand_id, days = 14, engine, engines, measurement_mode, limit = 50, top_sources_limit = 10, ranked_source_domain, current_identity_only = false,
       active_prompts_only = false, cursor }) => {
       const selectedEngines = [...new Set(engines ?? [])].sort();
       if (engine && selectedEngines.length) {
@@ -1931,6 +1950,10 @@ export function registerTools(
       }
       const engineSelection = engine ?? (selectedEngines.length ? selectedEngines : undefined);
       const requestedEngines = engine ? [engine] : selectedEngines;
+      const rankedSourceDomain = ranked_source_domain === undefined ? null : normalizeDomainInput(ranked_source_domain);
+      if (ranked_source_domain !== undefined && rankedSourceDomain === null) {
+        throw new Error('Invalid ranked source domain. Provide a valid domain-shaped hostname from ranked citations.');
+      }
       const brand = await deps.db.getBrand(brand_id);
       if (!brand) {
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
@@ -1944,7 +1967,7 @@ export function registerTools(
       const now = Date.now();
       const previous = cursor ? decodeCitationCursor(
         cursor, brand_id, days, engine ?? null, selectedEngines, measurement_mode, current_identity_only, identityBoundary,
-        active_prompts_only, promptRosterDigest,
+        active_prompts_only, promptRosterDigest, rankedSourceDomain,
       ) : null;
       const since = previous?.since ?? (now - days * 86_400_000);
       const until = previous?.until ?? now;
@@ -1966,6 +1989,10 @@ export function registerTools(
         brand_id, since, until, engineSelection, minRunStartedAt, active_prompts_only, measurement_mode,
       );
       const rankedSources = buildTopSources(sourceResponses, brand, identityBoundary);
+      // Exact domain drilldown only changes the ranked summary; page/coverage
+      // denominators still describe the entire selected observation window.
+      const selectedRankedSources = rankedSourceDomain === null ? rankedSources
+        : rankedSources.filter(({ domain }) => domain === rankedSourceDomain);
       const observationEvidence = new Map<string, {
         count: number;
         prompts: Set<string>;
@@ -1995,8 +2022,10 @@ export function registerTools(
         const citedUrl = brandUrl ? redactCitationUrlQuery(brandUrl.url) : null;
         return {
           id: citationId(row.response_id),
+          run_id: row.run_id,
+          response_id: row.response_id,
           engine: row.engine,
-          prompt: row.prompt,
+          prompt: redactEvidenceText(row.prompt),
           cited_at: new Date(row.captured_at).toISOString(),
           citation_type:
             row.brand_mentioned !== 1 && row.brand_cited_with_link === 1
@@ -2078,6 +2107,7 @@ export function registerTools(
               engine: engine ?? null,
               ...(selectedEngines.length ? { engines: selectedEngines } : {}),
               ...(measurement_mode ? { measurement_mode } : {}),
+              ...(rankedSourceDomain ? { ranked_source_domain: rankedSourceDomain } : {}),
               identity_selection: current_identity_only ? 'current_identity_only' : 'full_history',
               identity_boundary: current_identity_only ? identityBoundary : null,
               prompt_selection: active_prompts_only ? 'active_only' : 'full_history',
@@ -2094,8 +2124,10 @@ export function registerTools(
           : null,
         top_sources_limit,
         total_source_domains: rankedSources.length,
-        top_sources_truncated: rankedSources.length > top_sources_limit,
-        top_sources: rankedSources.slice(0, top_sources_limit),
+        top_sources_truncated: selectedRankedSources.length > top_sources_limit,
+        ranked_source_domain_filter: rankedSourceDomain,
+        ranked_source_domain_match_found: rankedSourceDomain !== null && selectedRankedSources.length > 0,
+        top_sources: selectedRankedSources.slice(0, top_sources_limit),
         citations,
       };
       return toolResult(payload);
@@ -2146,6 +2178,8 @@ export function registerTools(
         (await deps.db.getActivePrompts(brand_id)).map(({ id }) => id),
       );
       const providerSources = new Map<string, { url: string; url_redacted: boolean }>();
+      let filteredProviderSourceUrls = 0;
+      let deduplicatedProviderSourceUrls = 0;
       // Special-use hostnames are not publicly actionable AI source links.
       // Avoid exposing private network names in client-facing audit evidence.
       const nonPublicSuffixes = ['.local', '.localhost', '.internal', '.test', '.invalid', '.example', '.home.arpa'];
@@ -2153,18 +2187,30 @@ export function registerTools(
         try {
           // Native provider links are evidence, not trusted instructions or
           // verified sources. Exclude malformed, local and credentialed URLs.
-          if (/[\u0000-\u001f\u007f]/.test(rawUrl) || rawUrl !== rawUrl.trim()) continue;
+          if (/[\u0000-\u001f\u007f]/.test(rawUrl) || rawUrl !== rawUrl.trim()) {
+            filteredProviderSourceUrls++;
+            continue;
+          }
           const parsed = new URL(rawUrl);
-          if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') continue;
+          if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+            filteredProviderSourceUrls++;
+            continue;
+          }
           const hostname = normalizeDomainInput(parsed.hostname);
           if (parsed.username || parsed.password || !hostname || hostname === 'home.arpa' ||
-            nonPublicSuffixes.some((suffix) => hostname.endsWith(suffix))) continue;
+            nonPublicSuffixes.some((suffix) => hostname.endsWith(suffix))) {
+            filteredProviderSourceUrls++;
+            continue;
+          }
           const safeUrl = redactCitationUrlQuery(rawUrl);
           if (!providerSources.has(safeUrl)) {
             providerSources.set(safeUrl, { url: safeUrl, url_redacted: safeUrl !== rawUrl });
+          } else {
+            deduplicatedProviderSourceUrls++;
           }
         } catch {
           // One invalid provider URL cannot hide other usable evidence.
+          filteredProviderSourceUrls++;
         }
       }
       const providerSourceList = [...providerSources.values()];
@@ -2190,10 +2236,12 @@ export function registerTools(
         response_excerpt: buildResponseExcerpt(response.raw_response, brand, requestedCompetitor ?? undefined),
         requested_competitor: requestedCompetitor,
         provider_source_count: providerSourceList.length,
+        provider_source_urls_filtered_count: filteredProviderSourceUrls,
+        provider_source_urls_deduplicated_count: deduplicatedProviderSourceUrls,
         provider_source_urls_truncated: providerSourceList.length > 5,
         provider_source_urls: providerSourceList.slice(0, 5),
         google_search_sampling: googleSearchSampling([run.engine]),
-        evidence_note: 'This is a short credential-redacted excerpt of one stored successful response, not a full answer or an independently verified source citation. The original buyer question is credential-redacted without excerpt truncation. An optional recorded competitor focus is best effort; absence from the excerpt does not disprove a recorded mention. Provider-returned source URLs are not independently verified; access-bearing URL query and fragment fields are masked. Review identity_scope, active_prompt and measurement_mode before quoting in an audit. No provider request occurred.',
+        evidence_note: 'This is a short credential-redacted excerpt of one stored successful response, not a full answer or an independently verified source citation. The original buyer question is credential-redacted without excerpt truncation. An optional recorded competitor focus is best effort; absence from the excerpt does not disprove a recorded mention. Provider-returned source URLs are not independently verified; access-bearing URL query and fragment fields are masked. provider_source_count counts accepted unique URLs, with filtered and deduplicated (after masking) counts reported separately; only the first five are shown. Review identity_scope, active_prompt and measurement_mode before quoting in an audit. No provider request occurred.',
       };
       return toolResult(payload);
     },
@@ -2386,9 +2434,15 @@ export function registerTools(
             a.prompt_text.localeCompare(b.prompt_text),
         )
         .slice(0, 15);
+      // Keep evidence ordering and stored questions intact, but do not expose
+      // embedded credentials in client reports or opt-in analyzer inputs.
+      const safeLosingPrompts = losingPrompts.map((prompt) => ({
+        ...prompt,
+        prompt_text: redactEvidenceText(prompt.prompt_text),
+      }));
       const losing_prompt_evidence = {
-        note: 'These are stored response record references for observed competitor-only mentions in the current active prompt set, not independently verified source citations. Each observation records its model-only or search-requested request mode; neither mode proves a citation. No raw model answers are included; inspect stored responses before quoting any evidence in a client audit.',
-        prompts: losingPrompts.map(({ prompt_id, prompt_text, observations }) => ({
+        note: 'These are stored response record references for observed competitor-only mentions in the current active prompt set, not independently verified source citations. Buyer questions are credential-redacted in this report. Each observation records its model-only or search-requested request mode; neither mode proves a citation. No raw model answers are included; inspect stored responses before quoting any evidence in a client audit.',
+        prompts: safeLosingPrompts.map(({ prompt_id, prompt_text, observations }) => ({
           prompt_id, prompt_text, observations,
         })),
       };
@@ -2472,7 +2526,7 @@ export function registerTools(
         return toolResult(payload);
       }
 
-      let recommendations = buildFallbackRecommendations(losingPrompts, max_recommendations);
+      let recommendations = buildFallbackRecommendations(safeLosingPrompts, max_recommendations);
       let prompt_source: 'generated' | 'fallback' = 'fallback';
       let fallbackReason: string | undefined;
       if (ai_analysis) {
@@ -2483,7 +2537,7 @@ export function registerTools(
             recommendations = await analyzeContentGaps(
               { ANTHROPIC_API_KEY: deps.env.ANTHROPIC_API_KEY },
               brand,
-              losingPrompts,
+              safeLosingPrompts,
               max_recommendations,
             );
             prompt_source = 'generated';
@@ -3105,6 +3159,9 @@ function citationIdentityScope(startedAt: number | null | undefined, boundary: n
 }
 
 function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityBoundary: number | null = null) {
+  // Historical provider evidence may predate source-host filtering at ingest.
+  // Exclude private/internal, special-use and invalid/test hostnames from audit rankings.
+  const nonPublicSuffixes = ['.local', '.localhost', '.internal', '.test', '.invalid', '.home.arpa', '.onion', '.alt'];
   const engineObservationCounts = new Map<string, number>();
   for (const response of responses) {
     engineObservationCounts.set(response.engine, (engineObservationCounts.get(response.engine) ?? 0) + 1);
@@ -3116,7 +3173,7 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
       engineCitationCounts: Map<string, number>;
       enginePrompts: Map<string, Set<string>>;
       engineLastCapturedAt: Map<string, number>;
-      engineSamples: Map<string, { url: string; capturedAt: number; responseId: string }>;
+      engineSamples: Map<string, { url: string; capturedAt: number; responseId: string; runId: string }>;
       pathResponseCounts: Map<string, number>;
       prompts: Set<string>;
       engines: Set<string>;
@@ -3135,6 +3192,9 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
       ? null : citationIdentityScope(response.run_started_at, identityBoundary);
     for (const rawUrl of response.engine_citations) {
       try {
+        // WHATWG URL silently drops tabs/newlines and trims outer whitespace.
+        // Historical malformed provider links are not trustworthy audit evidence.
+        if (/[\u0000-\u001f\u007f]/.test(rawUrl) || rawUrl !== rawUrl.trim()) continue;
         const parsed = new URL(rawUrl);
         if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') continue;
         if (parsed.username || parsed.password) continue;
@@ -3142,6 +3202,7 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
         // Only rank domain-shaped sources using the same host rules as brands.
         const domain = normalizeDomainInput(parsed.hostname);
         if (!domain) continue;
+        if (domain === 'home.arpa' || nonPublicSuffixes.some((suffix) => domain.endsWith(suffix))) continue;
         if (!domainsForResponse.has(domain)) domainsForResponse.set(domain, rawUrl);
         const citedPaths = pathsForResponse.get(domain) ?? new Set<string>();
         citedPaths.add(parsed.pathname);
@@ -3168,7 +3229,7 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
         if (!engineSample || response.captured_at > engineSample.capturedAt ||
           (response.captured_at === engineSample.capturedAt && response.id < engineSample.responseId)) {
           existing.engineSamples.set(response.engine, {
-            url: sampleUrl, capturedAt: response.captured_at, responseId: response.id,
+            url: sampleUrl, capturedAt: response.captured_at, responseId: response.id, runId: response.run_id,
           });
         }
         for (const path of pathsForResponse.get(domain) ?? []) {
@@ -3196,7 +3257,7 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
           enginePrompts: new Map([[response.engine, new Set([response.prompt_id])]]),
           engineLastCapturedAt: new Map([[response.engine, response.captured_at]]),
           engineSamples: new Map([[response.engine, {
-            url: sampleUrl, capturedAt: response.captured_at, responseId: response.id,
+            url: sampleUrl, capturedAt: response.captured_at, responseId: response.id, runId: response.run_id,
           }]]),
           pathResponseCounts: new Map([...(pathsForResponse.get(domain) ?? [])]
             .map((path): [string, number] => [path, 1])),
@@ -3233,7 +3294,10 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
         per_engine_examples: Object.fromEntries(
           [...source.engineSamples].sort(([a], [b]) => a.localeCompare(b)).map(([engine, sample]) => {
             const safeUrl = redactCitationUrlQuery(sample.url);
-            return [engine, { sample_url: safeUrl, url_redacted: safeUrl !== sample.url }];
+            return [engine, {
+              sample_url: safeUrl, url_redacted: safeUrl !== sample.url,
+              run_id: sample.runId, response_id: sample.responseId,
+            }];
           }),
         ),
         distinct_cited_path_count: source.pathResponseCounts.size,
@@ -3283,8 +3347,12 @@ function redactCitationUrlQuery(rawUrl: string): string {
     } catch {
       // An invalid encoded name is not interpreted as a credential key.
     }
-    const normalized = name.toLowerCase().replace(/[-_.\s]/g, '');
-    return secretNames.has(normalized) ? `${piece.slice(0, equals)}=[REDACTED]` : piece;
+    // Array and nested form keys can carry credentials too: token[] or
+    // auth[access_token], including percent-encoded bracket spellings.
+    const keyParts = name.toLowerCase().split(/[\[\]]+/)
+      .map((part) => part.replace(/[-_.\s]/g, ''));
+    return keyParts.some((part) => secretNames.has(part))
+      ? `${piece.slice(0, equals)}=[REDACTED]` : piece;
   }).join('');
   const safeAddress = queryStart === -1 ? address
     : `${address.slice(0, queryStart + 1)}${redactParameters(address.slice(queryStart + 1))}`;
@@ -3313,11 +3381,32 @@ function redactEvidenceText(text: string): string {
       return '[unparseable URL omitted]';
     }
   });
+  // HTTP header folding makes whitespace-prefixed continuation lines part of
+  // the preceding credential, including proxy credentials. Mask them together
+  // before line-based redaction.
+  const foldedHeaderSafeText = urlSafeText.replace(
+    /^([ \t]*(?:(?:Proxy-)?Authorization|Set-Cookie|Cookie|X-(?:[A-Za-z0-9-]+-)?(?:Token|Api-Key|Auth-Key|Secret))[ \t]*:[ \t]*)([^\r\n]*)(?:\r?\n[ \t]+[^\r\n]*)+/gim,
+    (_match, header: string, firstValue: string) => {
+      const scheme = /^([A-Za-z][A-Za-z0-9+.-]*[ \t]+)/.exec(firstValue);
+      return /Authorization[ \t]*:[ \t]*$/i.test(header) && scheme
+        ? `${header}${scheme[1]}[REDACTED]`
+        : `${header}[REDACTED]`;
+    },
+  );
   // Provider prose can contain standalone credential assignments and auth
   // headers, not just URLs. Mask their values before selecting an excerpt;
   // raw stored observations remain unchanged for forensic provenance.
-  return urlSafeText
-    .replace(/\b(Authorization\s*:\s*(?:Bearer|Basic)\s+)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;]+)/gi, '$1[REDACTED]')
+  return foldedHeaderSafeText
+    // Cookie and custom token/key headers can expose session credentials;
+    // mask full values, including previously unknown X-*-Token names.
+    .replace(/\b((?:Set-Cookie|Cookie|X-(?:[A-Za-z0-9-]+-)?(?:Token|Api-Key|Auth-Key|Secret))[ \t]*:[ \t]*)[^\r\n]*/gi, '$1[REDACTED]')
+    // Digest and SigV4 credentials consist of multiple parameters. Redacting
+    // just the first token would expose the nonce, response or signature.
+    .replace(/\b(Authorization[ \t]*:[ \t]*(?:Digest|AWS4-HMAC-SHA256)[ \t]+)[^\r\n]*/gi, '$1[REDACTED]')
+    .replace(/\b(Authorization\s*:\s*(?:Bearer|Basic|Token|ApiKey|Api-Key)\s+)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;]+)/gi, '$1[REDACTED]')
+    // Unknown authorization schemes can also carry multi-parameter secrets;
+    // preserve the scheme label but mask the entire remaining header line.
+    .replace(/\b(Authorization[ \t]*:[ \t]*)(?!(?:Digest|AWS4-HMAC-SHA256|Bearer|Basic|Token|ApiKey|Api-Key)[ \t]+)([A-Za-z][A-Za-z0-9+.-]*[ \t]+)[^\r\n]*/gi, '$1$2[REDACTED]')
     .replace(/\b((?:access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|client[_-]?secret)\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s&,;]+)/gi, '$1[REDACTED]');
 }
 
@@ -3352,6 +3441,8 @@ function pickBrandUrl(
     [extractUrls(rawResponse), 'answer_text'],
   ] as const) {
     for (const rawUrl of urls) {
+      // WHATWG URL normalizes malformed stored links; do not present them as direct citations.
+      if (/[\u0000-\u001f\u007f]/.test(rawUrl) || rawUrl !== rawUrl.trim()) continue;
       const url = source === 'answer_text' ? rawUrl.replace(/[.,;!]+$/, '') : rawUrl;
       try {
         const parsed = new URL(url);

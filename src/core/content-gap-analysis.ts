@@ -191,12 +191,13 @@ function referencesUnobservedDomain(
     } catch {
       return true;
     }
-    if (!host || !isObservedHost(host)) {
+    // URL userinfo can hide credentials or disguise a different destination.
+    // An observed brand hostname never makes such a link trustworthy evidence.
+    if (!host || !isObservedHost(host) || url.username || url.password) {
       return true;
     }
     if (host !== brand.domain.toLowerCase().replace(/^www\./, '') &&
-        (url.pathname !== '/' || url.search || url.hash || url.port ||
-          url.username || url.password)) {
+        (url.pathname !== '/' || url.search || url.hash || url.port)) {
       return true;
     }
   }

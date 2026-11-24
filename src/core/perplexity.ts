@@ -100,6 +100,8 @@ function extractAgentCitations(data: PerplexityResponse, text: string): string[]
     ) continue;
     for (const result of item.results) {
       if (typeof result.url !== 'string') continue;
+      // WHATWG URL parsing silently strips raw control bytes and outer space.
+      if (/[\u0000-\u001f\u007f]/.test(result.url) || result.url.trim() !== result.url) continue;
       try {
         const parsed = new URL(result.url);
         // Search-result metadata must point to a domain-shaped web host,

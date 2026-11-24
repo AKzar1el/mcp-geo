@@ -23,6 +23,8 @@ export function flattenSerpApiReferences(
   const urls: string[] = [];
   for (const ref of refs) {
     if (!ref || typeof ref.link !== 'string') continue;
+    // URL parsing strips control bytes and surrounding whitespace from raw provider evidence.
+    if (/[\u0000-\u001f\u007f]/.test(ref.link) || ref.link !== ref.link.trim()) continue;
     try {
       const parsed = new URL(ref.link);
       // Provider metadata is evidence only when it points to a web source.

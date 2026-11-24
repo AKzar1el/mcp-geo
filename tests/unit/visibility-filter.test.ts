@@ -317,6 +317,27 @@ test('check_visibility scopes every snapshot field to the requested engine', asy
   );
 });
 
+test('check_visibility redacts buyer credentials in ranked winning and losing questions', async () => {
+  const winningQuestion = 'Best Acme guide https://docs.example.com/path?api_key=win-secret&source=public';
+  const losingQuestion = 'Compare alternatives Authorization: Bearer loss-secret';
+  const sourceRows = [
+    response('chatgpt', 'secret-win', winningQuestion, 1),
+    response('chatgpt', 'secret-loss', losingQuestion, 0, ['beta.com']),
+  ];
+  const visibility = registerVisibilityTool({
+    responses: { [runs.chatgpt.id]: sourceRows },
+  });
+  const snapshot = (await visibility.handler({ brand_id: brand.id, engines: ['chatgpt'] })).structuredContent;
+
+  assert.equal(snapshot.overall_score, 50);
+  assert.equal(snapshot.top_winning_prompts[0].prompt,
+    'Best Acme guide https://docs.example.com/path?api_key=[REDACTED]&source=public');
+  assert.equal(snapshot.top_losing_prompts[0].prompt,
+    'Compare alternatives Authorization: Bearer [REDACTED]');
+  assert.equal(sourceRows[0].prompt_text, winningQuestion, 'raw stored winning question must be untouched');
+  assert.equal(sourceRows[1].prompt_text, losingQuestion, 'raw stored losing question must be untouched');
+});
+
 test('check_visibility discloses US-English sampling only when Google search results are included', async () => {
   const googleRun = run('ai_overviews', chatgptTimestamp);
   const visibility = registerVisibilityTool({
