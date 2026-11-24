@@ -1933,7 +1933,7 @@ export function registerTools(
         active_prompts_only: z.boolean().default(false)
           .describe('Filter citations and source rankings to currently active buyer questions without new provider scans.'),
         cursor: z.string().max(1600).optional()
-          .describe('Opaque next_cursor; preserve brand, days, engine/engines, identity and prompt selection.'),
+          .describe('next_cursor; keep brand, days, engine(s), measurement_mode, ranked_source_domain, identity, prompts.'),
       },
       outputSchema: citationsOutputSchema,
       annotations: {
