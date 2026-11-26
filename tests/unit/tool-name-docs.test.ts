@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { HOSTED_SERVER_INSTRUCTIONS, LOCAL_SERVER_INSTRUCTIONS } from '../../src/core/server-instructions.ts';
 
 const read = (path: string) => fs.readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
 
@@ -12,6 +13,23 @@ const pairs = [
   ['get_content_gaps', 'visibility.content_gaps'],
   ['refresh_brand', 'visibility.refresh'],
 ] as const;
+
+test('MCP initialization guides scoped, provider-free observation evidence inspection', () => {
+  const toolsSource = read('src/core/tools.ts');
+  assert.match(toolsSource, /get_observation_evidence: 'visibility\.observation_evidence'/);
+
+  for (const [instructions, name] of [
+    [LOCAL_SERVER_INSTRUCTIONS, 'get_observation_evidence'],
+    [HOSTED_SERVER_INSTRUCTIONS, 'visibility.observation_evidence'],
+  ]) {
+    assert.ok(instructions.includes(name), `${name} is missing from initialization guidance`);
+    for (const field of ['brand_id', 'run_id', 'response_id', 'active_prompt', 'identity_scope', 'measurement_mode']) {
+      assert.ok(instructions.includes(field), `${name} guidance omits ${field}`);
+    }
+    assert.match(instructions, /without provider calls/i);
+    assert.match(instructions, /not independently verified (?:source )?citations/i);
+  }
+});
 
 test('hosted Worker and local stdio tool names stay explicitly mapped in docs', () => {
   const toolsSource = read('src/core/tools.ts');
@@ -48,6 +66,8 @@ test('client audit report instructions account for paginated citation evidence',
   assert.match(report, /`has_more`/);
   assert.match(report, /`next_cursor`/);
   assert.match(report, /same.*`brand_id`.*`days`.*`engines`.*`measurement_mode`/);
+  assert.match(report, /same.*`ranked_source_domain`/);
+  assert.match(read('README.md'), /same `brand_id`.*`measurement_mode`.*`ranked_source_domain`/);
   assert.match(report, /`top_sources`.*full.*window/i);
   assert.match(report, /partial.*citation.*examples/i);
 });

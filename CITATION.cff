@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata below."
+title: "DigestSEO MCP GEO"
+type: software
+authors:
+  - given-names: Tomi
+    family-names: "Šeregi"
+    orcid: "https://orcid.org/0009-0005-0189-4426"
+abstract: "MCP server for AI search visibility and citation tracking."
+license: MIT
+repository-code: "https://github.com/AKzar1el/mcp-geo"
+url: "https://digestseo.com/geo-mcp/"

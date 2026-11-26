@@ -34,6 +34,8 @@ type CitationResult = {
   top_sources_limit: number;
   total_source_domains: number;
   top_sources_truncated: boolean;
+  ranked_source_domain_filter: string | null;
+  ranked_source_domain_match_found: boolean;
   measurement_mode_filter: 'model_only' | 'search_requested' | null;
   engine_scope: {
     selection: 'selected' | 'all_stored';
@@ -108,6 +110,7 @@ type CitationTool = {
     engines?: Array<'chatgpt' | 'claude' | 'perplexity' | 'gemini' | 'ai_overviews' | 'ai_mode'>;
     limit?: number;
     top_sources_limit?: number;
+    ranked_source_domain?: string;
     cursor?: string;
     current_identity_only?: boolean;
     active_prompts_only?: boolean;
@@ -548,6 +551,33 @@ test('get_citations preserves the full engine-native brand citation URL', async 
   assert.equal(result.structuredContent.citations[0].url_source, 'provider_source');
 });
 
+test('get_citations rejects malformed provider brand URLs without hiding valid evidence', async () => {
+  for (const rawUrl of [
+    ' https://acme.com/guide',
+    'https://acme.com/guide\npage',
+    'https://acme.com/\tguide',
+    'https://acme.com/report\r\n',
+  ]) {
+    const tool = registerCitationTool(citationRow({
+      engine_citations_json: JSON.stringify([rawUrl]),
+    }));
+    const citation = (await tool.handler({ brand_id: brand.id })).structuredContent.citations[0];
+    assert.equal(citation.cited_url, null, JSON.stringify(rawUrl));
+    assert.equal(citation.url_source, null, JSON.stringify(rawUrl));
+  }
+
+  const tool = registerCitationTool(citationRow({
+    raw_response: 'Acme is documented at https://docs.acme.com/pricing?ref=answer',
+    engine_citations_json: JSON.stringify([
+      'https://acme.com/\tspoofed',
+      'https://www.acme.com/valid?ref=native',
+    ]),
+  }));
+  const citation = (await tool.handler({ brand_id: brand.id })).structuredContent.citations[0];
+  assert.equal(citation.cited_url, 'https://www.acme.com/valid?ref=native');
+  assert.equal(citation.url_source, 'provider_source');
+});
+
 test('get_citations never fabricates a URL from host-only evidence', async () => {
   const citation = registerCitationTool(
     citationRow({
@@ -617,6 +647,27 @@ test('get_citations redacts repeated and encoded query credentials at all client
   assert.doesNotMatch(JSON.stringify(result), /NATIVE_SECRET|TOKEN_ONE|TOKEN_TWO|SOURCE_SECRET|ANOTHER_SECRET|ANSWER_SECRET/);
 });
 
+test('get_citations redacts array and nested credential parameter names without hiding public context', async () => {
+  const citation = registerCitationTool(citationRow({
+    prompt: 'Compare Acme at https://acme.com/guide?meta%5Bapi_key%5D=BUYER_NESTED&ref=client',
+    raw_response: 'Acme cites https://acme.com/report?access_token[]=EXCERPT_ARRAY&ref=excerpt',
+    engine_citations_json: JSON.stringify([
+      'https://acme.com/report?credentials%5Baccess_token%5D=NATIVE_NESTED&scope=public',
+    ]),
+  }), [promptResponse({ engine_citations: [
+    'https://research.example/article?token%5B%5D=SOURCE_ARRAY&filter%5Blang%5D=en#auth%5Bclient_secret%5D=SOURCE_FRAGMENT',
+  ] })]);
+  const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.equal(result.citations[0].cited_url,
+    'https://acme.com/report?credentials%5Baccess_token%5D=[REDACTED]&scope=public');
+  assert.equal(result.top_sources[0].sample_url,
+    'https://research.example/article?token%5B%5D=[REDACTED]&filter%5Blang%5D=en#auth%5Bclient_secret%5D=[REDACTED]');
+  assert.match(result.citations[0].response_excerpt, /access_token\[\]=\[REDACTED\]&ref=excerpt/);
+  assert.match(result.citations[0].prompt, /meta%5Bapi_key%5D=\[REDACTED\]&ref=client/);
+  assert.doesNotMatch(JSON.stringify(result),
+    /BUYER_NESTED|EXCERPT_ARRAY|NATIVE_NESTED|SOURCE_ARRAY|SOURCE_FRAGMENT/);
+});
+
 test('get_citations redacts credentials in stored buyer questions without hiding public context', async () => {
   const citation = registerCitationTool(citationRow({
     prompt: 'Compare Acme at https://research.example/guide?api_key=BUYER_API_SECRET&ref=client with Authorization: Bearer BUYER_BEARER_SECRET',
@@ -625,6 +676,112 @@ test('get_citations redacts credentials in stored buyer questions without hiding
   assert.equal(result.citations[0].prompt,
     'Compare Acme at https://research.example/guide?api_key=[REDACTED]&ref=client with Authorization: Bearer [REDACTED]');
   assert.doesNotMatch(JSON.stringify(result.citations), /BUYER_API_SECRET|BUYER_BEARER_SECRET/);
+});
+
+test('get_citations hides Token and ApiKey authorization schemes in buyer questions and excerpts', async () => {
+  const citation = registerCitationTool(citationRow({
+    prompt: 'Compare Acme with Authorization: Token BUYER_TOKEN_SECRET while discussing public pricing',
+    raw_response: 'Acme supports Authorization: ApiKey EXCERPT_API_SECRET for this integration.',
+  }));
+  const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.match(result.citations[0].prompt, /Authorization: Token \[REDACTED\] while discussing public pricing/);
+  assert.match(result.citations[0].response_excerpt, /Authorization: ApiKey \[REDACTED\] for this integration/);
+  assert.doesNotMatch(JSON.stringify(result), /BUYER_TOKEN_SECRET|EXCERPT_API_SECRET/);
+});
+
+test('get_citations masks multiline Digest and AWS SigV4 authorization headers in client evidence', async () => {
+  const citation = registerCitationTool(citationRow({
+    prompt: 'Compare Acme integration security.\nAuthorization: Digest username="buyer", nonce="BUYER_NONCE_SECRET", response="BUYER_DIGEST_SECRET"\nKeep this public question.',
+    raw_response: 'Acme supports integrations.\nAuthorization: AWS4-HMAC-SHA256 Credential=AWS_CREDENTIAL_SECRET, SignedHeaders=host;x-amz-date, Signature=AWS_SIGNATURE_SECRET\nKeep this public answer.',
+  }));
+  const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.match(result.citations[0].prompt, /Authorization: Digest \[REDACTED\]/);
+  assert.match(result.citations[0].prompt, /Keep this public question\./);
+  assert.match(result.citations[0].response_excerpt, /Authorization: AWS4-HMAC-SHA256 \[REDACTED\]/);
+  assert.match(result.citations[0].response_excerpt, /Keep this public answer\./);
+  assert.doesNotMatch(JSON.stringify(result), /BUYER_NONCE_SECRET|BUYER_DIGEST_SECRET|AWS_CREDENTIAL_SECRET|AWS_SIGNATURE_SECRET/);
+});
+
+test('get_citations masks session Cookie and Set-Cookie header values in buyer and answer evidence', async () => {
+  const citation = registerCitationTool(citationRow({
+    prompt: 'Compare Acme sessions.\nCookie: session=BUYER_SESSION_SECRET; theme=light\nKeep this public question.',
+    raw_response: 'Acme supports sessions.\nSet-Cookie: __Host-id=ANSWER_SESSION_SECRET; Path=/; HttpOnly; Secure\nPublic answer. Cookie: inline=INLINE_SESSION_SECRET',
+  }));
+  const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.match(result.citations[0].prompt, /Cookie: \[REDACTED\]/);
+  assert.match(result.citations[0].prompt, /Keep this public question\./);
+  assert.match(result.citations[0].response_excerpt, /Set-Cookie: \[REDACTED\]/);
+  assert.match(result.citations[0].response_excerpt, /Public answer\. Cookie: \[REDACTED\]/);
+  assert.doesNotMatch(JSON.stringify(result), /BUYER_SESSION_SECRET|ANSWER_SESSION_SECRET|INLINE_SESSION_SECRET/);
+});
+
+test('get_citations masks custom authentication and session token headers in client evidence', async () => {
+  const citation = registerCitationTool(citationRow({
+    prompt: 'Compare Acme authentication.\nX-Auth-Token: BUYER_HEADER_SECRET\nPublic note: X-Auth-Token is a header name.',
+    raw_response: 'Acme supports session APIs.\nX-Session-Token: ANSWER_HEADER_SECRET\nPublic documentation remains.',
+  }));
+  const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.match(result.citations[0].prompt, /X-Auth-Token: \[REDACTED\]/);
+  assert.match(result.citations[0].prompt, /Public note: X-Auth-Token is a header name\./);
+  assert.match(result.citations[0].response_excerpt, /X-Session-Token: \[REDACTED\]/);
+  assert.match(result.citations[0].response_excerpt, /Public documentation remains\./);
+  assert.doesNotMatch(JSON.stringify(result), /BUYER_HEADER_SECRET|ANSWER_HEADER_SECRET/);
+});
+
+test('get_citations masks API and CSRF token headers while preserving public evidence', async () => {
+  const citation = registerCitationTool(citationRow({
+    prompt: 'Compare Acme security.\nX-API-Token: BUYER_API_TOKEN_SECRET\nX-CSRF-Token: BUYER_CSRF_SECRET\nPublic note: X-CSRF-Token is a header name.',
+    raw_response: 'Acme supports API integrations.\nX-API-Token: ANSWER_API_TOKEN_SECRET\nX-CSRF-Token: ANSWER_CSRF_SECRET\nPublic answer.',
+  }));
+  const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.match(result.citations[0].prompt, /X-API-Token: \[REDACTED\]/);
+  assert.match(result.citations[0].prompt, /X-CSRF-Token: \[REDACTED\]/);
+  assert.match(result.citations[0].prompt, /Public note: X-CSRF-Token is a header name\./);
+  assert.match(result.citations[0].response_excerpt, /X-API-Token: \[REDACTED\]/);
+  assert.match(result.citations[0].response_excerpt, /X-CSRF-Token: \[REDACTED\]/);
+  assert.match(result.citations[0].response_excerpt, /Public answer\./);
+  assert.doesNotMatch(JSON.stringify(result), /BUYER_API_TOKEN_SECRET|BUYER_CSRF_SECRET|ANSWER_API_TOKEN_SECRET|ANSWER_CSRF_SECRET/);
+});
+
+test('get_citations masks other authorization schemes and custom token headers without hiding public context', async () => {
+  const citation = registerCitationTool(citationRow({
+    prompt: 'Compare Acme identity security.\nAuthorization: HOBA challenge=BUYER_HOBA_SECRET, nonce=BUYER_NONCE_SECRET\nX-Custom-Token: BUYER_CUSTOM_SECRET\nX-Token-Count: 3\nPublic question remains.',
+    raw_response: 'Acme.\nAuthorization: Negotiate ANSWER_SPNEGO_SECRET\nAuthorization: Bearer-Plus ANSWER_EXTENDED_SECRET\nX-Custom-Token: ANSWER_CUSTOM_SECRET\nPublic.',
+  }));
+  const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.match(result.citations[0].prompt, /Authorization: HOBA \[REDACTED\]/);
+  assert.match(result.citations[0].prompt, /X-Custom-Token: \[REDACTED\]/);
+  assert.match(result.citations[0].prompt, /X-Token-Count: 3/);
+  assert.match(result.citations[0].prompt, /Public question remains\./);
+  assert.match(result.citations[0].response_excerpt, /Authorization: Negotiate \[REDACTED\]/);
+  assert.match(result.citations[0].response_excerpt, /Authorization: Bearer-Plus \[REDACTED\]/);
+  assert.match(result.citations[0].response_excerpt, /X-Custom-Token: \[REDACTED\]/);
+  assert.match(result.citations[0].response_excerpt, /Public\./);
+  assert.doesNotMatch(JSON.stringify(result), /BUYER_HOBA_SECRET|BUYER_NONCE_SECRET|BUYER_CUSTOM_SECRET|ANSWER_SPNEGO_SECRET|ANSWER_EXTENDED_SECRET|ANSWER_CUSTOM_SECRET/);
+});
+
+test('get_citations masks folded authentication header continuations without hiding public lines', async () => {
+  const citation = registerCitationTool(citationRow({
+    prompt: 'Compare Acme.\nAuthorization: Digest username="buyer",\r\n nonce="BUYER_FOLDED_NONCE",\r\n response="BUYER_FOLDED_RESPONSE"\nPublic buyer question.',
+    raw_response: 'Acme supports authentication.\n  Public indented context.\nAuthorization: Negotiate FIRST_SECRET\r\n CONTINUED_NEGOTIATE_SECRET\r\n\tMORE_NEGOTIATE_SECRET\nX-Custom-Token: FIRST_CUSTOM_SECRET\r\n\tCONTINUED_CUSTOM_SECRET\nPublic response.',
+  }));
+  const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.match(result.citations[0].prompt, /Authorization: Digest \[REDACTED\]\nPublic buyer question\./);
+  assert.match(result.citations[0].response_excerpt, /Authorization: Negotiate \[REDACTED\]\nX-Custom-Token: \[REDACTED\]\nPublic response\./);
+  assert.match(result.citations[0].response_excerpt, /Public indented context\./);
+  assert.doesNotMatch(JSON.stringify(result), /BUYER_FOLDED_NONCE|BUYER_FOLDED_RESPONSE|CONTINUED_NEGOTIATE_SECRET|MORE_NEGOTIATE_SECRET|CONTINUED_CUSTOM_SECRET/);
+});
+
+test('get_citations masks folded proxy authorization credentials while retaining public context', async () => {
+  const citation = registerCitationTool(citationRow({
+    prompt: 'Compare Acme.\nProxy-Authorization: Digest username="buyer",\r\n nonce="BUYER_PROXY_NONCE",\r\n response="BUYER_PROXY_DIGEST"\nPublic buyer text.',
+    raw_response: 'Acme.\nProxy-Authorization: Negotiate SERVER_PROXY_START\r\n CONTINUED_PROXY_SECRET\r\n\tMORE_PROXY_SECRET\nProxy-Authorization: Bearer SERVER_BEARER_START\n continuation-BEARER-SECRET\nPublic answer.\nProxy-Authorization is a public header name.',
+  }));
+  const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.match(result.citations[0].prompt, /Proxy-Authorization: Digest \[REDACTED\]\nPublic buyer text\./);
+  assert.match(result.citations[0].response_excerpt, /Proxy-Authorization: Negotiate \[REDACTED\]\nProxy-Authorization: Bearer \[REDACTED\]\nPublic answer\./);
+  assert.match(result.citations[0].response_excerpt, /Proxy-Authorization is a public header name\./);
+  assert.doesNotMatch(JSON.stringify(result), /BUYER_PROXY_NONCE|BUYER_PROXY_DIGEST|SERVER_PROXY_START|CONTINUED_PROXY_SECRET|MORE_PROXY_SECRET|SERVER_BEARER_START|continuation-BEARER-SECRET/);
 });
 
 test('get_citations redacts URL fragment credentials without changing public query and anchor context', async () => {
@@ -746,6 +903,36 @@ test('top source rankings exclude internal and invalid hosts from historical pro
     ['https://news.example.org/public']);
 });
 
+test('top source rankings omit special-use onion and alt hosts while retaining public sources', async () => {
+  const citation = registerCitationTool(citationRow(), [
+    promptResponse({ engine_citations: [
+      'https://archive.hidden.onion/report',
+      'https://service.alt/document',
+      'https://research.example.org/report',
+    ] }),
+  ]);
+  const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.deepEqual(result.top_sources.map((source) => source.domain), ['research.example.org']);
+  assert.equal(result.total_source_domains, 1);
+  assert.equal(result.top_sources[0]?.sample_url, 'https://research.example.org/report');
+});
+
+test('top source rankings reject provider URLs with control characters or outer whitespace', async () => {
+  const citation = registerCitationTool(citationRow(), [
+    promptResponse({ engine_citations: [
+      'https://newline.example.org/report\n',
+      'https://tab.example.org/re\tport',
+      ' https://space.example.org/report',
+      'https://clean.example.org/report',
+    ] }),
+  ]);
+  const result = (await citation.handler({ brand_id: brand.id })).structuredContent;
+  assert.deepEqual(result.top_sources.map((source) => source.domain), ['clean.example.org']);
+  assert.equal(result.total_source_domains, 1);
+  assert.deepEqual(result.top_sources.map((source) => source.sample_url),
+    ['https://clean.example.org/report']);
+});
+
 test('get_citations distinguishes provider-listed link-only evidence from textual brand mentions', async () => {
   const citation = registerCitationTool(
     citationRow({
@@ -793,6 +980,47 @@ test('get_citations discloses truncated source rankings and supports a bounded w
   assert.equal(extended.top_sources[12].domain, 'source-13.example');
   assert.equal(extended.total_matching_rows, defaultView.total_matching_rows);
   assert.deepEqual(extended.citations, defaultView.citations);
+});
+
+test('get_citations looks up an exact low-ranked source without changing citation pages or window counts', async () => {
+  const domains = Array.from({ length: 13 }, (_, index) =>
+    `https://source-${String(index + 1).padStart(2, '0')}.example/report`);
+  const now = Date.now();
+  const tool = registerCitationTool([
+    citationRow({ response_id: 'newer', captured_at: now - 1000 }),
+    citationRow({ response_id: 'older', captured_at: now - 2000 }),
+  ], [promptResponse({ engine_citations: domains })]);
+  const regular = (await tool.handler({ brand_id: brand.id, limit: 1, top_sources_limit: 1 })).structuredContent;
+  assert.deepEqual(regular.top_sources.map(({ domain }) => domain), ['source-01.example']);
+
+  const focusedArgs = {
+    brand_id: brand.id, limit: 1, top_sources_limit: 1, ranked_source_domain: 'SOURCE-13.EXAMPLE.',
+  };
+  const focused = (await tool.handler(focusedArgs)).structuredContent;
+  assert.equal(focused.ranked_source_domain_filter, 'source-13.example');
+  assert.equal(focused.ranked_source_domain_match_found, true);
+  assert.deepEqual(focused.top_sources.map(({ domain }) => domain), ['source-13.example']);
+  assert.equal(focused.total_source_domains, 13);
+  assert.equal(focused.top_sources_truncated, false);
+  assert.equal(focused.total_matching_rows, 2);
+  assert.deepEqual(focused.citations, regular.citations);
+  assert.equal(focused.has_more, true);
+  assert.ok(focused.next_cursor);
+
+  const next = (await tool.handler({ ...focusedArgs, cursor: focused.next_cursor! })).structuredContent;
+  assert.equal(next.has_more, false);
+  assert.deepEqual(next.top_sources, focused.top_sources);
+  assert.notDeepEqual(next.citations, focused.citations);
+  await assert.rejects(tool.handler({ brand_id: brand.id, limit: 1, cursor: focused.next_cursor! }),
+    /Invalid citation cursor/);
+
+  const absent = (await tool.handler({ brand_id: brand.id, ranked_source_domain: 'absent.example' })).structuredContent;
+  assert.equal(absent.ranked_source_domain_match_found, false);
+  assert.equal(absent.total_source_domains, 13);
+  assert.deepEqual(absent.top_sources, []);
+  assert.equal(absent.total_matching_rows, 2);
+  await assert.rejects(tool.handler({ brand_id: brand.id, ranked_source_domain: 'http://localhost/private' }),
+    /Invalid ranked source domain/);
 });
 
 test('get_citations ranks engine-native source domains across the requested window', async () => {
