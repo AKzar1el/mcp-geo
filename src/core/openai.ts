@@ -142,7 +142,7 @@ const COMMON_TWO_LABEL_PUBLIC_SUFFIXES = new Set([
   'co.kr', 'co.za', 'co.in', 'com.cn', 'com.ar',
   'co.id', 'com.ph', 'com.my',
   'com.co', 'co.il', 'com.vn',
-  'com.pk', 'co.th',
+  'com.pk', 'co.th', 'com.sa', 'com.eg',
   'co.ke', 'com.ng', 'co.ug', 'com.bd', 'co.bd',
 ]);
 
@@ -168,16 +168,68 @@ function rootTermFromDomain(domain: string): string {
   return parts[parts.length - 2]!.toLowerCase();
 }
 
+// Decode a single canonical Punycode label without Node-only modules; the
+// same mention matcher is bundled into both the Worker and the stdio CLI.
+function unicodeRootFromPunycode(asciiRoot: string): string | null {
+  if (!asciiRoot.startsWith('xn--') || asciiRoot.length > 63) return null;
+  const input = asciiRoot.slice(4);
+  const delimiter = input.lastIndexOf('-');
+  const output = delimiter >= 0 ? [...input.slice(0, delimiter)] : [];
+  let offset = delimiter >= 0 ? delimiter + 1 : 0;
+  let codePoint = 128;
+  let index = 0;
+  let bias = 72;
+
+  while (offset < input.length) {
+    const previousIndex = index;
+    let weight = 1;
+    for (let k = 36; ; k += 36) {
+      if (offset >= input.length) return null;
+      const char = input.charCodeAt(offset++);
+      const digit = char >= 97 && char <= 122 ? char - 97
+        : char >= 48 && char <= 57 ? char - 22 : -1;
+      if (digit < 0 || digit > Math.floor((Number.MAX_SAFE_INTEGER - index) / weight)) return null;
+      index += digit * weight;
+      const threshold = k <= bias ? 1 : k >= bias + 26 ? 26 : k - bias;
+      if (digit < threshold) break;
+      if (weight > Number.MAX_SAFE_INTEGER / (36 - threshold)) return null;
+      weight *= 36 - threshold;
+    }
+    const size = output.length + 1;
+    let delta = previousIndex === 0 ? Math.floor((index - previousIndex) / 700)
+      : Math.floor((index - previousIndex) / 2);
+    delta += Math.floor(delta / size);
+    let adjustment = 0;
+    while (delta > 455) {
+      delta = Math.floor(delta / 35);
+      adjustment += 36;
+    }
+    bias = adjustment + Math.floor((36 * delta) / (delta + 38));
+    codePoint += Math.floor(index / size);
+    index %= size;
+    if (codePoint > 0x10ffff || (codePoint >= 0xd800 && codePoint <= 0xdfff)) return null;
+    output.splice(index++, 0, String.fromCodePoint(codePoint));
+  }
+
+  const decoded = output.join('');
+  try {
+    // WHATWG's IDNA-to-ASCII pass also rejects invalid or noncanonical labels.
+    return new URL(`http://${decoded}`).hostname === asciiRoot ? decoded.normalize('NFC') : null;
+  } catch {
+    return null;
+  }
+}
+
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 // Matches `term` only as a standalone token — not buried inside a larger
-// word. Boundaries = "no adjacent letter/digit" (Unicode-friendlier than \b).
+// word. Combining marks belong to words too; a decomposed accent is not a boundary.
 function termMatchIndex(text: string, term: string): number {
   const t = term.trim();
   if (t.length === 0) return -1;
-  const re = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(t)}(?![\\p{L}\\p{N}])`, 'iu');
+  const re = new RegExp(`(?<![\\p{L}\\p{N}\\p{M}])${escapeRegExp(t)}(?![\\p{L}\\p{N}\\p{M}])`, 'iu');
   return re.exec(text)?.index ?? -1;
 }
 
@@ -193,29 +245,39 @@ function domainMatchIndex(text: string, domain: string): number {
     domain.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0]?.toLowerCase() ?? '';
   if (fullDomain.length === 0) return -1;
 
-  // Match the exact host or one of its subdomains, never a lookalike host
-  // that merely contains the configured domain as a suffix or prefix.
-  // Repeated-dot pseudo-hosts must not count as a domain mention either.
-  const re = new RegExp(
-    `(?:^|[^\\p{L}\\p{N}-])((?:[a-z0-9-]+\\.)*${escapeRegExp(fullDomain)})(?!\\.+[\\p{L}\\p{N}-])(?=$|[^\\p{L}\\p{N}.-]|\\.(?![\\p{L}\\p{N}-]))`,
-    'iu',
-  );
-  const match = re.exec(text);
-  if (!match || !match[1]) return -1;
-  return match.index + match[0].indexOf(match[1]);
+  const variants = [fullDomain];
+  if (fullDomain.includes('xn--')) {
+    // Answer text can spell a tracked IDN host in Unicode even though its
+    // stored canonical domain is Punycode. Decode only validated labels.
+    const unicodeDomain = fullDomain.split('.')
+      .map((label) => unicodeRootFromPunycode(label) ?? label).join('.');
+    if (unicodeDomain !== fullDomain) variants.push(unicodeDomain);
+  }
+
+  for (const variant of variants) {
+    // Require the exact domain or a subdomain, never a lookalike suffix,
+    // prefix, or repeated-dot pseudo-host. Preserve original text offsets.
+    const re = new RegExp(
+      `(?:^|[^\\p{L}\\p{N}\\p{M}-])((?:[a-z0-9-]+\\.)*${escapeRegExp(variant)})(?!\\.+[\\p{L}\\p{N}\\p{M}-])(?=$|[^\\p{L}\\p{N}\\p{M}.-]|\\.(?![\\p{L}\\p{N}\\p{M}-]))`,
+      'iu',
+    );
+    const match = re.exec(text);
+    if (match?.[1]) return match.index + match[0].indexOf(match[1]);
+  }
+  return -1;
 }
 
 function rootTermMatchIndexOutsideHostname(text: string, term: string): number {
   const t = term.trim();
   if (t.length === 0) return -1;
   const re = new RegExp(
-    `(?<![\\p{L}\\p{N}.])${escapeRegExp(t)}(?![\\p{L}\\p{N}]|\\.(?=[\\p{L}\\p{N}-]))`,
+    `(?<![\\p{L}\\p{N}\\p{M}.])${escapeRegExp(t)}(?![\\p{L}\\p{N}\\p{M}]|\\.(?=[\\p{L}\\p{N}\\p{M}-]))`,
     'iu',
   );
   return re.exec(text)?.index ?? -1;
 }
 
-export function findTermSetMatchIndex(text: string, terms: MatchTerms): number {
+function findCanonicalTermSetMatchIndex(text: string, terms: MatchTerms): number {
   // 1. Exact domain/subdomain reference - highest confidence, never suppressed.
   const domainIndex = domainMatchIndex(text, terms.domain);
   if (domainIndex !== -1) return domainIndex;
@@ -236,7 +298,42 @@ export function findTermSetMatchIndex(text: string, terms: MatchTerms): number {
     const rootIndex = rootTermMatchIndexOutsideHostname(text, root);
     if (rootIndex !== -1) return rootIndex;
   }
+  // IDN domains are stored as Punycode, but an answer may name the brand
+  // using its human-readable label. Require a lossless round-trip so an
+  // invalid encoded label cannot silently become an unrelated word.
+  if (root.startsWith('xn--') && !excluded.has(root)) {
+    const decodedRoot = unicodeRootFromPunycode(root)?.toLowerCase();
+    if (decodedRoot && decodedRoot !== root && !excluded.has(decodedRoot)) {
+      const unicodeIndex = rootTermMatchIndexOutsideHostname(text, decodedRoot);
+      if (unicodeIndex !== -1) return unicodeIndex;
+    }
+  }
   return -1;
+}
+
+export function findTermSetMatchIndex(text: string, terms: MatchTerms): number {
+  // NFC equates precomposed and decomposed Unicode without folding accents.
+  // Report the original UTF-16 offset for excerpt slicing, not the NFC offset.
+  const canonicalText = text.normalize('NFC');
+  const canonicalTerms: MatchTerms = {
+    domain: terms.domain.normalize('NFC'),
+    name: terms.name?.normalize('NFC'),
+    aliases: terms.aliases?.map((alias) => alias.normalize('NFC')),
+    excludeTerms: terms.excludeTerms?.map((term) => term.normalize('NFC')),
+  };
+  const index = findCanonicalTermSetMatchIndex(canonicalText, canonicalTerms);
+  if (index === -1 || canonicalText === text) return index;
+
+  // A composed character may cover several original code units. Find the
+  // first source offset contributing to the matched canonical character.
+  let low = 0;
+  let high = text.length;
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if (text.slice(0, mid + 1).normalize('NFC').length > index) high = mid;
+    else low = mid + 1;
+  }
+  return low;
 }
 
 function mentionsTermSet(text: string, terms: MatchTerms): boolean {
@@ -264,6 +361,9 @@ export function hostMatchesDomain(host: string, domain: string): boolean {
 }
 
 function normalizeHost(rawUrl: string): string | null {
+  // WHATWG URL trims outer whitespace and strips tabs/newlines; raw provider
+  // annotations containing those bytes are not reliable citation evidence.
+  if (/[\u0000-\u001f\u007f]/.test(rawUrl) || rawUrl !== rawUrl.trim()) return null;
   try {
     const u = new URL(rawUrl);
     // Native source metadata is link evidence only when it points to a web URL.
@@ -276,9 +376,14 @@ function normalizeHost(rawUrl: string): string | null {
     host = host.replace(/[;,!]+$/, '');
     if (host.endsWith('.')) host = host.slice(0, -1);
     if (host.endsWith('.')) return null; // Do not turn repeated root dots into brand evidence.
-    // Reuse the brand-domain gate for answer-text source hosts too: local or
-    // IP-literal URLs are not independent external citation evidence.
-    return normalizeDomainInput(host);
+    // Reuse the brand-domain gate, then exclude internal/special-use names.
+    // A syntactically valid hostname is not necessarily a public citation.
+    const normalized = normalizeDomainInput(host);
+    if (!normalized) return null;
+    if (normalized === 'home.arpa' ||
+        ['.local', '.localhost', '.internal', '.test', '.invalid', '.example', '.home.arpa']
+          .some((suffix) => normalized.endsWith(suffix))) return null;
+    return normalized;
   } catch {
     return null;
   }
@@ -611,6 +716,14 @@ export function extractUrls(text: string): string[] {
   return urls;
 }
 
+export function visibleAnswerProse(responseText: string): string {
+  // Source markers in examples, hidden markup and reference definitions are
+  // not citations made by the rendered answer.
+  return decodeHtmlCharacterReferences(
+    parseMarkdownReferenceLinks(omitMarkdownLinkTitles(omitMarkdownImageAssets(
+      omitHtmlTags(omitHtmlCodeExamples(omitMarkdownCodeExamples(responseText)))))).visibleText);
+}
+
 export function maskAnswerUrlMentions(text: string, preserveOffsets = false): string {
   // URL paths are source data, not answer prose. Preserve the original length
   // when locating an excerpt so a scored mention maps to its actual position.
@@ -619,6 +732,7 @@ export function maskAnswerUrlMentions(text: string, preserveOffsets = false): st
     (url) => preserveOffsets ? ' '.repeat(url.length) : ' ',
   );
 }
+
 
 export function extractCitations(
   brand: Brand,
@@ -629,10 +743,8 @@ export function extractCitations(
   // balanced parentheses inside URLs, but leave an unmatched ')' in place so
   // visible text after a Markdown link target remains scoreable. Hidden HTML
   // and sample code must not inflate brand or competitor answer mentions.
-  const answerProse = decodeHtmlCharacterReferences(
-    parseMarkdownReferenceLinks(omitMarkdownLinkTitles(omitMarkdownImageAssets(
-      omitHtmlTags(omitHtmlCodeExamples(omitMarkdownCodeExamples(responseText)))))).visibleText);
-  const mentionText = answerProse.replace(/https?:\/\/(?:\([^()\s]*\)|[^\s()\]\}'"\x60<>])+/gi, ' ');
+  const answerProse = visibleAnswerProse(responseText);
+  const mentionText = maskAnswerUrlMentions(answerProse);
   let brandMentioned = mentionsTermSet(mentionText, {
     domain: brand.domain,
     name: brand.name,

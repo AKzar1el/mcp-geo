@@ -129,6 +129,7 @@ test('shared hosted tools run on the SDK v2 stateless handler with legacy fallba
     'visibility.history',
     'visibility.compare',
     'visibility.citations',
+    'visibility.observation_evidence',
     'visibility.content_gaps',
     'visibility.refresh',
   ]) {
@@ -186,6 +187,7 @@ test('shared hosted tools support the MCP 2026-07-28 modern stateless flow', asy
     'visibility.compare',
     'visibility.content_gaps',
     'visibility.history',
+    'visibility.observation_evidence',
     'visibility.refresh',
   ]);
 });

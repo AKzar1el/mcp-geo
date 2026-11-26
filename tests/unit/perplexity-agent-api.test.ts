@@ -64,6 +64,142 @@ test('Perplexity uses the Agent API fast preset and parses search-result URLs', 
   }
 });
 
+test('Perplexity does not credit an unreferenced search result when inline source IDs are present', async () => {
+  const originalFetch = globalThis.fetch;
+  const persisted: Array<{
+    brand_mentioned: number;
+    brand_cited_with_link: number;
+    cited_urls: string[];
+    engine_citations?: string[];
+  }> = [];
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    status: 'completed',
+    output: [
+      { type: 'search_results', results: [
+        { id: 5, url: 'https://acme.example/pricing' },
+        { id: 7, url: 'https://research.example/report' },
+        { id: 3, url: 'https://press.example/article' },
+        { id: 8, url: 'https://unused.example/other' },
+      ] },
+      { type: 'message', content: [{
+        type: 'output_text', text: 'Acme is mentioned in research [web:7] and news [3].',
+      }] },
+    ],
+  }), { status: 200 });
+
+  try {
+    await runLive({
+      PERPLEXITY_API_KEY: 'offline-test-key',
+      db: {
+        persistEngineRun: async (_runId, _engine, _model, _ttl, results) => {
+          persisted.push(...results);
+        },
+      },
+    } as Parameters<typeof runLive>[0], {
+      domain: 'acme.example', name: 'Acme', competitors: [], aliases: [], exclude_terms: [],
+    } as Parameters<typeof runLive>[1], [
+      { id: 'one', text: 'Who mentions Acme?' },
+    ] as Parameters<typeof runLive>[2], 'offline-run');
+
+    assert.equal(persisted.length, 1);
+    assert.equal(persisted[0].brand_mentioned, 1);
+    assert.equal(persisted[0].brand_cited_with_link, 0);
+    assert.deepEqual(persisted[0].engine_citations, [
+      'https://research.example/report',
+      'https://press.example/article',
+    ]);
+    assert.deepEqual(persisted[0].cited_urls, ['research.example', 'press.example']);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Perplexity source IDs in code and hidden markup do not count as visible citations', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    status: 'completed',
+    output: [
+      { type: 'search_results', results: [
+        { id: 1, url: 'https://acme.example/uncited' },
+        { id: 7, url: 'https://research.example/actually-cited' },
+      ] },
+      { type: 'message', content: [{
+        type: 'output_text',
+        text: 'Example:\n```md\n[web:1]\n```\n`[1]` <!-- [web:1] --> <span hidden>[web:1]</span> Escaped \\[web:1]. Real source [web:7].',
+      }] },
+    ],
+  }), { status: 200 });
+  try {
+    const result = await chatCompletion('offline-test-key', 'Question', 'System');
+    assert.deepEqual(result.citations, ['https://research.example/actually-cited']);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Perplexity does not fall back to uncited search results for hidden-only source markers', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    status: 'completed',
+    output: [
+      { type: 'search_results', results: [{ id: 1, url: 'https://acme.example/uncited' }] },
+      { type: 'message', content: [{
+        type: 'output_text', text: 'Code example:\n```text\n[web:1]\n```',
+      }] },
+    ],
+  }), { status: 200 });
+  try {
+    const result = await chatCompletion('offline-test-key', 'Question', 'System');
+    assert.deepEqual(result.citations, []);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Perplexity declines ambiguous or malformed inline source IDs', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    status: 'completed',
+    output: [
+      { type: 'search_results', results: [
+        { id: 7, url: 'https://acme.example/claim' },
+        { id: 7, url: 'https://other.example/conflict' },
+        { id: '9', url: 'https://acme.example/string-id' },
+      ] },
+      { type: 'message', content: [{
+        type: 'output_text', text: 'Answer with conflicting [web:7] and invalid [9] sources.',
+      }] },
+    ],
+  }), { status: 200 });
+  try {
+    const result = await chatCompletion('offline-test-key', 'Question', 'System');
+    assert.deepEqual(result.citations, []);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Perplexity does not fall back to every search result for oversized inline IDs', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    status: 'completed',
+    output: [
+      { type: 'search_results', results: [
+        { id: 1, url: 'https://acme.example/uncited' },
+      ] },
+      { type: 'message', content: [{
+        type: 'output_text', text: 'A citation with an invalid ID [web:9999999999999999999999].',
+      }] },
+    ],
+  }), { status: 200 });
+  try {
+    const result = await chatCompletion('offline-test-key', 'Question', 'System');
+    assert.deepEqual(result.citations, []);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('Perplexity excludes non-web search-result references from native citations', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => new Response(JSON.stringify({
@@ -80,6 +216,9 @@ test('Perplexity excludes non-web search-result references from native citations
         { url: 'https://127.0.0.1/debug' },
         { url: 'https://[::1]/debug' },
         { url: 'https://acme.example../malformed-root' },
+        { url: ' https://acme.example/leading-whitespace' },
+        { url: 'https://acme.example/trailing-newline\n' },
+        { url: 'https://acme.ex\tample/embedded-tab' },
         { url: 'HTTPS://source.example/reference' },
         { url: 'https://valid.example/page' },
       ] },

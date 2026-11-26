@@ -84,8 +84,27 @@ const responses = {
 type VisibilitySnapshot = {
   refreshed_at: string;
   overall_score: number;
+  score_uncertainty: {
+    minimum: number;
+    maximum: number;
+    partial_engines: string[];
+    by_engine: Array<{
+      engine: string;
+      observed_score: number;
+      minimum: number;
+      maximum: number;
+      usable_prompts: number;
+      expected_prompts: number;
+    }>;
+    by_measurement_mode: {
+      search_requested: { minimum: number; maximum: number; partial_engines: string[] } | null;
+      model_only: { minimum: number; maximum: number; partial_engines: string[] } | null;
+    };
+    note: string;
+  };
   missing_requested_engines: string[];
   unmeasured_engines: string[];
+  unmeasured_engine_reasons: Array<{ engine: string; reason: string }>;
   unmeasured_engines_note: string;
   measurement_scope: {
     measurement_mode_filter: 'model_only' | 'search_requested' | null;
@@ -235,6 +254,9 @@ test('check_visibility never attributes pre-identity-change scores to the curren
   assert.equal(current.overall_score, 100, 'old Claude mentions must not lower the current score');
   assert.deepEqual(current.per_engine.map((engine) => engine.engine), ['chatgpt']);
   assert.ok(current.unmeasured_engines.includes('claude'));
+  assert.deepEqual(current.unmeasured_engine_reasons.find((item) => item.engine === 'claude'), {
+    engine: 'claude', reason: 'stale_brand_identity',
+  });
   assert.deepEqual(current.identity_attribution.stale_engines, ['claude']);
 
   const staleOnly = registerVisibilityTool({
@@ -253,6 +275,12 @@ test('check_visibility scopes every snapshot field to the requested engine', asy
   });
 
   assert.equal(result.structuredContent.overall_score, 50);
+  assert.deepEqual(
+    { minimum: result.structuredContent.score_uncertainty.minimum,
+      maximum: result.structuredContent.score_uncertainty.maximum,
+      partial_engines: result.structuredContent.score_uncertainty.partial_engines },
+    { minimum: 50, maximum: 50, partial_engines: [] },
+  );
   assert.equal(result.structuredContent.google_search_sampling, null);
   assert.deepEqual(result.structuredContent.per_engine, [
     {
@@ -287,6 +315,27 @@ test('check_visibility scopes every snapshot field to the requested engine', asy
     result.structuredContent.refreshed_at,
     new Date(claudeTimestamp).toISOString(),
   );
+});
+
+test('check_visibility redacts buyer credentials in ranked winning and losing questions', async () => {
+  const winningQuestion = 'Best Acme guide https://docs.example.com/path?api_key=win-secret&source=public';
+  const losingQuestion = 'Compare alternatives Authorization: Bearer loss-secret';
+  const sourceRows = [
+    response('chatgpt', 'secret-win', winningQuestion, 1),
+    response('chatgpt', 'secret-loss', losingQuestion, 0, ['beta.com']),
+  ];
+  const visibility = registerVisibilityTool({
+    responses: { [runs.chatgpt.id]: sourceRows },
+  });
+  const snapshot = (await visibility.handler({ brand_id: brand.id, engines: ['chatgpt'] })).structuredContent;
+
+  assert.equal(snapshot.overall_score, 50);
+  assert.equal(snapshot.top_winning_prompts[0].prompt,
+    'Best Acme guide https://docs.example.com/path?api_key=[REDACTED]&source=public');
+  assert.equal(snapshot.top_losing_prompts[0].prompt,
+    'Compare alternatives Authorization: Bearer [REDACTED]');
+  assert.equal(sourceRows[0].prompt_text, winningQuestion, 'raw stored winning question must be untouched');
+  assert.equal(sourceRows[1].prompt_text, losingQuestion, 'raw stored losing question must be untouched');
 });
 
 test('check_visibility discloses US-English sampling only when Google search results are included', async () => {
@@ -443,6 +492,44 @@ test('check_visibility discloses absolute scan age for scheduled brands without 
   assert.deepEqual(freshWeekly.freshness.cadence_overdue_engines, []);
 });
 
+test('check_visibility does not present delayed run completion as fresh captured evidence', async () => {
+  const capturedAt = Date.now() - 9 * 24 * 60 * 60 * 1000;
+  const completedAt = Date.now() - 60 * 60 * 1000;
+  const stored = { ...response('chatgpt', 'p1', 'Buyer question', 1), captured_at: capturedAt };
+  const delayedRun = {
+    ...run('chatgpt', completedAt, 'batch'), started_at: capturedAt - 60_000,
+  };
+  const result = (await registerVisibilityTool({
+    runs: { chatgpt: delayedRun, claude: undefined },
+    responses: { [delayedRun.id]: [stored] },
+  }).handler({ brand_id: brand.id, engines: ['chatgpt'] })).structuredContent;
+
+  assert.equal(result.per_engine[0].refreshed_at, new Date(capturedAt).toISOString());
+  assert.equal(result.refreshed_at, new Date(capturedAt).toISOString());
+  assert.equal(result.freshness.cadence_overdue_warning, true);
+  assert.deepEqual(result.freshness.cadence_overdue_engines, ['chatgpt']);
+});
+
+test('active-only visibility freshness excludes newer retired-prompt observations', async () => {
+  const activeCapturedAt = Date.now() - 9 * 24 * 60 * 60 * 1000;
+  const retiredCapturedAt = Date.now() - 60 * 60 * 1000;
+  const currentRun = {
+    ...run('chatgpt', retiredCapturedAt, 'batch'), started_at: activeCapturedAt - 60_000,
+  };
+  const result = (await registerVisibilityTool({
+    runs: { chatgpt: currentRun, claude: undefined },
+    responses: { [currentRun.id]: [
+      { ...response('chatgpt', 'active', 'Current buyer prompt', 1), captured_at: activeCapturedAt },
+      { ...response('chatgpt', 'retired', 'Retired buyer prompt', 1), captured_at: retiredCapturedAt },
+    ] },
+    activePromptIds: ['active'],
+  }).handler({ brand_id: brand.id, engines: ['chatgpt'], active_prompts_only: true })).structuredContent;
+
+  assert.equal(result.per_engine[0].refreshed_at, new Date(activeCapturedAt).toISOString());
+  assert.equal(result.freshness.cadence_overdue_warning, true);
+  assert.equal(result.prompt_set_scope.selection, 'active_only');
+});
+
 test('batch ChatGPT results are not falsely classified as live-search observations', async () => {
   const batchRun = run('chatgpt', chatgptTimestamp, 'batch');
   const visibility = registerVisibilityTool({ runs: { chatgpt: batchRun } });
@@ -527,6 +614,9 @@ test('check_visibility identifies explicitly requested engines missing usable sc
   assert.equal(result.structuredContent.overall_score, 75);
   assert.deepEqual(result.structuredContent.missing_requested_engines, ['gemini']);
   assert.deepEqual(result.structuredContent.unmeasured_engines, ['gemini']);
+  assert.deepEqual(result.structuredContent.unmeasured_engine_reasons, [
+    { engine: 'gemini', reason: 'no_eligible_stored_run' },
+  ]);
   assert.deepEqual(result.structuredContent.per_engine.map(({ engine }) => engine), ['chatgpt', 'claude']);
 
   const implicit = await visibility.handler({ brand_id: brand.id });
@@ -556,6 +646,87 @@ test('check_visibility labels a score based on partial successful prompt coverag
     percent: 20,
     partial: true,
   });
+  assert.deepEqual(
+    { minimum: result.structuredContent.score_uncertainty.minimum,
+      maximum: result.structuredContent.score_uncertainty.maximum,
+      partial_engines: result.structuredContent.score_uncertainty.partial_engines },
+    { minimum: 20, maximum: 100, partial_engines: ['claude'] },
+  );
+  assert.deepEqual(result.structuredContent.score_uncertainty.by_measurement_mode, {
+    search_requested: null,
+    model_only: { minimum: 20, maximum: 100, partial_engines: ['claude'] },
+  });
+  assert.match(result.structuredContent.score_uncertainty.note, /not a confidence interval/i);
+  assert.match(result.structuredContent.score_uncertainty.note, /unmeasured engines.*excluded/i);
+});
+
+test('check_visibility refuses to report a measured zero when every stored response failed', async () => {
+  const failed = {
+    ...response('claude', 'failed-only', 'Provider-unavailable question', 0),
+    status: 'failed' as const,
+    error_message: 'Offline provider failure fixture',
+  };
+  const tool = registerVisibilityTool({
+    runs: { chatgpt: undefined, claude: runs.claude },
+    responses: { [runs.claude.id]: [failed] },
+  });
+  await assert.rejects(
+    tool.handler({ brand_id: brand.id, engines: ['claude'] }),
+    /No successful stored visibility observations.*unmeasured, not (?:an observed )?zero/i,
+  );
+});
+
+test('check_visibility excludes failed-only engines from scores and score freshness', async () => {
+  const failed = {
+    ...response('claude', 'failed-only', 'Provider-unavailable question', 0),
+    status: 'failed' as const,
+    error_message: 'Offline provider failure fixture',
+  };
+  const tool = registerVisibilityTool({
+    responses: { [runs.claude.id]: [failed] },
+  });
+  const snapshot = (await tool.handler({
+    brand_id: brand.id, engines: ['chatgpt', 'claude'],
+  })).structuredContent;
+  assert.equal(snapshot.overall_score, 100);
+  assert.deepEqual(snapshot.per_engine.map(({ engine }) => engine), ['chatgpt']);
+  assert.deepEqual(snapshot.unmeasured_engines, ['claude']);
+  assert.deepEqual(snapshot.unmeasured_engine_reasons, [
+    { engine: 'claude', reason: 'no_usable_stored_responses' },
+  ]);
+  assert.deepEqual(snapshot.missing_requested_engines, ['claude']);
+  assert.equal(snapshot.refreshed_at, new Date(chatgptTimestamp).toISOString());
+  assert.equal(snapshot.freshness.oldest_refreshed_at, new Date(chatgptTimestamp).toISOString());
+  assert.equal(snapshot.freshness.mixed_age_warning, false);
+  assert.deepEqual(snapshot.score_uncertainty.partial_engines, []);
+});
+
+test('check_visibility score range averages measured-engine extremes without counting missing engines as zeros', async () => {
+  const partialRun: Run = { ...runs.claude, prompts_total: 5, prompts_completed: 1 };
+  const tool = registerVisibilityTool({
+    runs: { claude: partialRun },
+    responses: { [partialRun.id]: [response('claude', 'only-ok', 'Observed mention', 1)] },
+  });
+  const result = await tool.handler({ brand_id: brand.id });
+  assert.equal(result.structuredContent.overall_score, 100);
+  assert.equal(result.structuredContent.score_uncertainty.minimum, 60);
+  assert.equal(result.structuredContent.score_uncertainty.maximum, 100);
+  assert.deepEqual(result.structuredContent.score_uncertainty.partial_engines, ['claude']);
+  assert.deepEqual(result.structuredContent.score_uncertainty.by_engine, [
+    {
+      engine: 'chatgpt', observed_score: 100, minimum: 100, maximum: 100,
+      usable_prompts: 2, expected_prompts: 2,
+    },
+    {
+      engine: 'claude', observed_score: 100, minimum: 20, maximum: 100,
+      usable_prompts: 1, expected_prompts: 5,
+    },
+  ]);
+  assert.deepEqual(result.structuredContent.score_uncertainty.by_measurement_mode, {
+    search_requested: { minimum: 100, maximum: 100, partial_engines: [] },
+    model_only: { minimum: 20, maximum: 100, partial_engines: ['claude'] },
+  });
+  assert.ok(result.structuredContent.unmeasured_engines.includes('gemini'));
 });
 
 test('check_visibility flags historical prompt evidence after a prompt-set replacement', async () => {
@@ -611,6 +782,9 @@ test('active-only scoring excludes engines with retired-only evidence instead of
   assert.equal(snapshot.overall_score, 100);
   assert.deepEqual(snapshot.per_engine.map(({ engine }) => engine), ['chatgpt']);
   assert.deepEqual(snapshot.unmeasured_engines, ['claude']);
+  assert.deepEqual(snapshot.unmeasured_engine_reasons, [
+    { engine: 'claude', reason: 'no_successful_active_prompt_observations' },
+  ]);
   assert.deepEqual(snapshot.missing_requested_engines, ['claude']);
   assert.equal(snapshot.freshness.oldest_refreshed_at, new Date(chatgptTimestamp).toISOString());
   assert.equal(snapshot.prompt_set_scope.excluded_successful_responses, 3);
@@ -730,6 +904,9 @@ test('check_visibility selects latest eligible stored request mode before headli
   assert.equal(search.overall_score, 100);
   assert.deepEqual(search.per_engine.map((row) => row.engine), ['chatgpt']);
   assert.deepEqual(search.unmeasured_engines, ['claude']);
+  assert.deepEqual(search.unmeasured_engine_reasons, [
+    { engine: 'claude', reason: 'incompatible_mode_selection' },
+  ]);
   assert.deepEqual(search.missing_requested_engines, ['claude']);
   assert.deepEqual(search.top_winning_prompts.map((row) => row.prompt), ['Live winner']);
   assert.equal(search.measurement_scope.measurement_mode_filter, 'search_requested');
@@ -750,6 +927,9 @@ test('check_visibility selects latest eligible stored request mode before headli
   })).structuredContent;
   assert.equal(liveModel.overall_score, 50);
   assert.deepEqual(liveModel.unmeasured_engines, ['chatgpt']);
+  assert.deepEqual(liveModel.unmeasured_engine_reasons, [
+    { engine: 'chatgpt', reason: 'incompatible_mode_selection' },
+  ]);
   assert.deepEqual(liveModel.per_engine.map((row) => row.engine), ['claude']);
 
   await assert.rejects(

@@ -970,6 +970,12 @@ test('content-gap analyzer does not present invented competitor page URLs as obs
           rationale: 'Create a proposed pricing guide at https://acme.com/pricing to address the Asana competitor',
           suggested_format: 'pricing_page',
         },
+        {
+          priority: 5,
+          topic: 'Acme versus Asana credentialed guide',
+          rationale: 'Asana is observed, but https://user:private@acme.com/pricing is a supposed Acme guide',
+          suggested_format: 'comparison_page',
+        },
       ]) }],
     });
   };
@@ -978,7 +984,7 @@ test('content-gap analyzer does not present invented competitor page URLs as obs
       { ANTHROPIC_API_KEY: 'synthetic-offline-key' },
       { id: 'acme', name: 'Acme', domain: 'acme.com' } as Brand,
       [{ prompt_text: 'Compare team tools', engines_lost_on: ['chatgpt'], competitors_winning: ['asana.com'] }],
-      4,
+      5,
     );
     assert.deepEqual(recommendations.map((rec) => rec.topic), [
       'Acme versus Asana homepages',
@@ -1422,6 +1428,7 @@ test('content gaps expose bounded traceable winning observations, not retired or
             engine: string;
             run_id: string;
             response_id: string;
+            measurement_mode: 'model_only' | 'search_requested';
             captured_at_ms: number;
             competitors_mentioned: string[];
           }>;
@@ -1457,6 +1464,7 @@ test('content gaps expose bounded traceable winning observations, not retired or
     prompt_text: 'Best software for agencies',
     observations: [{
       engine: 'chatgpt', run_id: 'run-chatgpt', response_id: 'current',
+      measurement_mode: 'search_requested',
       captured_at_ms: 200, competitors_mentioned: ['rival.com'],
     }],
   }]);
@@ -1464,7 +1472,7 @@ test('content gaps expose bounded traceable winning observations, not retired or
   assert.doesNotMatch(JSON.stringify(result.losing_prompt_evidence), /Private answer|obsolete.com|retired/);
 });
 
-test('content gaps disclose usable active-prompt coverage of latest completed engine runs', async () => {
+test('content gaps date active-prompt coverage by successful captures, with legacy fallback', async () => {
   const brand = {
     id: 'acme', name: 'Acme', domain: 'acme.com', competitors: ['rival.com'],
     aliases: [], exclude_terms: [], updated_at: 0,
@@ -1505,16 +1513,16 @@ test('content gaps disclose usable active-prompt coverage of latest completed en
       getBrand: async () => brand,
       getActivePrompts: async () => [{ id: 'prompt-1' }, { id: 'prompt-2' }],
       getLatestCompletedRun: async (_id, engine) =>
-        engine === 'chatgpt' ? { id: 'run-chatgpt', started_at: 1000, completed_at: 1500 } :
+        engine === 'chatgpt' ? { id: 'run-chatgpt', started_at: 1000, completed_at: 15000 } :
         engine === 'claude' ? { id: 'run-claude', started_at: 3000, completed_at: null } : null,
       getResponsesForRun: async (runId) => runId === 'run-chatgpt' ? [
-        response(runId, 'prompt-1', 'success', 'ok', 100),
-        response(runId, 'prompt-1', 'later-failure', 'error', 200),
-        response(runId, 'prompt-2', 'failure', 'error', 100),
-        response(runId, 'retired', 'retired-success', 'ok', 300),
+        response(runId, 'prompt-1', 'success', 'ok', 1100),
+        response(runId, 'prompt-1', 'later-failure', 'error', 1200),
+        response(runId, 'prompt-2', 'failure', 'error', 1150),
+        response(runId, 'retired', 'retired-success', 'ok', 1300),
       ] : [
-        response(runId, 'prompt-1', 'claude-1', 'ok', 100),
-        response(runId, 'prompt-2', 'claude-2', 'ok', 100),
+        response(runId, 'prompt-1', 'claude-1', 'ok', 0),
+        response(runId, 'prompt-2', 'claude-2', 'ok', 0),
       ],
     } as Db,
     env: {}, refreshExecution: 'sync',
@@ -1524,7 +1532,7 @@ test('content gaps disclose usable active-prompt coverage of latest completed en
   const result = (await handler({ brand_id: brand.id, max_recommendations: 2 })).structuredContent;
   assert.equal(result.observation_coverage.active_prompt_count, 2);
   assert.deepEqual(result.observation_coverage.per_engine, [
-    { engine: 'chatgpt', run_id: 'run-chatgpt', usable_prompt_count: 1, missing_prompt_count: 1, refreshed_at: new Date(1500).toISOString() },
+    { engine: 'chatgpt', run_id: 'run-chatgpt', usable_prompt_count: 1, missing_prompt_count: 1, refreshed_at: new Date(1100).toISOString() },
     { engine: 'claude', run_id: 'run-claude', usable_prompt_count: 2, missing_prompt_count: 0, refreshed_at: new Date(3000).toISOString() },
   ]);
   assert.deepEqual(result.observation_coverage.incomplete_engines, ['chatgpt']);
@@ -1576,6 +1584,7 @@ test('content gaps flag a completed engine run without usable active-prompt evid
   assert.deepEqual(result.recommendations, []);
   assert.equal(result.observation_coverage.per_engine[0]?.usable_prompt_count, 0);
   assert.equal(result.observation_coverage.per_engine[0]?.missing_prompt_count, 1);
+  assert.equal((result.observation_coverage.per_engine[0] as { refreshed_at?: string | null }).refreshed_at, null);
   assert.ok(result.observation_coverage.incomplete_engines.includes('chatgpt'));
   assert.ok(result.observation_coverage.unmeasured_engines.includes('chatgpt'));
   assert.match(result.observation_coverage.note, /no usable|zero usable/i);
@@ -1644,7 +1653,10 @@ test('content gaps select the latest eligible run within a request-mode cohort',
     ai_analysis: boolean; measurement_mode?: 'model_only' | 'search_requested';
   }) => Promise<{ structuredContent: {
     observation_coverage: { per_engine: Array<{ run_id: string }>; unmeasured_engines: string[] };
-    losing_prompt_evidence: { prompts: Array<{ prompt_id: string }> };
+    losing_prompt_evidence: { prompts: Array<{
+      prompt_id: string;
+      observations: Array<{ measurement_mode: 'model_only' | 'search_requested' }>;
+    }> };
     measurement_scope: {
       measurement_mode_filter: 'model_only' | 'search_requested' | null;
       model_only_engines: string[]; search_requested_engines: string[];
@@ -1694,6 +1706,8 @@ test('content gaps select the latest eligible run within a request-mode cohort',
   assert.equal(search.measurement_scope.measurement_mode_filter, 'search_requested');
   assert.deepEqual(search.observation_coverage.per_engine.map((run) => run.run_id), ['live-old']);
   assert.deepEqual(search.losing_prompt_evidence.prompts.map((prompt) => prompt.prompt_id), ['prompt-live']);
+  assert.deepEqual(search.losing_prompt_evidence.prompts[0]?.observations.map((row) => row.measurement_mode),
+    ['search_requested']);
   assert.deepEqual(search.measurement_scope.search_requested_engines, ['chatgpt']);
   assert.ok(search.observation_coverage.unmeasured_engines.includes('claude'));
   assert.ok(!selectedRuns.some(({ engine }) => engine === 'claude'),
@@ -1707,6 +1721,8 @@ test('content gaps select the latest eligible run within a request-mode cohort',
   assert.deepEqual(model.observation_coverage.per_engine.map((run) => run.run_id),
     ['batch-new', 'claude-run']);
   assert.deepEqual(model.measurement_scope.model_only_engines, ['chatgpt', 'claude']);
+  assert.deepEqual(model.losing_prompt_evidence.prompts.flatMap((prompt) =>
+    prompt.observations.map((row) => row.measurement_mode)), ['model_only', 'model_only']);
   assert.ok(selectedRuns.some(({ engine, mode }) => engine === 'chatgpt' && mode === 'batch'));
   assert.ok(selectedRuns.some(({ engine, mode }) => engine === 'claude' && mode === 'any'));
 
@@ -1714,4 +1730,49 @@ test('content gaps select the latest eligible run within a request-mode cohort',
   assert.equal(legacy.measurement_scope.measurement_mode_filter, null);
   assert.deepEqual(legacy.observation_coverage.per_engine.map((run) => run.run_id),
     ['batch-new', 'claude-run']);
+});
+
+test('content gap evidence and fallback advice redact credentials in stored buyer questions', async () => {
+  const question = 'Best tools at https://example.com/docs?api_key=synthetic-url-secret and access_token=synthetic-inline-secret';
+  const stored: PromptResponse = {
+    id: 'response-secret', run_id: 'run-1', prompt_id: 'prompt-1',
+    prompt_text: question, engine: 'chatgpt', raw_response: '',
+    brand_mentioned: 0, brand_cited_with_link: 0, cited_urls: [],
+    competitors_mentioned: ['rival.com'], engine_citations: [], status: 'ok',
+    error_message: null, captured_at: 2000,
+  };
+  let handler: ((input: { brand_id: string; max_recommendations: number; ai_analysis: boolean }) =>
+    Promise<{ structuredContent: {
+      losing_prompt_evidence: { prompts: Array<{ prompt_text: string }> };
+      recommendations: Array<{ topic: string; rationale: string }>;
+      observation_coverage: { active_prompt_count: number };
+    } }>) | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, callback: unknown) {
+      if (name === 'get_content_gaps') handler = callback as typeof handler;
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => ({
+        id: 'acme', name: 'Acme', domain: 'acme.com', competitors: ['rival.com'],
+        aliases: [], exclude_terms: [], updated_at: 0,
+      } as Brand),
+      getActivePrompts: async () => [{ id: 'prompt-1' }],
+      getLatestCompletedRun: async (_id, engine) =>
+        engine === 'chatgpt' ? { id: 'run-1', mode: 'live', started_at: 1000 } : null,
+      getResponsesForRun: async () => [stored],
+    } as Db,
+    env: {}, refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(handler);
+  const result = (await handler({ brand_id: 'acme', max_recommendations: 1, ai_analysis: false })).structuredContent;
+  const output = JSON.stringify(result);
+  assert.doesNotMatch(output, /synthetic-url-secret|synthetic-inline-secret/);
+  assert.match(result.losing_prompt_evidence.prompts[0]?.prompt_text ?? '', /api_key=\[REDACTED\]/);
+  assert.match(result.recommendations[0]?.topic ?? '', /access_token=\[REDACTED\]/);
+  assert.match(result.recommendations[0]?.rationale ?? '', /rival\.com/);
+  assert.equal(result.observation_coverage.active_prompt_count, 1);
+  assert.equal(stored.prompt_text, question, 'stored evidence remains unchanged');
 });

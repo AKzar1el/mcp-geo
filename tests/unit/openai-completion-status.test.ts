@@ -52,7 +52,9 @@ test('OpenAI native citations exclude invalid, non-web and credentialed URLs', a
           { type: 'url_citation', url_citation: { url: 'javascript:alert(1)' } },
           { type: 'url_citation', url_citation: { url: 'https://user:secret@attacker.example/a' } },
           { type: 'url_citation', url_citation: { url: 'bare.example' } },
-          { type: 'url_citation', url_citation: { url: 'HTTPS://valid.example/source' } },
+          { type: 'url_citation', url_citation: { url: ' https://acme.com/normalized' } },
+          { type: 'url_citation', url_citation: { url: 'https://acme.com/sou\nrce' } },
+          { type: 'url_citation', url_citation: { url: 'HTTPS://valid.example.org/source' } },
           { type: 'note', url_citation: { url: 'https://ignored.example/' } },
         ],
       },
@@ -60,7 +62,7 @@ test('OpenAI native citations exclude invalid, non-web and credentialed URLs', a
   }), { status: 200 });
   try {
     const answer = await chatCompletion('test-key', 'Find sources');
-    assert.deepEqual(answer.citations, ['HTTPS://valid.example/source']);
+    assert.deepEqual(answer.citations, ['HTTPS://valid.example.org/source']);
   } finally {
     globalThis.fetch = originalFetch;
   }

@@ -91,6 +91,14 @@ type ComparisonResult = {
     excluded_mode_responses: number;
     note: string;
   };
+  mention_evidence_samples: {
+    brand: Array<{ engine: string; run_id: string; response_id: string; prompt_id: string; prompt: string; measurement_mode: string; captured_at: string }>;
+    competitors: Array<{
+      domain: string;
+      samples: Array<{ engine: string; run_id: string; response_id: string; prompt_id: string; prompt: string; measurement_mode: string; captured_at: string }>;
+    }>;
+    note: string;
+  };
   requested_competitor_domains: string[] | null;
   prompts_you_win: Array<{ prompt: string; you_cited_by: string[]; competitors_cited: string[]; you_mentioned_by: string[]; competitors_mentioned: string[] }>;
   prompts_brand_only: Array<{ prompt: string; you_cited_by: string[]; competitors_cited: string[]; you_mentioned_by: string[]; competitors_mentioned: string[] }>;
@@ -113,6 +121,46 @@ type ComparisonTool = {
     measurement_mode?: 'model_only' | 'search_requested';
   }) => Promise<{ structuredContent: ComparisonResult }>;
 };
+
+test('comparison redacts credentials in displayed buyer questions without changing counts', async () => {
+  let comparison: ComparisonTool | undefined;
+  const capturedAt = Date.now();
+  const server = {
+    registerTool(name: string, _config: unknown, handler: unknown) {
+      if (name === 'compare_competitors') comparison = { handler: handler as ComparisonTool['handler'] };
+    },
+  } as unknown as McpServer;
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getResponsesSince: async () => [
+        { ...response('brand', 'Which platform works with https://example.com/docs?api_key=private-brand-key for teams?', 1, []), captured_at: capturedAt - 2_000 },
+        { ...response('competitor', 'Compare access_token=private-competitor-token for team planning', 0, ['asana.com']), captured_at: capturedAt - 1_000 },
+        { ...response('both', 'Does Authorization: Bearer private-cohort-token work for both?', 1, ['asana.com']), captured_at: capturedAt },
+      ],
+    } as Db,
+    env: {}, refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(comparison);
+
+  const result = (await comparison.handler({ brand_id: brand.id })).structuredContent;
+  const serialized = JSON.stringify(result);
+  for (const secret of ['private-brand-key', 'private-competitor-token', 'private-cohort-token']) {
+    assert.ok(!serialized.includes(secret), `comparison output exposed ${secret}`);
+  }
+  // Samples are newest-first; validate the intended response, not its position.
+  assert.equal(result.mention_evidence_samples.brand[0]?.response_id, 'both');
+  assert.match(result.mention_evidence_samples.brand.find((sample) => sample.response_id === 'brand')?.prompt ?? '', /api_key=\[REDACTED\]/);
+  assert.match(result.mention_evidence_samples.competitors[0]?.samples.find((sample) => sample.response_id === 'competitor')?.prompt ?? '', /access_token=\[REDACTED\]/);
+  assert.match(result.mention_evidence_samples.competitors[0]?.samples.find((sample) => sample.response_id === 'both')?.prompt ?? '', /Bearer \[REDACTED\]/);
+  assert.match(result.prompts_brand_only[0]?.prompt ?? '', /\[REDACTED\]/);
+  assert.match(result.prompts_co_mentioned[0]?.prompt ?? '', /\[REDACTED\]/);
+  assert.match(result.competitors[0]?.prompts_won_against_you[0] ?? '', /\[REDACTED\]/);
+  assert.equal(result.observation_coverage.successful_responses, 3);
+  assert.equal(result.your_mentions, 2);
+  assert.equal(result.competitors[0]?.mentions, 2);
+});
 
 test('comparison scopes model-only and search-requested evidence before shares and coverage', async () => {
   let comparison: ComparisonTool | undefined;
@@ -293,6 +341,12 @@ test('compare_competitors counts one latest successful retry per run, engine and
   assert.equal(result.your_share_of_voice_pct, 50);
   assert.equal(result.competitors.find((c) => c.domain === 'asana.com')?.mentions, 1);
   assert.equal(result.competitors.find((c) => c.domain === 'monday.com')?.mentions, 1);
+  assert.deepEqual(result.mention_evidence_samples.brand.map(({ response_id }) => response_id),
+    ['other-engine', 'later-scan']);
+  assert.deepEqual(result.mention_evidence_samples.competitors[0]?.samples
+    .map(({ response_id }) => response_id), ['retry-z']);
+  assert.deepEqual(result.mention_evidence_samples.competitors[1]?.samples
+    .map(({ response_id }) => response_id), ['other-engine']);
 });
 
 test('compare_competitors excludes pre-identity runs even when responses arrive after the edit', async () => {
@@ -675,6 +729,8 @@ test('comparison with no configured competitors does not pretend observations we
   assert.equal(result.observation_coverage.status, 'not_compared');
   assert.equal(result.observation_coverage.successful_responses, 0);
   assert.deepEqual(result.observation_coverage.per_engine, []);
+  assert.deepEqual(result.mention_evidence_samples.brand, []);
+  assert.deepEqual(result.mention_evidence_samples.competitors, []);
   assert.match(result.observation_coverage.note, /competitor/i);
 });
 
@@ -756,4 +812,60 @@ test('comparison can restrict its measurement cohort to currently active prompts
   assert.equal(empty.prompt_set_scope.active_prompt_count, 0);
   assert.equal(empty.prompt_set_scope.excluded_observations, 2);
   assert.equal(empty.your_mentions, 0);
+});
+
+test('comparison exposes bounded, scoped stored-response references for audit sampling', async () => {
+  let comparison: ComparisonTool | undefined;
+  const server = {
+    registerTool(name: string, _config: unknown, handler: unknown) {
+      if (name === 'compare_competitors') comparison = { handler: handler as ComparisonTool['handler'] };
+    },
+  } as unknown as McpServer;
+  const capturedBase = Date.UTC(2026, 10, 21, 15);
+  const brandRows = Array.from({ length: 7 }, (_, i) => ({
+    ...response(`b${i}`, `brand prompt ${i}`, 1, []),
+    captured_at: capturedBase + i * 1_000,
+    mode: 'live',
+  }));
+  const competitorRows = Array.from({ length: 7 }, (_, i) => ({
+    ...response(`c${i}`, `competitor prompt ${i}`, 0, ['asana.com']),
+    captured_at: capturedBase + i * 1_000,
+    mode: 'live',
+  }));
+  const excludedRows = [
+    { ...response('failed', 'failed prompt', 1, ['asana.com']), status: 'error', captured_at: capturedBase + 99_000, mode: 'live' },
+    { ...response('batch', 'different mode', 1, ['asana.com']), captured_at: capturedBase + 98_000, mode: 'batch' },
+    { ...response('retired', 'retired prompt', 1, ['asana.com']), captured_at: capturedBase + 97_000, mode: 'live' },
+  ];
+  registerTools(server, {
+    db: {
+      getBrand: async () => brand,
+      getResponsesSince: async () => [...brandRows, ...competitorRows, ...excludedRows],
+      getActivePrompts: async () => [...brandRows, ...competitorRows]
+        .map((row) => ({ id: row.prompt_id })),
+    } as Db,
+    env: {}, refreshExecution: 'sync',
+    runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
+  });
+  assert.ok(comparison);
+  const result = (await comparison.handler({
+    brand_id: brand.id, measurement_mode: 'search_requested', active_prompts_only: true,
+  })).structuredContent;
+  assert.equal(result.your_mentions, 7);
+  assert.equal(result.competitors[0]?.mentions, 7);
+  assert.deepEqual(result.mention_evidence_samples.brand.map((sample) => sample.response_id),
+    ['b6', 'b5', 'b4', 'b3', 'b2']);
+  assert.deepEqual(result.mention_evidence_samples.competitors.map(({ domain }) => domain),
+    ['asana.com', 'monday.com']);
+  assert.deepEqual(result.mention_evidence_samples.competitors[0]?.samples.map((sample) => sample.response_id),
+    ['c6', 'c5', 'c4', 'c3', 'c2']);
+  assert.deepEqual(result.mention_evidence_samples.competitors[1]?.samples, []);
+  assert.deepEqual(result.mention_evidence_samples.brand[0], {
+    engine: 'chatgpt', run_id: 'run-b6', response_id: 'b6', prompt_id: 'prompt-b6',
+    prompt: 'brand prompt 6', measurement_mode: 'search_requested',
+    captured_at: new Date(capturedBase + 6_000).toISOString(),
+  });
+  assert.equal(result.mention_evidence_samples.competitors[0]?.samples[0]?.prompt, 'competitor prompt 6');
+  assert.equal(result.mention_evidence_samples.competitors[0]?.samples[0]?.measurement_mode, 'search_requested');
+  assert.match(result.mention_evidence_samples.note, /not.*citations|mention.*not.*citation/i);
 });

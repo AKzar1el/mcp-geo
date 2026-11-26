@@ -32,9 +32,16 @@ function captureToolConfigs(): Map<string, CapturedConfig> {
   return configs;
 }
 
-test('all twelve tool schemas stay lean, example-led, and parameter-described', () => {
+test('citation cursor guidance names the request mode and ranked source that must be preserved', () => {
+  const cursor = captureToolConfigs().get('get_citations')?.inputSchema?.cursor?.description;
+  assert.ok(cursor);
+  assert.match(cursor, /measurement_mode/);
+  assert.match(cursor, /ranked_source_domain/);
+});
+
+test('all thirteen tool schemas stay lean, example-led, and parameter-described', () => {
   const configs = captureToolConfigs();
-  assert.equal(configs.size, 12);
+  assert.equal(configs.size, 13);
 
   for (const [name, config] of configs) {
     assert.ok(config.description, `${name} needs a description`);

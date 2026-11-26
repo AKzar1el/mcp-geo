@@ -735,7 +735,7 @@ export function createD1Db(d1: D1Database): Db {
       // Match SQLite's per-run/prompt retry deduplication and frozen window.
       const { results } = await d1
         .prepare(
-          `SELECT pr.id, pr.prompt_id, pr.engine, r.mode AS mode, r.started_at AS run_started_at, pr.engine_citations_json, pr.captured_at
+          `SELECT pr.id, pr.run_id, pr.prompt_id, pr.engine, r.mode AS mode, r.started_at AS run_started_at, pr.engine_citations_json, pr.captured_at
              FROM prompt_responses pr
              JOIN runs r ON r.id = pr.run_id
              ${activePromptsOnly ? 'JOIN prompts p ON p.id = pr.prompt_id' : ''}
@@ -879,6 +879,8 @@ export function createD1Db(d1: D1Database): Db {
           `SELECT r.id AS run_id, r.engine, r.mode, r.started_at,
                   COALESCE(r.completed_at, r.started_at) AS completed_at,
                   COUNT(pr.id) AS total,
+                  MAX(pr.captured_at) AS last_captured_at,
+                  MAX(CASE WHEN p.active = 1 THEN pr.captured_at END) AS active_last_captured_at,
                   SUM(pr.brand_mentioned) AS hits,
                   SUM(CASE WHEN p.active = 1 THEN 1 ELSE 0 END) AS active_total,
                   SUM(CASE WHEN p.active = 1 THEN pr.brand_mentioned ELSE 0 END) AS active_hits,

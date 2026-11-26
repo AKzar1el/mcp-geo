@@ -38,6 +38,9 @@ test('GET /audit serves the frozen EUR 99 audit offer', async () => {
   assert.match(body, /reported per engine/i);
   assert.match(body, /same 20 buyer-intent prompts/i);
   assert.match(body, /See the exact score calculation and interpretation limits/i);
+  assert.match(body, /Google AI Overviews and AI Mode.*United States.*gl=us.*English.*hl=en/i);
+  assert.match(body, /no city-level location/i);
+  assert.match(body, /do not establish visibility in other markets or languages/i);
   assert.match(
     body,
     /https:\/\/github\.com\/AKzar1el\/mcp-geo\/blob\/main\/docs\/ai-visibility-audit-methodology\.md/,
@@ -398,7 +401,12 @@ test('audit form validates scope and preserves oversized email requests with the
 
   // WHATWG URL accepts malformed DNS labels; an email request cannot treat
   // those as valid, measurable public brand or competitor domains.
-  for (const invalid of ['one..com', 'one..site', 'https://-bad.com', 'https://localhost.', 'https://one.com..', '127.0.0.1']) {
+  for (const invalid of [
+    'one..com', 'one..site', 'https://-bad.com', 'https://localhost.',
+    'https://one.com..', '127.0.0.1', 'router.home.arpa', 'home.arpa',
+    'printer.local', 'service.internal', 'brand.test', 'demo.invalid', 'docs.example',
+    'archive.hidden.onion', 'service.alt', 'https://example.onion/report',
+  ]) {
     form.values.brand = invalid;
     form.values.competitors = 'two.com';
     location.href = '';
@@ -407,6 +415,14 @@ test('audit form validates scope and preserves oversized email requests with the
     assert.match(status.textContent, /valid.*(?:domain|URL)/i);
   }
   form.values.brand = 'example.com';
+  for (const invalid of ['printer.local', 'router.home.arpa', 'brand.test',
+    'service.alt', 'https://archive.hidden.onion/report']) {
+    form.values.competitors = invalid;
+    location.href = '';
+    await submit();
+    assert.equal(location.href, '', `non-public competitor ${invalid} must not open an email`);
+    assert.match(status.textContent, /valid.*(?:domain|URL)/i);
+  }
   form.values.competitors = 'https://one..com';
   location.href = '';
   await submit();

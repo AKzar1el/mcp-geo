@@ -1,13 +1,13 @@
 // Perplexity Agent API runner. Live mode only; uses the managed `fast` preset.
-// Captures the engine-native citations array Perplexity returns alongside
-// the answer text — those URLs are explicit sources Perplexity grounded
-// its answer on, so we keep them in addition to whatever extractCitations
-// finds in the response body.
+// Captures Agent API search-result source URLs alongside the answer text.
+// Where inline citation IDs exist, only the referenced results qualify as
+// answer citations; otherwise retain the provider's search-result fallback.
 
 import {
   buildSystemPrompt,
   extractCitations,
   hasBrandInEngineCitations,
+  visibleAnswerProse,
 } from './openai.js';
 import type {
   Brand,
@@ -49,7 +49,7 @@ interface PerplexityMessageOutput {
 
 interface PerplexitySearchResultsOutput {
   type: 'search_results';
-  results?: Array<{ url?: unknown }>;
+  results?: Array<{ id?: unknown; url?: unknown }>;
 }
 
 type PerplexityOutput =
@@ -81,7 +81,16 @@ function extractAgentText(data: PerplexityResponse): string {
   return chunks.join('');
 }
 
-function extractAgentCitations(data: PerplexityResponse): string[] {
+function extractAgentCitations(data: PerplexityResponse, text: string): string[] {
+  const citedIds = new Set<number>();
+  // A marker in code or hidden markup must not cite a source, but its raw
+  // presence still prevents the broad all-search-results fallback.
+  const hasInlineMarkers = /\[(?:web:)?\d+\]/.test(text);
+  for (const match of visibleAnswerProse(text).matchAll(/(?<!\\)\[(?:web:)?(\d+)\]/g)) {
+    const id = Number(match[1]);
+    if (Number.isSafeInteger(id)) citedIds.add(id);
+  }
+  const matchingSources = new Map<number, string | null>();
   const urls: string[] = [];
   for (const item of data.output ?? []) {
     if (
@@ -91,20 +100,31 @@ function extractAgentCitations(data: PerplexityResponse): string[] {
     ) continue;
     for (const result of item.results) {
       if (typeof result.url !== 'string') continue;
+      // WHATWG URL parsing silently strips raw control bytes and outer space.
+      if (/[\u0000-\u001f\u007f]/.test(result.url) || result.url.trim() !== result.url) continue;
       try {
         const parsed = new URL(result.url);
         // Search-result metadata must point to a domain-shaped web host,
         // not a loopback, IP literal, or malformed DNS spelling.
         if ((parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
             normalizeDomainInput(parsed.hostname) && !parsed.username && !parsed.password) {
-          urls.push(result.url);
+          if (!hasInlineMarkers) {
+            urls.push(result.url);
+          } else if (typeof result.id === 'number' && citedIds.has(result.id)) {
+            // Conflicting URLs for the same provider ID are ambiguous: fail closed.
+            const previous = matchingSources.get(result.id);
+            matchingSources.set(result.id, previous === undefined || previous === result.url
+              ? result.url : null);
+          }
         }
       } catch {
         // Bare hosts and malformed provider metadata are not source links.
       }
     }
   }
-  return urls;
+  return !hasInlineMarkers
+    ? urls
+    : [...matchingSources.values()].filter((url): url is string => url !== null);
 }
 
 function describeAgentError(data: PerplexityResponse): string {
@@ -159,7 +179,7 @@ export async function chatCompletion(
   if (text.trim().length === 0) {
     throw new Error('Perplexity Agent API response missing output_text');
   }
-  const citations = extractAgentCitations(data);
+  const citations = extractAgentCitations(data, text);
   return { text, citations };
 }
 
