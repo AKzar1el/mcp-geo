@@ -3,8 +3,8 @@
   "name": "digestseo-mcp",
   "display_name": "GEO Tracker by DigestSEO",
   "version": "0.3.31",
-  "description": "DigestSEO mcp-geo: track brand citations across seven AI search surfaces. Free OSS with an optional EUR 99 one-time AI Visibility Audit.",
-  "long_description": "Self-hosted AI visibility tracking over MCP. Runs buyer-intent prompts against the AI engines you hold API keys for, records which ones cite your brand versus competitors, and exposes twelve tools: track_brand, update_brand, list_brands, list_prompts, set_prompts, generate_prompts, refresh_brand, check_visibility, get_visibility_history, compare_competitors, get_citations, get_content_gaps. All data stays in a local SQLite database under ~/.digestseo.",
+  "description": "DigestSEO mcp-geo: measure AI brand mentions and source links where providers return them. Free MIT software; live scans require provider keys and can incur charges. Optional EUR 99 one-time AI Visibility Audit.",
+  "long_description": "Self-hosted AI visibility tracking over MCP. Runs buyer-intent prompts against the AI engines you hold API keys for, records brand mentions and separately records source links when providers return them, and exposes twelve tools: track_brand, update_brand, list_brands, list_prompts, set_prompts, generate_prompts, refresh_brand, check_visibility, get_visibility_history, compare_competitors, get_citations, get_content_gaps. All data stays in a local SQLite database under ~/.digestseo.",
   "author": {
     "name": "AKzar1el",
     "url": "https://github.com/AKzar1el"
