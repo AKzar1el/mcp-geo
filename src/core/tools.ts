@@ -343,6 +343,7 @@ const observationEvidenceOutputSchema = z.object({
   competitors_mentioned: z.array(z.string()),
   response_excerpt: z.string().max(250),
   requested_competitor: z.string().nullable(),
+  requested_source_url: z.string().nullable(),
   provider_source_count: z.number().int().nonnegative(),
   provider_source_urls_filtered_count: z.number().int().nonnegative(),
   provider_source_urls_deduplicated_count: z.number().int().nonnegative(),
@@ -2139,7 +2140,7 @@ export function registerTools(
     {
       title: 'Inspect one stored AI observation',
       description:
-        "Read a brand-owned stored response as a redacted excerpt. Optional competitor focus requires a recorded mention. No provider calls or verified citations. Example: brand_id='acme', run_id='run-1', response_id='response-1'.",
+        "Inspect one stored response with redacted excerpt and up to five native links. Optional competitor or exact recorded redacted source URL focus. No provider calls or verified citations. Example: brand_id='acme', run_id='r', response_id='s'.",
       inputSchema: {
         brand_id: z.string().min(1).max(128)
           .describe('Tracked brand ID that owns the originating run.'),
@@ -2149,6 +2150,8 @@ export function registerTools(
           .describe('Response ID from the same stored evidence reference.'),
         focus_competitor: z.string().trim().min(1).max(253).optional()
           .describe('Recorded competitor domain; prioritizes its mention in the redacted excerpt.'),
+        focus_source_url: z.string().trim().min(1).max(2048).optional()
+          .describe('Exact redacted native URL from this response to prioritize among five displayed sources.'),
       },
       outputSchema: observationEvidenceOutputSchema,
       annotations: {
@@ -2157,7 +2160,7 @@ export function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ brand_id, run_id, response_id, focus_competitor }) => {
+    async ({ brand_id, run_id, response_id, focus_competitor, focus_source_url }) => {
       const missing = 'Successful stored observation not found for this brand, run and response.';
       const brand = await deps.db.getBrand(brand_id);
       if (!brand) throw new Error(missing);
@@ -2214,6 +2217,12 @@ export function registerTools(
         }
       }
       const providerSourceList = [...providerSources.values()];
+      // Match only a recorded, screened, redacted URL belonging to this observation.
+      const focusedSource = focus_source_url ? providerSources.get(focus_source_url) : null;
+      if (focus_source_url && !focusedSource) throw new Error(missing);
+      const displayedSources = focusedSource
+        ? [focusedSource, ...providerSourceList.filter((source) => source.url !== focusedSource.url)]
+        : providerSourceList;
       const identityBoundary = brand.identity_changed_at ?? null;
       const payload = {
         brand_id,
@@ -2235,13 +2244,14 @@ export function registerTools(
         competitors_mentioned: [...new Set(response.competitors_mentioned)].sort(),
         response_excerpt: buildResponseExcerpt(response.raw_response, brand, requestedCompetitor ?? undefined),
         requested_competitor: requestedCompetitor,
+        requested_source_url: focusedSource?.url ?? null,
         provider_source_count: providerSourceList.length,
         provider_source_urls_filtered_count: filteredProviderSourceUrls,
         provider_source_urls_deduplicated_count: deduplicatedProviderSourceUrls,
         provider_source_urls_truncated: providerSourceList.length > 5,
-        provider_source_urls: providerSourceList.slice(0, 5),
+        provider_source_urls: displayedSources.slice(0, 5),
         google_search_sampling: googleSearchSampling([run.engine]),
-        evidence_note: 'This is a short credential-redacted excerpt of one stored successful response, not a full answer or an independently verified source citation. The original buyer question is credential-redacted without excerpt truncation. An optional recorded competitor focus is best effort; absence from the excerpt does not disprove a recorded mention. Provider-returned source URLs are not independently verified; access-bearing URL query and fragment fields are masked. provider_source_count counts accepted unique URLs, with filtered and deduplicated (after masking) counts reported separately; only the first five are shown. Review identity_scope, active_prompt and measurement_mode before quoting in an audit. No provider request occurred.',
+        evidence_note: 'This is a short credential-redacted excerpt of one stored successful response, not a full answer or an independently verified source citation. The original buyer question is credential-redacted without excerpt truncation. An optional recorded competitor focus is best effort; absence from the excerpt does not disprove a recorded mention. Provider-returned source URLs are not independently verified; access-bearing URL query and fragment fields are masked. provider_source_count counts accepted unique URLs, with filtered and deduplicated (after masking) counts reported separately; only five are shown; exact recorded redacted source URL focus changes only display order, not counts. Review identity_scope, active_prompt and measurement_mode before quoting in an audit. No provider request occurred.',
       };
       return toolResult(payload);
     },

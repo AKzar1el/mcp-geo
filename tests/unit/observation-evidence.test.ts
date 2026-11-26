@@ -38,6 +38,7 @@ type EvidenceResult = {
   active_prompt: boolean;
   response_excerpt: string;
   requested_competitor: string | null;
+  requested_source_url: string | null;
   provider_source_count: number;
   provider_source_urls_filtered_count: number;
   provider_source_urls_deduplicated_count: number;
@@ -48,6 +49,7 @@ type EvidenceResult = {
 
 type Handler = (args: {
   brand_id: string; run_id: string; response_id: string; focus_competitor?: string;
+  focus_source_url?: string;
 }) => Promise<{ structuredContent: EvidenceResult }>;
 
 function setup(runRecord: Run = run, rows: PromptResponse[] = [response]): Handler | undefined {
@@ -218,4 +220,33 @@ test('observation evidence excludes special-use internal hosts from provider sou
   assert.deepEqual(result.provider_source_urls, [
     { url: 'https://docs.example.org/public', url_redacted: false },
   ]);
+});
+
+test('recorded source URL focus prioritizes a deep native link without expanding or leaking evidence', async () => {
+  const urls = [
+    'https://sources.example.org/a',
+    'https://sources.example.org/b',
+    'https://sources.example.org/c',
+    'https://sources.example.org/d',
+    'https://sources.example.org/e',
+    'https://sources.example.org/f?api_key=SOURCE_SECRET&view=public',
+  ];
+  const handler = setup(run, [{ ...response, engine_citations: urls }]);
+  assert.ok(handler);
+  const args = { brand_id: brand.id, run_id: run.id, response_id: response.id };
+  const baseline = (await handler(args)).structuredContent;
+  assert.equal(baseline.requested_source_url, null);
+  assert.equal(baseline.provider_source_count, 6);
+  assert.equal(baseline.provider_source_urls_truncated, true);
+  assert.equal(baseline.provider_source_urls.some((source) => source.url.includes('/f?')), false);
+  const focusedUrl = 'https://sources.example.org/f?api_key=[REDACTED]&view=public';
+  const focused = (await handler({ ...args, focus_source_url: focusedUrl })).structuredContent;
+  assert.equal(focused.requested_source_url, focusedUrl);
+  assert.deepEqual(focused.provider_source_urls[0], { url: focusedUrl, url_redacted: true });
+  assert.equal(focused.provider_source_count, 6);
+  assert.equal(focused.provider_source_urls_truncated, true);
+  assert.equal(focused.provider_source_urls.length, 5);
+  assert.doesNotMatch(JSON.stringify(focused), /SOURCE_SECRET/);
+  await assert.rejects(handler({ ...args, focus_source_url: 'https://unrecorded.example.org/link' }), /not found/i);
+  await assert.rejects(handler({ ...args, focus_source_url: 'https://sources.example.org/f?api_key=SOURCE_SECRET&view=public' }), /not found/i);
 });
