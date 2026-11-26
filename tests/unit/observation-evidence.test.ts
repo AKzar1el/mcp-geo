@@ -219,3 +219,19 @@ test('observation evidence excludes special-use internal hosts from provider sou
     { url: 'https://docs.example.org/public', url_redacted: false },
   ]);
 });
+
+test('observation evidence excludes Tor and alternative namespace hosts from public source links', async () => {
+  const handler = setup(run, [{ ...response, engine_citations: [
+    'https://research.onion/private',
+    'https://portal.service.alt/dashboard',
+    'https://research-onion.example.org/public',
+    'https://docs.example.org/public',
+  ] }]);
+  assert.ok(handler);
+  const result = (await handler({ brand_id: brand.id, run_id: run.id, response_id: response.id })).structuredContent;
+  assert.equal(result.provider_source_count, 2);
+  assert.deepEqual(result.provider_source_urls, [
+    { url: 'https://research-onion.example.org/public', url_redacted: false },
+    { url: 'https://docs.example.org/public', url_redacted: false },
+  ]);
+});
