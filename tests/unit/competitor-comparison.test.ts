@@ -134,10 +134,10 @@ test('comparison redacts credentials in displayed buyer questions without changi
     db: {
       getBrand: async () => brand,
       getResponsesSince: async () => [
-        response('brand', 'Which platform works with https://example.com/docs?api_key=private-brand-key for teams?', 1, []),
-        response('competitor', 'Compare access_token=private-competitor-token for team planning', 0, ['asana.com']),
-        response('both', 'Does Authorization: Bearer private-cohort-token work for both?', 1, ['asana.com']),
-      ].map((row, index) => ({ ...row, captured_at: capturedAt - 2 + index })),
+        { ...response('brand', 'Which platform works with https://example.com/docs?api_key=private-brand-key for teams?', 1, []), captured_at: capturedAt - 2_000 },
+        { ...response('competitor', 'Compare access_token=private-competitor-token for team planning', 0, ['asana.com']), captured_at: capturedAt - 1_000 },
+        { ...response('both', 'Does Authorization: Bearer private-cohort-token work for both?', 1, ['asana.com']), captured_at: capturedAt },
+      ],
     } as Db,
     env: {}, refreshExecution: 'sync',
     runEnginesInline: async () => ({ run_ids: {}, engines: [] }),
@@ -149,10 +149,11 @@ test('comparison redacts credentials in displayed buyer questions without changi
   for (const secret of ['private-brand-key', 'private-competitor-token', 'private-cohort-token']) {
     assert.ok(!serialized.includes(secret), `comparison output exposed ${secret}`);
   }
+  // Samples are newest-first; validate the intended response, not its position.
   assert.equal(result.mention_evidence_samples.brand[0]?.response_id, 'both');
-  const brandSample = result.mention_evidence_samples.brand.find((sample) => sample.response_id === 'brand');
-  assert.match(brandSample?.prompt ?? '', /api_key=\[REDACTED\]/);
-  assert.match(result.mention_evidence_samples.competitors[0]?.samples[0]?.prompt ?? '', /\[REDACTED\]/);
+  assert.match(result.mention_evidence_samples.brand.find((sample) => sample.response_id === 'brand')?.prompt ?? '', /api_key=\[REDACTED\]/);
+  assert.match(result.mention_evidence_samples.competitors[0]?.samples.find((sample) => sample.response_id === 'competitor')?.prompt ?? '', /access_token=\[REDACTED\]/);
+  assert.match(result.mention_evidence_samples.competitors[0]?.samples.find((sample) => sample.response_id === 'both')?.prompt ?? '', /Bearer \[REDACTED\]/);
   assert.match(result.prompts_brand_only[0]?.prompt ?? '', /\[REDACTED\]/);
   assert.match(result.prompts_co_mentioned[0]?.prompt ?? '', /\[REDACTED\]/);
   assert.match(result.competitors[0]?.prompts_won_against_you[0] ?? '', /\[REDACTED\]/);

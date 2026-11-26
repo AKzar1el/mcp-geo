@@ -52,6 +52,18 @@ test('citation excerpt can center an explicit alias when no domain is present', 
   assert.match(excerpt, /Example Pro is recommended/);
 });
 
+test('citation excerpts retain original UTF-16 offsets around decomposed Unicode mentions', () => {
+  const brand = makeBrand({ domain: 'xn--caf-dma.fr', name: 'Different legal publisher' });
+  const prefix = '\ud83d\ude80 e\u0301 unrelated context. '.repeat(28);
+  const response = `${prefix}Cafe\u0301 is recommended for this workflow. ${'Further details. '.repeat(15)}`;
+  const position = response.indexOf('Cafe\u0301 is recommended');
+  assert.ok(position > 100);
+
+  const excerpt = buildResponseExcerpt(response, brand);
+  assert.equal(excerpt, response.slice(position - 100, position + 150));
+  assert.match(excerpt, /Cafe\u0301 is recommended/);
+});
+
 test('citation excerpts omit credential-bearing URLs without suppressing valid evidence', () => {
   const brand = makeBrand({ domain: 'example.com', name: 'Example' });
   const response =

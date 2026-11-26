@@ -76,6 +76,8 @@ function extractResponseText(data: XAiResponse): string {
 
 function matchesInlineCitation(text: string, start: number, end: number, expectedUrl: unknown): boolean {
   if (typeof expectedUrl !== 'string') return false;
+  // Reject raw provider metadata that URL parsing would silently repair.
+  if (/[\u0000-\u001f\u007f]/.test(expectedUrl) || expectedUrl.trim() !== expectedUrl) return false;
   let canonicalUrl: string;
   try {
     canonicalUrl = new URL(expectedUrl).href;

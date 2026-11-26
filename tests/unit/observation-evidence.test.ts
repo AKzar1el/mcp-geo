@@ -40,6 +40,8 @@ type EvidenceResult = {
   requested_competitor: string | null;
   requested_source_url: string | null;
   provider_source_count: number;
+  provider_source_urls_filtered_count: number;
+  provider_source_urls_deduplicated_count: number;
   provider_source_urls_truncated: boolean;
   provider_source_urls: Array<{ url: string; url_redacted: boolean }>;
   evidence_note: string;
@@ -160,33 +162,29 @@ test('observation evidence exposes bounded, credential-redacted provider-native 
   assert.match(result.evidence_note, /provider-returned.*not independently verified/i);
 });
 
-test('recorded source URL focus prioritizes a deep native link without expanding or leaking evidence', async () => {
-  const urls = [
-    'https://sources.example.org/a',
-    'https://sources.example.org/b',
-    'https://sources.example.org/c',
-    'https://sources.example.org/d',
-    'https://sources.example.org/e',
-    'https://sources.example.org/f?api_key=SOURCE_SECRET&view=public',
-  ];
-  const handler = setup(run, [{ ...response, engine_citations: urls }]);
+test('observation evidence distinguishes filtered and deduplicated provider URLs from accepted sources', async () => {
+  const handler = setup(run, [{ ...response, engine_citations: [
+    'https://docs.example.org/public',
+    'https://docs.example.org/public',
+    'https://docs.example.org/private?api_key=source-secret',
+    'https://docs.example.org/private?api_key=another-secret',
+    'https://user:pass@docs.example.org/credential',
+    'http://127.0.0.1/internal',
+    'https://dev.local/private',
+    'javascript:alert(1)',
+  ] }]);
   assert.ok(handler);
-  const args = { brand_id: brand.id, run_id: run.id, response_id: response.id };
-  const baseline = (await handler(args)).structuredContent;
-  assert.equal(baseline.requested_source_url, null);
-  assert.equal(baseline.provider_source_count, 6);
-  assert.equal(baseline.provider_source_urls_truncated, true);
-  assert.equal(baseline.provider_source_urls.some((source) => source.url.includes('/f?')), false);
-  const focusedUrl = 'https://sources.example.org/f?api_key=[REDACTED]&view=public';
-  const focused = (await handler({ ...args, focus_source_url: focusedUrl })).structuredContent;
-  assert.equal(focused.requested_source_url, focusedUrl);
-  assert.deepEqual(focused.provider_source_urls[0], { url: focusedUrl, url_redacted: true });
-  assert.equal(focused.provider_source_count, 6);
-  assert.equal(focused.provider_source_urls_truncated, true);
-  assert.equal(focused.provider_source_urls.length, 5);
-  assert.doesNotMatch(JSON.stringify(focused), /SOURCE_SECRET/);
-  await assert.rejects(handler({ ...args, focus_source_url: 'https://unrecorded.example.org/link' }), /not found/i);
-  await assert.rejects(handler({ ...args, focus_source_url: 'https://sources.example.org/f?api_key=SOURCE_SECRET&view=public' }), /not found/i);
+  const result = (await handler({ brand_id: brand.id, run_id: run.id, response_id: response.id })).structuredContent;
+  assert.equal(result.provider_source_count, 2);
+  assert.equal(result.provider_source_urls_filtered_count, 4);
+  assert.equal(result.provider_source_urls_deduplicated_count, 2);
+  assert.equal(result.provider_source_urls_truncated, false);
+  assert.deepEqual(result.provider_source_urls, [
+    { url: 'https://docs.example.org/public', url_redacted: false },
+    { url: 'https://docs.example.org/private?api_key=[REDACTED]', url_redacted: true },
+  ]);
+  assert.match(result.evidence_note, /filtered.*deduplicated.*masking/i);
+  assert.doesNotMatch(JSON.stringify(result), /source-secret|another-secret|user:pass|127\.0\.0\.1|dev\.local/);
 });
 
 test('observation evidence masks OAuth fragment credentials before hash-route query separators', async () => {
@@ -222,4 +220,33 @@ test('observation evidence excludes special-use internal hosts from provider sou
   assert.deepEqual(result.provider_source_urls, [
     { url: 'https://docs.example.org/public', url_redacted: false },
   ]);
+});
+
+test('recorded source URL focus prioritizes a deep native link without expanding or leaking evidence', async () => {
+  const urls = [
+    'https://sources.example.org/a',
+    'https://sources.example.org/b',
+    'https://sources.example.org/c',
+    'https://sources.example.org/d',
+    'https://sources.example.org/e',
+    'https://sources.example.org/f?api_key=SOURCE_SECRET&view=public',
+  ];
+  const handler = setup(run, [{ ...response, engine_citations: urls }]);
+  assert.ok(handler);
+  const args = { brand_id: brand.id, run_id: run.id, response_id: response.id };
+  const baseline = (await handler(args)).structuredContent;
+  assert.equal(baseline.requested_source_url, null);
+  assert.equal(baseline.provider_source_count, 6);
+  assert.equal(baseline.provider_source_urls_truncated, true);
+  assert.equal(baseline.provider_source_urls.some((source) => source.url.includes('/f?')), false);
+  const focusedUrl = 'https://sources.example.org/f?api_key=[REDACTED]&view=public';
+  const focused = (await handler({ ...args, focus_source_url: focusedUrl })).structuredContent;
+  assert.equal(focused.requested_source_url, focusedUrl);
+  assert.deepEqual(focused.provider_source_urls[0], { url: focusedUrl, url_redacted: true });
+  assert.equal(focused.provider_source_count, 6);
+  assert.equal(focused.provider_source_urls_truncated, true);
+  assert.equal(focused.provider_source_urls.length, 5);
+  assert.doesNotMatch(JSON.stringify(focused), /SOURCE_SECRET/);
+  await assert.rejects(handler({ ...args, focus_source_url: 'https://unrecorded.example.org/link' }), /not found/i);
+  await assert.rejects(handler({ ...args, focus_source_url: 'https://sources.example.org/f?api_key=SOURCE_SECRET&view=public' }), /not found/i);
 });

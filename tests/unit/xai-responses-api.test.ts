@@ -130,6 +130,39 @@ test('xAI only returns valid web citation evidence from provider metadata', asyn
   }
 });
 
+test('xAI rejects annotation URLs that the URL parser would silently normalize', async () => {
+  const originalFetch = globalThis.fetch;
+  const valid = 'https://acme.example/verified';
+  const invalid = 'https://acme.example/normalized';
+  const citedPart = (inlineUrl: string, metadataUrl: string) => {
+    const text = `Evidence [[1]](${inlineUrl})`;
+    return {
+      type: 'output_text', text,
+      annotations: [{
+        type: 'url_citation', url: metadataUrl,
+        start_index: text.indexOf('[[1]]'), end_index: text.length,
+      }],
+    };
+  };
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    status: 'completed',
+    output: [{ type: 'message', content: [
+      citedPart(valid, valid),
+      citedPart(invalid, ` ${invalid}`),
+      citedPart(invalid, `${invalid}\n`),
+      citedPart(invalid, `\t${invalid}`),
+      citedPart(invalid, invalid.replace('example', 'exam\nple')),
+    ] }],
+  }), { status: 200 });
+
+  try {
+    const result = await chatCompletion('offline-key', 'Question', 'System');
+    assert.deepEqual(result.citations, [valid]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('xAI inline metadata cannot attribute a URL absent from its cited text span', async () => {
   const originalFetch = globalThis.fetch;
   const unrelated = 'Acme appears without any source link.';
