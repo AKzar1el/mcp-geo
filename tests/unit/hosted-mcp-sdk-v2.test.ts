@@ -17,7 +17,7 @@ function createSharedToolServer() {
       name: 'digestseo-mcp',
       title: 'GEO Tracker by DigestSEO',
       description:
-        'Track brand citations across seven AI search surfaces. Free OSS; optional EUR 99 client-ready audit.',
+        'Track AI brand mentions and source links where returned. MIT MCP; scans need provider keys.',
       version: 'test',
       websiteUrl: 'https://digestseo.com/geo-mcp/',
     },
@@ -165,7 +165,7 @@ test('shared hosted tools support the MCP 2026-07-28 modern stateless flow', asy
   );
   assert.equal(
     discover.result._meta['io.modelcontextprotocol/serverInfo'].description,
-    'Track brand citations across seven AI search surfaces. Free OSS; optional EUR 99 client-ready audit.',
+    'Track AI brand mentions and source links where returned. MIT MCP; scans need provider keys.',
   );
   assert.equal(
     discover.result._meta['io.modelcontextprotocol/serverInfo'].websiteUrl,
