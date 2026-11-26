@@ -344,6 +344,8 @@ const observationEvidenceOutputSchema = z.object({
   response_excerpt: z.string().max(250),
   requested_competitor: z.string().nullable(),
   provider_source_count: z.number().int().nonnegative(),
+  provider_source_urls_filtered_count: z.number().int().nonnegative(),
+  provider_source_urls_deduplicated_count: z.number().int().nonnegative(),
   provider_source_urls_truncated: z.boolean(),
   provider_source_urls: z.array(z.object({
     url: z.string(),
@@ -1931,7 +1933,7 @@ export function registerTools(
         active_prompts_only: z.boolean().default(false)
           .describe('Filter citations and source rankings to currently active buyer questions without new provider scans.'),
         cursor: z.string().max(1600).optional()
-          .describe('Opaque next_cursor; preserve brand, days, engine/engines, identity and prompt selection.'),
+          .describe('next_cursor; keep brand, days, engine(s), measurement_mode, ranked_source_domain, identity, prompts.'),
       },
       outputSchema: citationsOutputSchema,
       annotations: {
@@ -2176,6 +2178,8 @@ export function registerTools(
         (await deps.db.getActivePrompts(brand_id)).map(({ id }) => id),
       );
       const providerSources = new Map<string, { url: string; url_redacted: boolean }>();
+      let filteredProviderSourceUrls = 0;
+      let deduplicatedProviderSourceUrls = 0;
       // Special-use hostnames are not publicly actionable AI source links.
       // Avoid exposing private network names in client-facing audit evidence.
       // Tor and alternative namespace names are not globally DNS-resolvable
@@ -2188,18 +2192,30 @@ export function registerTools(
         try {
           // Native provider links are evidence, not trusted instructions or
           // verified sources. Exclude malformed, local and credentialed URLs.
-          if (/[\u0000-\u001f\u007f]/.test(rawUrl) || rawUrl !== rawUrl.trim()) continue;
+          if (/[\u0000-\u001f\u007f]/.test(rawUrl) || rawUrl !== rawUrl.trim()) {
+            filteredProviderSourceUrls++;
+            continue;
+          }
           const parsed = new URL(rawUrl);
-          if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') continue;
+          if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+            filteredProviderSourceUrls++;
+            continue;
+          }
           const hostname = normalizeDomainInput(parsed.hostname);
           if (parsed.username || parsed.password || !hostname || hostname === 'home.arpa' ||
-            nonPublicSuffixes.some((suffix) => hostname.endsWith(suffix))) continue;
+            nonPublicSuffixes.some((suffix) => hostname.endsWith(suffix))) {
+            filteredProviderSourceUrls++;
+            continue;
+          }
           const safeUrl = redactCitationUrlQuery(rawUrl);
           if (!providerSources.has(safeUrl)) {
             providerSources.set(safeUrl, { url: safeUrl, url_redacted: safeUrl !== rawUrl });
+          } else {
+            deduplicatedProviderSourceUrls++;
           }
         } catch {
           // One invalid provider URL cannot hide other usable evidence.
+          filteredProviderSourceUrls++;
         }
       }
       const providerSourceList = [...providerSources.values()];
@@ -2225,10 +2241,12 @@ export function registerTools(
         response_excerpt: buildResponseExcerpt(response.raw_response, brand, requestedCompetitor ?? undefined),
         requested_competitor: requestedCompetitor,
         provider_source_count: providerSourceList.length,
+        provider_source_urls_filtered_count: filteredProviderSourceUrls,
+        provider_source_urls_deduplicated_count: deduplicatedProviderSourceUrls,
         provider_source_urls_truncated: providerSourceList.length > 5,
         provider_source_urls: providerSourceList.slice(0, 5),
         google_search_sampling: googleSearchSampling([run.engine]),
-        evidence_note: 'This is a short credential-redacted excerpt of one stored successful response, not a full answer or an independently verified source citation. The original buyer question is credential-redacted without excerpt truncation. An optional recorded competitor focus is best effort; absence from the excerpt does not disprove a recorded mention. Provider-returned source URLs are not independently verified; access-bearing URL query and fragment fields are masked. Review identity_scope, active_prompt and measurement_mode before quoting in an audit. No provider request occurred.',
+        evidence_note: 'This is a short credential-redacted excerpt of one stored successful response, not a full answer or an independently verified source citation. The original buyer question is credential-redacted without excerpt truncation. An optional recorded competitor focus is best effort; absence from the excerpt does not disprove a recorded mention. Provider-returned source URLs are not independently verified; access-bearing URL query and fragment fields are masked. provider_source_count counts accepted unique URLs, with filtered and deduplicated (after masking) counts reported separately; only the first five are shown. Review identity_scope, active_prompt and measurement_mode before quoting in an audit. No provider request occurred.',
       };
       return toolResult(payload);
     },
@@ -3147,8 +3165,8 @@ function citationIdentityScope(startedAt: number | null | undefined, boundary: n
 
 function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityBoundary: number | null = null) {
   // Historical provider evidence may predate source-host filtering at ingest.
-  // Exclude private/internal and invalid/test hostnames from audit rankings.
-  const nonPublicSuffixes = ['.local', '.localhost', '.internal', '.test', '.invalid', '.home.arpa'];
+  // Exclude private/internal, special-use and invalid/test hostnames from audit rankings.
+  const nonPublicSuffixes = ['.local', '.localhost', '.internal', '.test', '.invalid', '.home.arpa', '.onion', '.alt'];
   const engineObservationCounts = new Map<string, number>();
   for (const response of responses) {
     engineObservationCounts.set(response.engine, (engineObservationCounts.get(response.engine) ?? 0) + 1);
@@ -3368,11 +3386,32 @@ function redactEvidenceText(text: string): string {
       return '[unparseable URL omitted]';
     }
   });
+  // HTTP header folding makes whitespace-prefixed continuation lines part of
+  // the preceding credential, including proxy credentials. Mask them together
+  // before line-based redaction.
+  const foldedHeaderSafeText = urlSafeText.replace(
+    /^([ \t]*(?:(?:Proxy-)?Authorization|Set-Cookie|Cookie|X-(?:[A-Za-z0-9-]+-)?(?:Token|Api-Key|Auth-Key|Secret))[ \t]*:[ \t]*)([^\r\n]*)(?:\r?\n[ \t]+[^\r\n]*)+/gim,
+    (_match, header: string, firstValue: string) => {
+      const scheme = /^([A-Za-z][A-Za-z0-9+.-]*[ \t]+)/.exec(firstValue);
+      return /Authorization[ \t]*:[ \t]*$/i.test(header) && scheme
+        ? `${header}${scheme[1]}[REDACTED]`
+        : `${header}[REDACTED]`;
+    },
+  );
   // Provider prose can contain standalone credential assignments and auth
   // headers, not just URLs. Mask their values before selecting an excerpt;
   // raw stored observations remain unchanged for forensic provenance.
-  return urlSafeText
-    .replace(/\b(Authorization\s*:\s*(?:Bearer|Basic)\s+)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;]+)/gi, '$1[REDACTED]')
+  return foldedHeaderSafeText
+    // Cookie and custom token/key headers can expose session credentials;
+    // mask full values, including previously unknown X-*-Token names.
+    .replace(/\b((?:Set-Cookie|Cookie|X-(?:[A-Za-z0-9-]+-)?(?:Token|Api-Key|Auth-Key|Secret))[ \t]*:[ \t]*)[^\r\n]*/gi, '$1[REDACTED]')
+    // Digest and SigV4 credentials consist of multiple parameters. Redacting
+    // just the first token would expose the nonce, response or signature.
+    .replace(/\b(Authorization[ \t]*:[ \t]*(?:Digest|AWS4-HMAC-SHA256)[ \t]+)[^\r\n]*/gi, '$1[REDACTED]')
+    .replace(/\b(Authorization\s*:\s*(?:Bearer|Basic|Token|ApiKey|Api-Key)\s+)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;]+)/gi, '$1[REDACTED]')
+    // Unknown authorization schemes can also carry multi-parameter secrets;
+    // preserve the scheme label but mask the entire remaining header line.
+    .replace(/\b(Authorization[ \t]*:[ \t]*)(?!(?:Digest|AWS4-HMAC-SHA256|Bearer|Basic|Token|ApiKey|Api-Key)[ \t]+)([A-Za-z][A-Za-z0-9+.-]*[ \t]+)[^\r\n]*/gi, '$1$2[REDACTED]')
     .replace(/\b((?:access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|client[_-]?secret)\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s&,;]+)/gi, '$1[REDACTED]');
 }
 
