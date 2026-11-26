@@ -724,6 +724,16 @@ export function visibleAnswerProse(responseText: string): string {
       omitHtmlTags(omitHtmlCodeExamples(omitMarkdownCodeExamples(responseText)))))).visibleText);
 }
 
+export function maskAnswerUrlMentions(text: string, preserveOffsets = false): string {
+  // URL paths are source data, not answer prose. Preserve the original length
+  // when locating an excerpt so a scored mention maps to its actual position.
+  return text.replace(
+    /https?:\/\/(?:\([^()\s]*\)|[^\s()\]\}'"\x60<>])+/gi,
+    (url) => preserveOffsets ? ' '.repeat(url.length) : ' ',
+  );
+}
+
+
 export function extractCitations(
   brand: Brand,
   responseText: string,
@@ -734,7 +744,7 @@ export function extractCitations(
   // visible text after a Markdown link target remains scoreable. Hidden HTML
   // and sample code must not inflate brand or competitor answer mentions.
   const answerProse = visibleAnswerProse(responseText);
-  const mentionText = answerProse.replace(/https?:\/\/(?:\([^()\s]*\)|[^\s()\]\}'"\x60<>])+/gi, ' ');
+  const mentionText = maskAnswerUrlMentions(answerProse);
   let brandMentioned = mentionsTermSet(mentionText, {
     domain: brand.domain,
     name: brand.name,
