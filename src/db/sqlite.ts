@@ -788,7 +788,7 @@ export function openSqliteDb(path?: string): SqliteDb {
       // within this window so a later retry cannot rewrite a frozen cursor page.
       const rows = sqlite
         .prepare(
-          `SELECT pr.id, pr.prompt_id, pr.engine, r.mode AS mode, r.started_at AS run_started_at, pr.engine_citations_json, pr.captured_at
+          `SELECT pr.id, pr.run_id, pr.prompt_id, pr.engine, r.mode AS mode, r.started_at AS run_started_at, pr.engine_citations_json, pr.captured_at
              FROM prompt_responses pr
              JOIN runs r ON r.id = pr.run_id
              ${activePromptsOnly ? 'JOIN prompts p ON p.id = pr.prompt_id' : ''}
@@ -931,6 +931,8 @@ export function openSqliteDb(path?: string): SqliteDb {
           `SELECT r.id AS run_id, r.engine, r.mode, r.started_at,
                   COALESCE(r.completed_at, r.started_at) AS completed_at,
                   COUNT(pr.id) AS total,
+                  MAX(pr.captured_at) AS last_captured_at,
+                  MAX(CASE WHEN p.active = 1 THEN pr.captured_at END) AS active_last_captured_at,
                   SUM(pr.brand_mentioned) AS hits,
                   SUM(CASE WHEN p.active = 1 THEN 1 ELSE 0 END) AS active_total,
                   SUM(CASE WHEN p.active = 1 THEN pr.brand_mentioned ELSE 0 END) AS active_hits,
@@ -957,6 +959,42 @@ export function openSqliteDb(path?: string): SqliteDb {
             ORDER BY COALESCE(r.completed_at, r.started_at) ASC`,
         )
         .all(brandId, since) as unknown as VisibilityHistoryRow[];
+    },
+
+    async countCitationRows(
+      brandId: string,
+      since: number,
+      engine?: string | string[],
+      page?: CitationPageOptions,
+    ): Promise<number> {
+      let sql = `SELECT COUNT(*) AS total
+                   FROM prompt_responses pr
+                   JOIN runs r ON r.id = pr.run_id
+                   JOIN prompts p ON p.id = pr.prompt_id
+                  WHERE r.brand_id = ? AND pr.captured_at >= ?
+                    AND (pr.brand_mentioned = 1 OR pr.brand_cited_with_link = 1)
+                    AND pr.status = 'ok'`;
+      const params: unknown[] = [brandId, since];
+      if (page?.minRunStartedAt !== undefined) {
+        sql += ' AND r.started_at >= ?';
+        params.push(page.minRunStartedAt);
+      }
+      if (page?.activePromptsOnly) sql += ' AND p.active = 1';
+      if (page?.measurementMode === 'model_only') {
+        sql += " AND (r.mode = 'batch' OR r.engine IN ('claude', 'gemini'))";
+      } else if (page?.measurementMode === 'search_requested') {
+        sql += " AND r.mode <> 'batch' AND r.engine NOT IN ('claude', 'gemini')";
+      }
+      const selectedEngines = Array.isArray(engine) ? [...new Set(engine)] : engine ? [engine] : [];
+      if (selectedEngines.length) {
+        sql += ` AND r.engine IN (${selectedEngines.map(() => '?').join(', ')})`;
+        params.push(...selectedEngines);
+      }
+      if (page?.until !== undefined) {
+        sql += ' AND pr.captured_at <= ?';
+        params.push(page.until);
+      }
+      return (sqlite.prepare(sql).get(...(params as never[])) as { total: number }).total;
     },
 
     async getCitationRows(

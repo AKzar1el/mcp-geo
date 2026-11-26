@@ -111,6 +111,7 @@ function auditHtml(origin: string): string {
     .cta, .secondary { display: inline-block; border: 0; padding: 14px 20px; border-radius: 8px; font: inherit; font-weight: 800; text-decoration: none; cursor: pointer; }
     .cta { background: #f4f6f8; color: #0b0d10; }
     .secondary { border: 1px solid #343b45; background: transparent; color: #f4f6f8; }
+    .request-preview { max-height: 280px; overflow: auto; margin: 0; padding: 16px; border: 1px solid #343b45; border-radius: 8px; background: #0b0d10; color: #dce2e8; font: 13px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
     .status { min-height: 22px; margin: 0; color: #c4ccd4; font-size: 14px; line-height: 1.5; }
     .fine { margin-top: 18px; color: #929daa; font-size: 14px; line-height: 1.6; }
     .oss { margin-top: 56px; padding-top: 24px; border-top: 1px solid #252a31; color: #aeb8c2; line-height: 1.65; }
@@ -135,6 +136,7 @@ function auditHtml(origin: string): string {
 
     <p class="proof"><a href="${SAMPLE_REPORT_URL}">See a sample report</a> generated through mcp-geo before you request the audit. It shows the output style and evidence depth; your paid audit is run for your own brand, prompts, and competitors.</p>
     <p class="proof"><strong>Methodology:</strong> The same 20 buyer-intent prompts are run as a point-in-time diagnostic and reported per engine, with citation/source evidence where the provider returns it. The report is a bounded observed snapshot, not a proprietary ranking promise or guaranteed forecast. <a href="${AUDIT_METHODOLOGY_URL}">See the exact score calculation and interpretation limits.</a></p>
+    <p class="fine"><strong>Geographic scope:</strong> When included, Google AI Overviews and AI Mode are sampled for the United States (gl=us) and English (hl=en), with no city-level location. These observations do not establish visibility in other markets or languages. Specify your target market in Context so we can confirm audit fit before proceeding.</p>
 
     <form id="audit-request-form" class="request-card">
       <label>
@@ -147,8 +149,9 @@ function auditHtml(origin: string): string {
       </label>
       <label>
         Competitors (up to 3)
-        <input name="competitors" type="text" placeholder="competitor-one.com, competitor-two.com">
+        <textarea name="competitors" rows="3" placeholder="competitor-one.com, competitor-two.com"></textarea>
       </label>
+      <p class="fine">Separate competitors with commas, semicolons or new lines. Pasted URLs are reduced to domain names in the request, so paths, login details and tracking parameters are not emailed. Add relevant page details in Context instead.</p>
       <label>
         Context or priority (optional)
         <textarea name="context" placeholder="What market, product, or buyer journey matters most?"></textarea>
@@ -156,14 +159,17 @@ function auditHtml(origin: string): string {
       <div class="actions">
         <button class="cta" type="submit">Request the EUR 99 audit</button>
         <button class="secondary" type="button" id="copy-request">Copy request details</button>
+        <button class="secondary" type="button" id="download-request">Download request details</button>
+        <button class="secondary" type="button" id="preview-request" aria-controls="request-preview-body" aria-expanded="false">Preview request details</button>
       </div>
+      <pre id="request-preview-body" class="request-preview" hidden aria-label="Prepared email request"></pre>
       <p id="request-status" class="status" role="status" aria-live="polite"></p>
     </form>
 
     <p class="fine">After you email the request, Tomi will confirm fit and scope by email, then use the existing invoice and payment process. This page does not collect payment details.</p>
     <p class="fine">Implementation is not included; the prioritized action memo is intended for your own team or existing provider to execute.</p>
     <p class="fine">Email <a href="mailto:${AUDIT_EMAIL}">${AUDIT_EMAIL}</a> directly if your browser does not open an email app. No subscription, no sales call required. The audit does not guarantee rankings, citations, traffic, or commercial outcomes.</p>
-    <a class="cta" href="${mailto}">Email the EUR 99 audit request</a>
+    <a class="cta" href="${mailto}" id="email-audit-request">Email the EUR 99 audit request</a>
     <noscript><p class="fine">JavaScript is optional. You can still <a href="${mailto}">email the prefilled audit request</a> directly.</p></noscript>
 
     <p class="oss">Prefer to run it yourself? <strong>mcp-geo remains free and open-source under MIT.</strong> Use the local npm package, or follow the self-hosting instructions to deploy your own configured Worker. Source and setup instructions are on <a href="https://github.com/AKzar1el/mcp-geo">GitHub</a>.</p>
@@ -172,20 +178,91 @@ function auditHtml(origin: string): string {
     (() => {
       const form = document.getElementById('audit-request-form');
       const copyButton = document.getElementById('copy-request');
+      const downloadButton = document.getElementById('download-request');
+      const previewButton = document.getElementById('preview-request');
+      const directEmailLink = document.getElementById('email-audit-request');
+      const previewBody = document.getElementById('request-preview-body');
       const status = document.getElementById('request-status');
-      if (!(form instanceof HTMLFormElement) || !(copyButton instanceof HTMLButtonElement) || !status) return;
+      if (!(form instanceof HTMLFormElement) ||
+          !(copyButton instanceof HTMLButtonElement) ||
+          !(downloadButton instanceof HTMLButtonElement) ||
+          !(previewButton instanceof HTMLButtonElement) || !previewBody || !status) return;
+
+      const nonPublicSuffixes = [
+        '.local', '.localhost', '.internal', '.test', '.invalid', '.example', '.home.arpa',
+        '.onion', '.alt',
+      ];
+      const domainForRequest = (input) => {
+        const raw = input.trim();
+        const isUrl = raw.includes('://');
+        try {
+          const candidate = isUrl ? raw : 'https://' + raw;
+          const url = new URL(candidate);
+          if ((url.protocol === 'https:' || url.protocol === 'http:') && url.hostname.includes('.')) {
+            const host = url.hostname.toLowerCase().replace(/[.]$/, '').replace(/^www[.]/, '');
+            const labels = host.split('.');
+            // WHATWG URL accepts repeated dots, invalid DNS labels and numeric IPs.
+            // Match the backend's public-domain requirements before offering an audit.
+            const isIpv4 = /^(?:[0-9]{1,3}[.]){3}[0-9]{1,3}$/.test(host);
+            if (host.length <= 253 && labels.length >= 2 && !isIpv4 &&
+                host !== 'home.arpa' && !nonPublicSuffixes.some((suffix) => host.endsWith(suffix)) &&
+                labels.every((label) => label.length <= 63 &&
+                  /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label))) {
+              return host;
+            }
+          }
+        } catch {
+          // Preserve free-form brand names rather than turning them into invalid domains.
+        }
+        // A broken scheme-less URL can otherwise leak paths or credential values
+        // into mailto, preview, clipboard, and downloaded request details.
+        const hasUrlSyntax = isUrl || /[?#@]/.test(raw) ||
+          (raw.includes('.') && (/[/:]/.test(raw) || !/\\s/.test(raw)));
+        return hasUrlSyntax ? '' : raw;
+      };
+
+      const parseCompetitors = (input) => {
+        const entries = [];
+        let start = 0;
+        for (let index = 0; index < input.length; index++) {
+          const delimiter = input[index];
+          if (delimiter !== ',' && delimiter !== ';' && delimiter !== '\\r' && delimiter !== '\\n') continue;
+          const segment = input.slice(start, index).trim();
+          // Literal line breaks separate pasted competitors, never URL query data.
+          if (delimiter === '\\r' || delimiter === '\\n') {
+            entries.push(segment);
+            start = index + 1;
+            continue;
+          }
+          // Query/hash punctuation can be URL data; a bare domain immediately
+          // after path punctuation can instead start another competitor.
+          const isUrlData = /^(?:https?:\\/\\/)?(?:[^/?#\\s,;]+[.])+[^/?#\\s,;]+[/?#]/i.test(segment);
+          const following = input.slice(index + 1);
+          const startsNextEntry = /^\\s|^https?:\\/\\//i.test(following);
+          // An adjacent bare domain after a URL path is a second competitor.
+          // Preserve commas inside URL query strings and fragments as data.
+          const nextBareDomain = /^(?:[a-z0-9-]+[.])+[a-z0-9-]+(?=$|[,;\\s/?#])/i.test(following);
+          if (isUrlData && !startsNextEntry &&
+              (/[?#]/.test(segment) || !nextBareDomain)) continue;
+          entries.push(segment);
+          start = index + 1;
+        }
+        entries.push(input.slice(start).trim());
+        return entries.filter(Boolean);
+      };
 
       const requestBody = () => {
         const data = new FormData(form);
         const value = (name) => String(data.get(name) ?? '').trim();
+        const competitors = parseCompetitors(value('competitors'));
         return [
           'Hi Tomi,',
           '',
           "I'd like the EUR 99 mcp-geo AI Visibility Audit.",
           '',
-          'Brand/domain: ' + value('brand'),
+          'Brand/domain: ' + domainForRequest(value('brand')),
           'Category / product type: ' + value('category'),
-          'Competitors (up to 3): ' + value('competitors'),
+          'Competitors (up to 3): ' + competitors.map(domainForRequest).join(', '),
           'Context or priority (optional): ' + value('context'),
           '',
           'Source: mcp-geo audit page',
@@ -193,9 +270,34 @@ function auditHtml(origin: string): string {
       };
 
       const validate = () => {
-        if (form.reportValidity()) return true;
-        status.textContent = 'Add your brand/domain and category first.';
-        return false;
+        if (!form.reportValidity()) {
+          status.textContent = 'Add your brand/domain and category first.';
+          return false;
+        }
+        const data = new FormData(form);
+        const value = (name) => String(data.get(name) ?? '').trim();
+        if (!value('brand') || !value('category')) {
+          status.textContent = 'Add your brand/domain and category first.';
+          return false;
+        }
+        const competitors = parseCompetitors(value('competitors'));
+        if (competitors.length > 3) {
+          status.textContent = 'This audit covers up to 3 competitors. Remove extras or email us about a different scope.';
+          return false;
+        }
+        if ([value('brand'), ...competitors].some((entry) => !domainForRequest(entry))) {
+          status.textContent = 'Enter a valid brand name, public domain or HTTP(S) URL for the brand and each competitor.';
+          return false;
+        }
+        // Compare the same canonical domain that goes into the request.
+        const comparisonDomain = (entry) => domainForRequest(entry).toLowerCase();
+        const competitorDomains = competitors.map(comparisonDomain);
+        if (new Set(competitorDomains).size !== competitorDomains.length ||
+            competitorDomains.includes(comparisonDomain(value('brand')))) {
+          status.textContent = 'Use distinct competitor domains that differ from your own brand/domain.';
+          return false;
+        }
+        return true;
       };
 
       const mailtoForRequest = () =>
@@ -203,6 +305,34 @@ function auditHtml(origin: string): string {
         encodeURIComponent('${AUDIT_SUBJECT}') +
         '&body=' +
         encodeURIComponent(requestBody());
+
+      const requestMessage = () =>
+        'To: ${AUDIT_EMAIL}\\nSubject: ${AUDIT_SUBJECT}\\n\\n' + requestBody();
+
+      const hidePreview = () => {
+        previewBody.hidden = true;
+        previewBody.textContent = '';
+        previewButton.setAttribute('aria-expanded', 'false');
+      };
+      let lastPreparedRequest = null;
+      // A copied clipboard or downloaded file cannot follow later edits to the form.
+      form.addEventListener('input', () => {
+        hidePreview();
+        if (lastPreparedRequest !== null && lastPreparedRequest !== requestMessage()) {
+          lastPreparedRequest = null;
+          status.textContent = 'Request changed since last copy or download. Copy or download updated details before emailing.';
+        }
+      });
+      previewButton.addEventListener('click', () => {
+        if (!previewBody.hidden) {
+          hidePreview();
+          return;
+        }
+        if (!validate()) return;
+        previewBody.textContent = requestMessage();
+        previewBody.hidden = false;
+        previewButton.setAttribute('aria-expanded', 'true');
+      });
 
       const copyText = async (text) => {
         if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -220,29 +350,89 @@ function auditHtml(origin: string): string {
         textarea.style.position = 'fixed';
         textarea.style.opacity = '0';
         document.body.appendChild(textarea);
-        textarea.select();
-        const copied = document.execCommand('copy');
-        textarea.remove();
+        let copied = false;
+        try {
+          textarea.select();
+          copied = document.execCommand('copy');
+        } finally {
+          textarea.remove();
+        }
         if (!copied) throw new Error('copy command failed');
       };
 
-      form.addEventListener('submit', (event) => {
+      const copyRequestDetails = async () => {
+        const preparedRequest = requestMessage();
+        try {
+          await copyText(preparedRequest);
+          if (preparedRequest !== requestMessage()) {
+            status.textContent = 'Request changed while copying. Copy again before emailing the updated details.';
+            return 'stale';
+          }
+          lastPreparedRequest = preparedRequest;
+          status.textContent = 'Request copied - email it to ${AUDIT_EMAIL}.';
+          return 'copied';
+        } catch {
+          status.textContent = 'Copy failed. Use Download request details to save the complete request, then email it to ${AUDIT_EMAIL}.';
+          return 'failed';
+        }
+      };
+
+      const downloadRequestDetails = () => {
+        let blobUrl;
+        let link;
+        try {
+          const preparedRequest = requestMessage();
+          const blob = new Blob([preparedRequest], { type: 'text/plain;charset=utf-8' });
+          blobUrl = URL.createObjectURL(blob);
+          link = document.createElement('a');
+          link.href = blobUrl;
+          link.download = 'mcp-geo-audit-request.txt';
+          document.body.appendChild(link);
+          link.click();
+          lastPreparedRequest = preparedRequest;
+          status.textContent = 'Request file downloaded. Email its contents to ${AUDIT_EMAIL}; downloading does not submit the request.';
+        } catch {
+          status.textContent = 'Download failed. Email ${AUDIT_EMAIL} directly with your request details.';
+        } finally {
+          if (link) link.remove();
+          if (blobUrl) URL.revokeObjectURL(blobUrl);
+        }
+      };
+
+      const submitAuditRequest = async (event) => {
         event.preventDefault();
         if (!validate()) return;
-        status.textContent = 'Opening your email app. If nothing happens, use Copy request details.';
-        window.location.href = mailtoForRequest();
-      });
+        const emailLink = mailtoForRequest();
+        // Long mailto URLs can be truncated or rejected by email clients.
+        // Preserve the complete request without sending it to any server.
+        if (emailLink.length > 1800) {
+          const copyResult = await copyRequestDetails();
+          status.textContent = copyResult === 'copied'
+            ? 'Email link too long; request copied. Paste it into an email to ${AUDIT_EMAIL}.'
+            : copyResult === 'stale'
+              ? 'Email link too long; request changed while copying. Copy again before emailing the updated details.'
+              : 'Email link too long and copy failed. Use Download request details, then email the saved request to ${AUDIT_EMAIL}.';
+          return;
+        }
+        status.textContent = 'Opening your email app. If nothing happens, use Copy or Download request details.';
+        try {
+          window.location.href = emailLink;
+        } catch {
+          // Some embedded or locked-down browsers reject external mail handlers.
+          status.textContent = 'Could not open your email app. Use Copy or Download request details, then email the request to ${AUDIT_EMAIL}.';
+        }
+      };
+      form.addEventListener('submit', submitAuditRequest);
+      // Keep the no-JS mailto fallback, but use the completed form when JS runs.
+      directEmailLink?.addEventListener('click', submitAuditRequest);
 
       copyButton.addEventListener('click', async () => {
         if (!validate()) return;
-        const copyPayload =
-          'To: ${AUDIT_EMAIL}\\nSubject: ${AUDIT_SUBJECT}\\n\\n' + requestBody();
-        try {
-          await copyText(copyPayload);
-          status.textContent = 'Request copied - email it to ${AUDIT_EMAIL}.';
-        } catch {
-          status.textContent = 'Copy failed. Email ${AUDIT_EMAIL} directly.';
-        }
+        await copyRequestDetails();
+      });
+      downloadButton.addEventListener('click', () => {
+        if (!validate()) return;
+        downloadRequestDetails();
       });
     })();
   </script>
@@ -252,19 +442,31 @@ function auditHtml(origin: string): string {
 
 export function handlePublicAudit(request: Request): Response | null {
   const url = new URL(request.url);
-  if (!['/', '/audit', '/privacy', '/robots.txt', '/sitemap.xml'].includes(url.pathname)) {
+  const hasCanonicalSlashAlias =
+    url.pathname === '/audit/' || url.pathname === '/privacy/';
+  if (
+    !hasCanonicalSlashAlias &&
+    !['/', '/audit', '/privacy', '/robots.txt', '/sitemap.xml'].includes(url.pathname)
+  ) {
     return null;
   }
 
-  if (request.method !== 'GET') {
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
     return new Response('Method Not Allowed', {
       status: 405,
-      headers: { Allow: 'GET' },
+      headers: { Allow: 'GET, HEAD' },
     });
   }
 
+  if (hasCanonicalSlashAlias) {
+    url.pathname = url.pathname.slice(0, -1);
+    return Response.redirect(url.toString(), 308);
+  }
+
+  const isHead = request.method === 'HEAD';
+
   if (url.pathname === '/robots.txt') {
-    return new Response(ROBOTS_BODY, {
+    return new Response(isHead ? null : ROBOTS_BODY, {
       headers: {
         'content-type': 'text/plain; charset=utf-8',
         'x-content-type-options': 'nosniff',
@@ -273,7 +475,7 @@ export function handlePublicAudit(request: Request): Response | null {
   }
 
   if (url.pathname === '/') {
-    return new Response(publicRootText(url.origin), {
+    return new Response(isHead ? null : publicRootText(url.origin), {
       headers: {
         'content-type': 'text/plain; charset=utf-8',
         'x-content-type-options': 'nosniff',
@@ -282,7 +484,7 @@ export function handlePublicAudit(request: Request): Response | null {
   }
 
   if (url.pathname === '/sitemap.xml') {
-    return new Response(SITEMAP_BODY, {
+    return new Response(isHead ? null : SITEMAP_BODY, {
       headers: {
         'content-type': 'application/xml; charset=utf-8',
         'x-content-type-options': 'nosniff',
@@ -291,7 +493,7 @@ export function handlePublicAudit(request: Request): Response | null {
   }
 
   if (url.pathname === '/privacy') {
-    return new Response(PRIVACY_BODY, {
+    return new Response(isHead ? null : PRIVACY_BODY, {
       headers: {
         'cache-control': 'no-store',
         'content-type': 'text/plain; charset=utf-8',
@@ -300,7 +502,7 @@ export function handlePublicAudit(request: Request): Response | null {
     });
   }
 
-  return new Response(auditHtml(url.origin), {
+  return new Response(isHead ? null : auditHtml(url.origin), {
     headers: {
       'cache-control': 'no-store',
       'content-type': 'text/html; charset=utf-8',

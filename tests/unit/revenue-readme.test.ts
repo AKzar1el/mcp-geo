@@ -169,20 +169,32 @@ test('audit methodology exposes the score formulas buyers need to verify', () =>
     /\[Use the reusable evidence-first report prompt\]\(\.\/ai-visibility-audit-report-prompt\.md\)/,
   );
 });
-test('audit report prompt uses the shipped citation source summary without inventing derived metrics', () => {
+test('audit report prompt distinguishes cited source paths from response-domain observations', () => {
   assert.match(
     reportPrompt,
     /get_citations[\s\S]*`top_sources` summary[\s\S]*recurring cited domains/,
   );
   assert.match(
     reportPrompt,
-    /Domain \| Citations \| Prompts \| Engines \| Evidence modes \| Brand domain\?/,
+    /Domain \| Response-domain observations \| Per-engine observations \| Per-engine source observation % \| Per-engine distinct prompts \| Per-engine last observed \| Per-engine source example \| Distinct cited paths \| Prompts \| Last observed \| Engines \| Evidence modes \| Brand domain\?/,
   );
   assert.match(
     reportPrompt,
-    /`citation_count`[\s\S]*`prompt_count`[\s\S]*`engines`[\s\S]*`is_brand_domain`/,
+    /`citation_count`[\s\S]*`per_engine_citation_count`[\s\S]*`prompt_count`[\s\S]*`engines`[\s\S]*`is_brand_domain`/,
   );
   assert.match(reportPrompt, /Do not infer a citation share or source category/);
+  assert.match(reportPrompt, /`distinct_cited_path_count`[\s\S]*ignoring query strings and fragments/);
+  assert.match(reportPrompt, /`top_cited_paths`[\s\S]*up to five pathnames[\s\S]*path counts can sum to more than the domain's `citation_count`/);
+  assert.match(reportPrompt, /`citation_count` counts stored responses listing that domain/);
+  assert.match(reportPrompt, /`per_engine_citation_count` breaks those same response-domain observations down by engine/);
+  assert.match(reportPrompt, /`per_engine_source_observation_percent` divides that source's per-engine response count by the same engine's `observation_coverage\.per_engine\.successful_observation_count`/);
+  assert.match(reportPrompt, /not a brand visibility score, a representative population estimate/);
+  assert.match(reportPrompt, /`per_engine_distinct_prompt_count` shows how many different stored prompt IDs cited that domain on each engine/);
+  assert.match(reportPrompt, /`per_engine_last_observed_at` is the latest stored response capture citing \*\*that source on that engine\*\*/);
+  assert.match(reportPrompt, /`top_sources\.per_engine_examples`[\s\S]*`url_redacted` flag/);
+  assert.match(reportPrompt, /top 10 source domains by default[\s\S]*`total_source_domains`[\s\S]*`top_sources_truncated`/);
+  assert.match(reportPrompt, /`get_citations\(top_sources_limit=50\)`[\s\S]*does not trigger provider calls/);
+  assert.match(reportPrompt, /must not be summed to infer global `prompt_count`/);
   assert.match(reportPrompt, /`measurement_modes`[\s\S]*model-only versus search-requested evidence/);
   assert.match(reportPrompt, /neither request mode alone verifies that a source was actually cited/);
   assert.match(
@@ -347,7 +359,7 @@ test('README documents Langflow local stdio setup without storing provider secre
 test('README documents Flowise local Custom MCP stdio setup without implying cloud npx support', () => {
   assert.match(
     readme,
-    /\*\*Flowise:\*\*[\s\S]*local\/self-hosted Flowise instance[\s\S]*\*\*Custom MCP\*\*[\s\S]*"command":"npx"[\s\S]*@digestseo\/mcp-geo[\s\S]*Available Actions[\s\S]*twelve mcp-geo tools/,
+    /\*\*Flowise:\*\*[\s\S]*local\/self-hosted Flowise instance[\s\S]*\*\*Custom MCP\*\*[\s\S]*"command":"npx"[\s\S]*@digestseo\/mcp-geo[\s\S]*Available Actions[\s\S]*thirteen mcp-geo tools/,
   );
   assert.match(readme, /STDIO only when it is running locally rather than in a cloud service/);
   assert.match(readme, /docs\.flowiseai\.com\/tutorials\/tools-and-mcp/);

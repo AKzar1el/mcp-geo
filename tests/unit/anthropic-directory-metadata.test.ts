@@ -62,7 +62,7 @@ function captureLocalManagementToolConfigs(): Map<string, ToolConfig> {
 test('hosted tools expose titles and complete safety annotations', () => {
   const tools = captureHostedToolConfigs();
 
-  assert.equal(tools.size, 6, 'expected the six hosted visibility tools');
+  assert.equal(tools.size, 7, 'expected the seven hosted visibility tools');
   for (const [name, config] of tools) {
     assert.ok(config.title?.trim(), `${name} is missing a non-empty title`);
     assert.ok(config.annotations, `${name} is missing annotations`);

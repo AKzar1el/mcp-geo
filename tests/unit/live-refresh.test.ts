@@ -84,6 +84,7 @@ async function assertLiveRunBypassesSharedCache(
   providerResponse: unknown,
   assertRequest?: (call: FetchCall) => void,
   assertResult?: (result: EnginePromptResult) => void,
+  expectedResponse = 'Fresh Acme provider response.',
 ): Promise<void> {
   let cacheReads = 0;
   let persisted: EnginePromptResult[] | undefined;
@@ -116,7 +117,7 @@ async function assertLiveRunBypassesSharedCache(
 
   assert.equal(cacheReads, 0, 'live scans must not read shared_prompt_cache');
   assert.ok(persisted);
-  assert.equal(persisted[0].raw_response, 'Fresh Acme provider response.');
+  assert.equal(persisted[0].raw_response, expectedResponse);
   assert.equal(persisted[0].brand_mentioned, 1);
   assert.equal(persisted[0].status, 'ok');
   assert.equal(persisted[0].cache_to_put, undefined);
@@ -202,7 +203,16 @@ test('live scans bypass shared cached responses for every provider', async (t) =
           {
             type: 'message',
             content: [
-              { type: 'output_text', text: 'Fresh Acme provider response.' },
+              {
+                type: 'output_text',
+                text: 'Fresh Acme provider response. [[1]](https://acme.com/fresh)',
+                annotations: [{
+                  type: 'url_citation',
+                  url: 'https://acme.com/fresh',
+                  start_index: 30,
+                  end_index: 59,
+                }],
+              },
             ],
           },
         ],
@@ -220,6 +230,7 @@ test('live scans bypass shared cached responses for every provider', async (t) =
         assert.deepEqual(result.cited_urls, ['acme.com']);
         assert.equal(result.brand_cited_with_link, 1);
       },
+      'Fresh Acme provider response. [[1]](https://acme.com/fresh)',
     ));
   await t.test('AI Overviews', () =>
     assertLiveRunBypassesSharedCache(

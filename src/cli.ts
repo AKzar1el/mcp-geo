@@ -3,9 +3,8 @@
 // server over stdin/stdout, backed by a local SQLite database
 // (~/.digestseo/digestseo.sqlite by default, DIGESTSEO_DB_PATH to
 // override). The Cloudflare Worker entry is src/index.ts; both wire
-// the six shared tools from src/core/tools.ts, and the CLI adds the
-// three local management tools (track_brand, list_brands,
-// generate_prompts).
+// the seven shared tools from src/core/tools.ts, and the CLI adds the
+// six local management tools.
 //
 // stdout is the JSON-RPC channel — every log line in this process goes
 // to stderr, never stdout.

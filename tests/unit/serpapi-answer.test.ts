@@ -19,6 +19,9 @@ test('SerpAPI citation evidence excludes credential-bearing and non-web referenc
     { link: 'http://0x7f000001/admin' },
     { link: 'http://[::1]/admin' },
     { link: 'https://bad..example/invalid-host' },
+    { link: ' https://example.net/padded' },
+    { link: 'https://example.net/path\n' },
+    { link: 'https://example.net/pa\tth' },
     { link: 'https://example.net/another' },
   ]);
   assert.deepEqual(links, [
@@ -26,6 +29,30 @@ test('SerpAPI citation evidence excludes credential-bearing and non-web referenc
     'http://www.example.org/story',
     'https://example.net/another',
   ]);
+});
+
+test('SerpAPI expandable sections preserve visible subtitles and nested answer text', () => {
+  assert.equal(flattenSerpApiAnswer([{
+    type: 'expandable',
+    title: 'Recommended analytics tools',
+    subtitle: 'Acme Analytics and Beta Insights',
+    text_blocks: [
+      { type: 'paragraph', snippet: 'Compare capabilities before choosing a tool.' },
+      { type: 'list', list: [{ snippet: 'Check citation evidence first' }] },
+    ],
+  }]), [
+    'Recommended analytics tools',
+    'Acme Analytics and Beta Insights',
+    'Compare capabilities before choosing a tool.',
+    '- Check citation evidence first',
+  ].join('\n\n'));
+
+  assert.equal(flattenSerpApiAnswer([{
+    type: 'paragraph', snippet: 'Visible prose', subtitle: 'Non-expandable metadata',
+  }]), 'Visible prose');
+  assert.throws(() => flattenSerpApiAnswer([{
+    type: 'expandable', subtitle: 'x'.repeat(MAX_SERPAPI_ANSWER_TEXT_LENGTH + 1),
+  }]), /structured-text size limit/);
 });
 
 test('SerpAPI table parsing ignores non-string metadata and keeps visible cells', () => {

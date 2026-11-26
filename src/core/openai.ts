@@ -142,7 +142,14 @@ const COMMON_TWO_LABEL_PUBLIC_SUFFIXES = new Set([
   'co.kr', 'co.za', 'co.in', 'com.cn', 'com.ar',
   'co.id', 'com.ph', 'com.my',
   'com.co', 'co.il', 'com.vn',
-  'com.pk', 'co.th',
+  'com.pk', 'co.th', 'com.sa', 'com.eg',
+  'co.ke', 'com.ng', 'co.ug', 'com.bd', 'co.bd',
+]);
+
+// The PSL's private section also assigns separate registrable names to
+// hosting tenants. Provider names must not stand in for tenant brands.
+const COMMON_TWO_LABEL_PRIVATE_SUFFIXES = new Set([
+  'github.io', 'pages.dev', 'vercel.app', 'netlify.app', 'blogspot.com',
 ]);
 
 function rootTermFromDomain(domain: string): string {
@@ -152,7 +159,8 @@ function rootTermFromDomain(domain: string): string {
   const parts = host.split('.');
   if (parts.length <= 1) return host.toLowerCase();
   const suffix = parts.slice(-2).join('.').toLowerCase();
-  if (parts.length >= 3 && COMMON_TWO_LABEL_PUBLIC_SUFFIXES.has(suffix)) {
+  if (parts.length >= 3 &&
+      (COMMON_TWO_LABEL_PUBLIC_SUFFIXES.has(suffix) || COMMON_TWO_LABEL_PRIVATE_SUFFIXES.has(suffix))) {
     return parts[parts.length - 3]!.toLowerCase();
   }
   // A tracked subdomain (e.g. shop.rival.com) still names the parent brand
@@ -160,16 +168,68 @@ function rootTermFromDomain(domain: string): string {
   return parts[parts.length - 2]!.toLowerCase();
 }
 
+// Decode a single canonical Punycode label without Node-only modules; the
+// same mention matcher is bundled into both the Worker and the stdio CLI.
+function unicodeRootFromPunycode(asciiRoot: string): string | null {
+  if (!asciiRoot.startsWith('xn--') || asciiRoot.length > 63) return null;
+  const input = asciiRoot.slice(4);
+  const delimiter = input.lastIndexOf('-');
+  const output = delimiter >= 0 ? [...input.slice(0, delimiter)] : [];
+  let offset = delimiter >= 0 ? delimiter + 1 : 0;
+  let codePoint = 128;
+  let index = 0;
+  let bias = 72;
+
+  while (offset < input.length) {
+    const previousIndex = index;
+    let weight = 1;
+    for (let k = 36; ; k += 36) {
+      if (offset >= input.length) return null;
+      const char = input.charCodeAt(offset++);
+      const digit = char >= 97 && char <= 122 ? char - 97
+        : char >= 48 && char <= 57 ? char - 22 : -1;
+      if (digit < 0 || digit > Math.floor((Number.MAX_SAFE_INTEGER - index) / weight)) return null;
+      index += digit * weight;
+      const threshold = k <= bias ? 1 : k >= bias + 26 ? 26 : k - bias;
+      if (digit < threshold) break;
+      if (weight > Number.MAX_SAFE_INTEGER / (36 - threshold)) return null;
+      weight *= 36 - threshold;
+    }
+    const size = output.length + 1;
+    let delta = previousIndex === 0 ? Math.floor((index - previousIndex) / 700)
+      : Math.floor((index - previousIndex) / 2);
+    delta += Math.floor(delta / size);
+    let adjustment = 0;
+    while (delta > 455) {
+      delta = Math.floor(delta / 35);
+      adjustment += 36;
+    }
+    bias = adjustment + Math.floor((36 * delta) / (delta + 38));
+    codePoint += Math.floor(index / size);
+    index %= size;
+    if (codePoint > 0x10ffff || (codePoint >= 0xd800 && codePoint <= 0xdfff)) return null;
+    output.splice(index++, 0, String.fromCodePoint(codePoint));
+  }
+
+  const decoded = output.join('');
+  try {
+    // WHATWG's IDNA-to-ASCII pass also rejects invalid or noncanonical labels.
+    return new URL(`http://${decoded}`).hostname === asciiRoot ? decoded.normalize('NFC') : null;
+  } catch {
+    return null;
+  }
+}
+
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 // Matches `term` only as a standalone token — not buried inside a larger
-// word. Boundaries = "no adjacent letter/digit" (Unicode-friendlier than \b).
+// word. Combining marks belong to words too; a decomposed accent is not a boundary.
 function termMatchIndex(text: string, term: string): number {
   const t = term.trim();
   if (t.length === 0) return -1;
-  const re = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(t)}(?![\\p{L}\\p{N}])`, 'iu');
+  const re = new RegExp(`(?<![\\p{L}\\p{N}\\p{M}])${escapeRegExp(t)}(?![\\p{L}\\p{N}\\p{M}])`, 'iu');
   return re.exec(text)?.index ?? -1;
 }
 
@@ -185,28 +245,39 @@ function domainMatchIndex(text: string, domain: string): number {
     domain.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0]?.toLowerCase() ?? '';
   if (fullDomain.length === 0) return -1;
 
-  // Match the exact host or one of its subdomains, never a lookalike host
-  // that merely contains the configured domain as a suffix or prefix.
-  const re = new RegExp(
-    `(?:^|[^\\p{L}\\p{N}-])((?:[a-z0-9-]+\\.)*${escapeRegExp(fullDomain)})(?=$|[^\\p{L}\\p{N}.-]|\\.(?![\\p{L}\\p{N}-]))`,
-    'iu',
-  );
-  const match = re.exec(text);
-  if (!match || !match[1]) return -1;
-  return match.index + match[0].indexOf(match[1]);
+  const variants = [fullDomain];
+  if (fullDomain.includes('xn--')) {
+    // Answer text can spell a tracked IDN host in Unicode even though its
+    // stored canonical domain is Punycode. Decode only validated labels.
+    const unicodeDomain = fullDomain.split('.')
+      .map((label) => unicodeRootFromPunycode(label) ?? label).join('.');
+    if (unicodeDomain !== fullDomain) variants.push(unicodeDomain);
+  }
+
+  for (const variant of variants) {
+    // Require the exact domain or a subdomain, never a lookalike suffix,
+    // prefix, or repeated-dot pseudo-host. Preserve original text offsets.
+    const re = new RegExp(
+      `(?:^|[^\\p{L}\\p{N}\\p{M}-])((?:[a-z0-9-]+\\.)*${escapeRegExp(variant)})(?!\\.+[\\p{L}\\p{N}\\p{M}-])(?=$|[^\\p{L}\\p{N}\\p{M}.-]|\\.(?![\\p{L}\\p{N}\\p{M}-]))`,
+      'iu',
+    );
+    const match = re.exec(text);
+    if (match?.[1]) return match.index + match[0].indexOf(match[1]);
+  }
+  return -1;
 }
 
 function rootTermMatchIndexOutsideHostname(text: string, term: string): number {
   const t = term.trim();
   if (t.length === 0) return -1;
   const re = new RegExp(
-    `(?<![\\p{L}\\p{N}.])${escapeRegExp(t)}(?![\\p{L}\\p{N}]|\\.(?=[\\p{L}\\p{N}-]))`,
+    `(?<![\\p{L}\\p{N}\\p{M}.])${escapeRegExp(t)}(?![\\p{L}\\p{N}\\p{M}]|\\.(?=[\\p{L}\\p{N}\\p{M}-]))`,
     'iu',
   );
   return re.exec(text)?.index ?? -1;
 }
 
-export function findTermSetMatchIndex(text: string, terms: MatchTerms): number {
+function findCanonicalTermSetMatchIndex(text: string, terms: MatchTerms): number {
   // 1. Exact domain/subdomain reference - highest confidence, never suppressed.
   const domainIndex = domainMatchIndex(text, terms.domain);
   if (domainIndex !== -1) return domainIndex;
@@ -227,7 +298,42 @@ export function findTermSetMatchIndex(text: string, terms: MatchTerms): number {
     const rootIndex = rootTermMatchIndexOutsideHostname(text, root);
     if (rootIndex !== -1) return rootIndex;
   }
+  // IDN domains are stored as Punycode, but an answer may name the brand
+  // using its human-readable label. Require a lossless round-trip so an
+  // invalid encoded label cannot silently become an unrelated word.
+  if (root.startsWith('xn--') && !excluded.has(root)) {
+    const decodedRoot = unicodeRootFromPunycode(root)?.toLowerCase();
+    if (decodedRoot && decodedRoot !== root && !excluded.has(decodedRoot)) {
+      const unicodeIndex = rootTermMatchIndexOutsideHostname(text, decodedRoot);
+      if (unicodeIndex !== -1) return unicodeIndex;
+    }
+  }
   return -1;
+}
+
+export function findTermSetMatchIndex(text: string, terms: MatchTerms): number {
+  // NFC equates precomposed and decomposed Unicode without folding accents.
+  // Report the original UTF-16 offset for excerpt slicing, not the NFC offset.
+  const canonicalText = text.normalize('NFC');
+  const canonicalTerms: MatchTerms = {
+    domain: terms.domain.normalize('NFC'),
+    name: terms.name?.normalize('NFC'),
+    aliases: terms.aliases?.map((alias) => alias.normalize('NFC')),
+    excludeTerms: terms.excludeTerms?.map((term) => term.normalize('NFC')),
+  };
+  const index = findCanonicalTermSetMatchIndex(canonicalText, canonicalTerms);
+  if (index === -1 || canonicalText === text) return index;
+
+  // A composed character may cover several original code units. Find the
+  // first source offset contributing to the matched canonical character.
+  let low = 0;
+  let high = text.length;
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if (text.slice(0, mid + 1).normalize('NFC').length > index) high = mid;
+    else low = mid + 1;
+  }
+  return low;
 }
 
 function mentionsTermSet(text: string, terms: MatchTerms): boolean {
@@ -255,6 +361,9 @@ export function hostMatchesDomain(host: string, domain: string): boolean {
 }
 
 function normalizeHost(rawUrl: string): string | null {
+  // WHATWG URL trims outer whitespace and strips tabs/newlines; raw provider
+  // annotations containing those bytes are not reliable citation evidence.
+  if (/[\u0000-\u001f\u007f]/.test(rawUrl) || rawUrl !== rawUrl.trim()) return null;
   try {
     const u = new URL(rawUrl);
     // Native source metadata is link evidence only when it points to a web URL.
@@ -267,9 +376,14 @@ function normalizeHost(rawUrl: string): string | null {
     host = host.replace(/[;,!]+$/, '');
     if (host.endsWith('.')) host = host.slice(0, -1);
     if (host.endsWith('.')) return null; // Do not turn repeated root dots into brand evidence.
-    // Reuse the brand-domain gate for answer-text source hosts too: local or
-    // IP-literal URLs are not independent external citation evidence.
-    return normalizeDomainInput(host);
+    // Reuse the brand-domain gate, then exclude internal/special-use names.
+    // A syntactically valid hostname is not necessarily a public citation.
+    const normalized = normalizeDomainInput(host);
+    if (!normalized) return null;
+    if (normalized === 'home.arpa' ||
+        ['.local', '.localhost', '.internal', '.test', '.invalid', '.example', '.home.arpa']
+          .some((suffix) => normalized.endsWith(suffix))) return null;
+    return normalized;
   } catch {
     return null;
   }
@@ -286,20 +400,328 @@ export function hasBrandInEngineCitations(
   });
 }
 
-export function extractUrls(text: string): string[] {
-  const markdownRe = /\[[^\]]+\]\((https?:\/\/[^\s)]+)\)/gi;
-  const plainRe = /https?:\/\/[^\s)\]\}'"`<>]+/gi;
-  const urls: string[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = markdownRe.exec(text)) !== null) {
-    urls.push(m[1]);
+function omitMarkdownCodeExamples(text: string): string {
+  // Example commands and JSON snippets are not sources cited by the answer.
+  // Treat an unterminated fence as code through the end of the response.
+  let fence: { char: string; length: number; quoted: boolean } | null = null;
+  let indentedCode = false;
+  let paragraphOpen = false;
+  let listContentIndent = 0;
+  let blankLines = 0;
+  return text.split(/\r?\n/).map((line) => {
+    // A fenced block may be nested in a Markdown quote. The quote markers
+    // are containers, not part of the code fence itself.
+    const quotePrefix = /^(?:[ \t]{0,3}>[ \t]?)+/.exec(line);
+    const fenceLine = quotePrefix && (!fence || fence.quoted)
+      ? line.slice(quotePrefix[0].length) : line;
+    if (fence?.quoted && !quotePrefix) fence = null;
+    const marker = /^[ \t]{0,3}(`+|~+)/.exec(fenceLine);
+    if (fence) {
+      if (
+        marker && marker[1][0] === fence.char &&
+        marker[1].length >= fence.length &&
+        fenceLine.slice(marker[0].length).trim() === ''
+      ) fence = null;
+      paragraphOpen = false;
+      return '';
+    }
+    if (marker && marker[1].length >= 3) {
+      fence = { char: marker[1][0], length: marker[1].length, quoted: Boolean(quotePrefix) };
+      paragraphOpen = false;
+      return '';
+    }
+    if (!line.trim()) {
+      paragraphOpen = false;
+      if (++blankLines > 1) listContentIndent = 0;
+      return '';
+    }
+    blankLines = 0;
+    // CommonMark thematic breaks interrupt paragraphs, and a setext
+    // underline ends its heading. Indented code can start on the next line
+    // without an intervening blank line in either case.
+    const thematicBreak = /^[ \t]{0,3}(?:(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|(?:-[ \t]*){3,})$/.test(line);
+    const setextUnderline = paragraphOpen && /^[ \t]{0,3}(?:=+|-+)[ \t]*$/.test(line);
+    if (thematicBreak || setextUnderline) {
+      indentedCode = false;
+      paragraphOpen = false;
+      listContentIndent = 0;
+      return '';
+    }
+    const leading = /^[ \t]*/.exec(line)?.[0] ?? '';
+    let indent = 0;
+    for (const char of leading) indent += char === '\t' ? 4 - (indent % 4) : 1;
+    const listMarker = /^ {0,3}(?:[-+*]|\d{1,9}[.)])[ \t]+(?=\S)/.exec(line);
+    if (listMarker) listContentIndent = listMarker[0].length;
+    else if (indent < listContentIndent) listContentIndent = 0;
+    // CommonMark code indentation cannot interrupt a paragraph (including a
+    // list-item paragraph); list code requires four additional columns.
+    const codeIndent = listContentIndent ? listContentIndent + 4 : 4;
+    if (indent >= codeIndent && (indentedCode || !paragraphOpen)) {
+      indentedCode = true;
+      return '';
+    }
+    indentedCode = false;
+    paragraphOpen = !/^[ \t]{0,3}#{1,6}(?:\s|$)/.test(line);
+    return line.replace(/(`+)[^`\r\n]*?\1/g, ' ');
+  }).join('\n');
+}
+
+function omitHiddenHtmlSubtrees(text: string): string {
+  // Non-rendered HTML is not observable citation or mention evidence. Track
+  // nested elements rather than stopping at the first same-name closing tag.
+  // Unlike display:none or opacity:0, visibility:hidden can be overridden by
+  // visibility:visible on a descendant, so preserve its inherited state.
+  const tagRe = /<\/?(?!https?:\/\/)[a-z][^>"']*(?:(?:"[^"]*"|'[^']*')[^>"']*)*>/gi;
+  const voidTags = new Set([
+    'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link',
+    'meta', 'param', 'source', 'track', 'wbr',
+  ]);
+  const stack: {
+    name: string;
+    hidden: boolean;
+    visibility: 'visible' | 'hidden';
+    contentVisible: boolean;
+    detailsOpen: boolean;
+    summarySeen: boolean;
+  }[] = [];
+  let hiddenDepth = 0;
+  const isVisible = () => !hiddenDepth &&
+    (stack.length === 0 || (
+      stack[stack.length - 1]!.visibility === 'visible' &&
+      stack[stack.length - 1]!.contentVisible
+    ));
+  let cursor = 0;
+  let visible = '';
+  for (const match of text.matchAll(tagRe)) {
+    const index = match.index ?? 0;
+    if (isVisible()) visible += text.slice(cursor, index);
+    const tag = match[0];
+    const name = /^<\/?([a-z][a-z0-9:-]*)/i.exec(tag)?.[1]?.toLowerCase();
+    if (name) {
+      if (tag.startsWith('</')) {
+        const wasVisible = isVisible();
+        let indexOfOpening = stack.length - 1;
+        while (indexOfOpening >= 0 && stack[indexOfOpening]!.name !== name) indexOfOpening--;
+        if (indexOfOpening !== -1) {
+          for (const entry of stack.splice(indexOfOpening)) {
+            if (entry.hidden) hiddenDepth--;
+          }
+        }
+        if (wasVisible || isVisible()) visible += ' ';
+      } else {
+        const attrs = tag.slice(1 + name.length, -1);
+        let hidden = false;
+        let visibility: 'visible' | 'hidden' = stack.length
+          ? stack[stack.length - 1]!.visibility : 'visible';
+        let visibilityImportant = false;
+        let hasOpenAttribute = false;
+        const attrRe = /([^\s=/>]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
+        for (const attr of attrs.matchAll(attrRe)) {
+          const key = attr[1]!.toLowerCase();
+          const value = attr[2] ?? attr[3] ?? attr[4] ?? '';
+          if ((name === 'details' || name === 'dialog') && key === 'open') {
+            hasOpenAttribute = true;
+          }
+          if (key === 'hidden' || (key === 'style' && (
+            /(?:^|;)\s*display\s*:\s*none\s*(?:!important)?\s*(?:;|$)/i.test(value) ||
+            /(?:^|;)\s*content-visibility\s*:\s*hidden\s*(?:!important)?\s*(?:;|$)/i.test(value) ||
+            /(?:^|;)\s*opacity\s*:\s*(?:0+(?:\.0+)?|\.0+)%?\s*(?:!important)?\s*(?:;|$)/i.test(value)
+          ))) {
+            hidden = true;
+          }
+          if (key === 'style') {
+            for (const declaration of value.matchAll(
+              /(?:^|;)\s*visibility\s*:\s*(visible|hidden|collapse)\s*(!important)?\s*(?=;|$)/gi
+            )) {
+              const important = !!declaration[2];
+              if (!visibilityImportant || important) {
+                visibility = declaration[1]!.toLowerCase() === 'visible' ? 'visible' : 'hidden';
+                visibilityImportant = important;
+              }
+            }
+          }
+        }
+        const selfClosing = /\/\s*>$/.test(tag) || voidTags.has(name);
+        const wasVisible = isVisible();
+        if (!selfClosing) {
+          const parent = stack[stack.length - 1];
+          let contentVisible = parent?.contentVisible ?? true;
+          if (name === 'summary' && parent?.name === 'details' &&
+              !parent.detailsOpen && !parent.summarySeen) {
+            // A closed disclosure displays only its first direct summary.
+            parent.summarySeen = true;
+            contentVisible = stack.length > 1 ? stack[stack.length - 2]!.contentVisible : true;
+          }
+          if ((name === 'details' || name === 'dialog') && !hasOpenAttribute) {
+            contentVisible = false;
+          }
+          stack.push({
+            name, hidden, visibility, contentVisible,
+            detailsOpen: name === 'details' && hasOpenAttribute,
+            summarySeen: false,
+          });
+          if (hidden) hiddenDepth++;
+        }
+        if ((selfClosing ? wasVisible && visibility === 'visible' : isVisible()) && !hidden) {
+          visible += tag;
+        } else if (wasVisible) {
+          visible += ' ';
+        }
+      }
+    }
+    cursor = index + tag.length;
   }
-  // Run plain after markdown — plainRe also catches the URL inside the
-  // markdown link, which is fine: we dedupe by hostname below.
-  while ((m = plainRe.exec(text)) !== null) {
-    urls.push(m[0]);
+  if (isVisible()) visible += text.slice(cursor);
+  return visible;
+}
+
+function omitHtmlCodeExamples(text: string): string {
+  // Comments, document-head metadata, inert templates, scripts, styles, and
+  // code samples are not visible evidence. Exclude unclosed blocks to the end.
+  return omitHiddenHtmlSubtrees(text
+    .replace(/<!--[\s\S]*?(?:-->|$)/g, ' ')
+    .replace(/<(pre|code|script|style|head|template)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, ' ')
+    .replace(/<(pre|code|script|style|head|template)\b[^>]*>[\s\S]*$/gi, ' '));
+}
+
+function omitHtmlTags(text: string): string {
+  // Attribute values (including alt/title/data-*) are metadata, not answer prose.
+  // Keep visible anchor labels and Markdown <https://...> autolinks; only
+  // remove actual tags while handling quoted '>' inside HTML attributes.
+  return text.replace(/<\/?(?!https?:\/\/)[a-z][^>"']*(?:(?:"[^"]*"|'[^']*')[^>"']*)*>/gi, ' ');
+}
+
+function omitMarkdownImageAssets(text: string): string {
+  // Image alt labels describe assets, not AI recommendations or source links.
+  // This includes one-level bracketed alt text, relative and embedded targets.
+  return text.replace(
+    /!\[(?:[^\[\]\r\n]|\[[^\[\]\r\n]*\])*\]\(\s*(?:\([^()\s]*\)|[^\s()])+(?:\s+(?:"[^"\r\n]*"|'[^'\r\n]*'))?\s*\)/gi,
+    ' ',
+  ).replace(/!\[(?:[^\[\]\r\n]|\[[^\[\]\r\n]*\])*\](?:\[[^\]\r\n]*\])?/g, ' ');
+}
+
+function omitMarkdownLinkTitles(text: string): string {
+  // Inline link titles are tooltip metadata, not visible answer prose or cited
+  // URLs. Retain the linked label and destination as actual evidence.
+  return text.replace(
+    /(?<!!)(\[[^\]\r\n]+\]\(\s*(?:<[^<>\s\r\n]+>|(?:\([^()\s]*\)|[^\s()])+))\s+(?:"[^"\r\n]*"|'[^'\r\n]*'|\([^()\r\n]*\))\s*\)/g,
+    '$1)',
+  );
+}
+
+function parseMarkdownReferenceLinks(text: string): { visibleText: string; urls: string[] } {
+  // Definitions are not rendered. Only a non-image reference that uses a
+  // definition makes its URL evidence of an actual linked source.
+  const normalizeLabel = (label: string) => label.trim().replace(/\s+/g, ' ').toLowerCase();
+  const definitions = new Map<string, string>();
+  const visibleText = text.replace(
+    /^[ \t]{0,3}\[([^\]\r\n]+)\]:[ \t]*(?:<([^<>\r\n]+)>|([^\s\r\n]+))(?:[ \t]+(?:"[^"\r\n]*"|'[^'\r\n]*'|\([^()\r\n]*\)))?[ \t]*$/gm,
+    (_full, label: string, angled: string | undefined, bare: string | undefined) => {
+      const key = normalizeLabel(label);
+      if (!definitions.has(key)) definitions.set(key, angled ?? bare ?? '');
+      return ' ';
+    },
+  );
+  const urls: string[] = [];
+  const addReference = (label: string) => {
+    const url = definitions.get(normalizeLabel(label));
+    if (url && /^https?:\/\//i.test(url)) urls.push(url);
+  };
+  const explicit = /(?<!!)\[([^\]\r\n]+)\]\[([^\]\r\n]*)\]/g;
+  for (const match of visibleText.matchAll(explicit)) {
+    addReference(match[2] || match[1]);
+  }
+  // Shortcut references [label] are links only when a matching definition
+  // exists. Ignore labels already consumed by explicit or inline links.
+  const withoutExplicit = visibleText.replace(explicit, ' ');
+  for (const match of withoutExplicit.matchAll(/(?<!!)\[([^\]\r\n]+)\](?!\s*[\[(])/g)) {
+    addReference(match[1]);
+  }
+  // An explicit reference ID is not visible in rendered Markdown. Preserve
+  // only the displayed label once its reference definition is resolved.
+  const renderedText = visibleText.replace(explicit, (full, label: string, id: string) =>
+    definitions.has(normalizeLabel(id || label)) ? label : full);
+  return { visibleText: renderedText, urls };
+}
+
+function decodeHtmlCharacterReferences(text: string): string {
+  // Decode only rendered labels and actual HTML anchor href attributes.
+  // Encoded URL text elsewhere is not independent source-link evidence.
+  const named: Record<string, string> = {
+    amp: '&', quot: '"', apos: "'", lt: '<', gt: '>', nbsp: ' ',
+  };
+  return text.replace(/&(?:#[xX][0-9a-fA-F]+|#[0-9]+|amp|quot|apos|lt|gt|nbsp);/gi, (raw) => {
+    const entity = raw.slice(1, -1).toLowerCase();
+    if (!entity.startsWith('#')) return named[entity] ?? raw;
+    const hex = entity.startsWith('#x');
+    const codePoint = Number.parseInt(entity.slice(hex ? 2 : 1), hex ? 16 : 10);
+    if (!Number.isSafeInteger(codePoint) || codePoint < 32 || codePoint > 0x10ffff ||
+        (codePoint >= 0xd800 && codePoint <= 0xdfff)) return raw;
+    return codePoint === 160 ? ' ' : String.fromCodePoint(codePoint);
+  });
+}
+
+function extractHtmlAnchorHrefs(text: string): string[] {
+  const urls: string[] = [];
+  // Only explicit HTML anchors cite a source. Other tag attributes are
+  // metadata, assets or internal data, even if they contain URLs or markup.
+  // Scan whole tags first so an anchor inside a quoted attribute is not a link.
+  const tagRe = /<\/?(?!https?:\/\/)[a-z][^>"']*(?:(?:"[^"]*"|'[^']*')[^>"']*)*>/gi;
+  for (const tag of text.matchAll(tagRe)) {
+    if (!/^<a\b/i.test(tag[0])) continue;
+    const attrs = tag[0].slice(2, -1);
+    const attrRe = /([^\s=/>]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
+    for (const attr of attrs.matchAll(attrRe)) {
+      if (attr[1].toLowerCase() === 'href') {
+        const href = attr[2] ?? attr[3] ?? attr[4];
+        if (href) urls.push(decodeHtmlCharacterReferences(href));
+        break;
+      }
+    }
   }
   return urls;
+}
+
+export function extractUrls(text: string): string[] {
+  // HTML and Markdown image targets are assets, not cited sources. Remove
+  // them and non-citation code examples before scanning plain URLs.
+  const htmlSource = omitMarkdownLinkTitles(omitMarkdownImageAssets(omitHtmlCodeExamples(omitMarkdownCodeExamples(text))
+    .replace(/<img\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi, ' ')));
+  const { visibleText: sourceText, urls: referenceUrls } =
+    parseMarkdownReferenceLinks(omitHtmlTags(htmlSource));
+  // The same URL scanner covers Markdown link targets and plain source URLs.
+  // Balanced path punctuation belongs to the URL, but an unmatched closing
+  // bracket/parenthesis terminates a surrounding Markdown wrapper.
+  const plainRe = /https?:\/\/[^\s\}'"`<>]+/gi;
+  const urls = [...extractHtmlAnchorHrefs(htmlSource), ...referenceUrls];
+  let m: RegExpExecArray | null;
+  while ((m = plainRe.exec(sourceText)) !== null) {
+    let parentheses = 0;
+    let brackets = 0;
+    let end = m[0].length;
+    for (let i = 0; i < m[0].length; i++) {
+      const char = m[0][i];
+      if (char === '(') parentheses++;
+      else if (char === '[') brackets++;
+      else if (char === ')') {
+        if (parentheses === 0) { end = i; break; }
+        parentheses--;
+      } else if (char === ']') {
+        if (brackets === 0) { end = i; break; }
+        brackets--;
+      }
+    }
+    urls.push(m[0].slice(0, end));
+  }
+  return urls;
+}
+
+export function visibleAnswerProse(responseText: string): string {
+  // Source markers in examples, hidden markup and reference definitions are
+  // not citations made by the rendered answer.
+  return decodeHtmlCharacterReferences(
+    parseMarkdownReferenceLinks(omitMarkdownLinkTitles(omitMarkdownImageAssets(
+      omitHtmlTags(omitHtmlCodeExamples(omitMarkdownCodeExamples(responseText)))))).visibleText);
 }
 
 export function extractCitations(
@@ -309,8 +731,10 @@ export function extractCitations(
   const urls = extractUrls(responseText);
   // URL hosts and path fragments are link evidence, not answer prose. Consume
   // balanced parentheses inside URLs, but leave an unmatched ')' in place so
-  // visible text after a Markdown link target remains scoreable.
-  const mentionText = responseText.replace(/https?:\/\/(?:\([^()\s]*\)|[^\s()\]\}'"\x60<>])+/gi, ' ');
+  // visible text after a Markdown link target remains scoreable. Hidden HTML
+  // and sample code must not inflate brand or competitor answer mentions.
+  const answerProse = visibleAnswerProse(responseText);
+  const mentionText = answerProse.replace(/https?:\/\/(?:\([^()\s]*\)|[^\s()\]\}'"\x60<>])+/gi, ' ');
   let brandMentioned = mentionsTermSet(mentionText, {
     domain: brand.domain,
     name: brand.name,

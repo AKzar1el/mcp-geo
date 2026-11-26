@@ -1,6 +1,6 @@
-// The six shared MCP tools (registerTools) plus the six CLI-only
+// The seven shared MCP tools (registerTools) plus the six CLI-only
 // management tools (registerLocalManagementTools), registered against
-// any McpServer. The shared six are wired verbatim
+// any McpServer. The shared seven are wired verbatim
 // between the Cloudflare Worker (src/index.ts) and the local stdio CLI
 // (src/cli.ts) — only the Deps wiring differs:
 //   - Worker: D1-backed Db, refresh_brand fans out per engine via the
@@ -125,8 +125,41 @@ const visibilityOutputSchema = z.object({
   }),
   refreshed_at: z.string(),
   overall_score: z.number(),
+  score_uncertainty: z.object({
+    minimum: z.number(),
+    maximum: z.number(),
+    partial_engines: z.array(z.string()),
+    by_engine: z.array(z.object({
+      engine: z.string(),
+      observed_score: z.number(),
+      minimum: z.number(),
+      maximum: z.number(),
+      usable_prompts: z.number(),
+      expected_prompts: z.number(),
+    })),
+    by_measurement_mode: z.object({
+      search_requested: z.object({
+        minimum: z.number(), maximum: z.number(), partial_engines: z.array(z.string()),
+      }).nullable(),
+      model_only: z.object({
+        minimum: z.number(), maximum: z.number(), partial_engines: z.array(z.string()),
+      }).nullable(),
+    }),
+    note: z.string(),
+  }),
   missing_requested_engines: z.array(z.string()),
   unmeasured_engines: z.array(z.string()),
+  unmeasured_engine_reasons: z.array(z.object({
+    engine: z.string(),
+    reason: z.enum([
+      'incompatible_mode_selection',
+      'no_eligible_stored_run',
+      'no_stored_responses',
+      'stale_brand_identity',
+      'no_successful_active_prompt_observations',
+      'no_usable_stored_responses',
+    ]),
+  })),
   unmeasured_engines_note: z.string(),
   measurement_scope: z.object({
     measurement_mode_filter: z.enum(['model_only', 'search_requested']).nullable(),
@@ -277,8 +310,49 @@ const historyOutputSchema = z.object({
 
 const comparedPromptOutputSchema = z.object({
   prompt: z.string(),
+  you_mentioned_by: z.array(z.string()),
+  competitors_mentioned: z.array(z.string()),
+  // Kept for existing MCP clients; these legacy names describe mentions, not citations.
   you_cited_by: z.array(z.string()),
   competitors_cited: z.array(z.string()),
+});
+
+const comparisonEvidenceSampleSchema = z.object({
+  engine: z.string(),
+  run_id: z.string(),
+  response_id: z.string(),
+  prompt_id: z.string(),
+  prompt: z.string(),
+  measurement_mode: z.enum(['model_only', 'search_requested']),
+  captured_at: z.string(),
+});
+
+const observationEvidenceOutputSchema = z.object({
+  brand_id: z.string(),
+  run_id: z.string(),
+  response_id: z.string(),
+  engine: z.string(),
+  prompt_id: z.string(),
+  prompt: z.string(),
+  captured_at: z.string().nullable(),
+  status: z.literal('ok'),
+  measurement_mode: z.enum(['model_only', 'search_requested']),
+  identity_scope: z.enum(['current_identity', 'historical_identity', 'unknown_boundary']),
+  active_prompt: z.boolean(),
+  brand_mentioned: z.boolean(),
+  competitors_mentioned: z.array(z.string()),
+  response_excerpt: z.string().max(250),
+  requested_competitor: z.string().nullable(),
+  provider_source_count: z.number().int().nonnegative(),
+  provider_source_urls_filtered_count: z.number().int().nonnegative(),
+  provider_source_urls_deduplicated_count: z.number().int().nonnegative(),
+  provider_source_urls_truncated: z.boolean(),
+  provider_source_urls: z.array(z.object({
+    url: z.string(),
+    url_redacted: z.boolean(),
+  })).max(5),
+  google_search_sampling: googleSearchSamplingSchema,
+  evidence_note: z.string(),
 });
 
 const COMPARISON_SEMANTICS =
@@ -286,6 +360,8 @@ const COMPARISON_SEMANTICS =
   'prompts_brand_only and prompts_co_mentioned classify individual engine responses; ' +
   'a prompt can occur in both when engines differ. ' +
   'prompts_won_against_you lists competitor mentions where the tracked brand is absent. ' +
+  'Use you_mentioned_by and competitors_mentioned for actual mention evidence; ' +
+  'legacy you_cited_by and competitors_cited mean mentions, not verified source citations. ' +
   'Counts use the latest successful observation per run, engine and prompt so retries do not inflate shares.';
 
 const COMPARISON_HISTORY_CAVEAT =
@@ -311,6 +387,14 @@ const compareOutputSchema = z.object({
       distinct_runs: z.number().int().nonnegative(),
       distinct_prompts: z.number().int().nonnegative(),
       last_observed_at: z.string(),
+    })),
+    note: z.string(),
+  }),
+  mention_evidence_samples: z.object({
+    brand: z.array(comparisonEvidenceSampleSchema).max(5),
+    competitors: z.array(z.object({
+      domain: z.string(),
+      samples: z.array(comparisonEvidenceSampleSchema).max(5),
     })),
     note: z.string(),
   }),
@@ -363,6 +447,15 @@ const citationsOutputSchema = z.object({
     not_observed_engines: z.array(z.string()),
     note: z.string(),
   }),
+  observation_coverage: z.object({
+    per_engine: z.array(z.object({
+      engine: z.string(),
+      successful_observation_count: z.number().int().nonnegative(),
+      distinct_prompt_count: z.number().int().nonnegative(),
+      last_observed_at: z.string().nullable(),
+    })),
+    note: z.string(),
+  }),
   google_search_sampling: googleSearchSamplingSchema,
   identity_attribution: z.object({
     identity_changed_at: z.string(),
@@ -379,16 +472,40 @@ const citationsOutputSchema = z.object({
     note: z.string(),
   }),
   limit: z.number().int(),
+  total_matching_rows: z.number().int().nonnegative(),
+  total_matching_rows_note: z.string(),
   has_more: z.boolean(),
   next_cursor: z.string().nullable(),
+  top_sources_limit: z.number().int().min(1).max(50).describe('Maximum ranked source domains returned; default 10, maximum 50.'),
+  total_source_domains: z.number().int().nonnegative().describe('All valid distinct cited domains in the selected stored window, before the ranked-source cap or exact-domain lookup.'),
+  top_sources_truncated: z.boolean().describe('True when ranked source domains are omitted by top_sources_limit; citation pagination does not expand this summary.'),
+  ranked_source_domain_filter: z.string().nullable().describe('Optional exact domain lookup applied only to the ranked source summary, not citation rows or full-window evidence counts.'),
+  ranked_source_domain_match_found: z.boolean().describe('True when the requested domain was observed in the selected window; false with no lookup or no match is not a universal non-citation claim.'),
   top_sources: z.array(
     z.object({
       domain: z.string(),
-      citation_count: z.number(),
+      citation_count: z.number().describe('Stored responses listing this domain, at most once per response; not unique URLs.'),
+      per_engine_citation_count: z.record(z.string(), z.number().int().nonnegative()).describe('Stored response-domain observations by engine, counted once per response and summing to citation_count; not unique links or verified live citations.'),
+      per_engine_source_observation_percent: z.record(z.string(), z.number().min(0).max(100)).describe('Percent of successful stored responses on each cited engine that list this source domain, before page limits; not a brand visibility score or verified live citation rate.'),
+      per_engine_distinct_prompt_count: z.record(z.string(), z.number().int().nonnegative()).describe('Distinct stored prompt IDs citing this domain on each engine; repeated observations of the same prompt count once per engine. Not unique question wording or a citation rate.'),
+      per_engine_last_observed_at: z.record(z.string(), z.string()).describe('Latest stored capture time citing this source domain on each engine within the selected evidence scope; not independent proof that links remain live or still cited.'),
+      per_engine_examples: z.record(z.string(), z.object({
+        sample_url: z.string(),
+        url_redacted: z.boolean(),
+        run_id: z.string().describe('Stored run for this engine source sample; use with brand_id and response_id in get_observation_evidence.'),
+        response_id: z.string().describe('Exact stored response for this engine source sample; not a verified live citation.'),
+      })).describe('One deterministic URL cited for this domain on each observed engine, from its latest stored response; sensitive parameters masked, not a verified live link.'),
+      distinct_cited_path_count: z.number().int().nonnegative().describe('Distinct cited URL pathnames for this domain, ignoring query and fragment; not verified live pages.'),
+      top_cited_paths: z.array(z.object({
+        path: z.string(),
+        response_count: z.number().int().nonnegative(),
+      })).max(5).describe('Up to five observed URL pathnames for this domain by stored response count, then path. One count per pathname per response; multiple different paths in one response can count separately. Query and fragment excluded; not verified live pages.'),
       prompt_count: z.number(),
+      last_observed_at: z.string().describe('Latest stored source observation capture time; not proof the URL is currently live.'),
       engines: z.array(z.string()),
       measurement_modes: z.array(z.enum(['model_only', 'search_requested'])),
       sample_url: z.string(),
+      url_redacted: z.boolean().describe('True when credential parameters were masked; the displayed sample may not be navigable.'),
       is_brand_domain: z.boolean(),
       identity_scopes: z.array(z.enum(['current', 'historical', 'unattributed'])).optional(),
     }),
@@ -396,6 +513,8 @@ const citationsOutputSchema = z.object({
   citations: z.array(
     z.object({
       id: z.string(),
+      run_id: z.string().describe('Stored run ID; pair with response_id and brand_id in get_observation_evidence.'),
+      response_id: z.string().describe('Exact stored response ID for get_observation_evidence; not an independently verified citation.'),
       engine: z.string(),
       prompt: z.string(),
       cited_at: z.string(),
@@ -404,6 +523,7 @@ const citationsOutputSchema = z.object({
       identity_scope: z.enum(['current', 'historical', 'unattributed']).optional(),
       response_excerpt: z.string(),
       cited_url: z.string().nullable(),
+      url_redacted: z.boolean().describe('True when credential parameters were masked; the displayed citation URL may not be navigable.'),
       url_source: z.enum(['provider_source', 'answer_text']).nullable(),
     }),
   ),
@@ -416,6 +536,7 @@ const citationCursorSchema = z.object({
   engine: z.string().nullable(),
   engines: z.array(engineSchema).optional(),
   measurement_mode: z.enum(['model_only', 'search_requested']).optional(),
+  ranked_source_domain: z.string().nullable().optional(),
   identity_selection: z.enum(['full_history', 'current_identity_only']).optional(),
   identity_boundary: z.number().int().nullable().optional(),
   prompt_selection: z.enum(['full_history', 'active_only']).optional(),
@@ -445,6 +566,7 @@ function decodeCitationCursor(
   measurementMode: 'model_only' | 'search_requested' | undefined,
   currentIdentityOnly: boolean, identityBoundary: number | null,
   activePromptsOnly: boolean, promptRosterDigest: string | null,
+  rankedSourceDomain: string | null,
 ) {
   try {
     const parsed = citationCursorSchema.parse(JSON.parse(decodeURIComponent(cursor)));
@@ -455,6 +577,7 @@ function decodeCitationCursor(
     if (parsed.brand_id !== brandId || parsed.days !== days || parsed.engine !== engine ||
       JSON.stringify(parsed.engines ?? []) !== JSON.stringify(engines) ||
       (parsed.measurement_mode ?? null) !== (measurementMode ?? null) ||
+      (parsed.ranked_source_domain ?? null) !== rankedSourceDomain ||
       (parsed.identity_selection ?? 'full_history') !==
         (currentIdentityOnly ? 'current_identity_only' : 'full_history') ||
       (currentIdentityOnly && parsed.identity_boundary !== identityBoundary) ||
@@ -471,7 +594,7 @@ function decodeCitationCursor(
     }
     return parsed;
   } catch {
-    throw new Error('Invalid citation cursor. Start again without cursor or preserve the brand, days, engine/engines, measurement mode, identity and prompt selection.');
+    throw new Error('Invalid citation cursor. Start again without cursor or preserve the brand, days, engine/engines, measurement mode, ranked source domain, identity and prompt selection.');
   }
 }
 
@@ -512,6 +635,7 @@ const contentGapsOutputSchema = z.object({
         engine: z.string(),
         run_id: z.string(),
         response_id: z.string(),
+        measurement_mode: z.enum(['model_only', 'search_requested']),
         captured_at_ms: z.number(),
         competitors_mentioned: z.array(z.string()),
       })),
@@ -541,8 +665,16 @@ const refreshOutputSchema = z.object({
   category_prompt_review_pending: z.boolean(),
   prompt_review_note: z.string().nullable(),
   run_ids: z.record(z.string(), z.string()),
+  failed_engines: z.array(z.string()).optional(),
   skipped_unconfigured_engines: z.array(z.string()),
   estimated_completion_seconds: z.number(),
+  preview_only: z.boolean().optional(),
+  planned_engines: z.array(z.string()).optional(),
+  active_prompt_count: z.number().optional(),
+  planned_prompt_engine_pairs: z.number().optional(),
+  cost_note: z.string().optional(),
+  ready_to_refresh: z.boolean().optional(),
+  readiness_warnings: z.array(z.string()).optional(),
 });
 
 const trackBrandOutputSchema = z.object({
@@ -636,6 +768,7 @@ const HOSTED_TOOL_NAMES = {
   get_visibility_history: 'visibility.history',
   compare_competitors: 'visibility.compare',
   get_citations: 'visibility.citations',
+  get_observation_evidence: 'visibility.observation_evidence',
   get_content_gaps: 'visibility.content_gaps',
   refresh_brand: 'visibility.refresh',
 } as const;
@@ -685,10 +818,11 @@ export function registerTools(
   const toolName = (legacyName: keyof typeof HOSTED_TOOL_NAMES) =>
     options.namespaced ? HOSTED_TOOL_NAMES[legacyName] : legacyName;
   const refreshIsAsync = deps.refreshExecution === 'async';
+  const emptyVisibilityPreviewHint = `Call ${toolName('refresh_brand')} with preview_only=true to review configured engines and active prompts without provider requests. Start a real refresh only after reviewing potential provider charges.`;
   const refreshCostNote = ' Provider API requests may incur charges. Retries rerun every active prompt, including prior successes.';
   const refreshDescription = refreshIsAsync
-    ? "Start fresh scans on selected engines; returns run IDs immediately." + refreshCostNote + " Example: brand_id='acme', engines=['chatgpt','gemini']."
-    : "Scan selected engines and return after completion." + refreshCostNote + " Example: brand_id='acme', engines=['chatgpt','gemini'].";
+    ? "Start scans; returns run IDs immediately." + refreshCostNote + " Set preview_only=true for a no-call scope preview. Example: brand_id='acme'."
+    : "Scan; return after completion." + refreshCostNote + " Set preview_only=true for a no-call scope preview. Example: brand_id='acme'.";
 
   server.registerTool(
     toolName('check_visibility'),
@@ -741,6 +875,7 @@ export function registerTools(
       const observedPromptIdsByEngine = new Map<string, Set<string>>();
       const identityChangedAt = brand.identity_changed_at ?? null;
       const staleIdentityEngines: string[] = [];
+      const unmeasuredReasonByEngine = new Map<string, string>();
       const measurementModeByEngine = new Map<string, 'search_requested' | 'model_only'>();
       let mostRecentTimestamp = 0;
       for (const engine of selectedEngines) {
@@ -748,20 +883,33 @@ export function registerTools(
         // dispatch mode: Claude/Gemini live runs are still model-only.
         let eligibleRunMode = run_mode;
         if (measurement_mode === 'search_requested') {
-          if (run_mode === 'batch' || engine === 'claude' || engine === 'gemini') continue;
+          if (run_mode === 'batch' || engine === 'claude' || engine === 'gemini') {
+            unmeasuredReasonByEngine.set(engine, 'incompatible_mode_selection');
+            continue;
+          }
           eligibleRunMode = 'live';
         } else if (measurement_mode === 'model_only' && engine !== 'claude' && engine !== 'gemini') {
-          if (run_mode === 'live') continue;
+          if (run_mode === 'live') {
+            unmeasuredReasonByEngine.set(engine, 'incompatible_mode_selection');
+            continue;
+          }
           eligibleRunMode = 'batch';
         }
         const run = await deps.db.getLatestCompletedRun(brand_id, engine, eligibleRunMode);
-        if (!run) continue;
+        if (!run) {
+          unmeasuredReasonByEngine.set(engine, 'no_eligible_stored_run');
+          continue;
+        }
         const responses = await deps.db.getResponsesForRun(run.id);
-        if (responses.length === 0) continue;
+        if (responses.length === 0) {
+          unmeasuredReasonByEngine.set(engine, 'no_stored_responses');
+          continue;
+        }
         // Stored mention flags were scored against the brand identity at scan
         // time. Do not attribute them to a later name/domain/alias revision.
         if (identityChangedAt !== null && run.started_at < identityChangedAt) {
           staleIdentityEngines.push(engine);
+          unmeasuredReasonByEngine.set(engine, 'stale_brand_identity');
           continue;
         }
         selectedResponses.push(...responses);
@@ -778,15 +926,15 @@ export function registerTools(
       }
       if (selectedResponses.length === 0) {
         if (staleIdentityEngines.length > 0) {
-          throw new Error('No current-identity visibility data for the selected engines. Stored scans predate the last brand name, domain, alias, or exclusion change; call refresh_brand to measure the current identity (provider charges may apply). Historical runs remain available in get_visibility_history.');
+          throw new Error(`No current-identity visibility data for the selected engines. Stored scans predate the last brand name, domain, alias, or exclusion change. Historical runs remain available in get_visibility_history. ${emptyVisibilityPreviewHint}`);
         }
         if (measurement_mode) {
-          throw new Error('No usable stored visibility observations match the selected measurement_mode and run_mode for these engines. Missing evidence is unmeasured, not zero; a new provider scan may incur charges.');
+          throw new Error(`No usable stored visibility observations match the selected measurement_mode and run_mode for these engines. Missing evidence is unmeasured, not zero. ${emptyVisibilityPreviewHint}`);
         }
         throw new Error(
           engines && engines.length > 0
-            ? 'No visibility data yet for the selected engines. Call refresh_brand to populate them.'
-            : 'No visibility data yet for this brand. Call refresh_brand to populate it.',
+            ? `No visibility data yet for the selected engines. ${emptyVisibilityPreviewHint}`
+            : `No visibility data yet for this brand. ${emptyVisibilityPreviewHint}`,
         );
       }
       const activePrompts = await deps.db.getActivePrompts(brand_id);
@@ -795,20 +943,48 @@ export function registerTools(
         ? selectedResponses.filter((row) => activePromptIds.has(row.prompt_id))
         : selectedResponses;
       const scored = computeOverallScore(brand, scoredResponses);
-      // A snapshot containing only retired questions is not a measured zero.
-      if (active_prompts_only && scored.per_engine.length === 0) {
-        throw new Error('No successful stored observations for currently active buyer prompts in the selected engines. A new scan may incur provider charges; historical results remain available without active_prompts_only.');
+      // A failed-only snapshot is not evidence of zero brand visibility.
+      if (scored.per_engine.length === 0) {
+        if (active_prompts_only) {
+          throw new Error(`No successful stored observations for currently active buyer prompts in the selected engines. Historical results remain available without active_prompts_only. ${emptyVisibilityPreviewHint}`);
+        }
+        throw new Error(`No successful stored visibility observations for the selected engines. Failed or incomplete runs are unmeasured, not zero. ${emptyVisibilityPreviewHint}`);
+      }
+      // A run may be marked complete long after an earlier successful answer
+      // was persisted. Date the displayed evidence by its latest usable row,
+      // not by a later status update (or by excluded retired prompts).
+      const latestCapturedAtByEngine = new Map<string, number>();
+      for (const row of scoredResponses) {
+        if (row.status !== 'ok' || !Number.isFinite(row.captured_at) || row.captured_at <= 0) continue;
+        const previous = latestCapturedAtByEngine.get(row.engine);
+        if (previous === undefined || row.captured_at > previous) {
+          latestCapturedAtByEngine.set(row.engine, row.captured_at);
+        }
+      }
+      for (const { engine } of scored.per_engine) {
+        const capturedAt = latestCapturedAtByEngine.get(engine);
+        if (capturedAt === undefined) continue; // Older data may lack a usable capture timestamp.
+        refreshMsByEngine.set(engine, capturedAt);
+        refreshedAtByEngine.set(engine, new Date(capturedAt).toISOString());
       }
       const scoredEngines = new Set(scored.per_engine.map(({ engine }) => engine));
-      // An explicit multi-engine request must disclose engines whose latest
-      // run contains no successful currently active questions.
+      // Failed-only engines are unmeasured even when they have a stored run;
+      // they must not appear to have supplied a zero score or fresh evidence.
       const unmeasuredEngines = selectedEngines.filter((engine) =>
-        active_prompts_only ? !scoredEngines.has(engine) : !refreshedAtByEngine.has(engine));
+        !scoredEngines.has(engine));
+      // Explain only what the selected stored evidence proves. Missing runs
+      // do not establish whether a provider was configured or attempted.
+      const unmeasuredEngineReasons = unmeasuredEngines.map((engine) => ({
+        engine,
+        reason: unmeasuredReasonByEngine.get(engine) ?? (active_prompts_only
+          ? 'no_successful_active_prompt_observations'
+          : 'no_usable_stored_responses'),
+      }));
       const missingRequestedEngines = engines && engines.length > 0
         ? unmeasuredEngines
         : [];
       const scoredRefreshMs = [...refreshMsByEngine.entries()]
-        .filter(([engine]) => !active_prompts_only || scoredEngines.has(engine));
+        .filter(([engine]) => scoredEngines.has(engine));
       const oldestTimestamp = Math.min(...scoredRefreshMs.map(([, timestamp]) => timestamp));
       mostRecentTimestamp = Math.max(...scoredRefreshMs.map(([, timestamp]) => timestamp));
       const ageSpreadMs = mostRecentTimestamp - oldestTimestamp;
@@ -840,7 +1016,7 @@ export function registerTools(
       // identity snapshot. Report potentially older scoring evidence without
       // claiming we know which metadata fields actually changed.
       const enginesBeforeBrandUpdate = [...startedMsByEngine.entries()]
-        .filter(([engine]) => !active_prompts_only || scoredEngines.has(engine))
+        .filter(([engine]) => scoredEngines.has(engine))
         .filter(([, startedAt]) => startedAt < brand.updated_at)
         .map(([engine]) => engine)
         .sort();
@@ -863,6 +1039,53 @@ export function registerTools(
         };
       });
 
+      // The headline score conditions on observed successful prompts. Give
+      // clients deterministic extremes over each engine's missing prompt
+      // slots instead of letting a 1-of-20 result appear fully measured.
+      const possiblePerEngineScores = perEngine.map((engine) => {
+        const expected = engine.coverage.expected_prompts;
+        const missing = expected - engine.coverage.usable_prompts;
+        const hits = engine.prompts_appeared_in;
+        return {
+          engine: engine.engine,
+          observed_score: engine.score,
+          minimum: expected === 0 ? 0 : Math.round(100 * hits / expected),
+          maximum: expected === 0 ? 0 : Math.round(100 * (hits + missing) / expected),
+          usable_prompts: engine.coverage.usable_prompts,
+          expected_prompts: expected,
+          partial: missing > 0,
+        };
+      });
+      const averageExtreme = (
+        scores: typeof possiblePerEngineScores, key: 'minimum' | 'maximum',
+      ): number => scores.length === 0 ? 0 : Math.round(
+        scores.reduce((sum, engine) => sum + engine[key], 0) / scores.length,
+      );
+      const modeBounds = (mode: 'search_requested' | 'model_only') => {
+        const scores = possiblePerEngineScores.filter(
+          (engine) => measurementModeByEngine.get(engine.engine) === mode,
+        );
+        return scores.length === 0 ? null : {
+          minimum: averageExtreme(scores, 'minimum'),
+          maximum: averageExtreme(scores, 'maximum'),
+          partial_engines: scores.filter((engine) => engine.partial)
+            .map((engine) => engine.engine).sort(),
+        };
+      };
+      const score_uncertainty = {
+        minimum: averageExtreme(possiblePerEngineScores, 'minimum'),
+        maximum: averageExtreme(possiblePerEngineScores, 'maximum'),
+        partial_engines: possiblePerEngineScores.filter((engine) => engine.partial)
+          .map((engine) => engine.engine).sort(),
+        by_engine: possiblePerEngineScores.map(({ partial, ...engine }) => engine)
+          .sort((a, b) => a.engine.localeCompare(b.engine)),
+        by_measurement_mode: {
+          search_requested: modeBounds('search_requested'),
+          model_only: modeBounds('model_only'),
+        },
+        note: 'These are deterministic best/worst-case bounds if every missing prompt in each scored engine were a brand mention or a non-mention, not a confidence interval or a forecast. by_engine identifies the observed and possible scores for each measured surface. by_measurement_mode separates search-requested from model-only scored engines; a null mode has no measured engines, not a zero score. Only scored engines contribute; unmeasured engines are excluded. Historical or changed prompt sets may not be directly comparable. No provider calls were made.',
+      };
+
       const measurementGroup = (mode: 'search_requested' | 'model_only') => {
         const engines = perEngine.filter((engine) => engine.measurement_mode === mode);
         return {
@@ -884,8 +1107,10 @@ export function registerTools(
         },
         refreshed_at: new Date(mostRecentTimestamp).toISOString(),
         overall_score: scored.overall_score,
+        score_uncertainty,
         missing_requested_engines: missingRequestedEngines,
         unmeasured_engines: unmeasuredEngines,
+        unmeasured_engine_reasons: unmeasuredEngineReasons,
         unmeasured_engines_note: active_prompts_only
           ? 'These engines have no successful stored observations for currently active buyer prompts under the selected run and measurement modes and are excluded from overall_score. They are unmeasured, not observed zeros. A new scan may incur provider charges.'
           : 'These known or requested engines have no usable current-identity observations under the selected run and measurement modes and are excluded from overall_score. Stale identity engines are listed in identity_attribution; absence does not establish whether an engine was configured, attempted or failed.',
@@ -942,9 +1167,15 @@ export function registerTools(
           note: 'Runs started before the last matching-identity change are excluded from current scores and listed as stale engines, not treated as observed zeros. Refresh those engines before measuring the current brand identity (provider charges may apply). Historical runs remain available in history; older changes before identity-boundary migration are unknown.',
         },
         per_engine: perEngine,
-        top_winning_prompts: scored.top_winning_prompts,
+        top_winning_prompts: scored.top_winning_prompts.map((row) => ({
+          ...row,
+          prompt: redactEvidenceText(row.prompt),
+        })),
         winning_prompt_evidence_note: 'engines_cited_in is a legacy field counting brand mentions in answers, not source citations. Use engines_mentioned_in for mention evidence and engines_with_brand_link for linked brand evidence. A link-only source without an answer mention is not a winning prompt.',
-        top_losing_prompts: scored.top_losing_prompts,
+        top_losing_prompts: scored.top_losing_prompts.map((row) => ({
+          ...row,
+          prompt: redactEvidenceText(row.prompt),
+        })),
         losing_prompt_evidence_note: 'competitors_cited retains historical answer mentions, not verified source links. The tracked and not-currently-tracked lists describe the present competitor roster, not the roster at observation time; historical scores and observations are not rewritten. Refresh scans before interpreting current competitors.',
       };
       return toolResult(payload);
@@ -1229,7 +1460,15 @@ export function registerTools(
         const previous = perEngine.get(row.engine);
         const brand_mentions = (previous?.brand_mentions ?? 0) + hits;
         const usable_prompts = (previous?.usable_prompts ?? 0) + total;
-        const observedAt = new Date(row.completed_at).toISOString();
+        // Run completion can lag successful captures by hours or days.
+        // Preserve completion-based chart buckets while dating evidence by
+        // the latest eligible successful response in the selected cohort.
+        const capturedAt = active_prompts_only
+          ? row.active_last_captured_at : row.last_captured_at;
+        const observedAt = new Date(
+          typeof capturedAt === 'number' && Number.isFinite(capturedAt)
+            ? capturedAt : row.completed_at,
+        ).toISOString();
         perEngine.set(row.engine, {
           score: usable_prompts > 0 ? Math.round((100 * brand_mentions) / usable_prompts) : 0,
           brand_mentions,
@@ -1350,6 +1589,11 @@ export function registerTools(
         const payload = {
           brand_id,
           days,
+          mention_evidence_samples: {
+            brand: [],
+            competitors: [],
+            note: 'No targets selected; no stored mention evidence was queried.',
+          },
           identity_attribution: {
             last_identity_change_at: lastIdentityChangeAt,
             excluded_responses: 0,
@@ -1437,6 +1681,30 @@ export function registerTools(
         : null;
       const allResponses = activePromptIds === null ? currentIdentityResponses
         : currentIdentityResponses.filter((row) => activePromptIds.has(row.prompt_id));
+      // Sample only records that actually contribute to the scoped comparison
+      // counts. Keep this bounded and omit raw model text from client reports.
+      const sampleRows = [...allResponses].sort((a, b) =>
+        b.captured_at - a.captured_at || b.id.localeCompare(a.id) ||
+        a.engine.localeCompare(b.engine));
+      const sampleReference = (row: ComparisonEvidenceRow) => ({
+        engine: row.engine,
+        run_id: row.run_id,
+        response_id: row.id,
+        prompt_id: row.prompt_id,
+        prompt: redactEvidenceText(row.prompt_text),
+        measurement_mode: visibilityMeasurementMode(row.engine, row.mode ?? 'live'),
+        captured_at: new Date(row.captured_at).toISOString(),
+      });
+      const mention_evidence_samples = {
+        brand: sampleRows.filter((row) => row.brand_mentioned === 1)
+          .slice(0, 5).map(sampleReference),
+        competitors: targets.map((domain) => ({
+          domain,
+          samples: sampleRows.filter((row) => row.competitors_mentioned.includes(domain))
+            .slice(0, 5).map(sampleReference),
+        })),
+        note: 'Up to five latest stored response references, with buyer question and request mode, for each counted brand or competitor mention after all comparison scopes and retry deduplication. Mentions are not verified source citations; references contain no raw AI answers. Counts use all eligible observations, not only these samples.',
+      };
       const usableEngines = new Set(allResponses.map((row) => row.engine));
       const engine_scope = {
         selection: requestedEngines ? 'selected' as const : 'all_stored' as const,
@@ -1549,7 +1817,7 @@ export function registerTools(
             .sort(([idA, textA], [idB, textB]) =>
               textA.localeCompare(textB) || idA.localeCompare(idB))
             .slice(0, 5)
-            .map(([, text]) => text),
+            .map(([, text]) => redactEvidenceText(text)),
         };
       });
 
@@ -1593,11 +1861,17 @@ export function registerTools(
           a.prompt.localeCompare(b.prompt) ||
           idA.localeCompare(idB))
         .slice(0, 5)
-        .map(([, w]) => ({
-          prompt: w.prompt,
-          you_cited_by: [...w.engines].sort(),
-          competitors_cited: [...w.competitors].sort(),
-        }));
+        .map(([, w]) => {
+          const you_mentioned_by = [...w.engines].sort();
+          const competitors_mentioned = [...w.competitors].sort();
+          return {
+            prompt: redactEvidenceText(w.prompt),
+            you_mentioned_by,
+            competitors_mentioned,
+            you_cited_by: you_mentioned_by,
+            competitors_cited: competitors_mentioned,
+          };
+        });
       const prompts_you_win = topPrompts(winsByPrompt);
       const prompts_brand_only = topPrompts(brandOnlyByPrompt);
       const prompts_co_mentioned = topPrompts(coMentionedByPrompt);
@@ -1605,6 +1879,7 @@ export function registerTools(
       const payload = {
         brand_id,
         days,
+        mention_evidence_samples,
         identity_attribution,
         observation_coverage,
         google_search_sampling: googleSearchSampling(allResponses.map(({ engine }) => engine)),
@@ -1631,7 +1906,7 @@ export function registerTools(
     {
       title: 'Get AI citation evidence',
       description:
-        "Page stored citations and source rankings. engines selects audit surfaces; measurement_mode selects model-only or search-requested evidence before pagination. Defaults retain history. No provider scans. Example: brand_id='acme'.",
+        "Page citations and ranked sources; look up one exact source domain past the cap. Lookup leaves citation pages and window counts unchanged. Includes run/response IDs for drilldown. No provider calls. Example: brand_id='acme'.",
       inputSchema: {
         brand_id: z
           .string()
@@ -1652,12 +1927,16 @@ export function registerTools(
           .describe('Filter pages and top_sources by request mode; search_requested does not verify source links.'),
         limit: z.number().int().min(1).max(100).default(50)
           .describe('Citation rows per page, 1-100 (default 50).'),
+        top_sources_limit: z.number().int().min(1).max(50).default(10)
+          .describe('Ranked source domains, 1-50 (default 10); independent of citation page size.'),
+        ranked_source_domain: z.string().trim().min(1).max(253).optional()
+          .describe('Exact ranked domain lookup beyond top-50; does not filter citation pages or window counts.'),
         current_identity_only: z.boolean().default(false)
           .describe('Filter citations and source rankings to current-brand runs when the identity boundary is known.'),
         active_prompts_only: z.boolean().default(false)
           .describe('Filter citations and source rankings to currently active buyer questions without new provider scans.'),
         cursor: z.string().max(1600).optional()
-          .describe('Opaque next_cursor; preserve brand, days, engine/engines, identity and prompt selection.'),
+          .describe('next_cursor; keep brand, days, engine(s), measurement_mode, ranked_source_domain, identity, prompts.'),
       },
       outputSchema: citationsOutputSchema,
       annotations: {
@@ -1666,7 +1945,7 @@ export function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ brand_id, days = 14, engine, engines, measurement_mode, limit = 50, current_identity_only = false,
+    async ({ brand_id, days = 14, engine, engines, measurement_mode, limit = 50, top_sources_limit = 10, ranked_source_domain, current_identity_only = false,
       active_prompts_only = false, cursor }) => {
       const selectedEngines = [...new Set(engines ?? [])].sort();
       if (engine && selectedEngines.length) {
@@ -1674,6 +1953,10 @@ export function registerTools(
       }
       const engineSelection = engine ?? (selectedEngines.length ? selectedEngines : undefined);
       const requestedEngines = engine ? [engine] : selectedEngines;
+      const rankedSourceDomain = ranked_source_domain === undefined ? null : normalizeDomainInput(ranked_source_domain);
+      if (ranked_source_domain !== undefined && rankedSourceDomain === null) {
+        throw new Error('Invalid ranked source domain. Provide a valid domain-shaped hostname from ranked citations.');
+      }
       const brand = await deps.db.getBrand(brand_id);
       if (!brand) {
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
@@ -1687,7 +1970,7 @@ export function registerTools(
       const now = Date.now();
       const previous = cursor ? decodeCitationCursor(
         cursor, brand_id, days, engine ?? null, selectedEngines, measurement_mode, current_identity_only, identityBoundary,
-        active_prompts_only, promptRosterDigest,
+        active_prompts_only, promptRosterDigest, rankedSourceDomain,
       ) : null;
       const since = previous?.since ?? (now - days * 86_400_000);
       const until = previous?.until ?? now;
@@ -1702,17 +1985,50 @@ export function registerTools(
       });
       const hasMore = rows.length > limit;
       const results = rows.slice(0, limit);
+      const totalMatchingRows = await deps.db.countCitationRows(brand_id, since, engineSelection, {
+        until, minRunStartedAt, activePromptsOnly: active_prompts_only, measurementMode: measurement_mode,
+      });
       const sourceResponses = await deps.db.getCitationSourceRows(
         brand_id, since, until, engineSelection, minRunStartedAt, active_prompts_only, measurement_mode,
       );
+      const rankedSources = buildTopSources(sourceResponses, brand, identityBoundary);
+      // Exact domain drilldown only changes the ranked summary; page/coverage
+      // denominators still describe the entire selected observation window.
+      const selectedRankedSources = rankedSourceDomain === null ? rankedSources
+        : rankedSources.filter(({ domain }) => domain === rankedSourceDomain);
+      const observationEvidence = new Map<string, {
+        count: number;
+        prompts: Set<string>;
+        latestCapturedAt: number;
+      }>();
+      for (const response of sourceResponses) {
+        const evidence = observationEvidence.get(response.engine);
+        if (evidence) {
+          evidence.count++;
+          evidence.prompts.add(response.prompt_id);
+          evidence.latestCapturedAt = Math.max(evidence.latestCapturedAt, response.captured_at);
+        } else {
+          observationEvidence.set(response.engine, {
+            count: 1,
+            prompts: new Set([response.prompt_id]),
+            latestCapturedAt: response.captured_at,
+          });
+        }
+      }
+      const scopedEngineNames = requestedEngines.length
+        ? [...requestedEngines].sort()
+        : [...observationEvidence.keys()].sort();
 
       const citations = results.map((row) => {
         const engineHosts = parseStringArray(row.engine_citations_json);
         const brandUrl = pickBrandUrl(brand, engineHosts, row.raw_response);
+        const citedUrl = brandUrl ? redactCitationUrlQuery(brandUrl.url) : null;
         return {
           id: citationId(row.response_id),
+          run_id: row.run_id,
+          response_id: row.response_id,
           engine: row.engine,
-          prompt: row.prompt,
+          prompt: redactEvidenceText(row.prompt),
           cited_at: new Date(row.captured_at).toISOString(),
           citation_type:
             row.brand_mentioned !== 1 && row.brand_cited_with_link === 1
@@ -1725,7 +2041,8 @@ export function registerTools(
             ? { identity_scope: citationIdentityScope(row.run_started_at, identityBoundary) }
             : {}),
           response_excerpt: buildResponseExcerpt(row.raw_response, brand),
-          cited_url: brandUrl?.url ?? null,
+          cited_url: citedUrl,
+          url_redacted: brandUrl !== null && citedUrl !== brandUrl.url,
           url_source: brandUrl?.source ?? null,
         };
       });
@@ -1741,6 +2058,18 @@ export function registerTools(
           not_observed_engines: requestedEngines.filter((selected) =>
             !sourceResponses.some((response) => response.engine === selected)),
           note: 'Citation pages and source rankings use only the requested stored engines before limits and aggregation. Missing successful responses in this window are not measured zero, proof a provider was configured, or proof a scan was attempted.',
+        },
+        observation_coverage: {
+          per_engine: scopedEngineNames.map((engineName) => {
+            const evidence = observationEvidence.get(engineName);
+            return {
+              engine: engineName,
+              successful_observation_count: evidence?.count ?? 0,
+              distinct_prompt_count: evidence?.prompts.size ?? 0,
+              last_observed_at: evidence ? new Date(evidence.latestCapturedAt).toISOString() : null,
+            };
+          }),
+          note: 'Latest successful stored observation per run and prompt in the selected window, before citation pagination. Distinct prompts count stored prompt IDs, not unique question texts; last_observed_at is response capture time, not proof of a fresh scan or current brand identity. Counts are not brand mentions, source citations, completed scans, or visibility scores. Zero for a requested engine means unmeasured here, not zero visibility.',
         },
         identity_attribution: identityBoundary === null ? null : {
           identity_changed_at: new Date(identityBoundary).toISOString(),
@@ -1770,6 +2099,8 @@ export function registerTools(
           ...results.map(({ engine: citationEngine }) => citationEngine),
         ]),
         limit,
+        total_matching_rows: totalMatchingRows,
+        total_matching_rows_note: 'Full selected window before pagination: all successful brand mentions or source links, including historical retries. This is not a unique prompt count, total scanned prompts, or number of verified source citations.',
         has_more: hasMore,
         next_cursor: hasMore && results.length > 0
           ? encodeURIComponent(JSON.stringify({
@@ -1779,6 +2110,7 @@ export function registerTools(
               engine: engine ?? null,
               ...(selectedEngines.length ? { engines: selectedEngines } : {}),
               ...(measurement_mode ? { measurement_mode } : {}),
+              ...(rankedSourceDomain ? { ranked_source_domain: rankedSourceDomain } : {}),
               identity_selection: current_identity_only ? 'current_identity_only' : 'full_history',
               identity_boundary: current_identity_only ? identityBoundary : null,
               prompt_selection: active_prompts_only ? 'active_only' : 'full_history',
@@ -1793,8 +2125,126 @@ export function registerTools(
               },
             }))
           : null,
-        top_sources: buildTopSources(sourceResponses, brand, identityBoundary),
+        top_sources_limit,
+        total_source_domains: rankedSources.length,
+        top_sources_truncated: selectedRankedSources.length > top_sources_limit,
+        ranked_source_domain_filter: rankedSourceDomain,
+        ranked_source_domain_match_found: rankedSourceDomain !== null && selectedRankedSources.length > 0,
+        top_sources: selectedRankedSources.slice(0, top_sources_limit),
         citations,
+      };
+      return toolResult(payload);
+    },
+  );
+
+  server.registerTool(
+    toolName('get_observation_evidence'),
+    {
+      title: 'Inspect one stored AI observation',
+      description:
+        "Read a brand-owned stored response as a redacted excerpt. Optional competitor focus requires a recorded mention. No provider calls or verified citations. Example: brand_id='acme', run_id='run-1', response_id='response-1'.",
+      inputSchema: {
+        brand_id: z.string().min(1).max(128)
+          .describe('Tracked brand ID that owns the originating run.'),
+        run_id: z.string().min(1).max(128)
+          .describe('Run ID from a stored evidence reference.'),
+        response_id: z.string().min(1).max(128)
+          .describe('Response ID from the same stored evidence reference.'),
+        focus_competitor: z.string().trim().min(1).max(253).optional()
+          .describe('Recorded competitor domain; prioritizes its mention in the redacted excerpt.'),
+      },
+      outputSchema: observationEvidenceOutputSchema,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        openWorldHint: false,
+      },
+    },
+    async ({ brand_id, run_id, response_id, focus_competitor }) => {
+      const missing = 'Successful stored observation not found for this brand, run and response.';
+      const brand = await deps.db.getBrand(brand_id);
+      if (!brand) throw new Error(missing);
+      const run = await deps.db.getRunById(run_id);
+      // A guessed run or response ID must not reveal another brand's observations.
+      if (!run || run.brand_id !== brand_id) throw new Error(missing);
+      const response = (await deps.db.getResponsesForRun(run.id)).find(
+        (row) => row.run_id === run.id && row.id === response_id && row.status === 'ok',
+      );
+      if (!response) throw new Error(missing);
+      const requestedCompetitor = focus_competitor?.toLowerCase() ?? null;
+      // A guessed term cannot be used to explore arbitrary slices of a
+      // stored response. Only competitors recorded for this observation qualify.
+      if (requestedCompetitor && !response.competitors_mentioned.some(
+        (domain) => domain.toLowerCase() === requestedCompetitor,
+      )) throw new Error(missing);
+      const activePromptIds = new Set(
+        (await deps.db.getActivePrompts(brand_id)).map(({ id }) => id),
+      );
+      const providerSources = new Map<string, { url: string; url_redacted: boolean }>();
+      let filteredProviderSourceUrls = 0;
+      let deduplicatedProviderSourceUrls = 0;
+      // Special-use hostnames are not publicly actionable AI source links.
+      // Avoid exposing private network names in client-facing audit evidence.
+      const nonPublicSuffixes = ['.local', '.localhost', '.internal', '.test', '.invalid', '.example', '.home.arpa'];
+      for (const rawUrl of response.engine_citations) {
+        try {
+          // Native provider links are evidence, not trusted instructions or
+          // verified sources. Exclude malformed, local and credentialed URLs.
+          if (/[\u0000-\u001f\u007f]/.test(rawUrl) || rawUrl !== rawUrl.trim()) {
+            filteredProviderSourceUrls++;
+            continue;
+          }
+          const parsed = new URL(rawUrl);
+          if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+            filteredProviderSourceUrls++;
+            continue;
+          }
+          const hostname = normalizeDomainInput(parsed.hostname);
+          if (parsed.username || parsed.password || !hostname || hostname === 'home.arpa' ||
+            nonPublicSuffixes.some((suffix) => hostname.endsWith(suffix))) {
+            filteredProviderSourceUrls++;
+            continue;
+          }
+          const safeUrl = redactCitationUrlQuery(rawUrl);
+          if (!providerSources.has(safeUrl)) {
+            providerSources.set(safeUrl, { url: safeUrl, url_redacted: safeUrl !== rawUrl });
+          } else {
+            deduplicatedProviderSourceUrls++;
+          }
+        } catch {
+          // One invalid provider URL cannot hide other usable evidence.
+          filteredProviderSourceUrls++;
+        }
+      }
+      const providerSourceList = [...providerSources.values()];
+      const identityBoundary = brand.identity_changed_at ?? null;
+      const payload = {
+        brand_id,
+        run_id: run.id,
+        response_id: response.id,
+        engine: response.engine,
+        prompt_id: response.prompt_id,
+        prompt: redactEvidenceText(response.prompt_text),
+        captured_at: Number.isFinite(response.captured_at) &&
+          response.captured_at > 0 && Math.abs(response.captured_at) <= 8.64e15
+          ? new Date(response.captured_at).toISOString() : null,
+        status: 'ok' as const,
+        measurement_mode: visibilityMeasurementMode(run.engine, run.mode),
+        identity_scope: identityBoundary === null ? 'unknown_boundary' as const
+          : run.started_at < identityBoundary ? 'historical_identity' as const
+          : 'current_identity' as const,
+        active_prompt: activePromptIds.has(response.prompt_id),
+        brand_mentioned: response.brand_mentioned === 1,
+        competitors_mentioned: [...new Set(response.competitors_mentioned)].sort(),
+        response_excerpt: buildResponseExcerpt(response.raw_response, brand, requestedCompetitor ?? undefined),
+        requested_competitor: requestedCompetitor,
+        provider_source_count: providerSourceList.length,
+        provider_source_urls_filtered_count: filteredProviderSourceUrls,
+        provider_source_urls_deduplicated_count: deduplicatedProviderSourceUrls,
+        provider_source_urls_truncated: providerSourceList.length > 5,
+        provider_source_urls: providerSourceList.slice(0, 5),
+        google_search_sampling: googleSearchSampling([run.engine]),
+        evidence_note: 'This is a short credential-redacted excerpt of one stored successful response, not a full answer or an independently verified source citation. The original buyer question is credential-redacted without excerpt truncation. An optional recorded competitor focus is best effort; absence from the excerpt does not disprove a recorded mention. Provider-returned source URLs are not independently verified; access-bearing URL query and fragment fields are masked. provider_source_count counts accepted unique URLs, with filtered and deduplicated (after masking) counts reported separately; only the first five are shown. Review identity_scope, active_prompt and measurement_mode before quoting in an audit. No provider request occurred.',
       };
       return toolResult(payload);
     },
@@ -1865,6 +2315,7 @@ export function registerTools(
             engine: string;
             run_id: string;
             response_id: string;
+            measurement_mode: 'model_only' | 'search_requested';
             captured_at_ms: number;
             competitors_mentioned: string[];
           }>;
@@ -1911,10 +2362,20 @@ export function registerTools(
         if (latestOkByPrompt.size > 0) usableEngines.add(engine);
         // Report the denominator independently of whether any competitor won.
         // An observed loss on one prompt is not evidence of complete coverage.
-        const refreshedAtMs = run.completed_at ?? run.started_at;
+        // Completion may lag the actual answers by days. Use successful
+        // active-prompt capture times, not a late status update or a retired
+        // prompt. Only legacy successes lacking capture times use the run date.
+        const latestCaptureMs = [...latestOkByPrompt.values()].reduce<number | null>(
+          (latest, row) => Number.isFinite(row.captured_at) && row.captured_at > 0 &&
+            row.captured_at <= 8.64e15 && (latest === null || row.captured_at > latest)
+            ? row.captured_at : latest,
+          null,
+        );
+        const refreshedAtMs = latestOkByPrompt.size === 0 ? null :
+          (latestCaptureMs ?? run.completed_at ?? run.started_at);
         perEngineCoverage.push({
           engine, run_id: run.id,
-          refreshed_at: Number.isFinite(refreshedAtMs) &&
+          refreshed_at: refreshedAtMs !== null && Number.isFinite(refreshedAtMs) &&
             Math.abs(refreshedAtMs) <= 8.64e15
             ? new Date(refreshedAtMs).toISOString() : null,
           usable_prompt_count: latestOkByPrompt.size,
@@ -1933,14 +2394,16 @@ export function registerTools(
           if (currentMentions.length === 0) continue;
           // Identifiers only: these are traceable stored observations, not
           // independently verified source citations or copied model answers.
+          const observationMode = visibilityMeasurementMode(engine, run.mode ?? 'live');
           const observation = {
             engine: r.engine,
             run_id: run.id,
             response_id: r.id,
+            measurement_mode: observationMode,
             captured_at_ms: r.captured_at,
             competitors_mentioned: [...new Set(currentMentions)].sort(),
           };
-          lossModeByEngine.set(engine, visibilityMeasurementMode(engine, run.mode ?? 'live'));
+          lossModeByEngine.set(engine, observationMode);
           const existing = losingByPrompt.get(r.prompt_id);
           if (existing) {
             existing.engines.add(r.engine);
@@ -1974,9 +2437,15 @@ export function registerTools(
             a.prompt_text.localeCompare(b.prompt_text),
         )
         .slice(0, 15);
+      // Keep evidence ordering and stored questions intact, but do not expose
+      // embedded credentials in client reports or opt-in analyzer inputs.
+      const safeLosingPrompts = losingPrompts.map((prompt) => ({
+        ...prompt,
+        prompt_text: redactEvidenceText(prompt.prompt_text),
+      }));
       const losing_prompt_evidence = {
-        note: 'These are stored response record references for observed competitor-only mentions in the current active prompt set, not independently verified source citations. No raw model answers are included; inspect stored responses before quoting any evidence in a client audit.',
-        prompts: losingPrompts.map(({ prompt_id, prompt_text, observations }) => ({
+        note: 'These are stored response record references for observed competitor-only mentions in the current active prompt set, not independently verified source citations. Buyer questions are credential-redacted in this report. Each observation records its model-only or search-requested request mode; neither mode proves a citation. No raw model answers are included; inspect stored responses before quoting any evidence in a client audit.',
+        prompts: safeLosingPrompts.map(({ prompt_id, prompt_text, observations }) => ({
           prompt_id, prompt_text, observations,
         })),
       };
@@ -1989,7 +2458,7 @@ export function registerTools(
         unmeasured_engines: selectedEngines.filter(
           (engine) => !perEngineCoverage.some(
             (entry) => entry.engine === engine && entry.usable_prompt_count > 0)),
-        note: 'Counts are unique active prompts with a successful stored response in the selected engine/request-mode cohort after recorded identity changes, not verified citations or a confidence score. Per-engine refreshed_at is the run completion time (or start if unfinished), not proof all prompts succeeded. unmeasured_engines include engines without an eligible selected-mode run, with stale identity or zero usable active-prompt responses; others may be unconfigured or unscanned. Refreshing incomplete engines may incur provider charges.',
+        note: 'Counts are unique active prompts with a successful stored response in the selected engine/request-mode cohort after recorded identity changes, not verified citations or a confidence score. Per-engine refreshed_at is the latest successful active-prompt capture time (run completion/start only for legacy successes without capture time); null means no usable dated observations. It does not prove all prompts succeeded. unmeasured_engines include engines without an eligible selected-mode run, with stale identity or zero usable active-prompt responses; others may be unconfigured or unscanned. Refreshing incomplete engines may incur provider charges.',
       };
       const engine_scope = {
         selection: requestedEngines ? 'selected' as const : 'all_stored' as const,
@@ -2060,7 +2529,7 @@ export function registerTools(
         return toolResult(payload);
       }
 
-      let recommendations = buildFallbackRecommendations(losingPrompts, max_recommendations);
+      let recommendations = buildFallbackRecommendations(safeLosingPrompts, max_recommendations);
       let prompt_source: 'generated' | 'fallback' = 'fallback';
       let fallbackReason: string | undefined;
       if (ai_analysis) {
@@ -2071,7 +2540,7 @@ export function registerTools(
             recommendations = await analyzeContentGaps(
               { ANTHROPIC_API_KEY: deps.env.ANTHROPIC_API_KEY },
               brand,
-              losingPrompts,
+              safeLosingPrompts,
               max_recommendations,
             );
             prompt_source = 'generated';
@@ -2116,6 +2585,8 @@ export function registerTools(
           .min(1)
           .optional()
           .describe('Engines to run (at least one); omit for every configured engine.'),
+        preview_only: z.boolean().default(false)
+          .describe('Preview configured prompt-engine pairs without provider calls; not a billing quote.'),
       },
       outputSchema: refreshOutputSchema,
       annotations: {
@@ -2124,13 +2595,13 @@ export function registerTools(
         openWorldHint: true,
       },
     },
-    async ({ brand_id, engines }) => {
+    async ({ brand_id, engines, preview_only = false }) => {
       const brand = await deps.db.getBrand(brand_id);
       if (!brand) {
         throw new Error(BRAND_NOT_FOUND_MESSAGE);
       }
       const prompts = await deps.db.getActivePrompts(brand_id);
-      if (prompts.length === 0) {
+      if (prompts.length === 0 && !preview_only) {
         throw new Error(
           'Brand has no active prompts. Run the generate_prompts tool (local CLI) or POST /admin/generate-prompts (Workers deployment).',
         );
@@ -2151,7 +2622,7 @@ export function registerTools(
       const skippedUnconfigured = requested && requested.length > 0
         ? uniqueEngineNames(requested).filter((engine) => !filtered.includes(engine))
         : [];
-      if (filtered.length === 0) {
+      if (filtered.length === 0 && !preview_only) {
         if (requested && requested.length > 0) {
           throw new Error(
             `Requested engines are not configured: ${uniqueEngineNames(requested).join(', ')}. Configure the matching provider API key (and SERPAPI_AI_MODE_ENABLED=true for Google AI Mode), or omit engines to refresh every configured engine.`,
@@ -2161,15 +2632,52 @@ export function registerTools(
           'No engines available. Set at least one of OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, PERPLEXITY_API_KEY, XAI_API_KEY, SERPAPI_API_KEY. Google AI Mode additionally requires SERPAPI_AI_MODE_ENABLED=true.',
         );
       }
-      const { run_ids, engines: kicked } = await deps.runEnginesInline(
+      if (preview_only) {
+        const readinessWarnings: string[] = [];
+        const readyToRefresh = prompts.length > 0 && filtered.length > 0;
+        if (prompts.length === 0) {
+          readinessWarnings.push('No active prompts. Add or activate buyer-intent prompts before scanning.');
+        }
+        if (filtered.length === 0) {
+          readinessWarnings.push(requested
+            ? `No requested provider engines configured (${uniqueEngineNames(requested).join(', ')}). Configure their API keys or select available engines.`
+            : 'No provider engines configured. Set at least one supported provider API key before scanning.');
+        }
+        if (filtered.length > 0 && skippedUnconfigured.length > 0) {
+          readinessWarnings.push(`Requested engines without configuration will be skipped: ${skippedUnconfigured.join(', ')}. Configure their API keys to scan the complete requested scope.`);
+        }
+        return toolResult({
+          brand_id: brand.id,
+          message: !readyToRefresh
+            ? `Preview only: scan not ready; no provider requests started. ${readinessWarnings.join(' ')}`
+            : skippedUnconfigured.length > 0
+              ? `Preview only: partial engine scope; no provider requests started. ${readinessWarnings.join(' ')} Ready to scan configured engines only; review provider charges before proceeding.`
+            : 'Preview only: no provider requests started. Run refresh_brand without preview_only only after reviewing the active prompts and provider charges.',
+          run_ids: {},
+          failed_engines: [],
+          skipped_unconfigured_engines: skippedUnconfigured,
+          estimated_completion_seconds: 0,
+          preview_only: true,
+          planned_engines: filtered,
+          active_prompt_count: prompts.length,
+          planned_prompt_engine_pairs: prompts.length * filtered.length,
+          ready_to_refresh: readyToRefresh,
+          readiness_warnings: readinessWarnings,
+          cost_note: 'Logical prompt-engine pairs are not a billing estimate or total cost. Actual API requests, retries, token use and provider charges can differ.',
+        });
+      }
+      const { run_ids, engines: kicked, failed_engines = [] } = await deps.runEnginesInline(
         brand,
         prompts,
         filtered,
       );
       const alreadyRunning = Object.keys(run_ids).length - kicked.length;
+      const completedCount = kicked.length - failed_engines.length;
       const payload = {
         brand_id: brand.id,
-        message: `Refresh ${refreshIsAsync ? 'started' : 'completed'} for ${kicked.length} engine${kicked.length === 1 ? '' : 's'}` +
+        message: (failed_engines.length > 0
+          ? `Refresh partially completed for ${completedCount} engine${completedCount === 1 ? '' : 's'}; failed: ${failed_engines.join(', ')} (check stored run status before retrying; provider calls may incur charges)`
+          : `Refresh ${refreshIsAsync ? 'started' : 'completed'} for ${kicked.length} engine${kicked.length === 1 ? '' : 's'}`) +
           (alreadyRunning > 0
             ? `; ${alreadyRunning} engine${alreadyRunning === 1 ? '' : 's'} already in progress (existing run IDs reused)`
             : '') +
@@ -2179,6 +2687,7 @@ export function registerTools(
           ? 'The tracked category changed after the active buyer questions were last confirmed. This scan used the existing prompts; review list_prompts and confirm or replace them with set_prompts before interpreting results as current-market visibility.'
           : null,
         run_ids,
+        failed_engines,
         skipped_unconfigured_engines: skippedUnconfigured,
         estimated_completion_seconds: refreshIsAsync ? 30 : 0,
       };
@@ -2201,6 +2710,8 @@ export function registerLocalManagementTools(
   server: McpServer,
   deps: ManagementDeps,
 ): void {
+  const previewNextStep = (brandId: string) =>
+    `Call refresh_brand with brand_id '${brandId}', preview_only=true to review active prompts and configured engines without provider requests. Run without preview_only only after reviewing the scope and potential provider charges.`;
   server.registerTool(
     'track_brand',
     {
@@ -2311,9 +2822,9 @@ export function registerLocalManagementTools(
         next_steps =
           result.prompt_source === 'fallback'
             ? category?.trim()
-              ? `Tracked with ${result.prompts_inserted} provider-free category-anchored starter prompts. Review list_prompts and customize with set_prompts for representative buyer questions before interpreting scores. Call refresh_brand with brand_id '${result.brand_id}' for a starter scan; paid generate_prompts remains optional.`
-              : `Tracked with ${result.prompts_inserted} limited starter prompts. No category was supplied, so these prompts use your brand name and can bias visibility scores. Set a category with update_brand and supply independent category prompts with set_prompts before refresh_brand.`
-            : `Call refresh_brand with brand_id '${result.brand_id}' to run the first scan, then check_visibility for the results.`;
+              ? `Tracked with ${result.prompts_inserted} provider-free category-anchored starter prompts. Review list_prompts and customize with set_prompts for representative buyer questions before interpreting scores. ${previewNextStep(result.brand_id)} Paid generate_prompts remains optional.`
+              : `Tracked with ${result.prompts_inserted} limited starter prompts. No category was supplied, so these prompts use your brand name and can bias visibility scores. Set a category with update_brand and supply independent category prompts with set_prompts before a real scan. ${previewNextStep(result.brand_id)}`
+            : `${previewNextStep(result.brand_id)} Then check_visibility for the results after a real scan.`;
       } else if (result.reason === 'already exists') {
         next_steps = `Brand '${result.brand_id}' is already tracked — nothing was changed. Use list_brands to inspect it, update_brand to correct its metadata, or generate_prompts to refresh its prompt set.`;
       } else {
@@ -2416,8 +2927,9 @@ export function registerLocalManagementTools(
         },
         next_steps: [
           result.prompt_set_review_recommended
-            ? `Category changed, but active prompts and historical runs were preserved. Review list_prompts and use set_prompts to replace outdated buyer-intent prompts before calling refresh_brand for '${brand_id}'. generate_prompts uses a paid API and is optional.`
-            : `Call refresh_brand with brand_id '${brand_id}' to scan using the updated metadata. Active prompts and historical runs were preserved.`,
+            ? 'Category changed, but active prompts and historical runs were preserved. Review list_prompts and use set_prompts to replace outdated buyer-intent prompts before a new scan. generate_prompts uses a paid API and is optional.'
+            : 'Active prompts and historical runs were preserved.',
+          previewNextStep(brand_id),
           ...(result.historical_attribution_review_recommended
             ? ['Brand matching identity changed. Historical visibility scores were measured under the previous name/domain/aliases/exclusions and must not be treated as directly comparable to new scans; retain prior evidence and establish a new baseline.']
             : []),
@@ -2562,7 +3074,7 @@ export function registerLocalManagementTools(
       const payload = {
         brand_id,
         ...result,
-        next_steps: `Call refresh_brand with brand_id '${brand_id}' to scan this prompt set.`,
+        next_steps: previewNextStep(brand_id),
       };
       return toolResult(payload);
     },
@@ -2614,7 +3126,7 @@ export function registerLocalManagementTools(
         prompts_inserted: generated.length,
         prompt_source: 'generated' as const,
         prompts: generated.map((p) => p.text),
-        next_steps: `Call refresh_brand with brand_id '${brand_id}' to scan the new prompt set.`,
+        next_steps: previewNextStep(brand_id),
       };
       return toolResult(payload);
     },
@@ -2658,10 +3170,22 @@ function citationIdentityScope(startedAt: number | null | undefined, boundary: n
 }
 
 function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityBoundary: number | null = null) {
+  // Historical provider evidence may predate source-host filtering at ingest.
+  // Exclude private/internal, special-use and invalid/test hostnames from audit rankings.
+  const nonPublicSuffixes = ['.local', '.localhost', '.internal', '.test', '.invalid', '.home.arpa', '.onion', '.alt'];
+  const engineObservationCounts = new Map<string, number>();
+  for (const response of responses) {
+    engineObservationCounts.set(response.engine, (engineObservationCounts.get(response.engine) ?? 0) + 1);
+  }
   const sources = new Map<
     string,
     {
       citation_count: number;
+      engineCitationCounts: Map<string, number>;
+      enginePrompts: Map<string, Set<string>>;
+      engineLastCapturedAt: Map<string, number>;
+      engineSamples: Map<string, { url: string; capturedAt: number; responseId: string; runId: string }>;
+      pathResponseCounts: Map<string, number>;
       prompts: Set<string>;
       engines: Set<string>;
       measurement_modes: Set<'model_only' | 'search_requested'>;
@@ -2674,10 +3198,14 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
 
   for (const response of responses) {
     const domainsForResponse = new Map<string, string>();
+    const pathsForResponse = new Map<string, Set<string>>();
     const identityScope = identityBoundary === null
       ? null : citationIdentityScope(response.run_started_at, identityBoundary);
     for (const rawUrl of response.engine_citations) {
       try {
+        // WHATWG URL silently drops tabs/newlines and trims outer whitespace.
+        // Historical malformed provider links are not trustworthy audit evidence.
+        if (/[\u0000-\u001f\u007f]/.test(rawUrl) || rawUrl !== rawUrl.trim()) continue;
         const parsed = new URL(rawUrl);
         if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') continue;
         if (parsed.username || parsed.password) continue;
@@ -2685,7 +3213,11 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
         // Only rank domain-shaped sources using the same host rules as brands.
         const domain = normalizeDomainInput(parsed.hostname);
         if (!domain) continue;
+        if (domain === 'home.arpa' || nonPublicSuffixes.some((suffix) => domain.endsWith(suffix))) continue;
         if (!domainsForResponse.has(domain)) domainsForResponse.set(domain, rawUrl);
+        const citedPaths = pathsForResponse.get(domain) ?? new Set<string>();
+        citedPaths.add(parsed.pathname);
+        pathsForResponse.set(domain, citedPaths);
       } catch {
         // Provider-native citation payloads are external data. Ignore malformed
         // entries rather than letting one bad source hide the usable evidence.
@@ -2697,6 +3229,23 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
       const measurementMode = visibilityMeasurementMode(response.engine, response.mode ?? 'live');
       if (existing) {
         existing.citation_count += 1;
+        existing.engineCitationCounts.set(response.engine, (existing.engineCitationCounts.get(response.engine) ?? 0) + 1);
+        const enginePrompts = existing.enginePrompts.get(response.engine) ?? new Set<string>();
+        enginePrompts.add(response.prompt_id);
+        existing.enginePrompts.set(response.engine, enginePrompts);
+        existing.engineLastCapturedAt.set(response.engine, Math.max(
+          existing.engineLastCapturedAt.get(response.engine) ?? -Infinity, response.captured_at,
+        ));
+        const engineSample = existing.engineSamples.get(response.engine);
+        if (!engineSample || response.captured_at > engineSample.capturedAt ||
+          (response.captured_at === engineSample.capturedAt && response.id < engineSample.responseId)) {
+          existing.engineSamples.set(response.engine, {
+            url: sampleUrl, capturedAt: response.captured_at, responseId: response.id, runId: response.run_id,
+          });
+        }
+        for (const path of pathsForResponse.get(domain) ?? []) {
+          existing.pathResponseCounts.set(path, (existing.pathResponseCounts.get(path) ?? 0) + 1);
+        }
         existing.prompts.add(response.prompt_id);
         existing.engines.add(response.engine);
         existing.measurement_modes.add(measurementMode);
@@ -2715,6 +3264,14 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
       } else {
         sources.set(domain, {
           citation_count: 1,
+          engineCitationCounts: new Map([[response.engine, 1]]),
+          enginePrompts: new Map([[response.engine, new Set([response.prompt_id])]]),
+          engineLastCapturedAt: new Map([[response.engine, response.captured_at]]),
+          engineSamples: new Map([[response.engine, {
+            url: sampleUrl, capturedAt: response.captured_at, responseId: response.id, runId: response.run_id,
+          }]]),
+          pathResponseCounts: new Map([...(pathsForResponse.get(domain) ?? [])]
+            .map((path): [string, number] => [path, 1])),
           prompts: new Set([response.prompt_id]),
           engines: new Set([response.engine]),
           measurement_modes: new Set([measurementMode]),
@@ -2728,39 +3285,150 @@ function buildTopSources(responses: CitationSourceRow[], brand: Brand, identityB
   }
 
   return [...sources.entries()]
-    .map(([domain, source]) => ({
-      domain,
-      citation_count: source.citation_count,
-      prompt_count: source.prompts.size,
-      engines: [...source.engines].sort(),
-      measurement_modes: [...source.measurement_modes].sort(),
-      ...(identityBoundary !== null ? { identity_scopes: [...source.identity_scopes].sort() } : {}),
-      sample_url: source.sample_url,
-      is_brand_domain: hostMatchesDomain(domain, brand.domain),
-    }))
+    .map(([domain, source]) => {
+      const sampleUrl = redactCitationUrlQuery(source.sample_url);
+      return {
+        domain,
+        citation_count: source.citation_count,
+        per_engine_citation_count: Object.fromEntries([...source.engineCitationCounts].sort(([a], [b]) => a.localeCompare(b))),
+        per_engine_source_observation_percent: Object.fromEntries(
+          [...source.engineCitationCounts].sort(([a], [b]) => a.localeCompare(b))
+            .map(([engine, count]) => [engine, Math.round(1000 * count / (engineObservationCounts.get(engine) ?? 1)) / 10]),
+        ),
+        per_engine_distinct_prompt_count: Object.fromEntries(
+          [...source.enginePrompts].sort(([a], [b]) => a.localeCompare(b)).map(([engine, prompts]) => [engine, prompts.size]),
+        ),
+        per_engine_last_observed_at: Object.fromEntries(
+          [...source.engineLastCapturedAt].sort(([a], [b]) => a.localeCompare(b))
+            .map(([engine, capturedAt]) => [engine, new Date(capturedAt).toISOString()]),
+        ),
+        per_engine_examples: Object.fromEntries(
+          [...source.engineSamples].sort(([a], [b]) => a.localeCompare(b)).map(([engine, sample]) => {
+            const safeUrl = redactCitationUrlQuery(sample.url);
+            return [engine, {
+              sample_url: safeUrl, url_redacted: safeUrl !== sample.url,
+              run_id: sample.runId, response_id: sample.responseId,
+            }];
+          }),
+        ),
+        distinct_cited_path_count: source.pathResponseCounts.size,
+        top_cited_paths: [...source.pathResponseCounts.entries()]
+          .sort(([pathA, countA], [pathB, countB]) => countB - countA || pathA.localeCompare(pathB))
+          .slice(0, 5).map(([path, response_count]) => ({ path, response_count })),
+        prompt_count: source.prompts.size,
+        last_observed_at: new Date(source.sample_captured_at).toISOString(),
+        engines: [...source.engines].sort(),
+        measurement_modes: [...source.measurement_modes].sort(),
+        ...(identityBoundary !== null ? { identity_scopes: [...source.identity_scopes].sort() } : {}),
+        sample_url: sampleUrl,
+        url_redacted: sampleUrl !== source.sample_url,
+        is_brand_domain: hostMatchesDomain(domain, brand.domain),
+      };
+    })
     .sort(
       (a, b) =>
         b.citation_count - a.citation_count ||
         b.prompt_count - a.prompt_count ||
         a.domain.localeCompare(b.domain),
-    )
-    .slice(0, 10);
+    );
 }
 
-export function buildResponseExcerpt(text: string, brand: Brand): string {
-  if (!text) return '';
-  if (text === '[NO_AI_OVERVIEW]') return text;
-  // Provider text is untrusted. Even a URL rejected as citation evidence can
-  // otherwise expose authority credentials in the user-facing excerpt.
-  const safeText = text.replace(/https?:\/\/[^\s<>"'`\])}]+/gi, (rawUrl) => {
+// Source URLs can contain access-bearing query or fragment values without URL
+// userinfo. Redact named credentials at the output boundary while preserving
+// the original URL spelling and nonsecret source context.
+function redactCitationUrlQuery(rawUrl: string): string {
+  const fragmentStart = rawUrl.indexOf('#');
+  const address = fragmentStart === -1 ? rawUrl : rawUrl.slice(0, fragmentStart);
+  const fragment = fragmentStart === -1 ? null : rawUrl.slice(fragmentStart + 1);
+  const queryStart = address.indexOf('?');
+  const secretNames = new Set([
+    'apikey', 'key', 'token', 'accesstoken', 'refreshtoken', 'authtoken',
+    'idtoken', 'clientsecret', 'apisecret', 'secret', 'password', 'passwd',
+    'signature', 'authorization', 'auth', 'sig',
+    // Cloud presigned URLs use bearer capabilities under provider-specific keys.
+    'awsaccesskeyid', 'xamzcredential', 'xamzsignature', 'xamzsecuritytoken',
+    'xgoogcredential', 'xgoogsignature', 'xgoogsecuritytoken',
+  ]);
+  const redactParameters = (parameters: string): string => parameters.split(/([&;])/).map((piece) => {
+    const equals = piece.indexOf('=');
+    if (equals < 0) return piece;
+    let name = piece.slice(0, equals);
+    try {
+      name = decodeURIComponent(name.replace(/\+/g, ' '));
+    } catch {
+      // An invalid encoded name is not interpreted as a credential key.
+    }
+    // Array and nested form keys can carry credentials too: token[] or
+    // auth[access_token], including percent-encoded bracket spellings.
+    const keyParts = name.toLowerCase().split(/[\[\]]+/)
+      .map((part) => part.replace(/[-_.\s]/g, ''));
+    return keyParts.some((part) => secretNames.has(part))
+      ? `${piece.slice(0, equals)}=[REDACTED]` : piece;
+  }).join('');
+  const safeAddress = queryStart === -1 ? address
+    : `${address.slice(0, queryStart + 1)}${redactParameters(address.slice(queryStart + 1))}`;
+  if (fragment === null) return safeAddress;
+  // OAuth fragments commonly encode key/value pairs directly; hash routers
+  // also place their own query string after a route or anchor prefix.
+  const hashQueryStart = fragment.indexOf('?');
+  const safeFragment = hashQueryStart === -1 ? redactParameters(fragment)
+    : `${redactParameters(fragment.slice(0, hashQueryStart))}?${redactParameters(fragment.slice(hashQueryStart + 1))}`;
+  return `${safeAddress}#${safeFragment}`;
+}
+
+function redactEvidenceText(text: string): string {
+  // Stored text can carry credentials even when a URL is not valid citation
+  // evidence. Apply the same output-only redaction to excerpts and questions.
+  // Closing parentheses and square brackets can occur in URL paths before
+  // token-bearing query or fragment values. Keep scanning to redact them.
+  const urlSafeText = text.replace(/https?:\/\/[^\s<>"'`]+/gi, (rawUrl) => {
     try {
       const parsed = new URL(rawUrl.replace(/[.,;!]+$/, ''));
-      return parsed.username || parsed.password ? '[credential-bearing URL omitted]' : rawUrl;
+      return parsed.username || parsed.password
+        ? '[credential-bearing URL omitted]' : redactCitationUrlQuery(rawUrl);
     } catch {
-      return rawUrl;
+      // Malformed provider URLs may still contain access-bearing query or
+      // userinfo text. They cannot establish valid citation evidence.
+      return '[unparseable URL omitted]';
     }
   });
-  const idx = findTermSetMatchIndex(safeText, {
+  // HTTP header folding makes whitespace-prefixed continuation lines part of
+  // the preceding credential, including proxy credentials. Mask them together
+  // before line-based redaction.
+  const foldedHeaderSafeText = urlSafeText.replace(
+    /^([ \t]*(?:(?:Proxy-)?Authorization|Set-Cookie|Cookie|X-(?:[A-Za-z0-9-]+-)?(?:Token|Api-Key|Auth-Key|Secret))[ \t]*:[ \t]*)([^\r\n]*)(?:\r?\n[ \t]+[^\r\n]*)+/gim,
+    (_match, header: string, firstValue: string) => {
+      const scheme = /^([A-Za-z][A-Za-z0-9+.-]*[ \t]+)/.exec(firstValue);
+      return /Authorization[ \t]*:[ \t]*$/i.test(header) && scheme
+        ? `${header}${scheme[1]}[REDACTED]`
+        : `${header}[REDACTED]`;
+    },
+  );
+  // Provider prose can contain standalone credential assignments and auth
+  // headers, not just URLs. Mask their values before selecting an excerpt;
+  // raw stored observations remain unchanged for forensic provenance.
+  return foldedHeaderSafeText
+    // Cookie and custom token/key headers can expose session credentials;
+    // mask full values, including previously unknown X-*-Token names.
+    .replace(/\b((?:Set-Cookie|Cookie|X-(?:[A-Za-z0-9-]+-)?(?:Token|Api-Key|Auth-Key|Secret))[ \t]*:[ \t]*)[^\r\n]*/gi, '$1[REDACTED]')
+    // Digest and SigV4 credentials consist of multiple parameters. Redacting
+    // just the first token would expose the nonce, response or signature.
+    .replace(/\b(Authorization[ \t]*:[ \t]*(?:Digest|AWS4-HMAC-SHA256)[ \t]+)[^\r\n]*/gi, '$1[REDACTED]')
+    .replace(/\b(Authorization\s*:\s*(?:Bearer|Basic|Token|ApiKey|Api-Key)\s+)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;]+)/gi, '$1[REDACTED]')
+    // Unknown authorization schemes can also carry multi-parameter secrets;
+    // preserve the scheme label but mask the entire remaining header line.
+    .replace(/\b(Authorization[ \t]*:[ \t]*)(?!(?:Digest|AWS4-HMAC-SHA256|Bearer|Basic|Token|ApiKey|Api-Key)[ \t]+)([A-Za-z][A-Za-z0-9+.-]*[ \t]+)[^\r\n]*/gi, '$1$2[REDACTED]')
+    .replace(/\b((?:access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|client[_-]?secret)\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s&,;]+)/gi, '$1[REDACTED]');
+}
+
+export function buildResponseExcerpt(text: string, brand: Brand, focusCompetitor?: string): string {
+  if (!text) return '';
+  if (text === '[NO_AI_OVERVIEW]') return text;
+  const safeText = redactEvidenceText(text);
+  const focusIdx = focusCompetitor
+    ? findTermSetMatchIndex(safeText, { domain: focusCompetitor })
+    : -1;
+  const idx = focusIdx !== -1 ? focusIdx : findTermSetMatchIndex(safeText, {
     domain: brand.domain,
     name: brand.name,
     aliases: brand.aliases,
@@ -2784,6 +3452,8 @@ function pickBrandUrl(
     [extractUrls(rawResponse), 'answer_text'],
   ] as const) {
     for (const rawUrl of urls) {
+      // WHATWG URL normalizes malformed stored links; do not present them as direct citations.
+      if (/[\u0000-\u001f\u007f]/.test(rawUrl) || rawUrl !== rawUrl.trim()) continue;
       const url = source === 'answer_text' ? rawUrl.replace(/[.,;!]+$/, '') : rawUrl;
       try {
         const parsed = new URL(url);

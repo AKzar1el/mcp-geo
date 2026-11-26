@@ -664,3 +664,30 @@ test('history identifies stale and unverified latest prompt rosters against acti
     note: 'Most recent completed run per engine is compared with the current active prompt IDs. A differing complete roster needs new measurement; a partial or missing roster is unverified, not proof of current coverage. Historical scores remain unchanged.',
   });
 });
+
+test('history evidence timestamps reflect successful captures rather than late run completion', async () => {
+  const completed = Date.UTC(2026, 0, 5, 21);
+  const earlierCapture = Date.UTC(2026, 0, 4, 9);
+  const latestCapture = Date.UTC(2026, 0, 5, 10);
+  const history = registerHistoryTool([
+    { run_id: 'delayed', engine: 'chatgpt', completed_at: completed,
+      last_captured_at: latestCapture, active_last_captured_at: earlierCapture,
+      total: 2, hits: 1, active_total: 1, active_hits: 1 },
+    { run_id: 'legacy', engine: 'claude', completed_at: completed,
+      total: 1, hits: 1, active_total: 1, active_hits: 1 },
+  ], { activePromptIds: ['buyer-a'] });
+
+  const full = (await history.handler({ brand_id: 'acme', days: 30, granularity: 'daily' })).structuredContent;
+  assert.equal(full.series[0].date, '2026-01-05', 'trend bucket remains completion-based');
+  assert.equal(full.series[0].per_engine_evidence.chatgpt.observed_at,
+    new Date(latestCapture).toISOString(), 'completion must not date a prior observation');
+  assert.equal(full.series[0].per_engine_evidence.claude.observed_at,
+    new Date(completed).toISOString(), 'legacy rows without capture provenance retain fallback');
+  assert.equal(full.series[0].per_engine_evidence.chatgpt.usable_prompts, 2);
+
+  const active = (await history.handler({ brand_id: 'acme', days: 30,
+    granularity: 'daily', active_prompts_only: true })).structuredContent;
+  assert.equal(active.series[0].per_engine_evidence.chatgpt.observed_at,
+    new Date(earlierCapture).toISOString(), 'retired prompt captures cannot refresh active evidence');
+  assert.equal(active.series[0].per_engine_evidence.chatgpt.usable_prompts, 1);
+});

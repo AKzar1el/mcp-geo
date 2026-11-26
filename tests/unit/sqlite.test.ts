@@ -613,6 +613,8 @@ test('citation source projections preserve complete window, engine and status pa
     for (const adapter of [db, hosted]) {
       const full = await adapter.getCitationSourceRows('acme', now - 30_000, now);
       assert.deepEqual(full.map((row) => row.engine_citations[0]), expectedUrls);
+      assert.deepEqual(full.map((row) => row.run_id), [firstRunId, secondRunId],
+        'SQLite and D1 source samples must retain the owning run for exact observation drilldown');
       assert.deepEqual(full.map((row) => row.engine), ['chatgpt', 'perplexity']);
       assert.deepEqual(full.map((row) => row.mode), ['batch', 'live'],
         'SQLite and D1 must retain source run mode without reading AI answer bodies');
@@ -1546,7 +1548,7 @@ test('SQLite and D1 history count only the latest successful observation per run
        VALUES (?, ?, ?, 'chatgpt', '', ?, 0, '[]', '[]', ?, ?)`,
     );
     insert.run('old-no-mention', run.id, 'p1', 0, 'ok', 1000);
-    insert.run('new-mention', run.id, 'p1', 1, 'ok', 2000);
+    insert.run('new-mention', run.id, 'p1', 1, 'ok', 2500);
     insert.run('later-failed', run.id, 'p1', 0, 'failed', 3000);
     // Match computeOverallScore's deterministic id tie-breaker.
     insert.run('a-old-tie', run.id, 'p2', 0, 'ok', 2000);
@@ -1579,6 +1581,10 @@ test('SQLite and D1 history count only the latest successful observation per run
       assert.equal(Number(rows[0].hits), 2, 'latest successful response determines the hit');
       assert.equal(Number(rows[0].active_total), 1, 'retired questions cannot count in current trends');
       assert.equal(Number(rows[0].active_hits), 1, 'current hit count uses the latest successful active response');
+      assert.equal(Number(rows[0].last_captured_at), 2500,
+        'last capture must exclude later failed responses and older successful retries');
+      assert.equal(Number(rows[0].active_last_captured_at), 2000,
+        'active capture must exclude the later retired prompt response');
       assert.equal(Number(rows[0].roster_observed), 2);
     }
     db.raw.prepare("UPDATE prompts SET active = 0 WHERE id = 'p2'").run();
@@ -1587,6 +1593,8 @@ test('SQLite and D1 history count only the latest successful observation per run
       assert.equal(rows.length, 1, 'retired-only runs remain available for historical evidence');
       assert.equal(Number(rows[0].active_total), 0);
       assert.equal(Number(rows[0].active_hits), 0);
+      assert.equal(rows[0].active_last_captured_at, null,
+        'no active observations must not be assigned a fabricated capture time');
     }
   } finally {
     db.close();
@@ -1749,6 +1757,10 @@ test('SQLite and D1 scope multi-engine citation pages and source rankings before
     for (const adapter of [db, hosted]) {
       const all = await adapter.getCitationRows('acme', 0, undefined, { until, limit: 10 });
       assert.equal(all.length, 3);
+      assert.equal(await adapter.countCitationRows('acme', 0, undefined, { until, limit: 1 }), 3);
+      assert.equal(await adapter.countCitationRows('acme', 0, selected, { until, limit: 1 }), 2);
+      assert.equal(await adapter.countCitationRows('acme', 0, undefined, { until, measurementMode: 'model_only' }), 1);
+      assert.equal(await adapter.countCitationRows('acme', 0, undefined, { until, measurementMode: 'search_requested' }), 2);
       const modelOnly = await adapter.getCitationRows('acme', 0, undefined, {
         until, limit: 1, measurementMode: 'model_only',
       });
@@ -1944,6 +1956,7 @@ test('citation row pagination preserves repeated observations of the same run an
     const until = Date.now();
     const first = await db.getCitationRows('acme', 0, undefined, { limit: 1, until });
     assert.equal(first.length, 1);
+    assert.equal(await db.countCitationRows('acme', 0, undefined, { until, limit: 1 }), 2);
     const second = await db.getCitationRows('acme', 0, undefined, {
       limit: 1, until,
       before: {
@@ -1955,6 +1968,10 @@ test('citation row pagination preserves repeated observations of the same run an
     });
     assert.equal(second.length, 1);
     assert.notEqual(first[0].response_id, second[0].response_id);
+    assert.equal(await db.countCitationRows('acme', 0, undefined, { until, limit: 1, before: {
+      captured_at: first[0].captured_at, run_id: first[0].run_id,
+      prompt_id: first[0].prompt_id, response_id: first[0].response_id,
+    } }), 2, 'historical retry evidence count is unchanged by pagination');
     assert.equal((await db.getCitationRows('acme', 0, undefined, {
       limit: 1, until,
       before: {

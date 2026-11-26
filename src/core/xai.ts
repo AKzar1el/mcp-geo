@@ -41,6 +41,8 @@ interface XAiOutputText {
     type?: string;
     url?: unknown;
     url_citation?: { url?: unknown };
+    start_index?: number;
+    end_index?: number;
   }>;
 }
 
@@ -52,7 +54,6 @@ interface XAiOutputItem {
 interface XAiResponse {
   status?: string;
   output?: XAiOutputItem[];
-  citations?: unknown[];
 }
 
 export interface XAiCompletion {
@@ -71,6 +72,31 @@ function extractResponseText(data: XAiResponse): string {
     }
   }
   return chunks.join('');
+}
+
+function matchesInlineCitation(text: string, start: number, end: number, expectedUrl: unknown): boolean {
+  if (typeof expectedUrl !== 'string') return false;
+  // Reject raw provider metadata that URL parsing would silently repair.
+  if (/[\u0000-\u001f\u007f]/.test(expectedUrl) || expectedUrl.trim() !== expectedUrl) return false;
+  let canonicalUrl: string;
+  try {
+    canonicalUrl = new URL(expectedUrl).href;
+  } catch {
+    return false;
+  }
+  const matches = (span: string): boolean => {
+    const match = /^\[\[\d+\]\]\((https?:\/\/.+)\)$/i.exec(span);
+    if (!match) return false;
+    try {
+      return new URL(match[1]).href === canonicalUrl;
+    } catch {
+      return false;
+    }
+  };
+  // xAI documents character (Python-style) offsets. Handle both code points
+  // and JS UTF-16 offsets to avoid losing citations after emoji in the answer.
+  return matches(text.slice(start, end)) ||
+    matches(Array.from(text).slice(start, end).join(''));
 }
 
 function extractResponseCitations(data: XAiResponse): string[] {
@@ -92,19 +118,25 @@ function extractResponseCitations(data: XAiResponse): string[] {
     urls.push(url.href);
   };
 
-  for (const citation of data.citations ?? []) {
-    if (typeof citation === 'string') {
-      add(citation);
-    } else if (citation && typeof citation === 'object' && 'url' in citation) {
-      add((citation as { url?: unknown }).url);
-    }
-  }
+  // xAI's top-level `citations` lists *every source visited* by web search,
+  // including pages never referenced in the answer. Only positioned inline
+  // URL citations can substantiate an answer-linked brand/source observation.
   for (const item of data.output ?? []) {
-    if (!Array.isArray(item.content)) continue;
+    if (item.type !== 'message' || !Array.isArray(item.content)) continue;
     for (const part of item.content) {
+      if (part.type !== 'output_text' || typeof part.text !== 'string') continue;
       for (const annotation of part.annotations ?? []) {
-        add(annotation.url);
-        add(annotation.url_citation?.url);
+        // Without offsets, annotations can also describe merely encountered
+        // sources when inline citations are disabled.
+        const citationUrl = annotation.url ?? annotation.url_citation?.url;
+        if (annotation.type !== 'url_citation' ||
+            !Number.isInteger(annotation.start_index) ||
+            !Number.isInteger(annotation.end_index) ||
+            (annotation.start_index ?? -1) < 0 ||
+            (annotation.end_index ?? 0) <= (annotation.start_index ?? 0) ||
+            (annotation.end_index ?? Infinity) > part.text.length ||
+            !matchesInlineCitation(part.text, annotation.start_index!, annotation.end_index!, citationUrl)) continue;
+        add(citationUrl);
       }
     }
   }

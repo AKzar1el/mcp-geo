@@ -5,6 +5,7 @@ import { normalizeDomainInput } from './domain.js';
 export interface SerpApiAnswerBlock {
   type?: string;
   title?: string;
+  subtitle?: string;
   snippet?: string;
   text?: string;
   table?: unknown;
@@ -22,6 +23,8 @@ export function flattenSerpApiReferences(
   const urls: string[] = [];
   for (const ref of refs) {
     if (!ref || typeof ref.link !== 'string') continue;
+    // URL parsing strips control bytes and surrounding whitespace from raw provider evidence.
+    if (/[\u0000-\u001f\u007f]/.test(ref.link) || ref.link !== ref.link.trim()) continue;
     try {
       const parsed = new URL(ref.link);
       // Provider metadata is evidence only when it points to a web source.
@@ -75,11 +78,14 @@ export function flattenSerpApiAnswer(
 
     const title = visibleText(block.title);
     const body = visibleText(block.snippet) || visibleText(block.text);
+    const subtitle = block.type === 'expandable' ? visibleText(block.subtitle) : '';
     if (listItem) {
       const label = title && title !== body ? [title, body].filter(Boolean).join(' ') : body;
       if (label) add(`${bullet} ${label}`);
+      if (subtitle && subtitle !== title && subtitle !== body) add(subtitle);
     } else {
       if (title && title !== body) add(title);
+      if (subtitle && subtitle !== title && subtitle !== body) add(subtitle);
       add(body);
     }
 
