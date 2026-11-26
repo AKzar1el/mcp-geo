@@ -53,6 +53,9 @@ export interface Run {
   error: string | null;
   started_at: number;
   completed_at: number | null;
+  // Market the run was scanned in; read by getRunById only.
+  market?: string;
+  google_domain?: string;
 }
 
 // Long enough for normal live dispatch to finish, bounded so a canceled

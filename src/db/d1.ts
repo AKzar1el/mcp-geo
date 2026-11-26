@@ -256,13 +256,15 @@ export function createD1Db(d1: D1Database): Db {
         error: null,
         started_at: now,
         completed_at: null,
+        market: brandMarket(brand).market,
+        google_domain: brandMarket(brand).google_domain,
       };
       await d1
         .prepare(
           `INSERT INTO runs
              (id, brand_id, engine, mode, status, batch_id, prompts_total,
-              prompts_completed, cost_eur_estimate, error, started_at, completed_at, market)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, ?, NULL, ?)`,
+              prompts_completed, cost_eur_estimate, error, started_at, completed_at, market, google_domain)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, ?, NULL, ?, ?)`,
         )
         .bind(
           run.id,
@@ -274,6 +276,7 @@ export function createD1Db(d1: D1Database): Db {
           run.prompts_total,
           run.started_at,
           brandMarket(brand).market,
+          brandMarket(brand).google_domain,
         )
         .run();
       return run;
@@ -299,6 +302,8 @@ export function createD1Db(d1: D1Database): Db {
         error: null,
         started_at: now,
         completed_at: null,
+        market: brandMarket(brand).market,
+        google_domain: brandMarket(brand).google_domain,
       };
       // D1 serializes writes to the database; keep the exclusion predicate
       // inside the INSERT, never in a separate preflight read.
@@ -306,15 +311,15 @@ export function createD1Db(d1: D1Database): Db {
         .prepare(
           `INSERT INTO runs
            (id, brand_id, engine, mode, status, batch_id, prompts_total,
-            prompts_completed, cost_eur_estimate, error, started_at, completed_at, market)
-         SELECT ?, ?, ?, 'live', 'pending', NULL, ?, 0, NULL, NULL, ?, NULL, ?
+            prompts_completed, cost_eur_estimate, error, started_at, completed_at, market, google_domain)
+         SELECT ?, ?, ?, 'live', 'pending', NULL, ?, 0, NULL, NULL, ?, NULL, ?, ?
           WHERE NOT EXISTS (
             SELECT 1 FROM runs WHERE brand_id = ? AND engine = ?
               AND mode = 'live' AND status IN ('pending', 'in_progress')
               AND started_at > ?
           )`,
         )
-        .bind(run.id, brand.id, engine, promptsTotal, now, brandMarket(brand).market, brand.id, engine, cutoff)
+        .bind(run.id, brand.id, engine, promptsTotal, now, brandMarket(brand).market, brandMarket(brand).google_domain, brand.id, engine, cutoff)
         .run();
       if ((result.meta.changes ?? 0) > 0) return { run, started: true };
       const active = await d1
@@ -412,7 +417,8 @@ export function createD1Db(d1: D1Database): Db {
       const row = await d1
         .prepare(
           `SELECT id, brand_id, engine, mode, status, batch_id, prompts_total,
-                  prompts_completed, cost_eur_estimate, error, started_at, completed_at
+                  prompts_completed, cost_eur_estimate, error, started_at, completed_at,
+                  market, google_domain
              FROM runs
             WHERE id = ?`,
         )

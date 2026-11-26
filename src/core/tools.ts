@@ -722,6 +722,8 @@ const listBrandsOutputSchema = z.object({
       aliases: z.array(z.string()),
       exclude_terms: z.array(z.string()),
       refresh_frequency: z.string(),
+      market: z.string(),
+      google_domain: z.string(),
       active_prompts: z.number(),
       created_at: z.string(),
     }),
@@ -2229,7 +2231,8 @@ export function registerTools(
         provider_source_count: providerSourceList.length,
         provider_source_urls_truncated: providerSourceList.length > 5,
         provider_source_urls: providerSourceList.slice(0, 5),
-        google_search_sampling: googleSearchSampling(brand, [run.engine]),
+        // The run's own market: it may predate a market change.
+        google_search_sampling: googleSearchSampling(run, [run.engine]),
         evidence_note: 'This is a short credential-redacted excerpt of one stored successful response, not a full answer or an independently verified source citation. The original buyer question is credential-redacted without excerpt truncation. An optional recorded competitor focus is best effort; absence from the excerpt does not disprove a recorded mention. Provider-returned source URLs are not independently verified; access-bearing URL query and fragment fields are masked. Review identity_scope, active_prompt and measurement_mode before quoting in an audit. No provider request occurred.',
       };
       return toolResult(payload);
@@ -2968,6 +2971,8 @@ export function registerLocalManagementTools(
           aliases: b.aliases,
           exclude_terms: b.exclude_terms,
           refresh_frequency: b.refresh_frequency,
+          market: b.market,
+          google_domain: b.google_domain,
           active_prompts: b.active_prompts,
           created_at: new Date(b.created_at).toISOString(),
         })),

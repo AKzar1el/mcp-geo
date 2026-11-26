@@ -2410,6 +2410,7 @@ test('history is kept per market: a market switch hides old runs, switching back
     assert.equal(pl?.market, 'pl-PL');
     assert.equal(pl?.google_domain, 'google.pl');
     const plRun = await db.createRun(pl!, 'ai_overviews', 'live', 1);
+    assert.equal((await db.getRunById(plRun.id))?.google_domain, 'google.pl');
     await db.persistEngineRun(plRun.id, 'ai_overviews', 'serpapi', 3600, ok(1));
 
     await db.updateBrand('acme', { ...pl!, market: 'en-US', google_domain: 'google.com' });
@@ -2421,6 +2422,7 @@ test('history is kept per market: a market switch hides old runs, switching back
     assert.deepEqual(await db.getResponsesSince('acme', 0), []);
 
     const usRun = await db.createRun(us!, 'ai_overviews', 'live', 1);
+    assert.equal((await db.getRunById(usRun.id))?.market, 'en-US');
     await db.persistEngineRun(usRun.id, 'ai_overviews', 'serpapi', 3600, ok(0));
     assert.equal((await db.getLatestCompletedRun('acme', 'ai_overviews'))?.id, usRun.id);
     assert.deepEqual((await db.getVisibilityHistoryRows('acme', 0)).map((r) => r.run_id), [usRun.id]);
