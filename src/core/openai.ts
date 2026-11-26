@@ -10,6 +10,7 @@ import type {
   Run,
 } from '../db/types.js';
 import { fetchWithTimeout, fetchWithRetry } from './fetch.js';
+import { brandMarket, type Market } from './market.js';
 import { normalizeDomainInput } from './domain.js';
 import { redactProviderError } from './provider-error.js';
 
@@ -84,6 +85,7 @@ interface OpenAiCompletion {
 export async function chatCompletion(
   apiKey: string,
   userText: string,
+  market: Market = brandMarket({}),
 ): Promise<OpenAiCompletion> {
   const resp = await fetchWithRetry(`${OPENAI_BASE}/chat/completions`, {
     method: 'POST',
@@ -93,7 +95,7 @@ export async function chatCompletion(
     },
     body: JSON.stringify({
       model: MODEL,
-      web_search_options: { search_context_size: 'medium', user_location: { type: 'approximate', approximate: { country: 'PL' } } },
+      web_search_options: { search_context_size: 'medium', user_location: { type: 'approximate', approximate: { country: market.country.toUpperCase() } } },
       messages: [
         { role: 'system', content: buildSystemPrompt() },
         { role: 'user', content: userText },
@@ -744,6 +746,7 @@ export async function runLive(
           const completion = await chatCompletion(
             requireOpenAiKey(env),
             prompt.text,
+            brandMarket(brand),
           );
           const citations = extractCitations(brand, completion.text);
           const engineHosts = completion.citations

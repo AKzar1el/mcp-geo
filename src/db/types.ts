@@ -19,6 +19,10 @@ export interface Brand {
   // the weekday). The full domain and aliases still match.
   exclude_terms: string[];
   refresh_frequency: string;
+  // Search market as a BCP 47 locale ('pl-PL') and the Google domain it
+  // samples; see src/core/market.ts.
+  market: string;
+  google_domain: string;
   created_at: number;
   updated_at: number;
   // NULL for unchanged brands and for pre-migration changes, which are unknown.
@@ -54,6 +58,11 @@ export interface Run {
 // Long enough for normal live dispatch to finish, bounded so a canceled
 // Worker invocation cannot block future refreshes indefinitely.
 export const LIVE_RUN_STALE_AFTER_MS = 15 * 60 * 1000;
+
+// History is kept per market: a run counts only while its market is the
+// brand's current one. Callers alias runs as r.
+export const CURRENT_MARKET_SQL =
+  'r.market = (SELECT mb.market FROM brands mb WHERE mb.id = r.brand_id)';
 
 export interface LiveRunReservation {
   run: Run;
@@ -141,6 +150,9 @@ export interface CreateBrandInput {
   aliases: string[];
   exclude_terms: string[];
   refresh_frequency: string;
+  // Omitted: DEFAULT_MARKET on create, unchanged on update.
+  market?: string;
+  google_domain?: string;
 }
 
 // Mutable brand metadata. Brand ids, ownership and historical runs/prompts
@@ -154,6 +166,9 @@ export interface UpdateBrandFields {
   aliases: string[];
   exclude_terms: string[];
   refresh_frequency: string;
+  // Omitted: DEFAULT_MARKET on create, unchanged on update.
+  market?: string;
+  google_domain?: string;
   // Internal update signal, not user input or a directly stored field.
   identity_changed?: boolean;
 }

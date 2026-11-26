@@ -4,6 +4,7 @@ import {
   normalizeCompetitorDomains,
   normalizeRequiredDomain,
 } from './domain.js';
+import { isGoogleDomain, isMarket } from './market.js';
 
 export interface UpdateTrackedBrandInput {
   brand_id: string;
@@ -14,6 +15,8 @@ export interface UpdateTrackedBrandInput {
   aliases?: string[];
   exclude_terms?: string[];
   refresh_frequency?: 'daily' | 'weekly' | 'manual';
+  market?: string;
+  google_domain?: string;
 }
 
 export interface UpdateTrackedBrandResult {
@@ -22,6 +25,9 @@ export interface UpdateTrackedBrandResult {
   changed_fields: string[];
   prompt_set_review_recommended: boolean;
   historical_attribution_review_recommended: boolean;
+  // History is per market: after a change, reads start empty until a scan
+  // runs in the new market. Older runs stay stored.
+  market_changed: boolean;
   brand: Brand;
 }
 
@@ -91,6 +97,15 @@ export async function updateTrackedBrand(
     throw new DomainInputError('refresh_frequency must be daily, weekly, or manual');
   }
 
+  if (input.market !== undefined && !isMarket(input.market)) {
+    throw new DomainInputError("market must be a locale like 'pl-PL'");
+  }
+  if (input.google_domain !== undefined && !isGoogleDomain(input.google_domain)) {
+    throw new DomainInputError("google_domain must look like 'google.pl'");
+  }
+  const market = input.market ?? existing.market;
+  const googleDomain = input.google_domain ?? existing.google_domain;
+
   const fields: UpdateBrandFields = {
     domain,
     name,
@@ -99,6 +114,8 @@ export async function updateTrackedBrand(
     aliases,
     exclude_terms: excludeTerms,
     refresh_frequency: refreshFrequency,
+    market,
+    google_domain: googleDomain,
   };
 
   const changedFields: string[] = [];
@@ -109,6 +126,8 @@ export async function updateTrackedBrand(
   if (!arraysEqual(fields.aliases, existing.aliases)) changedFields.push('aliases');
   if (!arraysEqual(fields.exclude_terms, existing.exclude_terms)) changedFields.push('exclude_terms');
   if (fields.refresh_frequency !== existing.refresh_frequency) changedFields.push('refresh_frequency');
+  if (fields.market !== existing.market) changedFields.push('market');
+  if (fields.google_domain !== existing.google_domain) changedFields.push('google_domain');
 
   const matchingIdentityChanged =
     fields.name.toLowerCase() !== existing.name.toLowerCase() ||
@@ -133,6 +152,7 @@ export async function updateTrackedBrand(
     prompt_set_review_recommended: changedFields.includes('category'),
     // Stored observations were scored against the old matching identity.
     historical_attribution_review_recommended: matchingIdentityChanged,
+    market_changed: changedFields.includes('market'),
     brand,
   };
 }

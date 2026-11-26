@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { chatCompletion, MODEL, runLive } from '../../src/core/ai-mode.ts';
 import type { Brand, Db, EnginePromptResult, Prompt } from '../../src/db/types.ts';
+import { brandMarket } from '../../src/core/market.ts';
 
 type FetchCall = { url: URL; init: RequestInit | undefined };
 
@@ -320,4 +321,15 @@ test('Google AI Mode preserves primitive persistence errors on failed runs', asy
   assert.equal(updates.length, 1);
   assert.equal(updates[0].status, 'failed');
   assert.match(updates[0].error ?? '', /offline AI Mode persistence failure/);
+});
+
+test('Google AI Mode samples the brand market', async () => {
+  await withMockFetch(
+    [jsonResponse({ reconstructed_markdown: 'Acme.', references: [] })],
+    async (calls) => {
+      await chatCompletion('test-key', 'q', brandMarket({ market: 'en-US', google_domain: 'google.com' }));
+      assert.equal(calls[0].url.searchParams.get('gl'), 'us');
+      assert.equal(calls[0].url.searchParams.get('hl'), 'en');
+    },
+  );
 });

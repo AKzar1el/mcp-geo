@@ -1241,7 +1241,7 @@ test('content-gap advice discloses US/English Google sampling for observed Googl
   assert.deepEqual(google?.engines, ['ai_overviews']);
   assert.equal(google?.country, 'pl');
   assert.equal(google?.language, 'pl');
-  assert.match(google?.scope_note ?? '', /Polish location/);
+  assert.match(google?.scope_note ?? '', /gl=pl \(google\.pl\) and interface hl=pl/);
 
   observedEngine = 'chatgpt';
   const nonGoogle = (await handler({ brand_id: 'acme', max_recommendations: 1 }))
