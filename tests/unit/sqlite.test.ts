@@ -26,6 +26,7 @@ const EXPECTED_MIGRATIONS = [
   '0004_response_status.sql',
   '0005_brand_alias_exclude.sql',
   '0006_brand_identity_boundary.sql',
+  '0007_brand_market.sql',
 ];
 
 function tempRoot(): string {
@@ -2389,6 +2390,50 @@ test('seedBrand (core): already-existing brand is a clean no-op, empty input is 
     const empty = await seedBrand({ db }, null);
     assert.equal(empty.seeded, false);
     assert.equal(empty.reason, 'no brand payload provided');
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('history is kept per market: a market switch hides old runs, switching back restores them', async () => {
+  const root = tempRoot();
+  const db = openSqliteDb(join(root, 'digestseo.sqlite'));
+  try {
+    seedBrandFixture(db, 'acme');
+    seedPromptFixture(db, 'acme', 'p1', 'best project management tools');
+    const ok = (mentioned: number) => [{
+      prompt_id: 'p1', raw_response: 'Acme.', brand_mentioned: mentioned,
+      brand_cited_with_link: 0, cited_urls: [], competitors_mentioned: [], status: 'ok' as const,
+    }];
+    const pl = await db.getBrand('acme');
+    assert.equal(pl?.market, 'pl-PL');
+    assert.equal(pl?.google_domain, 'google.pl');
+    const plRun = await db.createRun(pl!, 'ai_overviews', 'live', 1);
+    assert.equal((await db.getRunById(plRun.id))?.google_domain, 'google.pl');
+    await db.persistEngineRun(plRun.id, 'ai_overviews', 'serpapi', 3600, ok(1));
+
+    await db.updateBrand('acme', { ...pl!, market: 'en-US', google_domain: 'google.com' });
+    const us = await db.getBrand('acme');
+    assert.equal(us?.market, 'en-US');
+    assert.equal(us?.google_domain, 'google.com');
+    assert.equal(await db.getLatestCompletedRun('acme', 'ai_overviews'), null);
+    assert.deepEqual(await db.getVisibilityHistoryRows('acme', 0), []);
+    assert.deepEqual(await db.getResponsesSince('acme', 0), []);
+
+    const usRun = await db.createRun(us!, 'ai_overviews', 'live', 1);
+    assert.equal((await db.getRunById(usRun.id))?.market, 'en-US');
+    await db.persistEngineRun(usRun.id, 'ai_overviews', 'serpapi', 3600, ok(0));
+    assert.equal((await db.getLatestCompletedRun('acme', 'ai_overviews'))?.id, usRun.id);
+    assert.deepEqual((await db.getVisibilityHistoryRows('acme', 0)).map((r) => r.run_id), [usRun.id]);
+
+    // An update without market keeps the stored one.
+    const { market: _m, google_domain: _g, ...rest } = us!;
+    await db.updateBrand('acme', rest);
+    assert.equal((await db.getBrand('acme'))?.market, 'en-US');
+
+    await db.updateBrand('acme', { ...us!, market: 'pl-PL', google_domain: 'google.pl' });
+    assert.equal((await db.getLatestCompletedRun('acme', 'ai_overviews'))?.id, plRun.id);
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });

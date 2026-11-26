@@ -11,6 +11,7 @@ import {
   normalizeRequiredDomain,
 } from './domain.js';
 import { generatePrompts } from './prompt-generation.js';
+import { isGoogleDomain, isMarket } from './market.js';
 
 const DEFAULT_USER_ID = 'dev-user';
 const DEFAULT_USER_EMAIL = 'dev@local';
@@ -61,6 +62,9 @@ export interface SeedBrandInput {
   // Terms suppressed from the bare-word match on the brand name and
   // domain root (homograph brands like Monday/Notion).
   exclude_terms?: string[];
+  // Search market as a BCP 47 locale ('pl-PL') and its Google domain.
+  market?: string;
+  google_domain?: string;
 }
 
 export interface SeedResult {
@@ -170,6 +174,13 @@ export async function seedBrand(
     );
   }
 
+  if (input.market !== undefined && !isMarket(input.market)) {
+    throw new DomainInputError("market must be a locale like 'pl-PL'");
+  }
+  if (input.google_domain !== undefined && !isGoogleDomain(input.google_domain)) {
+    throw new DomainInputError("google_domain must look like 'google.pl'");
+  }
+
   const domain = normalizeRequiredDomain(input.domain);
   const competitors = normalizeCompetitorDomains(
     input.competitors ?? [],
@@ -203,6 +214,8 @@ export async function seedBrand(
     aliases: input.aliases ?? [],
     exclude_terms: input.exclude_terms ?? [],
     refresh_frequency: input.refresh_frequency ?? 'weekly',
+    market: input.market,
+    google_domain: input.google_domain,
   });
 
   const brand = await deps.db.getBrand(input.brand_id);

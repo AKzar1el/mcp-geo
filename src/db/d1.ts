@@ -3,7 +3,8 @@
 // methods on an object so the Worker and the local CLI share one
 // interface. Worker-only file — imports Workers types.
 
-import { LIVE_RUN_STALE_AFTER_MS } from './types';
+import { CURRENT_MARKET_SQL, LIVE_RUN_STALE_AFTER_MS } from './types';
+import { brandMarket } from '../core/market';
 import type {
   Brand,
   BrandSummary,
@@ -37,6 +38,8 @@ interface BrandRow {
   aliases_json: string | null;
   exclude_terms_json: string | null;
   refresh_frequency: string;
+  market: string;
+  google_domain: string;
   created_at: number;
   updated_at: number;
   identity_changed_at: number | null;
@@ -64,6 +67,8 @@ function rowToBrand(row: BrandRow): Brand {
     aliases: parseJsonArray(row.aliases_json),
     exclude_terms: parseJsonArray(row.exclude_terms_json),
     refresh_frequency: row.refresh_frequency,
+    market: row.market,
+    google_domain: row.google_domain,
     created_at: row.created_at,
     updated_at: row.updated_at,
     identity_changed_at: row.identity_changed_at,
@@ -107,7 +112,7 @@ export function createD1Db(d1: D1Database): Db {
     async getBrand(brandId: string): Promise<Brand | null> {
       const row = await d1
         .prepare(
-          'SELECT id, user_id, domain, name, category, competitors_json, aliases_json, exclude_terms_json, refresh_frequency, created_at, updated_at, identity_changed_at FROM brands WHERE id = ?',
+          'SELECT id, user_id, domain, name, category, competitors_json, aliases_json, exclude_terms_json, refresh_frequency, market, google_domain, created_at, updated_at, identity_changed_at FROM brands WHERE id = ?',
         )
         .bind(brandId)
         .first<BrandRow>();
@@ -161,8 +166,8 @@ export function createD1Db(d1: D1Database): Db {
           `INSERT OR IGNORE INTO brands
              (id, user_id, domain, name, category, competitors_json,
               aliases_json, exclude_terms_json,
-              refresh_frequency, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              refresh_frequency, market, google_domain, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .bind(
           input.id,
@@ -174,6 +179,8 @@ export function createD1Db(d1: D1Database): Db {
           JSON.stringify(input.aliases),
           JSON.stringify(input.exclude_terms),
           input.refresh_frequency,
+          brandMarket(input).market,
+          brandMarket(input).google_domain,
           now,
           now,
         )
@@ -187,6 +194,7 @@ export function createD1Db(d1: D1Database): Db {
           `UPDATE brands
               SET domain = ?, name = ?, category = ?, competitors_json = ?,
                   aliases_json = ?, exclude_terms_json = ?, refresh_frequency = ?,
+                  market = COALESCE(?, market), google_domain = COALESCE(?, google_domain),
                   updated_at = ?,
                   identity_changed_at = CASE WHEN ? = 1 THEN ? ELSE identity_changed_at END
             WHERE id = ?`,
@@ -199,6 +207,8 @@ export function createD1Db(d1: D1Database): Db {
           JSON.stringify(fields.aliases),
           JSON.stringify(fields.exclude_terms),
           fields.refresh_frequency,
+          fields.market ?? null,
+          fields.google_domain ?? null,
           now,
           fields.identity_changed ? 1 : 0,
           now,
@@ -212,7 +222,7 @@ export function createD1Db(d1: D1Database): Db {
         .prepare(
           `SELECT b.id, b.user_id, b.domain, b.name, b.category,
                   b.competitors_json, b.aliases_json, b.exclude_terms_json,
-                  b.refresh_frequency, b.created_at, b.updated_at, b.identity_changed_at,
+                  b.refresh_frequency, b.market, b.google_domain, b.created_at, b.updated_at, b.identity_changed_at,
                   COUNT(p.id) AS active_prompts
              FROM brands b
              LEFT JOIN prompts p ON p.brand_id = b.id AND p.active = 1
@@ -246,13 +256,15 @@ export function createD1Db(d1: D1Database): Db {
         error: null,
         started_at: now,
         completed_at: null,
+        market: brandMarket(brand).market,
+        google_domain: brandMarket(brand).google_domain,
       };
       await d1
         .prepare(
           `INSERT INTO runs
              (id, brand_id, engine, mode, status, batch_id, prompts_total,
-              prompts_completed, cost_eur_estimate, error, started_at, completed_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, ?, NULL)`,
+              prompts_completed, cost_eur_estimate, error, started_at, completed_at, market, google_domain)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, ?, NULL, ?, ?)`,
         )
         .bind(
           run.id,
@@ -263,6 +275,8 @@ export function createD1Db(d1: D1Database): Db {
           run.batch_id,
           run.prompts_total,
           run.started_at,
+          brandMarket(brand).market,
+          brandMarket(brand).google_domain,
         )
         .run();
       return run;
@@ -288,6 +302,8 @@ export function createD1Db(d1: D1Database): Db {
         error: null,
         started_at: now,
         completed_at: null,
+        market: brandMarket(brand).market,
+        google_domain: brandMarket(brand).google_domain,
       };
       // D1 serializes writes to the database; keep the exclusion predicate
       // inside the INSERT, never in a separate preflight read.
@@ -295,15 +311,15 @@ export function createD1Db(d1: D1Database): Db {
         .prepare(
           `INSERT INTO runs
            (id, brand_id, engine, mode, status, batch_id, prompts_total,
-            prompts_completed, cost_eur_estimate, error, started_at, completed_at)
-         SELECT ?, ?, ?, 'live', 'pending', NULL, ?, 0, NULL, NULL, ?, NULL
+            prompts_completed, cost_eur_estimate, error, started_at, completed_at, market, google_domain)
+         SELECT ?, ?, ?, 'live', 'pending', NULL, ?, 0, NULL, NULL, ?, NULL, ?, ?
           WHERE NOT EXISTS (
             SELECT 1 FROM runs WHERE brand_id = ? AND engine = ?
               AND mode = 'live' AND status IN ('pending', 'in_progress')
               AND started_at > ?
           )`,
         )
-        .bind(run.id, brand.id, engine, promptsTotal, now, brand.id, engine, cutoff)
+        .bind(run.id, brand.id, engine, promptsTotal, now, brandMarket(brand).market, brandMarket(brand).google_domain, brand.id, engine, cutoff)
         .run();
       if ((result.meta.changes ?? 0) > 0) return { run, started: true };
       const active = await d1
@@ -356,9 +372,9 @@ export function createD1Db(d1: D1Database): Db {
         .prepare(
           `SELECT id, brand_id, engine, mode, status, batch_id, prompts_total,
                   prompts_completed, cost_eur_estimate, error, started_at, completed_at
-             FROM runs
-            WHERE brand_id = ? AND engine = ?
-            ORDER BY started_at DESC
+             FROM runs r
+            WHERE r.brand_id = ? AND r.engine = ? AND ${CURRENT_MARKET_SQL}
+            ORDER BY r.started_at DESC
             LIMIT 1`,
         )
         .bind(brandId, engine)
@@ -384,7 +400,7 @@ export function createD1Db(d1: D1Database): Db {
                   r.prompts_total, r.prompts_completed, r.cost_eur_estimate,
                   r.error, r.started_at, r.completed_at
              FROM runs r
-            WHERE r.brand_id = ? AND r.engine = ?${modeClause}
+            WHERE r.brand_id = ? AND ${CURRENT_MARKET_SQL} AND r.engine = ?${modeClause}
               AND EXISTS (
                 SELECT 1 FROM prompt_responses pr
                  WHERE pr.run_id = r.id AND pr.status = 'ok'
@@ -401,7 +417,8 @@ export function createD1Db(d1: D1Database): Db {
       const row = await d1
         .prepare(
           `SELECT id, brand_id, engine, mode, status, batch_id, prompts_total,
-                  prompts_completed, cost_eur_estimate, error, started_at, completed_at
+                  prompts_completed, cost_eur_estimate, error, started_at, completed_at,
+                  market, google_domain
              FROM runs
             WHERE id = ?`,
         )
@@ -430,7 +447,7 @@ export function createD1Db(d1: D1Database): Db {
                     SELECT r.brand_id, r.engine,
                            MAX(COALESCE(r.completed_at, r.started_at)) AS last_complete_run
                       FROM runs r
-                     WHERE r.mode = 'live'
+                     WHERE r.mode = 'live' AND ${CURRENT_MARKET_SQL}
                        AND EXISTS (SELECT 1 FROM prompts p WHERE p.brand_id = r.brand_id AND p.active = 1)
                        AND NOT EXISTS (
                          SELECT 1 FROM prompts p
@@ -445,11 +462,11 @@ export function createD1Db(d1: D1Database): Db {
                   latest_attempt AS (
                     SELECT brand_id, engine, MAX(started_at) AS last_attempt,
                            SUM(CASE WHEN started_at >= ? THEN 1 ELSE 0 END) AS attempts_week
-                      FROM runs WHERE mode = 'live' GROUP BY brand_id, engine
+                      FROM runs r WHERE r.mode = 'live' AND ${CURRENT_MARKET_SQL} GROUP BY r.brand_id, r.engine
                   )
              SELECT b.id, b.user_id, b.domain, b.name, b.category, b.competitors_json,
                     b.aliases_json, b.exclude_terms_json,
-                    b.refresh_frequency, b.created_at, b.updated_at
+                    b.refresh_frequency, b.market, b.google_domain, b.created_at, b.updated_at
                FROM brands b
               WHERE b.refresh_frequency <> 'manual'
                 AND EXISTS (SELECT 1 FROM prompts p WHERE p.brand_id = b.id AND p.active = 1)
@@ -476,7 +493,7 @@ export function createD1Db(d1: D1Database): Db {
         .prepare(
           `SELECT b.id, b.user_id, b.domain, b.name, b.category, b.competitors_json,
                   b.aliases_json, b.exclude_terms_json,
-                  b.refresh_frequency, b.created_at, b.updated_at,
+                  b.refresh_frequency, b.market, b.google_domain, b.created_at, b.updated_at,
                   MAX(CASE WHEN
                     EXISTS (SELECT 1 FROM prompts p WHERE p.brand_id = b.id AND p.active = 1)
                     AND NOT EXISTS (
@@ -490,7 +507,7 @@ export function createD1Db(d1: D1Database): Db {
                   MAX(r.started_at) AS last_attempt,
                   SUM(CASE WHEN r.started_at >= ? THEN 1 ELSE 0 END) AS attempts_week
              FROM brands b
-             LEFT JOIN runs r ON r.brand_id = b.id AND r.mode = 'live'
+             LEFT JOIN runs r ON r.brand_id = b.id AND r.mode = 'live' AND r.market = b.market
             WHERE EXISTS (SELECT 1 FROM prompts p WHERE p.brand_id = b.id AND p.active = 1)
             GROUP BY b.id
            HAVING b.refresh_frequency <> 'manual'
@@ -689,7 +706,7 @@ export function createD1Db(d1: D1Database): Db {
                     ) AS retry_rank
                FROM prompt_responses pr
                JOIN runs r ON r.id = pr.run_id
-              WHERE r.brand_id = ?
+              WHERE r.brand_id = ? AND ${CURRENT_MARKET_SQL}
                 AND pr.captured_at >= ?
                 AND pr.status = 'ok'
            )
@@ -739,7 +756,7 @@ export function createD1Db(d1: D1Database): Db {
              FROM prompt_responses pr
              JOIN runs r ON r.id = pr.run_id
              ${activePromptsOnly ? 'JOIN prompts p ON p.id = pr.prompt_id' : ''}
-            WHERE r.brand_id = ?
+            WHERE r.brand_id = ? AND ${CURRENT_MARKET_SQL}
               AND pr.captured_at >= ?
               AND pr.captured_at <= ?
               AND pr.status = 'ok'
@@ -901,7 +918,7 @@ export function createD1Db(d1: D1Database): Db {
                      OR (newer.captured_at = pr.captured_at AND newer.id > pr.id))
               )
              LEFT JOIN prompts p ON p.id = pr.prompt_id AND p.brand_id = r.brand_id
-            WHERE r.brand_id = ?
+            WHERE r.brand_id = ? AND ${CURRENT_MARKET_SQL}
               AND COALESCE(r.completed_at, r.started_at) >= ?
             GROUP BY r.id, r.engine
             ORDER BY COALESCE(r.completed_at, r.started_at) ASC`,
@@ -921,7 +938,7 @@ export function createD1Db(d1: D1Database): Db {
                    FROM prompt_responses pr
                    JOIN runs r ON r.id = pr.run_id
                    JOIN prompts p ON p.id = pr.prompt_id
-                  WHERE r.brand_id = ? AND pr.captured_at >= ?
+                  WHERE r.brand_id = ? AND ${CURRENT_MARKET_SQL} AND pr.captured_at >= ?
                     AND (pr.brand_mentioned = 1 OR pr.brand_cited_with_link = 1)
                     AND pr.status = 'ok'`;
       const params: unknown[] = [brandId, since];
@@ -962,7 +979,7 @@ export function createD1Db(d1: D1Database): Db {
              FROM prompt_responses pr
              JOIN runs r ON r.id = pr.run_id
              JOIN prompts p ON p.id = pr.prompt_id
-            WHERE r.brand_id = ?
+            WHERE r.brand_id = ? AND ${CURRENT_MARKET_SQL}
               AND pr.captured_at >= ?
               AND (pr.brand_mentioned = 1 OR pr.brand_cited_with_link = 1)
               AND pr.status = 'ok'`;

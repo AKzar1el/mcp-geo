@@ -15,6 +15,7 @@ import {
   extractCitations,
   hasBrandInEngineCitations,
 } from './openai.js';
+import { brandMarket, type Market } from './market.js';
 import type {
   Brand,
   Db,
@@ -106,14 +107,15 @@ async function fetchSerpApi(
 export async function chatCompletion(
   apiKey: string,
   userText: string,
+  market: Market = brandMarket({}),
 ): Promise<AiOverviewCompletion> {
   const params = new URLSearchParams({
     api_key: apiKey,
     engine: 'google',
     q: userText,
-    google_domain: 'google.pl',
-    gl: 'pl',
-    hl: 'pl',
+    google_domain: market.google_domain,
+    gl: market.country,
+    hl: market.language,
     no_cache: 'true',
   });
   const data = await fetchSerpApi(params);
@@ -281,6 +283,7 @@ export async function runLive(
           const payload = await chatCompletion(
             requireSerpApiKey(env),
             prompt.text,
+            brandMarket(brand),
           );
           results[idx] = buildResultFromPayload(brand, prompt, payload);
         } catch (err) {

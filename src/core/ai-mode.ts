@@ -6,6 +6,7 @@
 import { extractCitations, hasBrandInEngineCitations } from './openai.js';
 import type { Brand, Db, EnginePromptResult, Prompt } from '../db/types.js';
 import { fetchWithTimeout } from './fetch.js';
+import { brandMarket, type Market } from './market.js';
 import { redactSerpApiError } from './serpapi-error.js';
 import {
   MAX_SERPAPI_ANSWER_TEXT_LENGTH,
@@ -50,13 +51,14 @@ function requireSerpApiKey(env: AiModeEnv): string {
 export async function chatCompletion(
   apiKey: string,
   userText: string,
+  market: Market = brandMarket({}),
 ): Promise<AiModeCompletion> {
   const params = new URLSearchParams({
     api_key: apiKey,
     engine: 'google_ai_mode',
     q: userText,
-    gl: 'pl',
-    hl: 'pl',
+    gl: market.country,
+    hl: market.language,
     no_cache: 'true',
   });
   const resp = await fetchWithTimeout(`${SERPAPI_URL}?${params.toString()}`, { method: 'GET' });
@@ -199,7 +201,7 @@ export async function runLive(
       chunk.map(async (prompt, j) => {
         const idx = chunkStart + j;
         try {
-          const payload = await chatCompletion(requireSerpApiKey(env), prompt.text);
+          const payload = await chatCompletion(requireSerpApiKey(env), prompt.text, brandMarket(brand));
           results[idx] = buildResultFromPayload(brand, prompt, payload);
         } catch (err) {
           results[idx] = buildFailedResult(prompt, err, env.SERPAPI_API_KEY);

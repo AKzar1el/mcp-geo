@@ -31,6 +31,7 @@ import { generatePrompts } from './prompt-generation.js';
 import { applyExactPromptSet } from './prompt-set.js';
 import { seedBrand } from './seed.js';
 import { updateTrackedBrand } from './update-brand.js';
+import { brandMarket } from './market.js';
 import {
   normalizeCompetitorDomains,
   normalizeDomainInput,
@@ -52,25 +53,28 @@ const ENGINE_NAMES = [
 
 const engineSchema = z.enum(ENGINE_NAMES);
 
-const GOOGLE_SEARCH_SCOPE_NOTE =
-  'Google AI Overviews and AI Mode are sampled using Polish location (gl=pl, google.pl) and Polish interface (hl=pl); results do not establish visibility in other markets or languages.';
-
 const googleSearchSamplingSchema = z.object({
   engines: z.array(z.string()),
-  country: z.literal('pl'),
-  language: z.literal('pl'),
+  country: z.string(),
+  language: z.string(),
+  google_domain: z.string(),
   scope_note: z.string(),
 }).nullable();
 
-function googleSearchSampling(engines: readonly string[]) {
+function googleSearchSampling(
+  brand: { market?: string; google_domain?: string },
+  engines: readonly string[],
+) {
   const googleEngines = [...new Set(engines.filter(
     (engine) => engine === 'ai_overviews' || engine === 'ai_mode',
   ))];
+  const { country, language, google_domain } = brandMarket(brand);
   return googleEngines.length === 0 ? null : {
     engines: googleEngines,
-    country: 'pl' as const,
-    language: 'pl' as const,
-    scope_note: GOOGLE_SEARCH_SCOPE_NOTE,
+    country,
+    language,
+    google_domain,
+    scope_note: `Google AI Overviews and AI Mode are sampled using location gl=${country} (${google_domain}) and interface hl=${language}; results do not establish visibility in other markets or languages.`,
   };
 }
 
@@ -692,6 +696,7 @@ const updateBrandOutputSchema = z.object({
   changed_fields: z.array(z.string()),
   prompt_set_review_recommended: z.boolean(),
   historical_attribution_review_recommended: z.boolean(),
+  market_changed: z.boolean(),
   brand: z.object({
     name: z.string(),
     domain: z.string(),
@@ -700,6 +705,8 @@ const updateBrandOutputSchema = z.object({
     aliases: z.array(z.string()),
     exclude_terms: z.array(z.string()),
     refresh_frequency: z.enum(['daily', 'weekly', 'manual']),
+    market: z.string(),
+    google_domain: z.string(),
   }),
   next_steps: z.string(),
 });
@@ -715,6 +722,8 @@ const listBrandsOutputSchema = z.object({
       aliases: z.array(z.string()),
       exclude_terms: z.array(z.string()),
       refresh_frequency: z.string(),
+      market: z.string(),
+      google_domain: z.string(),
       active_prompts: z.number(),
       created_at: z.string(),
     }),
@@ -1116,7 +1125,7 @@ export function registerTools(
           mixed_modes: searchRequested.engines.length > 0 && modelOnly.engines.length > 0,
           note: 'Scores count brand mentions in the latest usable observation per distinct prompt and engine from each eligible stored run, not independently verified search citations. A measurement_mode filter selects matching evidence before scoring, even when a newer run has a different request mode; absent matching engines are unmeasured. Search-requested runs may return no source links. Claude/Gemini live runs and all batch runs are model-only; run_mode alone does not select a request mode. Omission retains historical mixed results; no provider calls occur.',
         },
-        google_search_sampling: googleSearchSampling(perEngine.map(({ engine }) => engine)),
+        google_search_sampling: googleSearchSampling(brand, perEngine.map(({ engine }) => engine)),
         freshness: {
           oldest_refreshed_at: new Date(oldestTimestamp).toISOString(),
           newest_refreshed_at: new Date(mostRecentTimestamp).toISOString(),
@@ -1518,7 +1527,7 @@ export function registerTools(
         engine_scope,
         prompt_set_scope,
         identity_scope,
-        google_search_sampling: googleSearchSampling(results.map(({ engine }) => engine)),
+        google_search_sampling: googleSearchSampling(brand, results.map(({ engine }) => engine)),
         measurement_scope: { ...measurement_scope, by_bucket },
         prompt_set_comparability,
         identity_comparability,
@@ -1877,7 +1886,7 @@ export function registerTools(
         mention_evidence_samples,
         identity_attribution,
         observation_coverage,
-        google_search_sampling: googleSearchSampling(allResponses.map(({ engine }) => engine)),
+        google_search_sampling: googleSearchSampling(brand, allResponses.map(({ engine }) => engine)),
         your_share_of_voice_pct: pct(brandMentions),
         your_mentions: brandMentions,
         comparison_semantics: COMPARISON_SEMANTICS,
@@ -2088,7 +2097,7 @@ export function registerTools(
             ? 'Citation pages and source rankings include only currently active buyer prompts. Earlier measurements of those same questions remain historical, not new scans; retired prompts are excluded before pagination and aggregation.'
             : 'Full historical buyer-prompt evidence retained, including retired questions. Set active_prompts_only=true for current buyer questions without provider requests.',
         },
-        google_search_sampling: googleSearchSampling([
+        google_search_sampling: googleSearchSampling(brand, [
           ...requestedEngines,
           ...sourceResponses.map(({ engine: sourceEngine }) => sourceEngine),
           ...results.map(({ engine: citationEngine }) => citationEngine),
@@ -2222,7 +2231,8 @@ export function registerTools(
         provider_source_count: providerSourceList.length,
         provider_source_urls_truncated: providerSourceList.length > 5,
         provider_source_urls: providerSourceList.slice(0, 5),
-        google_search_sampling: googleSearchSampling([run.engine]),
+        // The run's own market: it may predate a market change.
+        google_search_sampling: googleSearchSampling(run, [run.engine]),
         evidence_note: 'This is a short credential-redacted excerpt of one stored successful response, not a full answer or an independently verified source citation. The original buyer question is credential-redacted without excerpt truncation. An optional recorded competitor focus is best effort; absence from the excerpt does not disprove a recorded mention. Provider-returned source URLs are not independently verified; access-bearing URL query and fragment fields are masked. Review identity_scope, active_prompt and measurement_mode before quoting in an audit. No provider request occurred.',
       };
       return toolResult(payload);
@@ -2483,7 +2493,7 @@ export function registerTools(
       };
       // Google locale limits apply to usable observations even when no
       // competitor-only losses were found in those observations.
-      const google_search_sampling = googleSearchSampling(perEngineCoverage
+      const google_search_sampling = googleSearchSampling(brand, perEngineCoverage
         .filter(({ usable_prompt_count }) => usable_prompt_count > 0)
         .map(({ engine }) => engine));
 
@@ -2856,6 +2866,16 @@ export function registerLocalManagementTools(
           .enum(['daily', 'weekly', 'manual'])
           .optional()
           .describe("New cadence; 'manual' pauses cron scans."),
+        market: z
+          .string()
+          .regex(/^[a-z]{2}-[A-Z]{2}$/)
+          .optional()
+          .describe("Search market as a locale, e.g. 'pl-PL'. History is kept per market."),
+        google_domain: z
+          .string()
+          .regex(/^google\.[a-z]{2,3}(\.[a-z]{2})?$/)
+          .optional()
+          .describe("Google domain for AI Overviews, e.g. 'google.pl'."),
       },
       outputSchema: updateBrandOutputSchema,
       annotations: {
@@ -2874,6 +2894,8 @@ export function registerLocalManagementTools(
       aliases,
       exclude_terms,
       refresh_frequency,
+      market,
+      google_domain,
     }) => {
       const result = await updateTrackedBrand(deps.db, {
         brand_id,
@@ -2884,6 +2906,8 @@ export function registerLocalManagementTools(
         aliases,
         exclude_terms,
         refresh_frequency,
+        market,
+        google_domain,
       });
       const payload = {
         updated: result.updated,
@@ -2891,6 +2915,7 @@ export function registerLocalManagementTools(
         changed_fields: result.changed_fields,
         prompt_set_review_recommended: result.prompt_set_review_recommended,
         historical_attribution_review_recommended: result.historical_attribution_review_recommended,
+        market_changed: result.market_changed,
         brand: {
           name: result.brand.name,
           domain: result.brand.domain,
@@ -2899,6 +2924,8 @@ export function registerLocalManagementTools(
           aliases: result.brand.aliases,
           exclude_terms: result.brand.exclude_terms,
           refresh_frequency: result.brand.refresh_frequency,
+          market: result.brand.market,
+          google_domain: result.brand.google_domain,
         },
         next_steps: [
           result.prompt_set_review_recommended
@@ -2907,6 +2934,9 @@ export function registerLocalManagementTools(
           previewNextStep(brand_id),
           ...(result.historical_attribution_review_recommended
             ? ['Brand matching identity changed. Historical visibility scores were measured under the previous name/domain/aliases/exclusions and must not be treated as directly comparable to new scans; retain prior evidence and establish a new baseline.']
+            : []),
+          ...(result.market_changed
+            ? [`Market changed to ${result.brand.market}. History is kept per market: visibility reads start empty until a scan runs in the new market; earlier runs stay stored and come back if the market is switched back.`]
             : []),
         ].join(' '),
       };
@@ -2941,6 +2971,8 @@ export function registerLocalManagementTools(
           aliases: b.aliases,
           exclude_terms: b.exclude_terms,
           refresh_frequency: b.refresh_frequency,
+          market: b.market,
+          google_domain: b.google_domain,
           active_prompts: b.active_prompts,
           created_at: new Date(b.created_at).toISOString(),
         })),

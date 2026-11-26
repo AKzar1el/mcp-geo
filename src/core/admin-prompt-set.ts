@@ -69,6 +69,8 @@ export async function handleAdminListBrands(db: Db): Promise<Response> {
       aliases: brand.aliases,
       exclude_terms: brand.exclude_terms,
       refresh_frequency: brand.refresh_frequency,
+      market: brand.market,
+      google_domain: brand.google_domain,
       active_prompts: brand.active_prompts,
       created_at: new Date(brand.created_at).toISOString(),
     })),

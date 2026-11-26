@@ -192,3 +192,16 @@ test('observation evidence excludes special-use internal hosts from provider sou
     { url: 'https://docs.example.org/public', url_redacted: false },
   ]);
 });
+
+test('evidence labels Google sampling with the run market, not the brand current one', async () => {
+  // brand fixture has no market fields, i.e. the pl-PL default
+  const handler = setup({ ...run, engine: 'ai_overviews', market: 'en-US', google_domain: 'google.com' },
+    [{ ...response, engine: 'ai_overviews' }]);
+  assert.ok(handler);
+  const result = (await handler({ brand_id: 'acme', run_id: run.id, response_id: response.id }))
+    .structuredContent as unknown as { google_search_sampling: { country: string; language: string; google_domain: string } };
+  assert.deepEqual(
+    [result.google_search_sampling.country, result.google_search_sampling.language, result.google_search_sampling.google_domain],
+    ['us', 'en', 'google.com'],
+  );
+});
