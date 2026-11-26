@@ -11,7 +11,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { Brand, CitationSourceRow, ComparisonEvidenceRow, Db, Prompt, PromptResponse } from '../db/types.js';
-import { extractUrls, findTermSetMatchIndex, hostMatchesDomain } from './openai.js';
+import { extractUrls, findTermSetMatchIndex, hostMatchesDomain, maskAnswerUrlMentions } from './openai.js';
 import {
   ALL_ENGINES,
   getAvailableEngines,
@@ -3427,15 +3427,12 @@ export function buildResponseExcerpt(text: string, brand: Brand, focusCompetitor
   const focusIdx = focusCompetitor
     ? findTermSetMatchIndex(safeText, { domain: focusCompetitor })
     : -1;
-  const idx = focusIdx !== -1 ? focusIdx : findTermSetMatchIndex(safeText, {
-    domain: brand.domain,
-    name: brand.name,
-    aliases: brand.aliases,
-    excludeTerms: brand.exclude_terms,
-  });
+  const terms = { domain: brand.domain, name: brand.name, aliases: brand.aliases, excludeTerms: brand.exclude_terms };
+  const proseIndex = findTermSetMatchIndex(maskAnswerUrlMentions(safeText, true), terms);
+  const idx = focusIdx !== -1 ? focusIdx : proseIndex !== -1 ? proseIndex : findTermSetMatchIndex(safeText, terms);
   if (idx === -1) return safeText.slice(0, 250);
   const start = Math.max(0, idx - 100);
-  const end = Math.min(safeText.length, idx + 150);
+  const end = Math.min(safeText.length, start + 250);
   return safeText.slice(start, end);
 }
 
