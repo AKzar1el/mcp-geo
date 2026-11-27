@@ -19,6 +19,7 @@ import {
 } from './core/engines.js';
 import { registerTools } from './core/tools.js';
 import { registerSiteAuditTool } from './core/site-audit.js';
+import { registerGeoReportTool } from './core/geo-report.js';
 import { egressFetch } from './core/egress.js';
 import {
   boundHostedMcpRequestBody,
@@ -166,11 +167,9 @@ function registerHostedTools(
     },
     { namespaced: true },
   );
-  registerSiteAuditTool(
-    server,
-    db,
-    env.SHOPER_PROXY_URL ? egressFetch(env.SHOPER_PROXY_URL, env.SHOPER_PROXY_KEY ?? '') : fetch,
-  );
+  const storefrontFetch = env.SHOPER_PROXY_URL ? egressFetch(env.SHOPER_PROXY_URL, env.SHOPER_PROXY_KEY ?? '') : fetch;
+  registerSiteAuditTool(server, db, storefrontFetch);
+  registerGeoReportTool(server, db, storefrontFetch, SERVER_VERSION);
 }
 
 function createStatelessHostedServer(

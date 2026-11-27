@@ -383,14 +383,17 @@ function classifyPageType(url: string, v: AiView): string {
   return 'other';
 }
 
+export type SiteCheck = Check & { failingUrls: string[] };
+
 /** Site-wide: a check passes when 80%+ of crawled pages pass it. */
-export function aggregateChecks(pages: PageAudit[]): Check[] {
-  const byId = new Map<string, { label: string; points: number; pass: number; total: number }>();
+export function aggregateChecks(pages: PageAudit[]): SiteCheck[] {
+  const byId = new Map<string, { label: string; points: number; pass: number; total: number; failingUrls: string[] }>();
   for (const page of pages) {
     for (const c of page.checks) {
-      const row = byId.get(c.id) ?? { label: c.label, points: c.points, pass: 0, total: 0 };
+      const row = byId.get(c.id) ?? { label: c.label, points: c.points, pass: 0, total: 0, failingUrls: [] };
       row.total += 1;
       if (c.passed) row.pass += 1;
+      else row.failingUrls.push(page.url);
       byId.set(c.id, row);
     }
   }
@@ -398,6 +401,7 @@ export function aggregateChecks(pages: PageAudit[]): Check[] {
     id, label: r.label, points: r.points,
     passed: r.total > 0 && r.pass / r.total >= 0.8,
     details: `${r.pass}/${r.total} pages passed this check.`,
+    failingUrls: r.failingUrls,
   }));
 }
 
@@ -470,16 +474,20 @@ export async function auditSite(f: typeof fetch, domain: string, maxPages = 10) 
   const rssFeed = await detectRssFeed(f, startPageHtml, start);
   const llmsValid = llmsTxt.found && llmsTxt.hasH1 && llmsTxt.hasLink && llmsTxt.contentLength > 100;
   const checks = aggregateChecks(pages);
+  const siteFail = (passed: boolean, url: string) => (passed ? [] : [url]);
   checks.push(
     { id: 'llms-txt', label: 'llms.txt valid (informational, 0 pts)', passed: llmsValid, points: 0,
       details: !llmsTxt.found ? 'No llms.txt found.' : llmsValid ? `Valid llms.txt (${llmsTxt.contentLength} chars).`
-        : `Found llms.txt but ${!llmsTxt.hasH1 ? 'missing # heading' : !llmsTxt.hasLink ? 'missing links' : 'too short'}.` },
+        : `Found llms.txt but ${!llmsTxt.hasH1 ? 'missing # heading' : !llmsTxt.hasLink ? 'missing links' : 'too short'}.`,
+      failingUrls: siteFail(llmsValid, `${start.origin}/llms.txt`) },
     { id: 'ai-bot-access', label: 'AI bot access', passed: !robots.error && robots.aiBotBlocked.length === 0, points: 12,
       details: robots.error ? `robots.txt could not be read (${robots.error}); AI bot access unknown.`
         : !robots.found ? 'No robots.txt found (nothing blocked).'
-        : robots.aiBotBlocked.length === 0 ? 'No AI bots blocked in robots.txt.' : `Blocked: ${robots.aiBotBlocked.join(', ')}` },
+        : robots.aiBotBlocked.length === 0 ? 'No AI bots blocked in robots.txt.' : `Blocked: ${robots.aiBotBlocked.join(', ')}`,
+      failingUrls: siteFail(!robots.error && robots.aiBotBlocked.length === 0, robotsUrl) },
     { id: 'rss-feed', label: 'RSS/Atom feed', passed: rssFeed, points: 8,
-      details: rssFeed ? 'RSS or Atom feed detected.' : 'No RSS/Atom feed found.' },
+      details: rssFeed ? 'RSS or Atom feed detected.' : 'No RSS/Atom feed found.',
+      failingUrls: siteFail(rssFeed, startUrl) },
   );
   const earned = checks.reduce((s, c) => s + (c.passed ? c.points : 0), 0);
   const max = checks.reduce((s, c) => s + c.points, 0);
