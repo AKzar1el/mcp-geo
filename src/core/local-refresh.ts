@@ -33,6 +33,12 @@ export async function runLocalRefresh(
     log(`refresh_brand: running ${engine} (${prompts.length} prompt${prompts.length === 1 ? '' : 's'})...`);
     try {
       await execute({ db, ...env }, brand, prompts, { engine, run_id: reservation.run.id });
+      // Some adapters persist a terminal failure and return normally (for
+      // example, after a storage error). Do not count that run as successful.
+      const storedRun = await db.getRunById(reservation.run.id);
+      if (storedRun?.status === 'failed') {
+        throw new Error('Local engine execution recorded a failed run');
+      }
     } catch (error) {
       // An unexpected adapter failure must not strand this local reservation
       // and prevent an immediate retry. Leave any completed run untouched.

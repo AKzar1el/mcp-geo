@@ -130,6 +130,25 @@ test('a failed local engine does not prevent independent requested engines from 
     assert.deepEqual(called, ['chatgpt', 'claude']);
     assert.equal((await db.getLatestRun(brand.id, 'chatgpt'))?.status, 'failed');
     assert.equal((await db.getLatestRun(brand.id, 'claude'))?.status, 'completed');
+
+    // Provider adapters may record a terminal failure and resolve rather
+    // than throw. A normal return must not be reported as scan success.
+    const persistedFailure = await runLocalRefresh(db, {}, brand, prompts, ['chatgpt', 'claude'], async (_env, _brand, _prompts, run) => {
+      await db.updateRun(run.run_id, run.engine === 'chatgpt'
+        ? { status: 'failed', error: 'synthetic storage diagnostic', completed_at: Date.now() }
+        : { status: 'completed', completed_at: Date.now() });
+    });
+    assert.deepEqual(persistedFailure.failed_engines, ['chatgpt']);
+    assert.ok(persistedFailure.run_ids.chatgpt);
+    assert.ok(persistedFailure.run_ids.claude);
+    assert.equal((await db.getRunById(persistedFailure.run_ids.chatgpt))?.error, 'synthetic storage diagnostic');
+
+    await assert.rejects(
+      runLocalRefresh(db, {}, brand, prompts, ['chatgpt'], async (_env, _brand, _prompts, run) => {
+        await db.updateRun(run.run_id, { status: 'failed', error: 'synthetic private diagnostic', completed_at: Date.now() });
+      }),
+      /^Error: Local engine execution recorded a failed run$/,
+    );
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });
