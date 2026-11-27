@@ -237,9 +237,9 @@ export function openSqliteDb(path?: string): SqliteDb {
         .run(id, email, now, now);
     },
 
-    async createBrand(input: CreateBrandInput): Promise<boolean> {
+    async createBrand(input: CreateBrandInput, initialPrompts: NewPromptInput[] = []): Promise<boolean> {
       const now = Date.now();
-      const result = sqlite
+      const insertBrand = () => sqlite
         .prepare(
           `INSERT OR IGNORE INTO brands
              (id, user_id, domain, name, category, competitors_json,
@@ -260,7 +260,21 @@ export function openSqliteDb(path?: string): SqliteDb {
           now,
           now,
         );
-      return result.changes > 0;
+      if (!initialPrompts.length) return insertBrand().changes > 0;
+
+      let inserted = false;
+      inTransaction(sqlite, () => {
+        inserted = insertBrand().changes > 0;
+        if (!inserted) return;
+        const insert = sqlite.prepare(
+          `INSERT INTO prompts (id, brand_id, text, intent_stage, shape, active, created_at)
+           VALUES (?, ?, ?, ?, ?, 1, ?)`,
+        );
+        for (const p of initialPrompts) {
+          insert.run(randomUUID(), input.id, p.text, p.intent_stage, p.shape, now);
+        }
+      });
+      return inserted;
     },
 
     async updateBrand(brandId: string, fields: UpdateBrandFields): Promise<void> {

@@ -191,6 +191,7 @@ export async function seedBrand(
   }
 
   const category = input.category?.trim() || null;
+  const starters = substituteFallbackPlaceholders(FALLBACK_PROMPTS, category ?? name);
 
   await deps.db.upsertUser(DEFAULT_USER_ID, DEFAULT_USER_EMAIL);
   const inserted = await deps.db.createBrand({
@@ -203,7 +204,7 @@ export async function seedBrand(
     aliases: input.aliases ?? [],
     exclude_terms: input.exclude_terms ?? [],
     refresh_frequency: input.refresh_frequency ?? 'weekly',
-  });
+  }, input.prompt_generation === 'anthropic' ? undefined : starters);
 
   const brand = await deps.db.getBrand(input.brand_id);
   if (!brand) {
@@ -235,17 +236,21 @@ export async function seedBrand(
       });
     }
   }
-  const fallback = substituteFallbackPlaceholders(
-    FALLBACK_PROMPTS,
-    brand.category ?? brand.name,
-  );
-  await deps.db.replacePrompts(input.brand_id, fallback);
+  const fallbackCategory = input.prompt_generation === 'anthropic' ? brand.category : category;
+  if (input.prompt_generation === 'anthropic') {
+    // Keep the explicitly requested generation flow unchanged. Default
+    // enrollment already persisted the starter set with the brand insert.
+    await deps.db.replacePrompts(
+      input.brand_id,
+      substituteFallbackPlaceholders(FALLBACK_PROMPTS, fallbackCategory ?? brand.name),
+    );
+  }
   return {
     seeded: true,
     brand_id: input.brand_id,
-    prompts_inserted: fallback.length,
+    prompts_inserted: starters.length,
     prompt_source: 'fallback',
-    starter_prompt_limitations: brand.category
+    starter_prompt_limitations: fallbackCategory
       ? 'Three provider-free category-anchored prompts are only a small starter sample, not validated buyer-intent coverage. Inspect and customize the active prompts before interpreting visibility trends.'
       : 'No category was provided, so the three starter prompts use the brand name as a placeholder. This can bias brand-mention results and is not a valid independent category-visibility baseline. Set the category and replace prompts before scanning.',
   };
