@@ -23,7 +23,10 @@ export function selectAdminRunEngines(
   if (requested.length === 0) {
     return { error: 'engines must contain at least one engine; omit engines to run all configured' };
   }
-  const unknown = requested.filter((engine) => typeof engine !== 'string' || !isEngineName(engine));
+  if (requested.some((engine) => typeof engine !== 'string')) {
+    return { error: `Unknown engines: entries must be strings. Allowed: ${ALL_ENGINES.join(', ')}` };
+  }
+  const unknown = requested.filter((engine) => !isEngineName(engine));
   if (unknown.length > 0) {
     return { error: `Unknown engines: ${unknown.join(', ')}. Allowed: ${ALL_ENGINES.join(', ')}` };
   }

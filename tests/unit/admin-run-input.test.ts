@@ -38,6 +38,20 @@ test('explicit empty admin engine selection never silently triggers billable pro
   assert.deepEqual(selectAdminRunEngines(undefined, available).engineNames, [...available]);
 });
 
+test('malformed JSON engine entries return validation errors without coercing objects', () => {
+  const available = ['chatgpt', 'gemini'] as const;
+  for (const payload of [
+    '[{"toString":null}]',
+    '["chatgpt",{"toString":null,"valueOf":null}]',
+    '[[{"toString":null}]]',
+    '[null,42,true,{}]',
+  ]) {
+    const selection = selectAdminRunEngines(JSON.parse(payload), available);
+    assert.match(selection.error ?? '', /Unknown engines.*strings/);
+    assert.equal(selection.engineNames, undefined);
+  }
+});
+
 test('explicitly requested unconfigured engines fail before a misleading no-op scan', () => {
   const available = ['chatgpt'] as const;
   for (const requested of [['gemini'], ['chatgpt', 'gemini']]) {
