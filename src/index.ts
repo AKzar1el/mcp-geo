@@ -18,6 +18,8 @@ import {
   runEngineInProcess,
 } from './core/engines.js';
 import { registerTools } from './core/tools.js';
+import { registerSiteAuditTool } from './core/site-audit.js';
+import { egressFetch } from './core/egress.js';
 import {
   boundHostedMcpRequestBody,
   MAX_MCP_HTTP_BODY_BYTES,
@@ -90,6 +92,10 @@ export interface Env {
   // forks can wire them up without changing the Env shape.
   TURNSTILE_SITE_KEY?: string;
   TURNSTILE_SECRET_KEY?: string;
+  // Shoper egress proxy (shoper-growth-mcp decision 27) for site.audit:
+  // Shoper answers 421 to Worker subrequests. Unset = fetch directly.
+  SHOPER_PROXY_URL?: string;
+  SHOPER_PROXY_KEY?: string;
 }
 
 interface AgentProps extends Record<string, unknown> {
@@ -159,6 +165,11 @@ function registerHostedTools(
         runEngines(workerEnginesEnv(env, db), ctx, brand, prompts, engines),
     },
     { namespaced: true },
+  );
+  registerSiteAuditTool(
+    server,
+    db,
+    env.SHOPER_PROXY_URL ? egressFetch(env.SHOPER_PROXY_URL, env.SHOPER_PROXY_KEY ?? '') : fetch,
   );
 }
 

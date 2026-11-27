@@ -44,6 +44,10 @@
 		// Optional Google AI Mode adds a separate SerpAPI request per prompt.
 		// Keep false unless you explicitly want the added provider spend.
 		"SERPAPI_AI_MODE_ENABLED": "false"
+		// Optional: route site.audit storefront fetches through a signed
+		// egress proxy (hosts that refuse Cloudflare Worker subrequests,
+		// e.g. Shoper's 421). Set the key with `wrangler secret put SHOPER_PROXY_KEY`.
+		// "SHOPER_PROXY_URL": "https://your-egress-proxy.example.com"
 	},
 	// Service binding back to this same worker. /admin/run-live fans
 	// out to /admin/run-engine once per engine via env.SELF.fetch() so
