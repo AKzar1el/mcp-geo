@@ -38,6 +38,11 @@ test('robots.txt: shared User-agent groups, wildcards, AI bots inherit *', () =>
   assert.equal(isPathAllowed('/pl/basket', shoper), false);
   assert.equal(isPathAllowed('/pl/p/book/1', shoper), true);
 
+  // A Crawl-delay-only group must not inherit the next group's rules.
+  const delayOnly = parseRobots('User-agent: GPTBot\nCrawl-delay: 5\n\nUser-agent: *\nDisallow: /\n', 'https://shop.pl/robots.txt');
+  assert.ok(!delayOnly.aiBotBlocked.includes('gptbot'));
+  assert.ok(delayOnly.aiBotBlocked.includes('claudebot'));
+
   const blockAll = parseRobots('User-agent: *\nDisallow: /\n\nUser-agent: GPTBot\nAllow: /\n', 'https://shop.pl/robots.txt');
   assert.ok(!blockAll.aiBotBlocked.includes('gptbot'));
   assert.ok(blockAll.aiBotBlocked.includes('claudebot'));
@@ -100,4 +105,22 @@ test('auditSite interleaves child sitemaps so a small crawl samples every page t
   const f = (async (input: string) => new Response(site[input] ?? page)) as typeof fetch;
   const r = await auditSite(f, 'shop.pl', 3);
   assert.deepEqual(r.pageTypes, { home: 1, product: 1, category: 1 });
+});
+
+test('auditSite: robots.txt 404 passes ai-bot-access, 5xx fails it as unknown', async () => {
+  const page = '<html><head><title>t</title></head><body></body></html>';
+  const run = (robotsStatus: number) => auditSite((async (input: string) =>
+    input.endsWith('/robots.txt') ? new Response('x', { status: robotsStatus }) : new Response(page)) as typeof fetch, 'shop.pl', 1);
+  const missing = (await run(404)).checks.find((c) => c.id === 'ai-bot-access');
+  assert.equal(missing?.passed, true);
+  const broken = (await run(502)).checks.find((c) => c.id === 'ai-bot-access');
+  assert.equal(broken?.passed, false);
+  assert.match(broken!.details, /could not be read \(HTTP 502/);
+});
+
+test('auditSite: a proxy refusal is reported once, without extra advice', async () => {
+  const f = egressFetch('https://proxy.test', 'key', (async () =>
+    new Response('{"error":"bad signature"}', { status: 401, headers: { 'x-egress-error': '1' } })) as typeof fetch);
+  await assert.rejects(auditSite(f, 'shop.pl', 1), (e: Error) =>
+    /bad signature/.test(e.message) && !e.message.includes('..') && e.message.split('ALLOWED_HOSTS').length === 2);
 });
