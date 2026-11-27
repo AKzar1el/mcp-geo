@@ -99,7 +99,11 @@ const shouldSkipPath = (p: string) =>
   /\.(pdf|jpg|jpeg|png|gif|webp|svg|ico|zip|rar|7z|mp4|mp3|mov|avi|woff2?|ttf|eot|css|js)$/i.test(p);
 
 type PathRules = { allow: string[]; disallow: string[] };
-export type RobotsPolicy = PathRules & { sitemapUrls: string[]; found: boolean; aiBotBlocked: string[] };
+export type RobotsPolicy = PathRules & { sitemapUrls: string[]; found: boolean; aiBotBlocked: string[]; error?: string };
+
+class HttpError extends Error {
+  constructor(readonly status: number, url: string) { super(`HTTP ${status} for ${url}`); }
+}
 
 function ruleMatches(pathname: string, rule: string): boolean {
   const pattern = rule.trim().replace(/[|\\{}()[\]^$+?.]/g, '\\$&').replace(/\*/g, '.*');
@@ -125,15 +129,17 @@ export function parseRobots(txt: string, robotsUrl: string): RobotsPolicy {
     const value = line.slice(idx + 1).trim();
     if (key === 'user-agent') {
       if (inRules) { group = []; inRules = false; }
-      group.push(value.toLowerCase());
+      const agent = value.toLowerCase();
+      group.push(agent);
+      if (!groups.has(agent)) groups.set(agent, { allow: [], disallow: [] }); // named with no rules = allowed everywhere
     } else if (key === 'sitemap') {
       try {
         const sm = new URL(value, robotsUrl);
         if (siteHost(sm.host) === siteHost(new URL(robotsUrl).host)) sitemaps.add(sm.toString());
       } catch { /* malformed */ }
-    } else if (key === 'allow' || key === 'disallow') {
-      inRules = true;
-      if (!value) continue;
+    } else {
+      inRules = true; // any rule line (Crawl-delay too) closes the User-agent list
+      if ((key !== 'allow' && key !== 'disallow') || !value) continue;
       for (const agent of group) {
         const rules = groups.get(agent) ?? { allow: [], disallow: [] };
         rules[key].push(value);
@@ -155,7 +161,7 @@ async function fetchText(f: typeof fetch, url: string, attempts = 2): Promise<st
       const res = await f(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
       if (!res.ok) {
         await res.body?.cancel();
-        throw new Error(`HTTP ${res.status} for ${url}`);
+        throw new HttpError(res.status, url);
       }
       const text = await res.text();
       return text.length > MAX_HTML_BYTES ? text.slice(0, MAX_HTML_BYTES) : text;
@@ -412,8 +418,11 @@ export async function auditSite(f: typeof fetch, domain: string, maxPages = 10) 
   const robotsUrl = `${start.origin}/robots.txt`;
 
   const [robots, llmsTxt] = await Promise.all([
-    fetchText(f, robotsUrl).then((t) => parseRobots(t, robotsUrl), (): RobotsPolicy =>
-      ({ allow: [], disallow: [], sitemapUrls: [], found: false, aiBotBlocked: [] })),
+    // Only 404/410 mean "no robots.txt"; any other failure is unknown, not "nothing blocked".
+    fetchText(f, robotsUrl).then((t) => parseRobots(t, robotsUrl), (err): RobotsPolicy => ({
+      allow: [], disallow: [], sitemapUrls: [], found: false, aiBotBlocked: [],
+      error: err instanceof HttpError && (err.status === 404 || err.status === 410) ? undefined : err instanceof Error ? err.message : String(err),
+    })),
     checkLlmsTxt(f, start),
   ]);
   const sitemapUrls = await fetchSitemapUrls(f, start, robots, Math.min(maxPages * 8, 400));
@@ -424,6 +433,7 @@ export async function auditSite(f: typeof fetch, domain: string, maxPages = 10) 
   let robotsBlocked = 0;
   let failedPages = 0;
   let firstError = '';
+  let proxyRefused = false;
   let startPageHtml = '';
 
   async function processUrl(current: string, isFirst: boolean) {
@@ -441,7 +451,10 @@ export async function auditSite(f: typeof fetch, domain: string, maxPages = 10) 
       }
     } catch (err) {
       failedPages += 1;
-      firstError ||= err instanceof Error ? err.message : String(err);
+      if (!firstError) {
+        firstError = err instanceof Error ? err.message : String(err);
+        proxyRefused = err instanceof EgressError; // its message already says what to check
+      }
     }
   }
 
@@ -451,7 +464,7 @@ export async function auditSite(f: typeof fetch, domain: string, maxPages = 10) 
     await Promise.all(batch.map((u) => processUrl(u, false)));
   }
   if (pages.length === 0) {
-    throw new Error(`Could not crawl any page from ${startUrl}: ${firstError || 'every URL was blocked by robots.txt'}. Check the brand domain and that its host is in the egress proxy ALLOWED_HOSTS.`);
+    throw new Error(`Could not crawl any page from ${startUrl}: ${firstError || 'every URL was blocked by robots.txt.'}${proxyRefused ? '' : ' Check the brand domain and that its host is in the egress proxy ALLOWED_HOSTS.'}`);
   }
 
   const rssFeed = await detectRssFeed(f, startPageHtml, start);
@@ -461,8 +474,9 @@ export async function auditSite(f: typeof fetch, domain: string, maxPages = 10) 
     { id: 'llms-txt', label: 'llms.txt valid (informational, 0 pts)', passed: llmsValid, points: 0,
       details: !llmsTxt.found ? 'No llms.txt found.' : llmsValid ? `Valid llms.txt (${llmsTxt.contentLength} chars).`
         : `Found llms.txt but ${!llmsTxt.hasH1 ? 'missing # heading' : !llmsTxt.hasLink ? 'missing links' : 'too short'}.` },
-    { id: 'ai-bot-access', label: 'AI bot access', passed: robots.aiBotBlocked.length === 0, points: 12,
-      details: !robots.found ? 'No robots.txt found (nothing blocked).'
+    { id: 'ai-bot-access', label: 'AI bot access', passed: !robots.error && robots.aiBotBlocked.length === 0, points: 12,
+      details: robots.error ? `robots.txt could not be read (${robots.error}); AI bot access unknown.`
+        : !robots.found ? 'No robots.txt found (nothing blocked).'
         : robots.aiBotBlocked.length === 0 ? 'No AI bots blocked in robots.txt.' : `Blocked: ${robots.aiBotBlocked.join(', ')}` },
     { id: 'rss-feed', label: 'RSS/Atom feed', passed: rssFeed, points: 8,
       details: rssFeed ? 'RSS or Atom feed detected.' : 'No RSS/Atom feed found.' },
@@ -483,7 +497,7 @@ export async function auditSite(f: typeof fetch, domain: string, maxPages = 10) 
     foundationalScore: scoreToInt((earned / Math.max(1, max)) * 100),
     scoring: `16 deterministic checks, ${max} points (llms.txt weighs 0). A site-wide check passes when 80%+ of crawled pages pass it. Not a traffic prediction. Score the 6 content dimensions (answer readiness, quotability, evidence density, content depth, freshness, structural clarity) from pagesForReview yourself.`,
     checks,
-    robots: { found: robots.found, aiBotBlocked: robots.aiBotBlocked, sitemaps: robots.sitemapUrls },
+    robots: { found: robots.found, error: robots.error, aiBotBlocked: robots.aiBotBlocked, sitemaps: robots.sitemapUrls },
     llmsTxt,
     rssFeed,
     pageTypes: Object.fromEntries([...new Set(pages.map((p) => p.pageType))].map((t) => [t, pages.filter((p) => p.pageType === t).length])),
