@@ -6,28 +6,74 @@ import type { Db } from '../../src/db/types.ts';
 import { openSqliteDb } from '../../src/db/sqlite.ts';
 import { createD1Db } from '../../src/db/d1.ts';
 
+// Execute the D1 adapter's real SQL and emulate transactional batch metadata.
+function d1OnSqlite(local: ReturnType<typeof openSqliteDb>): Db {
+  type Params = Parameters<ReturnType<typeof local.raw.prepare>['run']>;
+  type BoundStatement = { runSync(): { meta: { changes: number } } };
+  return createD1Db({
+    prepare(sql: string) {
+      return {
+        bind(...params: Params) {
+          const statement = local.raw.prepare(sql);
+          const runSync = () => ({ meta: { changes: Number(statement.run(...params).changes) } });
+          return { runSync, async run() { return runSync(); }, async first() { return statement.get(...params) ?? null; } };
+        },
+      };
+    },
+    async batch(statements: BoundStatement[]) {
+      local.raw.exec('BEGIN');
+      try {
+        const results = statements.map((statement) => statement.runSync());
+        local.raw.exec('COMMIT');
+        return results;
+      } catch (error) {
+        local.raw.exec('ROLLBACK');
+        throw error;
+      }
+    },
+  } as unknown as Parameters<typeof createD1Db>[0]);
+}
+
+for (const driver of ['sqlite', 'd1'] as const) {
+  test(`seedBrand: starter insertion failure leaves no stranded brand (${driver})`, async () => {
+    const local = openSqliteDb(':memory:');
+    try {
+      const db = driver === 'sqlite' ? local : d1OnSqlite(local);
+      const input = { brand_id: 'atomic', name: 'Atomic', domain: 'atomic.example.com' };
+      local.raw.exec(`CREATE TRIGGER fail_starter BEFORE INSERT ON prompts
+        WHEN NEW.brand_id = 'atomic' AND NEW.intent_stage = 'comparison'
+        BEGIN SELECT RAISE(ABORT, 'synthetic starter failure'); END`);
+      await assert.rejects(seedBrand({ db }, input), /synthetic starter failure/);
+      assert.equal(await local.getBrand('atomic'), null);
+      assert.equal((await local.getActivePrompts('atomic')).length, 0);
+
+      local.raw.exec('DROP TRIGGER fail_starter');
+      const retry = await seedBrand({ db }, input);
+      assert.equal(retry.seeded, true);
+      assert.equal(retry.prompts_inserted, 3);
+      const prompts = await local.getActivePrompts('atomic');
+      assert.equal(prompts.length, 3);
+
+      const duplicate = await seedBrand({ db }, { ...input, name: 'Duplicate' });
+      assert.equal(duplicate.seeded, false);
+      assert.equal((await local.getBrand('atomic'))?.name, 'Atomic');
+      assert.deepEqual(await local.getActivePrompts('atomic'), prompts);
+    } finally {
+      local.close();
+    }
+  });
+}
+
 for (const driver of ['sqlite', 'd1'] as const) {
   test(`seedBrand: only the insertion winner seeds prompts (${driver})`, async () => {
     const local = openSqliteDb(':memory:');
     try {
-      // Run the actual D1 SQL against SQLite and emulate its statement metadata.
-      const adapter = driver === 'sqlite' ? local : createD1Db({
-        prepare(sql: string) {
-          return {
-            bind(...params: Parameters<ReturnType<typeof local.raw.prepare>['run']>) {
-              const statement = local.raw.prepare(sql);
-              return {
-                async first() { return statement.get(...params) ?? null; },
-                async run() { return { meta: { changes: Number(statement.run(...params).changes) } }; },
-              };
-            },
-          };
-        },
-      } as unknown as Parameters<typeof createD1Db>[0]);
+      const adapter = driver === 'sqlite' ? local : d1OnSqlite(local);
       let initialReads = 0;
       let release!: () => void;
       const barrier = new Promise<void>((resolve) => { release = resolve; });
       let replacements = 0;
+      let initializations = 0;
       const db: Db = {
         ...adapter,
         async getBrand(id) {
@@ -43,6 +89,11 @@ for (const driver of ['sqlite', 'd1'] as const) {
           replacements++;
           return local.replacePrompts(id, prompts);
         },
+        async createBrand(input, initialPrompts) {
+          const inserted = await adapter.createBrand(input, initialPrompts);
+          if (inserted && initialPrompts?.length) initializations++;
+          return inserted;
+        },
       };
       const input = { brand_id: 'acme', name: 'Acme', domain: 'acme.com' };
       const results = await Promise.all([
@@ -51,15 +102,21 @@ for (const driver of ['sqlite', 'd1'] as const) {
       ]);
       assert.equal(results.filter((result) => result.seeded).length, 1);
       assert.equal(results.find((result) => !result.seeded)?.reason, 'already exists');
-      assert.equal(replacements, 1);
+      assert.equal(initializations, 1);
+      assert.equal(replacements, 0);
       const brand = await local.getBrand('acme');
       assert.equal(brand?.name, results[0].seeded ? 'Acme' : 'Other');
-      assert.equal((await local.getActivePrompts('acme')).length, 3);
+      const prompts = await local.getActivePrompts('acme');
+      assert.equal(prompts.length, 3);
+      assert.ok(prompts.every(({ text }) => text.includes(brand!.name)));
       assert.equal((await seedBrand({ db }, input)).seeded, false);
-      assert.equal(replacements, 1);
+      assert.equal(initializations, 1);
+      assert.equal(replacements, 0);
+      assert.deepEqual(await local.getActivePrompts('acme'), prompts);
       const other = await seedBrand({ db }, { ...input, brand_id: 'beta' });
       assert.equal(other.seeded, true);
-      assert.equal(replacements, 2);
+      assert.equal(initializations, 2);
+      assert.equal(replacements, 0);
     } finally {
       local.close();
     }
@@ -77,10 +134,12 @@ for (const field of ['category', 'name'] as const) {
       const db = {
         getBrand: async () => stored,
         upsertUser: async () => {},
-        createBrand: async (brand: unknown) => { stored = brand; return true; },
-        replacePrompts: async (_id: string, prompts: Array<{ text: string }>) => {
+        createBrand: async (brand: unknown, prompts: Array<{ text: string }>) => {
+          stored = brand;
           texts = prompts.map((prompt) => prompt.text);
+          return true;
         },
+        replacePrompts: async () => { throw new Error('unexpected non-atomic starter write'); },
       } as unknown as Db;
       const result = await seedBrand({ db }, input);
       assert.equal(result.prompt_source, 'fallback');

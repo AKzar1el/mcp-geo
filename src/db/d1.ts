@@ -154,9 +154,9 @@ export function createD1Db(d1: D1Database): Db {
         .run();
     },
 
-    async createBrand(input: CreateBrandInput): Promise<boolean> {
+    async createBrand(input: CreateBrandInput, initialPrompts: NewPromptInput[] = []): Promise<boolean> {
       const now = Date.now();
-      const result = await d1
+      const insertBrand = d1
         .prepare(
           `INSERT OR IGNORE INTO brands
              (id, user_id, domain, name, category, competitors_json,
@@ -176,8 +176,18 @@ export function createD1Db(d1: D1Database): Db {
           input.refresh_frequency,
           now,
           now,
-        )
-        .run();
+        );
+      if (!initialPrompts.length) return ((await insertBrand.run()).meta.changes ?? 0) > 0;
+
+      // D1 batches are sequential transactions. The single bulk insert sees
+      // changes() from the preceding brand insert, including a duplicate's 0.
+      const insertPrompts = d1.prepare(
+        `INSERT INTO prompts (id, brand_id, text, intent_stage, shape, active, created_at)
+         SELECT json_extract(value, '$.id'), ?, json_extract(value, '$.text'),
+                json_extract(value, '$.intent_stage'), json_extract(value, '$.shape'), 1, ?
+         FROM json_each(?) WHERE changes() = 1`,
+      ).bind(input.id, now, JSON.stringify(initialPrompts.map((p) => ({ ...p, id: randomId() }))));
+      const [result] = await d1.batch([insertBrand, insertPrompts]);
       return (result.meta.changes ?? 0) > 0;
     },
 
