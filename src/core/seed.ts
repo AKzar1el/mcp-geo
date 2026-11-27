@@ -44,7 +44,7 @@ function substituteFallbackPlaceholders(
 ): NewPromptInput[] {
   return prompts.map((p) => ({
     ...p,
-    text: p.text.replaceAll('$CATEGORY', categoryOrName),
+    text: p.text.replaceAll('$CATEGORY', () => categoryOrName),
   }));
 }
 
