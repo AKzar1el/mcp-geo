@@ -39,6 +39,9 @@ export async function runLocalRefresh(
       if (storedRun?.status === 'failed') {
         throw new Error('Local engine execution recorded a failed run');
       }
+      if (storedRun?.status !== 'completed') {
+        throw new Error('Local engine execution did not record a terminal run');
+      }
     } catch (error) {
       // An unexpected adapter failure must not strand this local reservation
       // and prevent an immediate retry. Leave any completed run untouched.
