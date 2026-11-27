@@ -191,7 +191,8 @@ export async function seedBrand(
   }
 
   const category = input.category?.trim() || null;
-  const starters = substituteFallbackPlaceholders(FALLBACK_PROMPTS, category ?? name);
+  const starters = substituteFallbackPlaceholders(FALLBACK_PROMPTS, category ?? name)
+    .map((prompt) => ({ ...prompt, id: crypto.randomUUID() }));
 
   await deps.db.upsertUser(DEFAULT_USER_ID, DEFAULT_USER_EMAIL);
   const inserted = await deps.db.createBrand({
@@ -204,7 +205,7 @@ export async function seedBrand(
     aliases: input.aliases ?? [],
     exclude_terms: input.exclude_terms ?? [],
     refresh_frequency: input.refresh_frequency ?? 'weekly',
-  }, input.prompt_generation === 'anthropic' ? undefined : starters);
+  }, starters);
 
   const brand = await deps.db.getBrand(input.brand_id);
   if (!brand) {
@@ -217,11 +218,23 @@ export async function seedBrand(
   }
 
   if (input.prompt_generation === 'anthropic') {
+    const expectedIds: string[] = starters.map(({ id }) => id);
+    const startersStillActive = async () => {
+      const active = await deps.db.getActivePrompts(input.brand_id);
+      return active.length === expectedIds.length && active.every(({ id }) => expectedIds.includes(id));
+    };
+    const changedResult = (): SeedResult => ({
+      seeded: true,
+      brand_id: input.brand_id,
+      reason: 'Active prompts changed during enrollment; current prompts were preserved. Inspect list_prompts.',
+    });
+    if (!(await startersStillActive())) return changedResult();
     try {
       const generated = await generatePrompts(
         { db: deps.db, ANTHROPIC_API_KEY: deps.ANTHROPIC_API_KEY },
         brand,
         promptCount,
+        expectedIds,
       );
       return {
         seeded: true,
@@ -230,21 +243,16 @@ export async function seedBrand(
         prompt_source: 'generated',
       };
     } catch (err) {
-      console.warn('seedBrand: generator failed, using fallback prompts', {
+      // The fallback was committed with the brand, so do not rewrite prompts
+      // after a failed or superseded generation attempt.
+      if (!(await startersStillActive())) return changedResult();
+      console.warn('seedBrand: generator failed, retaining fallback prompts', {
         brand_id: input.brand_id,
         message: err instanceof Error ? err.message : String(err),
       });
     }
   }
-  const fallbackCategory = input.prompt_generation === 'anthropic' ? brand.category : category;
-  if (input.prompt_generation === 'anthropic') {
-    // Keep the explicitly requested generation flow unchanged. Default
-    // enrollment already persisted the starter set with the brand insert.
-    await deps.db.replacePrompts(
-      input.brand_id,
-      substituteFallbackPlaceholders(FALLBACK_PROMPTS, fallbackCategory ?? brand.name),
-    );
-  }
+  const fallbackCategory = category;
   return {
     seeded: true,
     brand_id: input.brand_id,

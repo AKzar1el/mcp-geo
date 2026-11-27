@@ -16,7 +16,7 @@ function d1OnSqlite(local: ReturnType<typeof openSqliteDb>): Db {
         bind(...params: Params) {
           const statement = local.raw.prepare(sql);
           const runSync = () => ({ meta: { changes: Number(statement.run(...params).changes) } });
-          return { runSync, async run() { return runSync(); }, async first() { return statement.get(...params) ?? null; } };
+          return { runSync, async run() { return runSync(); }, async first() { return statement.get(...params) ?? null; }, async all() { return { results: statement.all(...params) }; } };
         },
       };
     },
@@ -32,6 +32,87 @@ function d1OnSqlite(local: ReturnType<typeof openSqliteDb>): Db {
       }
     },
   } as unknown as Parameters<typeof createD1Db>[0]);
+}
+
+for (const driver of ['sqlite', 'd1'] as const) {
+  test(`seedBrand: opt-in enrollment preserves atomic starters and newer manual prompts (${driver})`, async () => {
+    const local = openSqliteDb(':memory:');
+    const originalFetch = globalThis.fetch;
+    try {
+      const db = driver === 'sqlite' ? local : d1OnSqlite(local);
+      const input = { brand_id: 'optin', name: 'Opt-in', domain: 'optin.example.com', prompt_generation: 'anthropic' as const };
+      let providerCalls = 0;
+      globalThis.fetch = async () => {
+        providerCalls++;
+        return new Response('synthetic provider failure', { status: 503 });
+      };
+      local.raw.exec(`CREATE TRIGGER fail_optin_starters BEFORE INSERT ON prompts
+        WHEN NEW.brand_id = 'optin' AND NEW.intent_stage = 'comparison'
+        BEGIN SELECT RAISE(ABORT, 'synthetic starter failure'); END`);
+      await assert.rejects(seedBrand({ db, ANTHROPIC_API_KEY: 'offline-key' }, input, 1), /synthetic starter failure/);
+      assert.equal(await local.getBrand('optin'), null);
+      assert.equal(providerCalls, 0);
+      local.raw.exec('DROP TRIGGER fail_optin_starters');
+
+      const fallback = await seedBrand({ db, ANTHROPIC_API_KEY: 'offline-key' }, input, 1);
+      assert.equal(fallback.prompt_source, 'fallback');
+      assert.equal(providerCalls, 1);
+      assert.equal((await local.getActivePrompts('optin')).length, 3);
+
+      const manual = ['Manual question?', 'Another manual question?', 'Third manual question?']
+        .map((text) => ({ text, intent_stage: null, shape: null }));
+      const response = () => new Response(JSON.stringify({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify([{ prompt: 'Generated question?', intent_stage: 'awareness', shape: 'best X' }]) }] }));
+      globalThis.fetch = async () => {
+        providerCalls++;
+        await local.replacePrompts('concurrent', manual);
+        return response();
+      };
+      const concurrent = await seedBrand({ db, ANTHROPIC_API_KEY: 'offline-key' }, { ...input, brand_id: 'concurrent' }, 1);
+      assert.equal(concurrent.seeded, true);
+      assert.match(concurrent.reason ?? '', /changed/i);
+      assert.equal(concurrent.prompt_source, undefined);
+      assert.deepEqual((await local.getActivePrompts('concurrent')).map(({ text }) => text), manual.map(({ text }) => text));
+
+      globalThis.fetch = async () => { providerCalls++; return response(); };
+      const generated = await seedBrand({ db, ANTHROPIC_API_KEY: 'offline-key' }, { ...input, brand_id: 'generated' }, 1);
+      assert.equal(generated.prompt_source, 'generated');
+      assert.deepEqual((await local.getActivePrompts('generated')).map(({ text }) => text), ['Generated question?']);
+      assert.equal(providerCalls, 3);
+
+      local.raw.exec(`CREATE TRIGGER fail_generated BEFORE INSERT ON prompts
+        WHEN NEW.brand_id = 'rollback' AND NEW.text = 'Generated question?'
+        BEGIN SELECT RAISE(ABORT, 'synthetic generated insert failure'); END`);
+      let initialIds: string[] = [];
+      globalThis.fetch = async () => {
+        providerCalls++;
+        initialIds = (await local.getActivePrompts('rollback')).map(({ id }) => id);
+        assert.equal(initialIds.length, 3);
+        return response();
+      };
+      const rolledBack = await seedBrand({ db, ANTHROPIC_API_KEY: 'offline-key' }, { ...input, brand_id: 'rollback' }, 1);
+      assert.equal(rolledBack.prompt_source, 'fallback');
+      assert.deepEqual((await local.getActivePrompts('rollback')).map(({ id }) => id), initialIds);
+      assert.equal(providerCalls, 4);
+
+      const changedBeforeGeneration: Db = {
+        ...db,
+        async createBrand(brand, prompts) {
+          const inserted = await db.createBrand(brand, prompts);
+          if (inserted) await local.replacePrompts(brand.id, manual);
+          return inserted;
+        },
+      };
+      const changed = await seedBrand({ db: changedBeforeGeneration, ANTHROPIC_API_KEY: 'offline-key' }, { ...input, brand_id: 'early-edit' }, 1);
+      assert.equal(changed.seeded, true);
+      assert.match(changed.reason ?? '', /changed/i);
+      assert.equal(changed.prompt_source, undefined);
+      assert.equal(providerCalls, 4, 'skip provider generation if the initial roster was already replaced');
+      assert.deepEqual((await local.getActivePrompts('early-edit')).map(({ text }) => text), manual.map(({ text }) => text));
+    } finally {
+      globalThis.fetch = originalFetch;
+      local.close();
+    }
+  });
 }
 
 for (const driver of ['sqlite', 'd1'] as const) {

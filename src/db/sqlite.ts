@@ -29,6 +29,7 @@ import type {
   CreateBrandInput,
   Db,
   EnginePromptResult,
+  InitialPromptInput,
   InsertPromptResponseInput,
   LiveRunReservation,
   NewPromptInput,
@@ -237,7 +238,7 @@ export function openSqliteDb(path?: string): SqliteDb {
         .run(id, email, now, now);
     },
 
-    async createBrand(input: CreateBrandInput, initialPrompts: NewPromptInput[] = []): Promise<boolean> {
+    async createBrand(input: CreateBrandInput, initialPrompts: InitialPromptInput[] = []): Promise<boolean> {
       const now = Date.now();
       const insertBrand = () => sqlite
         .prepare(
@@ -271,7 +272,7 @@ export function openSqliteDb(path?: string): SqliteDb {
            VALUES (?, ?, ?, ?, ?, 1, ?)`,
         );
         for (const p of initialPrompts) {
-          insert.run(randomUUID(), input.id, p.text, p.intent_stage, p.shape, now);
+          insert.run(p.id ?? randomUUID(), input.id, p.text, p.intent_stage, p.shape, now);
         }
       });
       return inserted;
@@ -836,7 +837,11 @@ export function openSqliteDb(path?: string): SqliteDb {
     async replacePrompts(
       brandId: string,
       prompts: NewPromptInput[],
+      expectedActiveIds?: readonly string[],
     ): Promise<number> {
+      if (expectedActiveIds && (!expectedActiveIds.length || new Set(expectedActiveIds).size !== expectedActiveIds.length)) {
+        throw new RangeError('Expected prompt roster must be nonempty and unique');
+      }
       const now = Date.now();
       const deactivate = sqlite.prepare(
         'UPDATE prompts SET active = 0 WHERE brand_id = ? AND active = 1',
@@ -845,15 +850,21 @@ export function openSqliteDb(path?: string): SqliteDb {
         `INSERT INTO prompts (id, brand_id, text, intent_stage, shape, active, created_at)
          VALUES (?, ?, ?, ?, ?, 1, ?)`,
       );
+      let replaced = false;
       inTransaction(sqlite, () => {
+        if (expectedActiveIds) {
+          const current = sqlite.prepare('SELECT id FROM prompts WHERE brand_id = ? AND active = 1').all(brandId);
+          if (current.length !== expectedActiveIds.length || current.some((row) => !expectedActiveIds.includes(String(row.id)))) return;
+        }
         // Soft-delete: mark old prompts inactive so historical
         // prompt_responses rows keep their FK target.
         deactivate.run(brandId);
         for (const p of prompts) {
           insert.run(randomUUID(), brandId, p.text, p.intent_stage, p.shape, now);
         }
+        replaced = true;
       });
-      return prompts.length;
+      return replaced ? prompts.length : 0;
     },
 
     async cacheGet(
