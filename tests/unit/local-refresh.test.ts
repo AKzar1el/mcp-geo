@@ -30,10 +30,11 @@ test('overlapping CLI refreshes share a live reservation and do not run duplicat
     let unblock!: () => void;
     const gate = new Promise<void>((resolve) => { unblock = resolve; });
     let executed = 0;
-    const first = runLocalRefresh(db, {}, brand, prompts, ['chatgpt', 'chatgpt'], async () => {
+    const first = runLocalRefresh(db, {}, brand, prompts, ['chatgpt', 'chatgpt'], async (_env, _brand, _prompts, run) => {
       executed++;
       signalStarted();
       await gate;
+      await db.updateRun(run.run_id, { status: 'completed', completed_at: Date.now() });
     });
     let second;
     try {
@@ -49,6 +50,50 @@ test('overlapping CLI refreshes share a live reservation and do not run duplicat
     assert.deepEqual(second?.engines, []);
     assert.equal(firstResult.run_ids.chatgpt, second?.run_ids.chatgpt);
     assert.equal(executed, 1);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('local refresh rejects nonterminal and missing results without blocking independent engines', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'mcp-geo-cli-nonterminal-'));
+  const db = openSqliteDb(join(root, 'test.sqlite'));
+  try {
+    await db.upsertUser('test-user', 'test@example.test');
+    await db.createBrand({
+      id: 'nonterminal', user_id: 'test-user', name: 'Acme', domain: 'acme.com',
+      category: null, competitors: [], aliases: [], exclude_terms: [], refresh_frequency: 'manual',
+    });
+    const brand = await db.getBrand('nonterminal');
+    assert.ok(brand);
+    const prompts: Prompt[] = [{
+      id: 'prompt-1', brand_id: brand.id, text: 'Independent category query',
+      intent_stage: null, shape: null, active: 1, created_at: 0,
+    }];
+    for (const status of ['pending', 'in_progress'] as const) {
+      const mixed = await runLocalRefresh(db, {}, brand, prompts, ['chatgpt', 'claude'], async (_env, _brand, _prompts, run) => {
+        await db.updateRun(run.run_id, run.engine === 'chatgpt'
+          ? { status }
+          : { status: 'completed', completed_at: Date.now() });
+      });
+      assert.deepEqual(mixed.failed_engines, ['chatgpt']);
+      assert.equal((await db.getRunById(mixed.run_ids.chatgpt))?.status, 'failed');
+      assert.equal((await db.getRunById(mixed.run_ids.claude))?.status, 'completed');
+    }
+    let missingId = '';
+    const missingDb = {
+      ...db,
+      getRunById: async (id: string) => id === missingId ? null : db.getRunById(id),
+    };
+    await assert.rejects(
+      runLocalRefresh(missingDb, {}, brand, prompts, ['chatgpt'], async (_env, _brand, _prompts, run) => {
+        missingId = run.run_id;
+      }),
+      /^Error: Local engine execution did not record a terminal run$/,
+    );
+    assert.ok(missingId);
+    assert.equal((await db.getRunById(missingId))?.status, 'failed');
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });
