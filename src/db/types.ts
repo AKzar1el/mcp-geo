@@ -281,7 +281,8 @@ export interface Db {
   // Seeding (core/seed.ts): INSERT OR IGNORE semantics on both — a
   // pre-existing user/brand row is left untouched, never clobbered.
   upsertUser(id: string, email: string): Promise<void>;
-  createBrand(input: CreateBrandInput): Promise<void>;
+  // True only when this call inserted the brand row.
+  createBrand(input: CreateBrandInput): Promise<boolean>;
   updateBrand(brandId: string, fields: UpdateBrandFields): Promise<void>;
   listBrands(): Promise<BrandSummary[]>;
   createRun(
