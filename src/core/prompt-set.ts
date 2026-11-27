@@ -19,6 +19,9 @@ export function normalizeExactPrompts(prompts: readonly string[]): string[] {
   const normalized = prompts.map((prompt) =>
     prompt.trim().replace(/\s+/g, ' ').normalize('NFC'),
   );
+  if (normalized.some((prompt) => prompt.length > 500)) {
+    throw new Error('Each prompt must be at most 500 characters.');
+  }
   if (normalized.some((prompt) => prompt.length === 0)) {
     throw new Error('Prompts must contain non-whitespace text.');
   }

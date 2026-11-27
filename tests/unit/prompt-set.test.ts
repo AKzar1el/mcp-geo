@@ -39,6 +39,32 @@ test('normalizeExactPrompts treats canonically equivalent Unicode questions as d
   ]);
 });
 
+test('normalizeExactPrompts enforces the length limit after NFC expansion', () => {
+  for (const character of ['\u0958', '\u0344']) {
+    const boundary = character.repeat(250);
+    assert.equal(boundary.normalize('NFC').length, 500);
+    const normalized = normalizeExactPrompts([boundary]);
+    assert.deepEqual(normalizeExactPrompts(normalized), normalized);
+    const oversized = character.repeat(251);
+    assert.equal(oversized.normalize('NFC').length, 502);
+    assert.throws(() => normalizeExactPrompts([oversized]), /at most 500 characters/);
+  }
+  assert.deepEqual(normalizeExactPrompts(['a'.repeat(500)]), ['a'.repeat(500)]);
+  assert.throws(() => normalizeExactPrompts([' '.repeat(501) + 'a']), /at most 500 characters/);
+});
+
+test('applyExactPromptSet rejects NFC expansion before accessing storage', async () => {
+  let reads = 0;
+  let writes = 0;
+  const db = {
+    getActivePrompts: async () => { reads++; return []; },
+    replacePrompts: async () => { writes++; return 0; },
+  } satisfies Pick<Db, 'getActivePrompts' | 'replacePrompts'>;
+  await assert.rejects(applyExactPromptSet(db, 'acme', ['Valid?', '\u0958'.repeat(251)]), /at most 500 characters/);
+  assert.equal(reads, 0);
+  assert.equal(writes, 0);
+});
+
 test('applyExactPromptSet is a no-op when the active set already matches', async () => {
   let replaceCalls = 0;
   const db = {
