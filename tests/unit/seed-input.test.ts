@@ -4,6 +4,34 @@ import { seedBrand, type SeedBrandInput } from '../../src/core/seed.ts';
 import { DomainInputError } from '../../src/core/domain.ts';
 import type { Db } from '../../src/db/types.ts';
 
+for (const field of ['category', 'name'] as const) {
+  test(`seedBrand preserves literal replacement tokens in fallback ${field}`, async () => {
+    for (const label of ['Tools $&', 'Tools $$', 'Tools $`', "Tools $'", 'Tools $CATEGORY']) {
+      const input = {
+        brand_id: 'acme', name: 'Acme', domain: 'acme.com', [field]: label,
+      };
+      let stored: unknown = null;
+      let texts: string[] = [];
+      const db = {
+        getBrand: async () => stored,
+        upsertUser: async () => {},
+        createBrand: async (brand: unknown) => { stored = brand; },
+        replacePrompts: async (_id: string, prompts: Array<{ text: string }>) => {
+          texts = prompts.map((prompt) => prompt.text);
+        },
+      } as unknown as Db;
+      const result = await seedBrand({ db }, input);
+      assert.equal(result.prompt_source, 'fallback');
+      assert.equal(result.prompts_inserted, 3);
+      assert.deepEqual(texts, [
+        `best tools for ${label}`,
+        `top alternatives in ${label}`,
+        `most popular ${label} options for small teams`,
+      ], label);
+    }
+  });
+}
+
 test('seedBrand rejects malformed hosted JSON fields before querying or changing the database', async () => {
   const valid = { brand_id: 'acme', name: 'Acme', domain: 'acme.com' };
   const invalid: Array<[string, unknown]> = [
