@@ -255,5 +255,7 @@ test('admin list-prompts returns the exact active measurement set', async () => 
       created_at: new Date(prompt.created_at).toISOString(),
     })),
     count: 2,
+    category_prompt_review_pending: false,
+    prompt_review_note: null,
   });
 });
