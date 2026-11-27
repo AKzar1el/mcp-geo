@@ -171,7 +171,7 @@ function createStatelessHostedServer(
       name: 'digestseo-mcp',
       title: 'GEO Tracker by DigestSEO',
       description:
-        'Track brand citations across seven AI search surfaces. Free OSS; optional EUR 99 client-ready audit.',
+        'AI brand mentions & returned source links. Free OSS; scans need keys; optional EUR 99 audit.',
       version: SERVER_VERSION,
       websiteUrl: 'https://digestseo.com/geo-mcp/',
     },
