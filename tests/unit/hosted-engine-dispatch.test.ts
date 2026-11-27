@@ -3,19 +3,20 @@ import assert from 'node:assert/strict';
 import { runClaimedHostedEngine } from '../../src/core/hosted-engine-dispatch.js';
 import type { Db } from '../../src/db/types.js';
 
-type DispatchDb = Pick<Db, 'deleteResponsesForRun' | 'failRunIfInProgress'>;
+type DispatchDb = Pick<Db, 'deleteResponsesForRun' | 'failRunIfInProgress' | 'getRunById'>;
 
 test('claimed hosted engine clears old run rows once and executes exactly once', async () => {
   const calls: string[] = [];
   const db = {
     deleteResponsesForRun: async (id: string) => { calls.push(`clear:${id}`); },
+    getRunById: async (id: string) => { calls.push(`read:${id}`); return { status: 'completed' }; },
     failRunIfInProgress: async () => { calls.push('failed'); return true; },
   } as DispatchDb;
   const result = await runClaimedHostedEngine(db, 'run-1', async () => {
     calls.push('dispatch');
   });
   assert.equal(result, true);
-  assert.deepEqual(calls, ['clear:run-1', 'dispatch']);
+  assert.deepEqual(calls, ['clear:run-1', 'dispatch', 'read:run-1']);
 });
 
 test('adapter failure closes only active run, preserving partial evidence', async () => {
@@ -66,4 +67,41 @@ test('terminal transition failure does not repeat a billed provider operation', 
     throw new Error('adapter failure');
   }), false);
   assert.equal(dispatched, 1);
+});
+
+test('a normally resolving adapter with a persisted failed run is not reported as successful', async () => {
+  const calls: string[] = [];
+  const db = {
+    deleteResponsesForRun: async () => { calls.push('clear'); },
+    getRunById: async (id: string) => {
+      assert.equal(id, 'run-5');
+      calls.push('read');
+      return { status: 'failed', error: 'persisted diagnostic' };
+    },
+    failRunIfInProgress: async () => { calls.push('mark-failed'); return false; },
+  } as DispatchDb;
+  assert.equal(await runClaimedHostedEngine(db, 'run-5', async () => {
+    calls.push('dispatch');
+  }), false);
+  assert.deepEqual(calls, ['clear', 'dispatch', 'read']);
+});
+
+test('an unresolved claimed run is conditionally closed without another dispatch', async () => {
+  for (const row of [{ status: 'in_progress' }, { status: 'pending' }, null]) {
+    const calls: string[] = [];
+    const db = {
+      deleteResponsesForRun: async () => { calls.push('clear'); },
+      getRunById: async () => { calls.push('read'); return row; },
+      failRunIfInProgress: async (id: string, reason: string) => {
+        assert.equal(id, 'run-6');
+        assert.equal(reason, 'Hosted engine execution failed');
+        calls.push('mark-failed');
+        return row !== null;
+      },
+    } as DispatchDb;
+    assert.equal(await runClaimedHostedEngine(db, 'run-6', async () => {
+      calls.push('dispatch');
+    }), false);
+    assert.deepEqual(calls, ['clear', 'dispatch', 'read', 'mark-failed']);
+  }
 });

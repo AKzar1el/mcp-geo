@@ -1,6 +1,6 @@
 import type { Db } from '../db/types.js';
 
-type DispatchDb = Pick<Db, 'deleteResponsesForRun' | 'failRunIfInProgress'>;
+type DispatchDb = Pick<Db, 'deleteResponsesForRun' | 'failRunIfInProgress' | 'getRunById'>;
 
 // A service-binding invocation owns one claimed run. Close unexpected adapter
 // failures here, even if the parent fan-out's waitUntil work is interrupted.
@@ -12,7 +12,12 @@ export async function runClaimedHostedEngine(
   try {
     await db.deleteResponsesForRun(runId);
     await dispatch();
-    return true;
+    // A live adapter may persist a failed run and resolve normally. A
+    // successful dispatch must have actually reached its terminal state.
+    const run = await db.getRunById(runId);
+    if (run?.status === 'completed') return true;
+    if (run?.status === 'failed') return false;
+    throw new Error('Hosted engine did not record a terminal run');
   } catch {
     // The conditional update preserves a run the adapter already completed,
     // and does not delete usable prompt responses saved before the failure.
