@@ -101,7 +101,7 @@ function validateAndShape(
         : null;
     const normalizedShape =
       typeof shape === 'string' && shape.trim().length > 0 ? shape : null;
-    const dedupeKey = normalizedText.toLocaleLowerCase('en-US');
+    const dedupeKey = normalizedText.toLowerCase().normalize('NFC');
     if (seen.has(dedupeKey)) continue;
     seen.add(dedupeKey);
     out.push({

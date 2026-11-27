@@ -171,6 +171,40 @@ test('generatePrompts leaves the existing prompt set untouched when both attempt
   }
 });
 
+test('generated prompts reject duplicates that become canonically equivalent after lowercasing', async () => {
+  const duplicates = [prompt('Best J\u030c tools'), prompt('Best \u01f0 tools')];
+  let writes = 0;
+  const db = {
+    replacePrompts: async () => { writes++; return 0; },
+  } as unknown as Db;
+  await withMockAnthropic([anthropicResponse(duplicates), anthropicResponse(duplicates)], async (state) => {
+    await assert.rejects(
+      generatePrompts({ db, ANTHROPIC_API_KEY: 'offline-key' }, brand, 2),
+      /1 unique valid prompts; expected 2/,
+    );
+    assert.equal(state.calls, 2);
+    assert.equal(writes, 0);
+  });
+});
+
+test('generated prompts retry canonical duplicates and persist only distinct valid questions', async () => {
+  const duplicates = [prompt('Best J\u030c tools'), prompt('Best \u01f0 tools')];
+  const valid = [prompt('Best J\u030c tools'), prompt('Best J tools')];
+  const writes: NewPromptInput[][] = [];
+  const db = {
+    replacePrompts: async (_brandId: string, prompts: NewPromptInput[]) => {
+      writes.push(prompts);
+      return prompts.length;
+    },
+  } as unknown as Db;
+  await withMockAnthropic([anthropicResponse(duplicates), anthropicResponse(valid)], async (state) => {
+    const result = await generatePrompts({ db, ANTHROPIC_API_KEY: 'offline-key' }, brand, 2);
+    assert.equal(state.calls, 2);
+    assert.deepEqual(result.map(({ text }) => text), ['Best J\u030c tools', 'Best J tools']);
+    assert.deepEqual(writes, [result]);
+  });
+});
+
 test('generatePrompts does not retry a provider rate-limit response', async () => {
   let replaceCalls = 0;
   const db = {
