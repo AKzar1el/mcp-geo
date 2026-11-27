@@ -3,6 +3,68 @@ import assert from 'node:assert/strict';
 import { seedBrand, type SeedBrandInput } from '../../src/core/seed.ts';
 import { DomainInputError } from '../../src/core/domain.ts';
 import type { Db } from '../../src/db/types.ts';
+import { openSqliteDb } from '../../src/db/sqlite.ts';
+import { createD1Db } from '../../src/db/d1.ts';
+
+for (const driver of ['sqlite', 'd1'] as const) {
+  test(`seedBrand: only the insertion winner seeds prompts (${driver})`, async () => {
+    const local = openSqliteDb(':memory:');
+    try {
+      // Run the actual D1 SQL against SQLite and emulate its statement metadata.
+      const adapter = driver === 'sqlite' ? local : createD1Db({
+        prepare(sql: string) {
+          return {
+            bind(...params: Parameters<ReturnType<typeof local.raw.prepare>['run']>) {
+              const statement = local.raw.prepare(sql);
+              return {
+                async first() { return statement.get(...params) ?? null; },
+                async run() { return { meta: { changes: Number(statement.run(...params).changes) } }; },
+              };
+            },
+          };
+        },
+      } as unknown as Parameters<typeof createD1Db>[0]);
+      let initialReads = 0;
+      let release!: () => void;
+      const barrier = new Promise<void>((resolve) => { release = resolve; });
+      let replacements = 0;
+      const db: Db = {
+        ...adapter,
+        async getBrand(id) {
+          const row = await adapter.getBrand(id);
+          if (id === 'acme' && ++initialReads <= 2) {
+            assert.equal(row, null);
+            if (initialReads === 2) release();
+            await barrier;
+          }
+          return row;
+        },
+        async replacePrompts(id, prompts) {
+          replacements++;
+          return local.replacePrompts(id, prompts);
+        },
+      };
+      const input = { brand_id: 'acme', name: 'Acme', domain: 'acme.com' };
+      const results = await Promise.all([
+        seedBrand({ db }, input),
+        seedBrand({ db }, { ...input, name: 'Other', domain: 'other.com' }),
+      ]);
+      assert.equal(results.filter((result) => result.seeded).length, 1);
+      assert.equal(results.find((result) => !result.seeded)?.reason, 'already exists');
+      assert.equal(replacements, 1);
+      const brand = await local.getBrand('acme');
+      assert.equal(brand?.name, results[0].seeded ? 'Acme' : 'Other');
+      assert.equal((await local.getActivePrompts('acme')).length, 3);
+      assert.equal((await seedBrand({ db }, input)).seeded, false);
+      assert.equal(replacements, 1);
+      const other = await seedBrand({ db }, { ...input, brand_id: 'beta' });
+      assert.equal(other.seeded, true);
+      assert.equal(replacements, 2);
+    } finally {
+      local.close();
+    }
+  });
+}
 
 for (const field of ['category', 'name'] as const) {
   test(`seedBrand preserves literal replacement tokens in fallback ${field}`, async () => {
@@ -15,7 +77,7 @@ for (const field of ['category', 'name'] as const) {
       const db = {
         getBrand: async () => stored,
         upsertUser: async () => {},
-        createBrand: async (brand: unknown) => { stored = brand; },
+        createBrand: async (brand: unknown) => { stored = brand; return true; },
         replacePrompts: async (_id: string, prompts: Array<{ text: string }>) => {
           texts = prompts.map((prompt) => prompt.text);
         },

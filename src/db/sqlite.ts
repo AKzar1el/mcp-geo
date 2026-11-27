@@ -237,9 +237,9 @@ export function openSqliteDb(path?: string): SqliteDb {
         .run(id, email, now, now);
     },
 
-    async createBrand(input: CreateBrandInput): Promise<void> {
+    async createBrand(input: CreateBrandInput): Promise<boolean> {
       const now = Date.now();
-      sqlite
+      const result = sqlite
         .prepare(
           `INSERT OR IGNORE INTO brands
              (id, user_id, domain, name, category, competitors_json,
@@ -260,6 +260,7 @@ export function openSqliteDb(path?: string): SqliteDb {
           now,
           now,
         );
+      return result.changes > 0;
     },
 
     async updateBrand(brandId: string, fields: UpdateBrandFields): Promise<void> {

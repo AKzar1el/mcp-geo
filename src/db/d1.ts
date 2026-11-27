@@ -154,9 +154,9 @@ export function createD1Db(d1: D1Database): Db {
         .run();
     },
 
-    async createBrand(input: CreateBrandInput): Promise<void> {
+    async createBrand(input: CreateBrandInput): Promise<boolean> {
       const now = Date.now();
-      await d1
+      const result = await d1
         .prepare(
           `INSERT OR IGNORE INTO brands
              (id, user_id, domain, name, category, competitors_json,
@@ -178,6 +178,7 @@ export function createD1Db(d1: D1Database): Db {
           now,
         )
         .run();
+      return (result.meta.changes ?? 0) > 0;
     },
 
     async updateBrand(brandId: string, fields: UpdateBrandFields): Promise<void> {

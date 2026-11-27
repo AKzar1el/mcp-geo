@@ -193,7 +193,7 @@ export async function seedBrand(
   const category = input.category?.trim() || null;
 
   await deps.db.upsertUser(DEFAULT_USER_ID, DEFAULT_USER_EMAIL);
-  await deps.db.createBrand({
+  const inserted = await deps.db.createBrand({
     id: input.brand_id,
     user_id: DEFAULT_USER_ID,
     domain,
@@ -208,6 +208,11 @@ export async function seedBrand(
   const brand = await deps.db.getBrand(input.brand_id);
   if (!brand) {
     throw new Error('seedBrand: brand insert apparently failed');
+  }
+  // A concurrent caller may have won the insert after the initial lookup.
+  // Only the insertion owner may generate or replace the starter prompts.
+  if (!inserted) {
+    return { seeded: false, brand_id: input.brand_id, reason: 'already exists' };
   }
 
   if (input.prompt_generation === 'anthropic') {
