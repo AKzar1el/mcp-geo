@@ -150,6 +150,7 @@ export async function generatePrompts(
   env: PromptGenEnv,
   brand: Brand,
   count = 20,
+  expectedActiveIds?: readonly string[],
 ): Promise<NewPromptInput[]> {
   // Validate before either provider attempt: invalid counts cannot be fulfilled.
   if (!Number.isInteger(count) || count < 1 || count > 50) {
@@ -167,6 +168,9 @@ export async function generatePrompts(
     });
     prompts = await callGenerator(env, brand, count, true);
   }
-  await env.db.replacePrompts(brand.id, prompts);
+  const inserted = await env.db.replacePrompts(brand.id, prompts, expectedActiveIds);
+  if (expectedActiveIds && inserted !== prompts.length) {
+    throw new Error('Active prompts changed during generation; generated prompts were not applied');
+  }
   return prompts;
 }

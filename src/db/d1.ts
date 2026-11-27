@@ -15,6 +15,7 @@ import type {
   CreateBrandInput,
   Db,
   EnginePromptResult,
+  InitialPromptInput,
   InsertPromptResponseInput,
   LiveRunReservation,
   NewPromptInput,
@@ -154,7 +155,7 @@ export function createD1Db(d1: D1Database): Db {
         .run();
     },
 
-    async createBrand(input: CreateBrandInput, initialPrompts: NewPromptInput[] = []): Promise<boolean> {
+    async createBrand(input: CreateBrandInput, initialPrompts: InitialPromptInput[] = []): Promise<boolean> {
       const now = Date.now();
       const insertBrand = d1
         .prepare(
@@ -186,7 +187,7 @@ export function createD1Db(d1: D1Database): Db {
          SELECT json_extract(value, '$.id'), ?, json_extract(value, '$.text'),
                 json_extract(value, '$.intent_stage'), json_extract(value, '$.shape'), 1, ?
          FROM json_each(?) WHERE changes() = 1`,
-      ).bind(input.id, now, JSON.stringify(initialPrompts.map((p) => ({ ...p, id: randomId() }))));
+      ).bind(input.id, now, JSON.stringify(initialPrompts.map((p) => ({ ...p, id: p.id ?? randomId() }))));
       const [result] = await d1.batch([insertBrand, insertPrompts]);
       return (result.meta.changes ?? 0) > 0;
     },
@@ -783,8 +784,32 @@ export function createD1Db(d1: D1Database): Db {
     async replacePrompts(
       brandId: string,
       prompts: NewPromptInput[],
+      expectedActiveIds?: readonly string[],
     ): Promise<number> {
       const now = Date.now();
+      if (expectedActiveIds) {
+        if (!expectedActiveIds.length || new Set(expectedActiveIds).size !== expectedActiveIds.length) {
+          throw new RangeError('Expected prompt roster must be nonempty and unique');
+        }
+        // Select the entire matching roster before changing any active flags.
+        // The next batch statement inserts only if all expected rows changed.
+        const deactivate = d1.prepare(
+          `UPDATE prompts SET active = 0 WHERE id IN (
+             SELECT id FROM prompts WHERE brand_id = ? AND active = 1
+               AND (SELECT COUNT(*) FROM prompts WHERE brand_id = ? AND active = 1) = ?
+               AND (SELECT COUNT(*) FROM prompts WHERE brand_id = ? AND active = 1
+                      AND id IN (SELECT value FROM json_each(?))) = ?
+           )`,
+        ).bind(brandId, brandId, expectedActiveIds.length, brandId, JSON.stringify(expectedActiveIds), expectedActiveIds.length);
+        const insert = d1.prepare(
+          `INSERT INTO prompts (id, brand_id, text, intent_stage, shape, active, created_at)
+           SELECT json_extract(value, '$.id'), ?, json_extract(value, '$.text'),
+                  json_extract(value, '$.intent_stage'), json_extract(value, '$.shape'), 1, ?
+           FROM json_each(?) WHERE changes() = ?`,
+        ).bind(brandId, now, JSON.stringify(prompts.map((p) => ({ ...p, id: randomId() }))), expectedActiveIds.length);
+        const [result] = await d1.batch([deactivate, insert]);
+        return result.meta.changes === expectedActiveIds.length ? prompts.length : 0;
+      }
       // Soft-delete: mark old prompts inactive so the historical
       // prompt_responses rows keep their FK target. getActivePrompts filters
       // active=1, so the new prompts are the only ones future runs see.
