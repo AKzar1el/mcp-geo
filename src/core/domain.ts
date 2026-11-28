@@ -4,6 +4,21 @@
 
 export class DomainInputError extends Error {}
 
+// Bound untrusted diagnostic text before sanitizing it. Replace control,
+// formatting, and line-separator characters, plus the diagnostic's quote
+// delimiter and backslashes, so the preview stays on one readable line.
+function domainInputPreview(raw: string): string {
+  // A rejected URL-like value may carry userinfo, access tokens or query/path
+  // data. Redact the entire value before truncation, including delimiters
+  // outside the preview and compatibility-equivalent Unicode punctuation.
+  // Bare-domain diagnostic previews remain useful; this is not a general
+  // detector for secrets embedded in arbitrary domain-like text.
+  if (/[@:\/\\?#%=&;]/u.test(raw.normalize('NFKC'))) return '[redacted]';
+  const limit = 80;
+  const preview = raw.slice(0, limit).replace(/[\p{C}\p{Zl}\p{Zp}'\\]/gu, '?');
+  return raw.length > limit ? `${preview}...` : preview;
+}
+
 // 'https://www.Acme.com/pricing?x=1' -> 'acme.com'. Returns null when the
 // input doesn't reduce to something domain-shaped.
 export function normalizeDomainInput(raw: string): string | null {
@@ -50,7 +65,7 @@ export function normalizeRequiredDomain(raw: string): string {
   const domain = normalizeDomainInput(raw);
   if (!domain) {
     throw new DomainInputError(
-      `'${raw}' does not look like a domain. Pass a bare domain like 'acme.com' (no scheme or path needed).`,
+      `'${domainInputPreview(raw)}' does not look like a domain. Pass a bare domain like 'acme.com' (no scheme or path needed).`,
     );
   }
   return domain;
@@ -65,7 +80,7 @@ export function normalizeCompetitorDomains(
     const domain = normalizeDomainInput(raw);
     if (!domain) {
       throw new DomainInputError(
-        `Competitor '${raw}' does not look like a domain. Pass bare domains like 'asana.com'.`,
+        `Competitor '${domainInputPreview(raw)}' does not look like a domain. Pass bare domains like 'asana.com'.`,
       );
     }
     if (domain !== primaryDomain && !competitors.includes(domain)) {
